@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "description": "CLI tool for Azure API Management configuration-as-code",
   "type": "module",
-  "private": true,
+  "private": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "apiops": "./dist/cli/index.js"
+    "apiops": "dist/cli/index.js"
   },
   "files": [
     "dist"
