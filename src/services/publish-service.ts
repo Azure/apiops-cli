@@ -1,0 +1,602 @@
+/**
+ * T030: Publish orchestration service
+ * Coordinates PUT/DELETE across dependency tiers in topological order
+ * PUTs in dependency order (tier 1-4), DELETEs in reverse order (tier 4-1)
+ */
+
+import { IApimClient } from '../clients/iapim-client.js';
+import { IArtifactStore } from '../clients/iartifact-store.js';
+import { PublishConfig } from '../models/config.js';
+import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
+import { ResourceType } from '../models/resource-types.js';
+import { getResourceTier } from '../lib/dependency-graph.js';
+import { runParallel } from '../lib/parallel-runner.js';
+import { logger } from '../lib/logger.js';
+import { EXIT_SUCCESS, EXIT_PARTIAL, EXIT_FATAL } from '../lib/exit-codes.js';
+
+// Import from other agents' files (will be created in parallel)
+import { publishResource, ResourcePublishResult } from './resource-publisher.js';
+import { publishApi } from './api-publisher.js';
+import { generateDryRunReport, DryRunReport } from './dry-run-reporter.js';
+import { computeDeleteActions } from './delete-unmatched-service.js';
+import { computeGitDiff } from './git-diff-service.js';
+
+/**
+ * The APIM Backend properties.type value that identifies a pool backend.
+ * Pool backends reference other Backend resources and must be published
+ * after the individual backends they aggregate.
+ */
+const POOL_BACKEND_TYPE = 'pool';
+
+export interface PublishActionResult {
+  descriptor: ResourceDescriptor;
+  action: 'put' | 'delete' | 'noop';
+  status: 'success' | 'failed' | 'skipped';
+  error?: Error;
+}
+
+export interface PublishResult {
+  totalPuts: number;
+  totalDeletes: number;
+  totalErrors: number;
+  totalSkipped: number;
+  exitCode: number; // 0=success, 1=partial failure, 2=fatal
+  actions: PublishActionResult[];
+  dryRunReport?: DryRunReport;
+}
+
+/**
+ * Main publish orchestration function.
+ * Coordinates PUT/DELETE operations across dependency tiers.
+ */
+export async function runPublish(
+  client: IApimClient,
+  store: IArtifactStore,
+  config: PublishConfig
+): Promise<PublishResult> {
+  try {
+    // Step 0: Pre-flight validation — ensure the resource group and APIM service exist
+    await client.validatePreFlight(config.service);
+
+    // Step 1: Determine target descriptors based on incremental mode
+    const targetDescriptors = await determineTargetDescriptors(store, config);
+
+    logger.debug(
+      `Publishing ${targetDescriptors.length} resources (dry-run: ${config.dryRun})`
+    );
+
+    // Step 2: Handle dry-run mode
+    if (config.dryRun) {
+      const dryRunReport = await generateDryRunReport(
+        store,
+        client,
+        config.service,
+        config,
+        targetDescriptors
+      );
+
+      return {
+        totalPuts: dryRunReport.summary.creates,
+        totalDeletes: dryRunReport.summary.deletes,
+        totalErrors: 0,
+        totalSkipped: dryRunReport.summary.skips,
+        exitCode: EXIT_SUCCESS,
+        actions: [],
+        dryRunReport,
+      };
+    }
+
+    // Step 3: Execute PUTs in dependency order (tier 1 → tier 4)
+    const putResults = await executePuts(
+      client,
+      store,
+      config.service,
+      config,
+      targetDescriptors
+    );
+
+    // Step 4: Execute DELETEs in reverse dependency order (tier 4 → tier 1) if requested
+    let deleteResults: PublishActionResult[] = [];
+    if (config.deleteUnmatched) {
+      deleteResults = await executeDeletes(
+        client,
+        store,
+        config.service,
+        config
+      );
+    }
+
+    // Step 5: Combine results and determine exit code
+    const allResults = [...putResults, ...deleteResults];
+    const totalPuts = putResults.length;
+    const totalDeletes = deleteResults.length;
+    const totalErrors = allResults.filter((r) => r.status === 'failed').length;
+    const totalSkipped = allResults.filter((r) => r.status === 'skipped').length;
+
+    const exitCode = determineExitCode(allResults);
+
+    return {
+      totalPuts,
+      totalDeletes,
+      totalErrors,
+      totalSkipped,
+      exitCode,
+      actions: allResults,
+    };
+  } catch (error) {
+    logger.error('Fatal error during publish:', error);
+    return {
+      totalPuts: 0,
+      totalDeletes: 0,
+      totalErrors: 1,
+      totalSkipped: 0,
+      exitCode: EXIT_FATAL,
+      actions: [],
+    };
+  }
+}
+
+/**
+ * Determine which resources to publish based on incremental mode.
+ */
+async function determineTargetDescriptors(
+  store: IArtifactStore,
+  config: PublishConfig
+): Promise<ResourceDescriptor[]> {
+  if (config.commitId) {
+    // Incremental mode: use git diff
+    logger.debug(
+      `Using incremental publish mode with commit ID: ${config.commitId}`
+    );
+    const diffResult = await computeGitDiff(config.sourceDir, config.commitId);
+    return diffResult.changedDescriptors;
+  } else {
+    // Full mode: publish all artifacts
+    logger.debug('Using full publish mode (all artifacts)');
+    return await store.listResources(config.sourceDir);
+  }
+}
+
+/**
+ * Resource types whose publish lifecycle is managed by publishApi() when their
+ * parent API is in the same publish batch. These are excluded from the normal
+ * tier-based publishing to avoid double-publishing.
+ */
+const API_CHILD_RESOURCE_TYPES = new Set<ResourceType>([
+  ResourceType.ApiPolicy,
+  ResourceType.ApiTag,
+  ResourceType.ApiDiagnostic,
+  ResourceType.ApiOperation,
+  ResourceType.ApiSchema,
+  ResourceType.ApiRelease,
+  ResourceType.ApiTagDescription,
+  ResourceType.ApiWiki,
+  ResourceType.GraphQLResolver,
+  ResourceType.ApiOperationPolicy,
+  ResourceType.GraphQLResolverPolicy,
+]);
+
+/**
+ * Execute PUT operations in dependency order (tier 1 → tier 4).
+ */
+async function executePuts(
+  client: IApimClient,
+  store: IArtifactStore,
+  context: ApimServiceContext,
+  config: PublishConfig,
+  targetDescriptors: ResourceDescriptor[]
+): Promise<PublishActionResult[]> {
+  const results: PublishActionResult[] = [];
+
+  // Group descriptors by tier
+  const tierGroups = new Map<number, ResourceDescriptor[]>();
+  for (const descriptor of targetDescriptors) {
+    const tier = getResourceTier(descriptor.type);
+    if (!tierGroups.has(tier)) {
+      tierGroups.set(tier, []);
+    }
+    tierGroups.get(tier)!.push(descriptor);
+  }
+
+  // Collect API names from tier 2 — publishApi() handles their children,
+  // so we exclude those children from tiers 3/4 to avoid double-publishing.
+  const apiNames = new Set(
+    (tierGroups.get(2) || [])
+      .filter((d) => d.type === ResourceType.Api)
+      .map((d) => d.name)
+  );
+
+  // Execute each tier in order (1, 2, 3, 4)
+  for (const tier of [1, 2, 3, 4]) {
+    const descriptors = tierGroups.get(tier) || [];
+    if (descriptors.length === 0) continue;
+
+    logger.debug(`Publishing tier ${tier}: ${descriptors.length} resources`);
+
+    if (tier === 1) {
+      // Within Tier 1 we publish in three ordered waves to satisfy implicit
+      // runtime dependencies:
+      //
+      // Wave 1 — NamedValues only.
+      //   Loggers and backends may reference named values by name in their
+      //   configuration (e.g. AppInsights instrumentation key stored as a
+      //   named value). Publishing named values first ensures they exist
+      //   before any resource that references them.
+      //
+      // Wave 2 — All remaining Tier 1 resources except pool backends.
+      //   Loggers, tags, gateways, etc. can now reference named values safely.
+      //
+      // Wave 3 — Pool backends.
+      //   Pool backends reference individual Backend resources and must be
+      //   published after the backends they aggregate (see pool backend
+      //   ordering comments in splitPoolBackends).
+      const { namedValues, otherTier1 } = splitNamedValues(descriptors);
+
+      if (namedValues.length > 0) {
+        logger.debug(`Publishing ${namedValues.length} named value(s) first (wave 1 of tier 1)`);
+        await publishAndOutput(client, store, context, config, namedValues, results);
+      }
+
+      const { poolBackends, regularTier1 } = await splitPoolBackends(
+        store,
+        config.sourceDir,
+        otherTier1
+      );
+      await publishAndOutput(client, store, context, config, regularTier1, results);
+      if (poolBackends.length > 0) {
+        logger.debug(
+          `Publishing ${poolBackends.length} pool backend(s) after regular backends`
+        );
+        await publishAndOutput(
+          client,
+          store,
+          context,
+          config,
+          poolBackends,
+          results
+        );
+      }
+    } else {
+      // For tiers 3/4, exclude API child resources whose parent API is
+      // being published in tier 2 (publishApi handles them internally).
+      let tierDescriptors = descriptors;
+      if (apiNames.size > 0) {
+        tierDescriptors = descriptors.filter((d) => {
+          if (!API_CHILD_RESOURCE_TYPES.has(d.type)) return true;
+          // Tier 3 children reference parent API via d.parent
+          // Tier 4 children (operation/resolver policies) use d.grandparent
+          const owningApi = d.grandparent ?? d.parent;
+          return !owningApi || !apiNames.has(owningApi);
+        });
+        const skipped = descriptors.length - tierDescriptors.length;
+        if (skipped > 0) {
+          logger.debug(`Skipping ${skipped} API child resource(s) in tier ${tier} (handled by publishApi)`);
+        }
+      }
+      await publishAndOutput(client, store, context, config, tierDescriptors, results);
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Publish a batch of descriptors and write their status lines to stdout/stderr.
+ */
+async function publishAndOutput(
+  client: IApimClient,
+  store: IArtifactStore,
+  context: ApimServiceContext,
+  config: PublishConfig,
+  descriptors: ResourceDescriptor[],
+  results: PublishActionResult[]
+): Promise<void> {
+  if (descriptors.length === 0) return;
+  const tierResults = await publishTier(client, store, context, config, descriptors);
+  results.push(...tierResults);
+  for (const result of tierResults) {
+    outputActionStatus(result);
+  }
+}
+
+/**
+ * Separates NamedValue descriptors from all other descriptors in the supplied list.
+ *
+ * NamedValues must be published before loggers, backends, and other Tier 1
+ * resources that may reference them by name in their configuration (e.g. a
+ * Logger that stores its instrumentation key as a named value).
+ */
+function splitNamedValues(
+  descriptors: ResourceDescriptor[]
+): { namedValues: ResourceDescriptor[]; otherTier1: ResourceDescriptor[] } {
+  const namedValues: ResourceDescriptor[] = [];
+  const otherTier1: ResourceDescriptor[] = [];
+
+  for (const descriptor of descriptors) {
+    if (descriptor.type === ResourceType.NamedValue) {
+      namedValues.push(descriptor);
+    } else {
+      otherTier1.push(descriptor);
+    }
+  }
+
+  return { namedValues, otherTier1 };
+}
+
+/**
+ * Separates Backend descriptors that are pool backends (properties.type === "Pool")
+ * from all other descriptors in the supplied list.
+ *
+ * Pool backends reference individual Backend resources and must therefore be
+ * published *after* those backends are created. Reading the artifact JSON is
+ * the only reliable way to detect pool backends at publish time because the
+ * ResourceType enum treats all backends as the same type.
+ */
+async function splitPoolBackends(
+  store: IArtifactStore,
+  sourceDir: string,
+  descriptors: ResourceDescriptor[]
+): Promise<{ poolBackends: ResourceDescriptor[]; regularTier1: ResourceDescriptor[] }> {
+  const poolBackends: ResourceDescriptor[] = [];
+  const regularTier1: ResourceDescriptor[] = [];
+
+  for (const descriptor of descriptors) {
+    if (descriptor.type === ResourceType.Backend) {
+      const json = await store.readResource(sourceDir, descriptor);
+      const props = json?.properties as Record<string, unknown> | undefined;
+      const backendType = props?.type;
+      if (typeof backendType === 'string' && backendType.toLowerCase() === POOL_BACKEND_TYPE) {
+        poolBackends.push(descriptor);
+        continue;
+      }
+    }
+    regularTier1.push(descriptor);
+  }
+
+  return { poolBackends, regularTier1 };
+}
+
+/**
+ * Publish a single tier of resources in parallel.
+ */
+async function publishTier(
+  client: IApimClient,
+  store: IArtifactStore,
+  context: ApimServiceContext,
+  config: PublishConfig,
+  descriptors: ResourceDescriptor[]
+): Promise<PublishActionResult[]> {
+  const tasks = descriptors.map((descriptor) => async () => {
+    try {
+      let publishResult: ResourcePublishResult;
+
+      // Use publishApi for Api type, publishResource for all others
+      if (descriptor.type === ResourceType.Api) {
+        publishResult = await publishApi(client, store, context, descriptor, config);
+      } else {
+        publishResult = await publishResource(
+          client,
+          store,
+          context,
+          descriptor,
+          config
+        );
+      }
+
+      return convertToActionResult(publishResult);
+    } catch (error) {
+      logger.error(
+        `Failed to publish ${descriptor.type} ${descriptor.name}:`,
+        error
+      );
+      return {
+        descriptor,
+        action: 'put' as const,
+        status: 'failed' as const,
+        error: error instanceof Error ? error : new Error(String(error)),
+      };
+    }
+  });
+
+  const taskResults = await runParallel(tasks, 5);
+
+  return taskResults.map((tr, index) => {
+    if (tr.status === 'fulfilled' && tr.value) {
+      return tr.value;
+    } else {
+      // Should not happen given error handling above, but be defensive
+      const descriptor = descriptors[index];
+      if (!descriptor) {
+        throw new Error('No descriptor found for failed task');
+      }
+      return {
+        descriptor,
+        action: 'put' as const,
+        status: 'failed' as const,
+        error: tr.reason || new Error('Unknown error'),
+      };
+    }
+  });
+}
+
+/**
+ * Execute DELETE operations in reverse dependency order (tier 4 → tier 1).
+ */
+async function executeDeletes(
+  client: IApimClient,
+  store: IArtifactStore,
+  context: ApimServiceContext,
+  config: PublishConfig
+): Promise<PublishActionResult[]> {
+  const deleteDescriptors = await computeDeleteActions(
+    client,
+    store,
+    context,
+    config
+  );
+
+  if (deleteDescriptors.length === 0) {
+    logger.debug('No resources to delete');
+    return [];
+  }
+
+  logger.debug(`Deleting ${deleteDescriptors.length} unmatched resources`);
+
+  const results: PublishActionResult[] = [];
+
+  // Group by tier
+  const tierGroups = new Map<number, ResourceDescriptor[]>();
+  for (const descriptor of deleteDescriptors) {
+    const tier = getResourceTier(descriptor.type);
+    if (!tierGroups.has(tier)) {
+      tierGroups.set(tier, []);
+    }
+    tierGroups.get(tier)!.push(descriptor);
+  }
+
+  // Execute in REVERSE tier order (4, 3, 2, 1)
+  for (const tier of [4, 3, 2, 1]) {
+    const descriptors = tierGroups.get(tier) || [];
+    if (descriptors.length === 0) continue;
+
+    logger.debug(`Deleting tier ${tier}: ${descriptors.length} resources`);
+
+    const tierResults = await deleteTier(client, context, descriptors);
+
+    results.push(...tierResults);
+
+    // Output per-resource status lines
+    for (const result of tierResults) {
+      outputActionStatus(result);
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Delete a single tier of resources in parallel.
+ */
+async function deleteTier(
+  client: IApimClient,
+  context: ApimServiceContext,
+  descriptors: ResourceDescriptor[]
+): Promise<PublishActionResult[]> {
+  const tasks = descriptors.map((descriptor) => async () => {
+    try {
+      const deleted = await client.deleteResource(context, descriptor);
+
+      return {
+        descriptor,
+        action: 'delete' as const,
+        status: deleted ? ('success' as const) : ('skipped' as const),
+      };
+    } catch (error) {
+      logger.error(
+        `Failed to delete ${descriptor.type} ${descriptor.name}:`,
+        error
+      );
+      return {
+        descriptor,
+        action: 'delete' as const,
+        status: 'failed' as const,
+        error: error instanceof Error ? error : new Error(String(error)),
+      };
+    }
+  });
+
+  const taskResults = await runParallel(tasks, 5);
+
+  return taskResults.map((tr, index) => {
+    if (tr.status === 'fulfilled' && tr.value) {
+      return tr.value;
+    } else {
+      const descriptor = descriptors[index];
+      if (!descriptor) {
+        throw new Error('No descriptor found for failed task');
+      }
+      return {
+        descriptor,
+        action: 'delete' as const,
+        status: 'failed' as const,
+        error: tr.reason || new Error('Unknown error'),
+      };
+    }
+  });
+}
+
+/**
+ * Convert ResourcePublishResult to PublishActionResult.
+ */
+function convertToActionResult(
+  result: ResourcePublishResult
+): PublishActionResult {
+  return {
+    descriptor: result.descriptor,
+    action: result.action,
+    status: result.status,
+    error: result.error,
+  };
+}
+
+/**
+ * Output per-resource status line to stdout.
+ */
+function outputActionStatus(result: PublishActionResult): void {
+  const verb = result.action.toUpperCase();
+  const path = buildResourcePath(result.descriptor);
+
+  if (result.status === 'success') {
+    process.stdout.write(`${verb} ${path}\n`);
+  } else if (result.status === 'skipped') {
+    process.stdout.write(`SKIP ${path}\n`);
+  } else if (result.status === 'failed') {
+    process.stderr.write(`ERROR ${verb} ${path}: ${result.error?.message}\n`);
+  }
+}
+
+/**
+ * Build a human-readable path for a resource descriptor.
+ */
+function buildResourcePath(descriptor: ResourceDescriptor): string {
+  const parts: string[] = [descriptor.type.toLowerCase()];
+
+  if (descriptor.workspace) {
+    parts.push(`workspace:${descriptor.workspace}`);
+  }
+
+  if (descriptor.grandparent) {
+    parts.push(descriptor.grandparent);
+  }
+
+  if (descriptor.parent) {
+    parts.push(descriptor.parent);
+  }
+
+  parts.push(descriptor.name);
+
+  return parts.join('/');
+}
+
+/**
+ * Determine exit code based on results.
+ * Uses standardised constants from exit-codes module.
+ */
+function determineExitCode(results: PublishActionResult[]): number {
+  if (results.length === 0) {
+    return EXIT_SUCCESS;
+  }
+
+  const successCount = results.filter((r) => r.status === 'success').length;
+  const failedCount = results.filter((r) => r.status === 'failed').length;
+
+  if (failedCount === 0) {
+    return EXIT_SUCCESS;
+  }
+
+  if (successCount > 0) {
+    return EXIT_PARTIAL;
+  }
+
+  return EXIT_FATAL;
+}

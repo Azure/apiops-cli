@@ -1,0 +1,26 @@
+{
+  "universe_usage_history": [
+    {
+      "universe": "custom",
+      "first_used": "2026-04-07T20:00:00Z",
+      "project": "apiops-cli"
+    }
+  ],
+  "assignment_cast_snapshots": {
+    "initial-2026-04-07": {
+      "assignment_id": "initial-2026-04-07",
+      "universe": "custom",
+      "created_at": "2026-04-07T20:00:00Z",
+      "agents": [
+        "ApiOpsLead",
+        "ApimExpert",
+        "ApicExpert",
+        "TypeScriptDev",
+        "NodeJsDev",
+        "TestEngineer",
+        "OpenSourceExpert",
+        "CodeReviewer"
+      ]
+    }
+  }
+}
