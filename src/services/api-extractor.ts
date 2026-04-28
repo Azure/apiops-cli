@@ -14,6 +14,7 @@ import { shouldIncludeResource } from './filter-service.js';
 import { extractResourceType, ExtractedResource } from './resource-extractor.js';
 import { logger } from '../lib/logger.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
+import { getNamePart } from '../lib/resource-path.js';
 
 /**
  * Result of API-specific extraction for a single API.
@@ -49,7 +50,7 @@ export async function extractApiResources(
   filter?: FilterConfig,
   workspace?: string
 ): Promise<ApiExtractionResult> {
-  const apiName = apiDescriptor.name;
+  const apiName = getNamePart(apiDescriptor.nameParts, 0);
   const result: ApiExtractionResult = {
     apiName,
     revisions: [],
@@ -72,9 +73,20 @@ export async function extractApiResources(
     client, store, context, apiName, outputDir, filter, workspace
   );
 
-  // Extract API specification
+  // Extract API schemas FIRST. For synthetic GraphQL APIs the SDL lives in an
+  // ApiSchema resource; by extracting schemas first we can detect that case
+  // from the results and skip the (failing) spec export — avoiding a redundant
+  // `list schemas` probe per GraphQL-typed API at scale.
+  const schemaResult = await extractResourceType(
+    client, store, context, ResourceType.ApiSchema,
+    outputDir, filter, apiDescriptor, workspace
+  );
+  result.schemas = schemaResult.extracted;
+
+  // Extract API specification (uses already-extracted schemas to detect
+  // synthetic GraphQL without a second list call).
   result.specification = await extractApiSpecification(
-    client, store, context, apiDescriptor, apiJson, outputDir
+    client, store, context, apiDescriptor, apiJson, outputDir, result.schemas
   );
 
   // Extract API policy
@@ -106,13 +118,6 @@ export async function extractApiResources(
     outputDir, filter, apiDescriptor, workspace
   );
   result.diagnostics = diagResult.extracted;
-
-  // Extract API schemas
-  const schemaResult = await extractResourceType(
-    client, store, context, ResourceType.ApiSchema,
-    outputDir, filter, apiDescriptor, workspace
-  );
-  result.schemas = schemaResult.extracted;
 
   // Extract API releases
   const releaseResult = await extractResourceType(
@@ -173,7 +178,7 @@ async function extractApiRevisions(
         const revName = `${apiName};rev=${revNumber}`;
         const descriptor: ResourceDescriptor = {
           type: ResourceType.Api,
-          name: revName,
+          nameParts: [revName],
           workspace,
         };
 
@@ -193,7 +198,7 @@ async function extractApiRevisions(
         const errorMessage = error instanceof Error ? error.message : String(error);
         logger.warn(`Failed to extract revision: ${errorMessage}`);
         results.push({
-          descriptor: { type: ResourceType.Api, name: `${apiName};rev=?` },
+          descriptor: { type: ResourceType.Api, nameParts: [`${apiName};rev=?`] },
           json: {},
           status: 'error',
           error: errorMessage,
@@ -210,6 +215,11 @@ async function extractApiRevisions(
 /**
  * Extract API specification (OpenAPI/GraphQL/WSDL/WADL).
  * WebSocket APIs do not have an OpenAPI specification — skip with a debug log.
+ * Synthetic GraphQL APIs (schema stored as an ApiSchema, no external SDL blob)
+ * are detected by inspecting already-extracted schemas and skipped here —
+ * their schema is captured by the ApiSchema extraction step. Pass-through
+ * GraphQL APIs (linked to an external GraphQL server) export their SDL via
+ * the graphql-link format.
  */
 async function extractApiSpecification(
   client: IApimClient,
@@ -217,7 +227,8 @@ async function extractApiSpecification(
   context: ApimServiceContext,
   apiDescriptor: ResourceDescriptor,
   apiJson: Record<string, unknown>,
-  outputDir: string
+  outputDir: string,
+  extractedSchemas: ExtractedResource[]
 ): Promise<boolean> {
   const properties = apiJson.properties as Record<string, unknown> | undefined;
   const apiType = properties?.type as string | undefined;
@@ -226,10 +237,17 @@ async function extractApiSpecification(
     return false;
   }
 
+  if (apiType?.toLowerCase() === 'graphql' && hasGraphQLSchema(extractedSchemas)) {
+    logger.debug(
+      `Skipping spec export for synthetic GraphQL API "${getNamePart(apiDescriptor.nameParts, 0)}" — schema is captured via ApiSchema`
+    );
+    return false;
+  }
+
   try {
-    const spec = await client.getApiSpecification(context, apiDescriptor.name, apiType);
+    const spec = await client.getApiSpecification(context, getNamePart(apiDescriptor.nameParts, 0), apiType);
     if (!spec) {
-      logger.debug(`No specification found for API "${apiDescriptor.name}"`);
+      logger.debug(`No specification found for API "${getNamePart(apiDescriptor.nameParts, 0)}"`);
       return false;
     }
 
@@ -251,6 +269,24 @@ async function extractApiSpecification(
 }
 
 /**
+ * Returns true if any already-extracted ApiSchema resource has a contentType
+ * indicating a GraphQL schema. Used to distinguish synthetic GraphQL APIs
+ * (schema stored in APIM) from pass-through GraphQL APIs (schema fetched from
+ * backend). Inspects schemas that were extracted prior to spec export, so no
+ * extra list call is required.
+ */
+function hasGraphQLSchema(schemas: ExtractedResource[]): boolean {
+  for (const schema of schemas) {
+    const props = schema.json.properties as Record<string, unknown> | undefined;
+    const contentType = (props?.contentType as string | undefined)?.toLowerCase() ?? '';
+    if (contentType.includes('graphql')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Extract API-level policy.
  */
 async function extractApiPolicy(
@@ -262,7 +298,7 @@ async function extractApiPolicy(
 ): Promise<string | undefined> {
   const policyDescriptor: ResourceDescriptor = {
     type: ResourceType.ApiPolicy,
-    name: apiDescriptor.name,
+    nameParts: [...apiDescriptor.nameParts],
     workspace: apiDescriptor.workspace,
   };
 
@@ -321,9 +357,7 @@ async function extractApiOperations(
 
     const opPolicyDescriptor: ResourceDescriptor = {
       type: ResourceType.ApiOperationPolicy,
-      name: apiDescriptor.name,
-      parent: op.descriptor.name,
-      grandparent: apiDescriptor.name,
+      nameParts: [...op.descriptor.nameParts],
       workspace,
     };
 
@@ -360,7 +394,7 @@ async function extractApiWiki(
 ): Promise<boolean> {
   const wikiDescriptor: ResourceDescriptor = {
     type: ResourceType.ApiWiki,
-    name: apiDescriptor.name,
+    nameParts: [...apiDescriptor.nameParts],
     workspace: apiDescriptor.workspace,
   };
 
@@ -434,9 +468,7 @@ async function extractGraphQLResolvers(
 
     const resolverPolicyDescriptor: ResourceDescriptor = {
       type: ResourceType.GraphQLResolverPolicy,
-      name: apiDescriptor.name,
-      parent: resolver.descriptor.name,
-      grandparent: apiDescriptor.name,
+      nameParts: [...resolver.descriptor.nameParts],
       workspace,
     };
 

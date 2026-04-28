@@ -159,12 +159,5 @@ function parseDiffOutput(diffOutput: string, sourceDir: string): GitDiffResult {
  * Create a unique key for a resource descriptor to enable deduplication.
  */
 function descriptorKey(descriptor: ResourceDescriptor): string {
-  const parts = [
-    descriptor.type,
-    descriptor.name,
-    descriptor.parent ?? '',
-    descriptor.grandparent ?? '',
-    descriptor.workspace ?? '',
-  ];
-  return parts.join('::');
+  return [descriptor.type, ...descriptor.nameParts, descriptor.workspace ?? ''].join('::');
 }

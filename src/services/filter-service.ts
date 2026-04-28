@@ -8,6 +8,7 @@ import { FilterConfig } from '../models/config.js';
 import { ResourceType } from '../models/resource-types.js';
 import { ResourceDescriptor } from '../models/types.js';
 import { logger } from '../lib/logger.js';
+import { getNamePart } from '../lib/resource-path.js';
 
 /**
  * Map resource types to their corresponding FilterConfig field names.
@@ -76,7 +77,7 @@ export function shouldIncludeResource(
   // Check direct filter field for this resource type
   const directField = FILTER_FIELD_MAP[descriptor.type];
   if (directField) {
-    return matchesFilter(descriptor.name, filter[directField]);
+    return matchesFilter(getNamePart(descriptor.nameParts, 0), filter[directField]);
   }
 
   // Check parent-based filter for child resource types
@@ -99,43 +100,15 @@ export function shouldIncludeResource(
 
 /**
  * Get the parent name to use for filter matching.
- * For API child resources, this is the API name (handles revision names).
- * For product child resources, this is the product name.
+ * Uses PARENT_FILTER_MAP to determine which name-part is the parent, and
+ * applies revision-suffix stripping for API children.
  */
 function getParentNameForFilter(descriptor: ResourceDescriptor): string | undefined {
-  switch (descriptor.type) {
-    // API children — parent is the API name
-    case ResourceType.ApiPolicy:
-    case ResourceType.ApiTag:
-    case ResourceType.ApiDiagnostic:
-    case ResourceType.ApiOperation:
-    case ResourceType.ApiSchema:
-    case ResourceType.ApiRelease:
-    case ResourceType.ApiTagDescription:
-    case ResourceType.ApiWiki:
-    case ResourceType.GraphQLResolver:
-      return descriptor.parent ? extractRootApiName(descriptor.parent) : undefined;
-
-    // Grandchild — grandparent is the API name
-    case ResourceType.ApiOperationPolicy:
-    case ResourceType.GraphQLResolverPolicy:
-      return descriptor.grandparent ? extractRootApiName(descriptor.grandparent) : undefined;
-
-    // Product children — parent is the product name
-    case ResourceType.ProductPolicy:
-    case ResourceType.ProductApi:
-    case ResourceType.ProductGroup:
-    case ResourceType.ProductTag:
-    case ResourceType.ProductWiki:
-      return descriptor.parent;
-
-    // Gateway children
-    case ResourceType.GatewayApi:
-      return descriptor.parent;
-
-    default:
-      return undefined;
-  }
+  const parentName = getNamePart(descriptor.nameParts, 0);
+  // API children need revision suffix stripped (e.g. "my-api;rev=2" → "my-api")
+  return PARENT_FILTER_MAP[descriptor.type] === 'apiNames'
+    ? extractRootApiName(parentName)
+    : parentName;
 }
 
 /**

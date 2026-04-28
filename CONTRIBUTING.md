@@ -1,111 +1,128 @@
 # Contributing to apiops-cli
 
-Thank you for contributing to **apiops-cli**, a TypeScript CLI tool for Azure API Management configuration-as-code.
+Thank you for your interest in contributing to **apiops-cli**! There are many ways to contribute:
 
-## Commit Message Convention
+- **Report bugs** — open an [issue](https://github.com/Azure/apiops-cli/issues) with a clear reproduction case.
+- **Request features** — open an issue describing the use case.
+- **Submit pull requests** — bug fixes, improvements, or new features are all welcome.
+- **Improve documentation** — corrections and clarifications in README or inline docs.
 
-**Always include `Closes #N` or `Fixes #N` in your commit messages when the change resolves a GitHub issue.**
+## Getting started
 
-This convention automatically closes the referenced issue when the pull request is merged.
+### VS Code (Recommended)
 
-Example:
-```
-feat: add support for policy extraction
+Open the repository in VS Code and click **Reopen in Container** when prompted (requires the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)). This starts a pre-configured environment with Node.js 22, Azure CLI, and GitHub CLI — no local tool installation needed.
 
-Implemented policy extraction for all API operations.
+### GitHub Codespaces
 
-Closes #42
-```
+Click **Code → Codespaces → Create codespace on `<branch>`** in the GitHub UI. The environment starts pre-configured — no local setup required.
 
-## Development Setup
-
-### Prerequisites
+### Manual setup
 
 - Node.js 22.x LTS or later
 - npm (comes with Node.js)
 
-### Getting Started
+```bash
+git clone https://github.com/Azure/apiops-cli.git
+cd apiops-cli
+npm install
+```
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/gim-home/apiops-cli.git
-   cd apiops-cli
-   ```
+## Development workflow
 
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
+All commands assume you are in the repository root.
 
-3. **Build the project:**
-   ```bash
-   npm run build
-   ```
+### Build
 
-4. **Run tests:**
-   ```bash
-   npm test
-   ```
+```bash
+npm run build
+```
 
-5. **Run linter:**
-   ```bash
-   npm run lint
-   ```
+### Test
 
-### Development Workflow
+```bash
+npm test
+```
 
-- **Build:** `npm run build` (compiles TypeScript to `dist/`)
-- **Test:** `npm test` (runs Vitest test suite)
-- **Test Watch Mode:** `npm run test:watch` (runs tests in watch mode)
-- **Lint:** `npm run lint` (runs ESLint on `src/` and `tests/`)
-- **Run CLI locally:** `npm start` (runs CLI without building)
+Run tests in watch mode while developing:
 
-## Pull Request Process
+```bash
+npm run test:watch
+```
 
-1. **Create a feature branch** from `main`:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
+### Lint
 
-2. **Make your changes** following the code style guidelines below.
+```bash
+npm run lint
+```
 
-3. **Write tests** for new functionality or bug fixes.
+### Recommended pre-push check
 
-4. **Ensure all checks pass:**
-   ```bash
-   npm run build && npm test && npm run lint
-   ```
+```bash
+npm run lint && npm run build && npm test
+```
 
-5. **Commit your changes** with a clear message (include `Closes #N` or `Fixes #N` if applicable).
+## Debugging
 
-6. **Push to your fork** and open a pull request against `main`.
+For verbose logging at the command line, either run via `npm start`:
 
-7. **Address review feedback** if requested.
+```bash
+npm start -- extract --resource-group my-rg --service-name my-apim --log-level debug
+```
 
-## Code Style
+Or use `npm link` to run the command as a user would:
 
-- **TypeScript strict mode** is enabled — all type errors must be resolved.
-- **ESLint** is configured with TypeScript-aware rules and runs automatically in CI.
-- **Follow existing conventions** in the codebase (naming, structure, patterns).
-- **Unused variables** are treated as errors (prefix with `_` if intentionally unused).
-- **Comments:** Only comment code that requires clarification — avoid obvious comments.
+```bash
+npm link
+apiops extract --resource-group my-rg --service-name my-apim --log-level debug
+```
 
-## Project Structure
+## Project structure
 
 ```
 src/
-  cli/        # CLI entry point and command definitions
-  clients/    # Azure API Management client wrappers
-  services/   # Business logic (extract, publish, etc.)
-  models/     # TypeScript types and interfaces
-  lib/        # Shared utilities
-
+  cli/          # CLI entry point and command definitions
+  clients/      # Azure API Management client wrappers
+  services/     # Business logic (extract, publish, etc.)
+  models/       # TypeScript types and interfaces
+  lib/          # Shared utilities
 tests/
-  unit/       # Unit tests
-  integration/ # Integration tests
-  contract/   # Contract tests
+  unit/         # Unit tests
+  integration/  # Integration tests
+  contract/     # Contract tests
+specs/          # Feature specifications and design documents
+dist/           # Compiled output (git-ignored)
 ```
 
-## Questions or Issues?
+## Technology stack
 
-Open an issue in the [GitHub issue tracker](https://github.com/gim-home/apiops-cli/issues) with a clear description of your question or problem.
+Dependencies and dev tools are listed in [`package.json`](./package.json). The project uses TypeScript (strict mode), Vitest for testing, and ESLint for linting.
+
+## Troubleshooting
+
+**`apiops: command not found`** — run `npm link` from the repository root after building (see [Manual setup](#manual-setup) above).
+
+## Pull request process
+
+1. **Write tests** for new functionality or bug fixes.
+
+2. **Ensure all checks pass locally:**
+   ```bash
+   npm run lint && npm run build && npm test
+   ```
+
+3. **Commit with a clear message.** Include `Closes #N` or `Fixes #N` when the change resolves a GitHub issue — this auto-closes the issue on merge:
+   ```
+   feat: add support for policy extraction
+
+   Closes #42
+   ```
+
+4. **Open a pull request** against `main`. CI automatically runs lint, build, and the full test suite. All checks must pass before merge.
+
+5. **Address review feedback** promptly.
+
+## Questions or issues?
+
+Open an issue in the [GitHub issue tracker](https://github.com/Azure/apiops-cli/issues) with a clear description of your question or problem.
+

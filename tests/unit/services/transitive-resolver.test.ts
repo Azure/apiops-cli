@@ -167,9 +167,9 @@ describe('transitive-resolver', () => {
 
       const deps = findTransitiveDependencies(policies, apis);
       expect(deps).toHaveLength(3);
-      expect(deps.some((d) => d.type === ResourceType.NamedValue && d.name === 'secret-1')).toBe(true);
-      expect(deps.some((d) => d.type === ResourceType.Backend && d.name === 'backend-1')).toBe(true);
-      expect(deps.some((d) => d.type === ResourceType.VersionSet && d.name === 'vs-1')).toBe(true);
+      expect(deps.some((d) => d.type === ResourceType.NamedValue && d.nameParts[0] === 'secret-1')).toBe(true);
+      expect(deps.some((d) => d.type === ResourceType.Backend && d.nameParts[0] === 'backend-1')).toBe(true);
+      expect(deps.some((d) => d.type === ResourceType.VersionSet && d.nameParts[0] === 'vs-1')).toBe(true);
     });
 
     it('should deduplicate dependencies', () => {

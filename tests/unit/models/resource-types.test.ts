@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ResourceType, RESOURCE_TYPE_METADATA, ResourceTypeMetadata } from '../../../src/models/resource-types.js';
+import { ResourceType, RESOURCE_TYPE_METADATA } from '../../../src/models/resource-types.js';
 
 describe('ResourceType enum', () => {
   it('should have exactly 33 resource types', () => {
@@ -24,24 +24,23 @@ describe('RESOURCE_TYPE_METADATA', () => {
     }
   });
 
-  it('each entry should have armPathSuffix, artifactDirectory, and infoFile', () => {
+  it('each entry should have armPathSuffix, artifactDirectory, and infoFile properties', () => {
     for (const [type, meta] of Object.entries(RESOURCE_TYPE_METADATA)) {
-      const metadata = meta as ResourceTypeMetadata;
-      expect(metadata.armPathSuffix, `${type} armPathSuffix`).toBeDefined();
-      expect(typeof metadata.armPathSuffix).toBe('string');
-      expect(metadata.artifactDirectory, `${type} artifactDirectory`).toBeDefined();
-      expect(typeof metadata.artifactDirectory).toBe('string');
+      expect(meta.armPathSuffix, `${type} armPathSuffix`).toBeDefined();
+      expect(typeof meta.armPathSuffix).toBe('string');
+      expect(meta.artifactDirectory, `${type} artifactDirectory`).toBeDefined();
+      expect(typeof meta.artifactDirectory).toBe('string');
       // infoFile can be null or string
       expect(
-        metadata.infoFile === null || typeof metadata.infoFile === 'string',
+        meta.infoFile === null || typeof meta.infoFile === 'string',
         `${type} infoFile should be null or string`
       ).toBe(true);
     }
   });
 
-  it('armPathSuffix should start with /', () => {
+  it('armPathSuffix should not start with /', () => {
     for (const [type, meta] of Object.entries(RESOURCE_TYPE_METADATA)) {
-      expect(meta.armPathSuffix.startsWith('/'), `${type} armPathSuffix should start with /`).toBe(true);
+      expect(meta.armPathSuffix.startsWith('/'), `${type} armPathSuffix should not start with /`).toBe(false);
     }
   });
 
@@ -56,10 +55,10 @@ describe('RESOURCE_TYPE_METADATA', () => {
     }
   });
 
-  it('should include child resource types with parent placeholders', () => {
-    expect(RESOURCE_TYPE_METADATA[ResourceType.ApiOperation].armPathSuffix).toContain('{apiName}');
-    expect(RESOURCE_TYPE_METADATA[ResourceType.ApiOperation].armPathSuffix).toContain('{opName}');
-    expect(RESOURCE_TYPE_METADATA[ResourceType.ProductApi].armPathSuffix).toContain('{name}');
-    expect(RESOURCE_TYPE_METADATA[ResourceType.ProductApi].armPathSuffix).toContain('{apiName}');
+  it('should include child resource types with positional placeholders', () => {
+    expect(RESOURCE_TYPE_METADATA[ResourceType.ApiOperation].armPathSuffix).toContain('{0}');
+    expect(RESOURCE_TYPE_METADATA[ResourceType.ApiOperation].armPathSuffix).toContain('{1}');
+    expect(RESOURCE_TYPE_METADATA[ResourceType.ProductApi].armPathSuffix).toContain('{0}');
+    expect(RESOURCE_TYPE_METADATA[ResourceType.ProductApi].armPathSuffix).toContain('{1}');
   });
 });

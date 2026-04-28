@@ -33,5 +33,44 @@
 
 **Callers don't need changes:** They already expect `properties.value` to contain the policy content, so the wrapping is transparent.
 
+### 2026-04-21: Export format quirks per API type — SOAP 500s and synthetic GraphQL 406s
+
+**APIM export format matrix (api-version 2024-05-01):**
+
+| API type   | Primary format     | Fallback          | Notes                                           |
+| ---------- | ------------------ | ----------------- | ----------------------------------------------- |
+| `http`     | `openapi-link`     | —                 | Default. Also accepts `swagger-link`, `openapi+json-link`, `wadl-link`. |
+| `soap`     | `wsdl-link`        | inline `wsdl`     | wsdl-link emitter 500s deterministically on many real-world APIs. |
+| `graphql`  | `graphql-link`     | (skip)            | Synthetic GraphQL (schema as ApiSchema) returns 406 — skip export entirely. |
+| `websocket`| (none)             | —                 | No traditional spec.                            |
+
+**Inline (non-link) export endpoints:** `format=wsdl` | `wadl` | `swagger` | `openapi` | `openapi+json`
+- Response shape: `{ properties: { value: "<xml-or-json-string>" } }` (api-version 2024-05-01; older versions use top-level `value`).
+- Re-importable via PUT `?import=true&format=<matching-format>` with the value as `properties.value`.
+
+**Synthetic vs pass-through GraphQL:** APIM has two GraphQL flavors:
+- **Synthetic:** SDL stored as an ApiSchema child with `contentType` containing `'graphql'`. Export via `graphql-link` returns HTTP 406. Standard ApiSchema extraction captures the SDL.
+- **Pass-through:** Remote GraphQL endpoint. Export via `graphql-link` returns a SAS blob link with the SDL.
+
+Detection strategy in `api-extractor.ts#hasGraphQLSchemaResource`: list ApiSchema children, check for `contentType` containing `'graphql'`. If yes → skip export.
+
+**SOAP 500 divergence from Azure/apiops:** The reference tool at `C:\Users\enewman\source\repos\azure\apiops` catches HTTP 500 on XML exports and skips the spec with comment *"Don't export XML specifications, as the non-link exports cannot be reimported."* This is incorrect — inline `format=wsdl` output **is** re-importable via PUT `?import=true&format=wsdl`. Our implementation uses this fallback to preserve round-trip capability.
+
+**Retry policy for XML exports:** Pass `noRetryOn5xx=true` to `request()` for wsdl-link/wadl-link. The 500s are deterministic, not transient, so retries waste time. Fall back to inline format immediately.
+
+### 2026-04-21: Authoritative APIM REST API schema source
+
+Ground payload/response shape questions in the upstream REST API specs — not in
+the SDK surface, reference docs, or ad-hoc observation.
+
+**Source of truth:** <https://github.com/Azure/azure-rest-api-specs/tree/main/specification/apimanagement>
+
+- Swagger/TypeSpec definitions per api-version (`stable/2024-05-01/`, etc.).
+- Examples folder shows real request/response bodies, including the edge-case
+  shapes we hit (e.g. inline WSDL export, synthetic GraphQL, named-value
+  key-vault references, long-running op status envelopes).
+- Use this when diagnosing: new api-version diffs, unexpected payload fields,
+  export/import format semantics, resource-type discovery.
+
 <!-- Append new learnings here after each session -->
 

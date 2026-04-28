@@ -7,7 +7,7 @@
 import { IApimClient } from '../clients/iapim-client.js';
 import { IArtifactStore } from '../clients/iartifact-store.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
-import { ResourceType } from '../models/resource-types.js';
+import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { redactSecrets } from './secret-redactor.js';
 import { shouldIncludeResource } from './filter-service.js';
 import { FilterConfig } from '../models/config.js';
@@ -79,18 +79,33 @@ export async function extractResourceType(
   try {
     const resources = client.listResources(context, type, parent);
 
-    for await (const json of resources) {
+    for await (const listJson of resources) {
       result.totalCount++;
 
       let descriptor: ResourceDescriptor | undefined;
       try {
-        const name = extractResourceName(json);
+        const name = extractResourceName(listJson);
         descriptor = buildDescriptor(type, name, parent, workspace);
 
         // Apply filter
         if (!shouldIncludeResource(descriptor, filter)) {
           logger.debug(`Filtered out ${buildResourceLabel(descriptor)}`);
           continue;
+        }
+
+        // Some APIM list endpoints return a shallow response that omits the
+        // heavyweight payload we need for round-trip publish. ApiSchema list
+        // omits `properties.document` (the GraphQL SDL / XSD / JSON-schema
+        // body); an individual GET returns it. Fetch the full resource so the
+        // extract captures what publish requires. Falls back to the list
+        // payload if the GET returns undefined (shouldn't normally happen —
+        // we just listed it).
+        let json: Record<string, unknown> = listJson;
+        if (typeNeedsFullFetch(type)) {
+          const full = await client.getResource(context, descriptor);
+          if (full) {
+            json = full;
+          }
         }
 
         // Apply secret redaction
@@ -109,14 +124,17 @@ export async function extractResourceType(
       } catch (error) {
         result.errorCount++;
         const errorMessage = error instanceof Error ? error.message : String(error);
-        const failedDescriptor = descriptor ?? buildDescriptor(type, 'unknown', parent, workspace);
-        logger.error(`Failed to extract ${buildResourceLabel(failedDescriptor)}: ${errorMessage}`);
-        result.extracted.push({
-          descriptor: failedDescriptor,
-          json: {},
-          status: 'error',
-          error: errorMessage,
-        });
+        if (descriptor) {
+          logger.error(`Failed to extract ${buildResourceLabel(descriptor)}: ${errorMessage}`);
+          result.extracted.push({
+            descriptor,
+            json: {},
+            status: 'error',
+            error: errorMessage,
+          });
+        } else {
+          logger.error(`Failed to extract ${type} resource: ${errorMessage}`);
+        }
       }
     }
   } catch (error) {
@@ -146,7 +164,7 @@ export async function extractSingleResource(
         descriptor,
         json: {},
         status: 'error',
-        error: `Resource not found: ${descriptor.type} "${descriptor.name}"`,
+        error: `Resource not found: ${buildResourceLabel(descriptor)}`,
       };
     }
 
@@ -168,6 +186,14 @@ export async function extractSingleResource(
 
 /**
  * Build a ResourceDescriptor for a given type, name, optional parent, and workspace.
+ *
+ * The nameParts array is derived generically using the count of positional
+ * placeholders in armPathSuffix:
+ *   - placeholderCount === parent.nameParts.length → singleton child (policy, wiki):
+ *       nameParts = parent.nameParts  (own fixed name not encoded in path)
+ *   - placeholderCount > parent.nameParts.length → named child:
+ *       nameParts = [...parent.nameParts, name]
+ *   - no parent → top-level: nameParts = [name]  (or [] for zero-placeholder types)
  */
 function buildDescriptor(
   type: ResourceType,
@@ -175,56 +201,21 @@ function buildDescriptor(
   parent?: ResourceDescriptor,
   workspace?: string
 ): ResourceDescriptor {
-  const descriptor: ResourceDescriptor = { type, name, workspace };
+  const metadata = RESOURCE_TYPE_METADATA[type];
+  const placeholderCount = (metadata.armPathSuffix.match(/\{\d+\}/g) ?? []).length;
 
-  // Set parent based on resource type hierarchy
-  if (parent) {
-    switch (type) {
-      // API children — parent is API name
-      case ResourceType.ApiPolicy:
-      case ResourceType.ApiTag:
-      case ResourceType.ApiDiagnostic:
-      case ResourceType.ApiOperation:
-      case ResourceType.ApiSchema:
-      case ResourceType.ApiRelease:
-      case ResourceType.ApiTagDescription:
-      case ResourceType.ApiWiki:
-      case ResourceType.GraphQLResolver:
-        descriptor.parent = parent.name;
-        break;
-
-      // Operation children — grandparent is API, parent is operation
-      case ResourceType.ApiOperationPolicy:
-        descriptor.grandparent = parent.parent;
-        descriptor.parent = parent.name;
-        break;
-
-      // Resolver children — grandparent is API, parent is resolver
-      case ResourceType.GraphQLResolverPolicy:
-        descriptor.grandparent = parent.parent;
-        descriptor.parent = parent.name;
-        break;
-
-      // Product children — parent is product name
-      case ResourceType.ProductPolicy:
-      case ResourceType.ProductApi:
-      case ResourceType.ProductGroup:
-      case ResourceType.ProductTag:
-      case ResourceType.ProductWiki:
-        descriptor.parent = parent.name;
-        break;
-
-      // Gateway children
-      case ResourceType.GatewayApi:
-        descriptor.parent = parent.name;
-        break;
-
-      default:
-        break;
-    }
+  let nameParts: string[];
+  if (!parent) {
+    nameParts = placeholderCount === 0 ? [] : [name];
+  } else if (parent.nameParts.length >= placeholderCount) {
+    // Singleton child (policy, wiki): identified solely by parent's name-parts
+    nameParts = [...parent.nameParts];
+  } else {
+    // Named child: has its own distinct position in the ARM path
+    nameParts = [...parent.nameParts, name];
   }
 
-  return descriptor;
+  return { type, nameParts, workspace };
 }
 
 /**
@@ -235,6 +226,19 @@ export function isSingletonType(type: ResourceType): boolean {
   return type === ResourceType.ServicePolicy ||
     type === ResourceType.ApiWiki ||
     type === ResourceType.ProductWiki;
+}
+
+/**
+ * True when the list endpoint for this resource type returns a shallow payload
+ * that omits fields required for round-trip publish, so we must issue an
+ * individual GET per item.
+ *
+ * ApiSchema: list omits `properties.document` (GraphQL SDL, XSD, JSON schema
+ * body). Without this, publish has nothing to upload and synthetic GraphQL
+ * APIs cannot round-trip.
+ */
+function typeNeedsFullFetch(type: ResourceType): boolean {
+  return type === ResourceType.ApiSchema;
 }
 
 /**

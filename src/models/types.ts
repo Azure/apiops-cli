@@ -7,11 +7,17 @@ import { ResourceType } from './resource-types.js';
 
 export interface ResourceDescriptor {
   type: ResourceType;
-  name: string;
-  /** Parent resource name (e.g., API name for ApiOperation) */
-  parent?: string;
-  /** Grandparent resource name (e.g., API name for ApiOperationPolicy) */
-  grandparent?: string;
+  /**
+   * Ordered name-parts that fill the positional `{0}`, `{1}`, … placeholders
+   * in both `armPathSuffix` and `artifactDirectory` for this resource type.
+   *
+   * Examples:
+   *   NamedValue "mySecret"                   → nameParts: ['mySecret']
+   *   ApiOperation api="petstore" op="get"     → nameParts: ['petstore', 'get']
+   *   ApiOperationPolicy api="petstore" op="get" → nameParts: ['petstore', 'get']
+   *   ServicePolicy                            → nameParts: []
+   */
+  nameParts: string[];
   /** Workspace name if workspace-scoped */
   workspace?: string;
 }

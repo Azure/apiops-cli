@@ -25,9 +25,9 @@ function createMockClient(
     listResources: async function* () {},
     getResource: vi.fn(
       async (_ctx: ApimServiceContext, descriptor: ResourceDescriptor) => {
-        const key = `${descriptor.type}:${descriptor.name}`;
+        const key = `${descriptor.type}:${descriptor.nameParts[0] ?? ''}`;
         const exists = existingResources.get(key);
-        return exists ? { name: descriptor.name } : undefined;
+        return exists ? { name: descriptor.nameParts[0] ?? '' } : undefined;
       }
     ),
     putResource: vi.fn(async () => ({ name: 'mock' })),
@@ -86,7 +86,7 @@ describe('dry-run-reporter', () => {
       const store = createMockStore();
 
       const descriptors: ResourceDescriptor[] = [
-        { type: ResourceType.NamedValue, name: 'my-nv' },
+        { type: ResourceType.NamedValue, nameParts: ['my-nv'] },
       ];
 
       await generateDryRunReport(store, client, testContext, testConfig, descriptors);
@@ -104,8 +104,8 @@ describe('dry-run-reporter', () => {
       const store = createMockStore();
 
       const descriptors: ResourceDescriptor[] = [
-        { type: ResourceType.NamedValue, name: 'nv1' },
-        { type: ResourceType.Backend, name: 'backend1' },
+        { type: ResourceType.NamedValue, nameParts: ['nv1'] },
+        { type: ResourceType.Backend, nameParts: ['backend1'] },
       ];
 
       const report = await generateDryRunReport(store, client, testContext, testConfig, descriptors);
@@ -121,7 +121,7 @@ describe('dry-run-reporter', () => {
       const store = createMockStore();
 
       const descriptors: ResourceDescriptor[] = [
-        { type: ResourceType.Tag, name: 'new-tag' },
+        { type: ResourceType.Tag, nameParts: ['new-tag'] },
       ];
 
       const report = await generateDryRunReport(store, client, testContext, testConfig, descriptors);
@@ -140,7 +140,7 @@ describe('dry-run-reporter', () => {
       const store = createMockStore();
 
       const descriptors: ResourceDescriptor[] = [
-        { type: ResourceType.Tag, name: 'existing-tag' },
+        { type: ResourceType.Tag, nameParts: ['existing-tag'] },
       ];
 
       const report = await generateDryRunReport(store, client, testContext, testConfig, descriptors);
@@ -158,9 +158,9 @@ describe('dry-run-reporter', () => {
       const store = createMockStore();
 
       const descriptors: ResourceDescriptor[] = [
-        { type: ResourceType.NamedValue, name: 'nv1' },
-        { type: ResourceType.Backend, name: 'backend1' },
-        { type: ResourceType.Tag, name: 'tag1' },
+        { type: ResourceType.NamedValue, nameParts: ['nv1'] },
+        { type: ResourceType.Backend, nameParts: ['backend1'] },
+        { type: ResourceType.Tag, nameParts: ['tag1'] },
       ];
 
       const report = await generateDryRunReport(store, client, testContext, testConfig, descriptors);
@@ -177,7 +177,7 @@ describe('dry-run-reporter', () => {
       const store = createMockStore();
 
       const descriptors: ResourceDescriptor[] = [
-        { type: ResourceType.Api, name: 'my-api' },
+        { type: ResourceType.Api, nameParts: ['my-api'] },
       ];
 
       const report = await generateDryRunReport(store, client, testContext, testConfig, descriptors);
@@ -198,8 +198,8 @@ describe('dry-run-reporter', () => {
       const store = createMockStore();
 
       const descriptors: ResourceDescriptor[] = [
-        { type: ResourceType.Api, name: 'api1' },
-        { type: ResourceType.NamedValue, name: 'nv1' },
+        { type: ResourceType.Api, nameParts: ['api1'] },
+        { type: ResourceType.NamedValue, nameParts: ['nv1'] },
       ];
 
       const report = await generateDryRunReport(store, client, testContext, testConfig, descriptors);
@@ -233,8 +233,7 @@ describe('dry-run-reporter', () => {
       const descriptors: ResourceDescriptor[] = [
         {
           type: ResourceType.ApiOperation,
-          name: 'get-user',
-          parent: 'my-api',
+          nameParts: ['my-api', 'get-user'],
         },
       ];
 
@@ -256,9 +255,9 @@ describe('dry-run-reporter', () => {
       const store = createMockStore();
 
       const descriptors: ResourceDescriptor[] = [
-        { type: ResourceType.ProductGroup, name: 'my-group', parent: 'my-product' },
-        { type: ResourceType.ProductApi, name: 'my-api', parent: 'my-product' },
-        { type: ResourceType.GatewayApi, name: 'my-api', parent: 'my-gateway' },
+        { type: ResourceType.ProductGroup, nameParts: ['my-product', 'my-group'] },
+        { type: ResourceType.ProductApi, nameParts: ['my-product', 'my-api'] },
+        { type: ResourceType.GatewayApi, nameParts: ['my-gateway', 'my-api'] },
       ];
 
       const report = await generateDryRunReport(store, client, testContext, testConfig, descriptors);

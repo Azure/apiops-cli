@@ -145,6 +145,37 @@ describe('extract-service', () => {
       expect(result.collectedPolicies.has('service-policy')).toBe(true);
     });
 
+    it('should not crash during transitive dedupe when a singleton (ServicePolicy) is already extracted', async () => {
+      // Regression: transitive resolution previously keyed the
+      // already-extracted set on getNamePart(d.nameParts, 0), which threw
+      // RangeError for singletons with empty nameParts (e.g. ServicePolicy).
+      // The dedupe now uses buildResourceLabel which handles empty nameParts.
+      const client = createMockClient({});
+      client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor) => {
+        if (descriptor.type === ResourceType.ServicePolicy) {
+          return {
+            name: 'policy',
+            properties: { value: '<policies><inbound><base /></inbound></policies>' },
+          };
+        }
+        return undefined;
+      });
+      const store = createMockStore();
+
+      const config: ExtractConfig = {
+        service: testContext,
+        outputDir: '/output',
+        includeTransitive: true,
+        logLevel: LogLevel.INFO,
+      };
+
+      // Must not throw RangeError from transitive dedupe key construction.
+      const result = await runExtraction(client, store, config);
+
+      expect(result.exitCode).toBe(0);
+      expect(result.collectedPolicies.has('service-policy')).toBe(true);
+    });
+
     it('should propagate write errors from store.writeContent for service policy', async () => {
       const writeError = new Error('I/O error');
       const client = createMockClient({});

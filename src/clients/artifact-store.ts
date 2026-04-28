@@ -246,9 +246,8 @@ export class ArtifactStore implements IArtifactStore {
   private descriptorEquals(a: ResourceDescriptor, b: ResourceDescriptor): boolean {
     return (
       a.type === b.type &&
-      a.name === b.name &&
-      a.parent === b.parent &&
-      a.grandparent === b.grandparent &&
+      a.nameParts.length === b.nameParts.length &&
+      a.nameParts.every((p, i) => p === b.nameParts[i]) &&
       a.workspace === b.workspace
     );
   }

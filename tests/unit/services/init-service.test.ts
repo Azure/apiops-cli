@@ -41,6 +41,8 @@ vi.mock('../../../src/lib/logger.js', () => ({
 
 /** Default CLI package path used in tests (absolute, ends in .tgz) */
 const TEST_CLI_PACKAGE = '/packages/apiops-0.1.0.tgz';
+/** Resolved form — matches what path.resolve() returns at runtime (adds drive letter on Windows) */
+const TEST_CLI_PACKAGE_RESOLVED = path.resolve(TEST_CLI_PACKAGE);
 
 describe('init-service', () => {
   beforeEach(() => {
@@ -59,7 +61,7 @@ describe('init-service', () => {
     
     // Mock fs.access: the CLI tarball exists, all other files don't
     vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
-      if (filePath.toString() === TEST_CLI_PACKAGE) {
+      if (filePath.toString() === TEST_CLI_PACKAGE_RESOLVED) {
         return Promise.resolve();
       }
       throw new Error('ENOENT');
@@ -197,7 +199,7 @@ describe('init-service', () => {
       // Mock file exists for extract workflow and the CLI tarball
       vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
         const p = filePath.toString();
-        if (p === TEST_CLI_PACKAGE || p.includes('run-apim-extractor.yml')) {
+        if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('run-apim-extractor.yml')) {
           return Promise.resolve();
         }
         throw new Error('ENOENT');
@@ -222,7 +224,7 @@ describe('init-service', () => {
       // Mock file exists for extract workflow and the CLI tarball
       vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
         const p = filePath.toString();
-        if (p === TEST_CLI_PACKAGE || p.includes('run-apim-extractor.yml')) {
+        if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('run-apim-extractor.yml')) {
           return Promise.resolve();
         }
         throw new Error('ENOENT');
@@ -246,7 +248,7 @@ describe('init-service', () => {
       // Mock file exists for filter config and the CLI tarball
       vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
         const p = filePath.toString();
-        if (p === TEST_CLI_PACKAGE || p.includes('configuration.extract.yaml')) {
+        if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('configuration.extract.yaml')) {
           return Promise.resolve();
         }
         throw new Error('ENOENT');
@@ -271,7 +273,7 @@ describe('init-service', () => {
       // Mock file exists for filter config and the CLI tarball
       vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
         const p = filePath.toString();
-        if (p === TEST_CLI_PACKAGE || p.includes('configuration.extract.yaml')) {
+        if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('configuration.extract.yaml')) {
           return Promise.resolve();
         }
         throw new Error('ENOENT');
@@ -371,7 +373,7 @@ describe('init-service', () => {
         expect.objectContaining({ recursive: true })
       );
       expect(vi.mocked(fs.copyFile)).toHaveBeenCalledWith(
-        TEST_CLI_PACKAGE,
+        TEST_CLI_PACKAGE_RESOLVED,
         path.join('/test', '.apiops', 'apiops-0.1.0.tgz')
       );
     });
@@ -418,8 +420,9 @@ describe('init-service', () => {
 
     it('should throw if CLI package is not a .tgz file', async () => {
       const badPath = '/packages/apiops-0.1.0.zip';
+      const badPathResolved = path.resolve(badPath);
       vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
-        if (filePath.toString() === badPath) {
+        if (filePath.toString() === badPathResolved) {
           return Promise.resolve();
         }
         throw new Error('ENOENT');
@@ -443,7 +446,7 @@ describe('init-service', () => {
     it('should throw when package.json already exists and --force is not set', async () => {
       vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
         const p = filePath.toString();
-        if (p === TEST_CLI_PACKAGE || p.includes('package.json')) {
+        if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('package.json')) {
           return Promise.resolve();
         }
         throw new Error('ENOENT');
@@ -467,7 +470,7 @@ describe('init-service', () => {
     it('should overwrite when package.json already exists and --force is set', async () => {
       vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
         const p = filePath.toString();
-        if (p === TEST_CLI_PACKAGE || p.includes('package.json')) {
+        if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('package.json')) {
           return Promise.resolve();
         }
         throw new Error('ENOENT');

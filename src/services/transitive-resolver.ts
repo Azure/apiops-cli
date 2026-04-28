@@ -204,7 +204,7 @@ export function findTransitiveDependencies(
       const key = `${dep.type}:${dep.name.toLowerCase()}`;
       if (!seen.has(key)) {
         seen.add(key);
-        dependencies.push({ type: dep.type, name: dep.name });
+        dependencies.push({ type: dep.type, nameParts: [dep.name] });
       }
     }
   }
@@ -216,7 +216,7 @@ export function findTransitiveDependencies(
       const key = `${dep.type}:${dep.name.toLowerCase()}`;
       if (!seen.has(key)) {
         seen.add(key);
-        dependencies.push({ type: dep.type, name: dep.name });
+        dependencies.push({ type: dep.type, nameParts: [dep.name] });
       }
     }
   }

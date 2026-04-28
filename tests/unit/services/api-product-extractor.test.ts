@@ -61,7 +61,7 @@ describe('api-extractor', () => {
       const store = createMockStore();
       const apiDescriptor: ResourceDescriptor = {
         type: ResourceType.Api,
-        name: 'pet-store',
+        nameParts: ['pet-store'],
       };
 
       const result = await extractApiResources(
@@ -82,7 +82,7 @@ describe('api-extractor', () => {
       const store = createMockStore();
       const apiDescriptor: ResourceDescriptor = {
         type: ResourceType.Api,
-        name: 'my-api',
+        nameParts: ['my-api'],
       };
 
       const result = await extractApiResources(
@@ -103,7 +103,7 @@ describe('api-extractor', () => {
       const store = createMockStore();
       const apiDescriptor: ResourceDescriptor = {
         type: ResourceType.Api,
-        name: 'ws-api',
+        nameParts: ['ws-api'],
       };
 
       const result = await extractApiResources(
@@ -129,13 +129,70 @@ describe('api-extractor', () => {
 
       const result = await extractApiResources(
         client, store, testContext,
-        { type: ResourceType.Api, name: 'ws-api' },
+        { type: ResourceType.Api, nameParts: ['ws-api'] },
         { name: 'ws-api', properties: { type: 'WebSocket' } },
         '/output'
       );
 
       expect(result.specification).toBe(false);
       expect(getApiSpecification).not.toHaveBeenCalled();
+    });
+
+    it('should skip specification export for synthetic GraphQL APIs (schema via ApiSchema)', async () => {
+      const getApiSpecification = vi.fn();
+      const client = createMockClient({
+        getApiSpecification,
+        listResources: async function* (_ctx: ApimServiceContext, type: ResourceType) {
+          if (type === ResourceType.ApiSchema) {
+            yield { name: 'default', properties: { contentType: 'application/vnd.ms-azure-apim.graphql.schema' } };
+          }
+        },
+        getResource: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+
+      const result = await extractApiResources(
+        client, store, testContext,
+        { type: ResourceType.Api, nameParts: ['synthetic-gql'] },
+        { name: 'synthetic-gql', properties: { type: 'graphql' } },
+        '/output'
+      );
+
+      expect(result.specification).toBe(false);
+      expect(getApiSpecification).not.toHaveBeenCalled();
+      expect(store.writeContent).not.toHaveBeenCalledWith(
+        expect.anything(), expect.anything(), expect.anything(), 'specification', expect.anything()
+      );
+    });
+
+    it('should extract specification for pass-through GraphQL APIs (no GraphQL schema resource)', async () => {
+      const getApiSpecification = vi.fn().mockResolvedValue({
+        content: 'type Query { hello: String }',
+        format: 'graphql',
+      });
+      const client = createMockClient({
+        getApiSpecification,
+        // listResources yields nothing for ApiSchema → pass-through GraphQL
+        getResource: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+
+      const result = await extractApiResources(
+        client, store, testContext,
+        { type: ResourceType.Api, nameParts: ['linked-gql'] },
+        { name: 'linked-gql', properties: { type: 'graphql' } },
+        '/output'
+      );
+
+      expect(result.specification).toBe(true);
+      expect(getApiSpecification).toHaveBeenCalledWith(testContext, 'linked-gql', 'graphql');
+      expect(store.writeContent).toHaveBeenCalledWith(
+        '/output',
+        expect.objectContaining({ nameParts: ['linked-gql'] }),
+        'type Query { hello: String }',
+        'specification',
+        'graphql'
+      );
     });
 
     it('should extract API policy and collect content', async () => {
@@ -152,7 +209,7 @@ describe('api-extractor', () => {
       const store = createMockStore();
       const apiDescriptor: ResourceDescriptor = {
         type: ResourceType.Api,
-        name: 'my-api',
+        nameParts: ['my-api'],
       };
 
       const result = await extractApiResources(
@@ -165,7 +222,7 @@ describe('api-extractor', () => {
       // Verify the descriptor used the API name, not 'policy'
       expect(client.getResource).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ type: ResourceType.ApiPolicy, name: 'my-api' })
+        expect.objectContaining({ type: ResourceType.ApiPolicy, nameParts: ['my-api'] })
       );
     });
 
@@ -185,7 +242,7 @@ describe('api-extractor', () => {
       store.writeContent = vi.fn().mockRejectedValue(writeError);
       const apiDescriptor: ResourceDescriptor = {
         type: ResourceType.Api,
-        name: 'my-api',
+        nameParts: ['my-api'],
       };
 
       await expect(
@@ -205,7 +262,7 @@ describe('api-extractor', () => {
       const store = createMockStore();
       const apiDescriptor: ResourceDescriptor = {
         type: ResourceType.Api,
-        name: 'my-api',
+        nameParts: ['my-api'],
       };
 
       const result = await extractApiResources(
@@ -231,7 +288,7 @@ describe('api-extractor', () => {
       const store = createMockStore();
       const apiDescriptor: ResourceDescriptor = {
         type: ResourceType.Api,
-        name: 'my-api',
+        nameParts: ['my-api'],
       };
 
       const result = await extractApiResources(
@@ -244,7 +301,7 @@ describe('api-extractor', () => {
       // Verify the descriptor used the API name, not 'default'
       expect(client.getResource).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ type: ResourceType.ApiWiki, name: 'my-api' })
+        expect.objectContaining({ type: ResourceType.ApiWiki, nameParts: ['my-api'] })
       );
     });
 
@@ -255,8 +312,8 @@ describe('api-extractor', () => {
           yield { apiRevision: '3', apiId: '/apis/my-api;rev=3' };
         },
         getResource: vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
-          if (desc.type === ResourceType.Api && desc.name.includes(';rev=')) {
-            return { name: desc.name, properties: {} };
+          if (desc.type === ResourceType.Api && (desc.nameParts[0] ?? '').includes(';rev=')) {
+            return { name: desc.nameParts[0] ?? '', properties: {} };
           }
           return undefined;
         }),
@@ -266,7 +323,7 @@ describe('api-extractor', () => {
 
       const result = await extractApiResources(
         client, store, testContext,
-        { type: ResourceType.Api, name: 'my-api' },
+        { type: ResourceType.Api, nameParts: ['my-api'] },
         { name: 'my-api' },
         '/output'
       );
@@ -281,8 +338,8 @@ describe('api-extractor', () => {
           yield { apiRevision: '2', apiId: '/apis/my-api;rev=2' };
         },
         getResource: vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
-          if (desc.name.includes(';rev=')) {
-            return { name: desc.name, properties: {} };
+          if ((desc.nameParts[0] ?? '').includes(';rev=')) {
+            return { name: desc.nameParts[0] ?? '', properties: {} };
           }
           return undefined;
         }),
@@ -292,14 +349,14 @@ describe('api-extractor', () => {
 
       const result = await extractApiResources(
         client, store, testContext,
-        { type: ResourceType.Api, name: 'my-api' },
+        { type: ResourceType.Api, nameParts: ['my-api'] },
         { name: 'my-api' },
         '/output'
       );
 
       // Only revision 2 should be extracted (revision 1 = main API)
       expect(result.revisions).toHaveLength(1);
-      expect(result.revisions[0]?.descriptor.name).toBe('my-api;rev=2');
+      expect(result.revisions[0]?.descriptor.nameParts[0]).toBe('my-api;rev=2');
     });
   });
 });
@@ -320,7 +377,7 @@ describe('product-extractor', () => {
 
       const productDescriptor: ResourceDescriptor = {
         type: ResourceType.Product,
-        name: 'starter',
+        nameParts: ['starter'],
       };
 
       const result = await extractProductResources(
@@ -343,7 +400,7 @@ describe('product-extractor', () => {
 
       const result = await extractProductResources(
         client, store, testContext,
-        { type: ResourceType.Product, name: 'starter' },
+        { type: ResourceType.Product, nameParts: ['starter'] },
         '/output'
       );
 
@@ -364,7 +421,7 @@ describe('product-extractor', () => {
 
       const result = await extractProductResources(
         client, store, testContext,
-        { type: ResourceType.Product, name: 'starter' },
+        { type: ResourceType.Product, nameParts: ['starter'] },
         '/output'
       );
 
@@ -389,7 +446,7 @@ describe('product-extractor', () => {
       await expect(
         extractProductResources(
           client, store, testContext,
-          { type: ResourceType.Product, name: 'starter' },
+          { type: ResourceType.Product, nameParts: ['starter'] },
           '/output'
         )
       ).rejects.toThrow('Permission denied');
@@ -403,7 +460,7 @@ describe('product-extractor', () => {
 
       const result = await extractProductResources(
         client, store, testContext,
-        { type: ResourceType.Product, name: 'empty-product' },
+        { type: ResourceType.Product, nameParts: ['empty-product'] },
         '/output'
       );
 
@@ -426,7 +483,7 @@ describe('product-extractor', () => {
 
       const result = await extractProductResources(
         client, store, testContext,
-        { type: ResourceType.Product, name: 'starter' },
+        { type: ResourceType.Product, nameParts: ['starter'] },
         '/output'
       );
 
@@ -434,7 +491,7 @@ describe('product-extractor', () => {
       // Verify the descriptor used the product name, not 'default'
       expect(client.getResource).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ type: ResourceType.ProductWiki, name: 'starter' })
+        expect.objectContaining({ type: ResourceType.ProductWiki, nameParts: ['starter'] })
       );
     });
   });

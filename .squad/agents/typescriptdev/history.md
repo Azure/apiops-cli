@@ -131,3 +131,32 @@
 - `src/services/extract-service.ts` - Updated 2 log statements
 
 **Testing:** All 454 unit tests pass without modification, demonstrating backward compatibility of change.
+
+### 2026-04-21: Windows path resolution in test mocks
+
+**Context:** `init-service.test.ts` was failing on Windows with errors like `CLI package not found: C:\packages\apiops-0.1.0.tgz` even though the mock was set up for `/packages/apiops-0.1.0.tgz`.
+
+**Root cause:** On Windows, `path.resolve('/packages/apiops-0.1.0.tgz')` returns `C:\packages\apiops-0.1.0.tgz` (drive letter prepended). The service under test calls `path.resolve(cliPackagePath)` before passing to `fs.access`, so the mock sees the Windows-absolute form, not the input literal.
+
+**Pattern:** When mocking `fs.access`, `fs.copyFile`, or any `fs/promises` function that receives a path argument the SUT has normalized, compare against `path.resolve()`-normalized values — not the raw input string. Works on Linux (no-op) and Windows (adds drive letter).
+
+```ts
+// WRONG — fails on Windows
+const TEST_CLI_PACKAGE = '/packages/apiops-0.1.0.tgz';
+vi.mocked(fs.access).mockImplementation(async (p) => {
+  if (p.toString() === TEST_CLI_PACKAGE) return; // never matches on Windows
+  throw new Error('ENOENT');
+});
+
+// RIGHT — platform-agnostic
+const TEST_CLI_PACKAGE = '/packages/apiops-0.1.0.tgz';
+const TEST_CLI_PACKAGE_RESOLVED = path.resolve(TEST_CLI_PACKAGE);
+vi.mocked(fs.access).mockImplementation(async (p) => {
+  if (p.toString() === TEST_CLI_PACKAGE_RESOLVED) return;
+  throw new Error('ENOENT');
+});
+```
+
+Same rule applies to `expect(fs.copyFile).toHaveBeenCalledWith(...)` assertions — use the resolved form.
+
+**Files:** `tests/unit/services/init-service.test.ts`.

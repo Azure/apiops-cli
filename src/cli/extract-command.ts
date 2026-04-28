@@ -144,9 +144,7 @@ function outputJson(result: ExtractionResult): void {
     },
     resources: result.extractedDescriptors.map((d) => ({
       type: d.type,
-      name: d.name,
-      parent: d.parent,
-      grandparent: d.grandparent,
+      nameParts: d.nameParts,
       workspace: d.workspace,
     })),
     apis: result.apiResults.map((ar) => ({
