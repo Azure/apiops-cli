@@ -1,0 +1,68 @@
+{
+  "agents": {
+    "ApiOpsLead": {
+      "persistent_name": "ApiOpsLead",
+      "role": "Tech Lead",
+      "universe": "custom",
+      "created_at": "2026-04-07T20:00:00Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "ApimExpert": {
+      "persistent_name": "ApimExpert",
+      "role": "APIM Expert",
+      "universe": "custom",
+      "created_at": "2026-04-07T20:00:00Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "ApicExpert": {
+      "persistent_name": "ApicExpert",
+      "role": "APIC Expert",
+      "universe": "custom",
+      "created_at": "2026-04-07T20:00:00Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "TypeScriptDev": {
+      "persistent_name": "TypeScriptDev",
+      "role": "TypeScript Developer",
+      "universe": "custom",
+      "created_at": "2026-04-07T20:00:00Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "NodeJsDev": {
+      "persistent_name": "NodeJsDev",
+      "role": "Node.js Developer",
+      "universe": "custom",
+      "created_at": "2026-04-07T20:00:00Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "TestEngineer": {
+      "persistent_name": "TestEngineer",
+      "role": "Test Engineer",
+      "universe": "custom",
+      "created_at": "2026-04-07T20:00:00Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "OpenSourceExpert": {
+      "persistent_name": "OpenSourceExpert",
+      "role": "Open Source Expert",
+      "universe": "custom",
+      "created_at": "2026-04-07T20:00:00Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    "CodeReviewer": {
+      "persistent_name": "CodeReviewer",
+      "role": "Code Reviewer & Standards Enforcer",
+      "universe": "custom",
+      "created_at": "2026-04-09T04:07:09Z",
+      "legacy_named": false,
+      "status": "active"
+    }
+  }
+}

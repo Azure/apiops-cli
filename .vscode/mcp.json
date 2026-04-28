@@ -1,0 +1,15 @@
+{
+  "servers": {
+    "github": {
+      "type": "stdio",
+      "command": "gh",
+      "args": ["mcp", "serve"],
+      "env": {}
+    },
+    "azure": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@azure/mcp@latest", "server", "start"]
+    }
+  }
+}
