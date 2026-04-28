@@ -10,6 +10,7 @@ import { ResourceType } from '../models/resource-types.js';
 import { FilterConfig } from '../models/config.js';
 import { extractResourceType, extractResourceName, ExtractedResource } from './resource-extractor.js';
 import { logger } from '../lib/logger.js';
+import { getNamePart } from '../lib/resource-path.js';
 
 /**
  * Result of product-specific extraction for a single product.
@@ -37,7 +38,7 @@ export async function extractProductResources(
   filter?: FilterConfig,
   workspace?: string
 ): Promise<ProductExtractionResult> {
-  const productName = productDescriptor.name;
+  const productName = getNamePart(productDescriptor.nameParts, 0);
   const result: ProductExtractionResult = {
     productName,
     apis: [],
@@ -112,10 +113,10 @@ async function extractProductAssociations(
     // Write association file
     if (names.length > 0) {
       await store.writeAssociation(outputDir, productDescriptor, associationType, names);
-      logger.info(`Extracted ${names.length} ${associationType} for product "${productDescriptor.name}"`);
+      logger.info(`Extracted ${names.length} ${associationType} for product "${getNamePart(productDescriptor.nameParts, 0)}"`);
     }
   } catch (error) {
-    logger.warn(`Failed to list ${associationType} for product "${productDescriptor.name}": ${(error as Error).message}`);
+    logger.warn(`Failed to list ${associationType} for product "${getNamePart(productDescriptor.nameParts, 0)}": ${(error as Error).message}`);
   }
 
   return names;
@@ -133,7 +134,7 @@ async function extractProductPolicy(
 ): Promise<string | undefined> {
   const policyDescriptor: ResourceDescriptor = {
     type: ResourceType.ProductPolicy,
-    name: productDescriptor.name,
+    nameParts: [...productDescriptor.nameParts],
     workspace: productDescriptor.workspace,
   };
 
@@ -147,7 +148,7 @@ async function extractProductPolicy(
 
   if (policyContent) {
     await store.writeContent(outputDir, policyDescriptor, policyContent, 'policy');
-    logger.debug(`Extracted policy for product "${productDescriptor.name}"`);
+    logger.debug(`Extracted policy for product "${getNamePart(productDescriptor.nameParts, 0)}"`);
     return policyContent;
   }
 
@@ -167,7 +168,7 @@ async function extractProductWiki(
   try {
     const wikiDescriptor: ResourceDescriptor = {
       type: ResourceType.ProductWiki,
-      name: productDescriptor.name,
+      nameParts: [...productDescriptor.nameParts],
       workspace: productDescriptor.workspace,
     };
 
@@ -177,10 +178,10 @@ async function extractProductWiki(
     }
 
     await store.writeResource(outputDir, wikiDescriptor, wikiJson);
-    logger.info(`Extracted wiki for product "${productDescriptor.name}"`);
+    logger.info(`Extracted wiki for product "${getNamePart(productDescriptor.nameParts, 0)}"`);
     return true;
   } catch (error) {
-    logger.debug(`No wiki for product "${productDescriptor.name}": ${(error as Error).message}`);
+    logger.debug(`No wiki for product "${getNamePart(productDescriptor.nameParts, 0)}": ${(error as Error).message}`);
     return false;
   }
 }

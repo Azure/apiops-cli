@@ -162,8 +162,7 @@ function outputJson(result: PublishResult): void {
     actions: Array<{
       action: string;
       type: string;
-      name: string;
-      parent?: string;
+      nameParts: string[];
       status: string;
       error?: string;
     }>;
@@ -196,8 +195,7 @@ function outputJson(result: PublishResult): void {
     actions: result.actions.map((action) => ({
       action: action.action,
       type: action.descriptor.type,
-      name: action.descriptor.name,
-      parent: action.descriptor.parent,
+      nameParts: action.descriptor.nameParts,
       status: action.status,
       error: action.error?.message,
     })),

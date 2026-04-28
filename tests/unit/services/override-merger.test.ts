@@ -12,7 +12,7 @@ describe('override-merger', () => {
   describe('applyOverrides', () => {
     const baseDescriptor: ResourceDescriptor = {
       type: ResourceType.NamedValue,
-      name: 'my-nv',
+      nameParts: ['my-nv'],
     };
 
     const baseJson = {
@@ -69,7 +69,7 @@ describe('override-merger', () => {
     it('should apply backend url override', () => {
       const backendDescriptor: ResourceDescriptor = {
         type: ResourceType.Backend,
-        name: 'my-backend',
+        nameParts: ['my-backend'],
       };
 
       const backendJson = {
@@ -98,7 +98,7 @@ describe('override-merger', () => {
     it('should apply api serviceUrl override', () => {
       const apiDescriptor: ResourceDescriptor = {
         type: ResourceType.Api,
-        name: 'my-api',
+        nameParts: ['my-api'],
       };
 
       const apiJson = {
@@ -173,7 +173,7 @@ describe('override-merger', () => {
     it('should handle unknown resource type gracefully', () => {
       const unknownDescriptor: ResourceDescriptor = {
         type: ResourceType.Product,
-        name: 'my-product',
+        nameParts: ['my-product'],
       };
 
       const productJson = {
@@ -247,7 +247,7 @@ describe('override-merger', () => {
     it('should apply logger overrides', () => {
       const loggerDescriptor: ResourceDescriptor = {
         type: ResourceType.Logger,
-        name: 'my-logger',
+        nameParts: ['my-logger'],
       };
 
       const loggerJson = {
@@ -275,7 +275,7 @@ describe('override-merger', () => {
     it('should apply diagnostic overrides', () => {
       const diagnosticDescriptor: ResourceDescriptor = {
         type: ResourceType.Diagnostic,
-        name: 'my-diagnostic',
+        nameParts: ['my-diagnostic'],
       };
 
       const diagnosticJson = {

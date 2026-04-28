@@ -75,7 +75,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.NamedValue,
-        name: 'my-nv',
+        nameParts: ['my-nv'],
       };
 
       const result = await publishResource(client, store, testContext, descriptor, testConfig);
@@ -96,7 +96,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.NamedValue,
-        name: 'my-nv',
+        nameParts: ['my-nv'],
       };
 
       const result = await publishResource(client, store, testContext, descriptor, testConfig);
@@ -118,7 +118,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Backend,
-        name: 'my-backend',
+        nameParts: ['my-backend'],
       };
 
       const result = await publishResource(client, store, testContext, descriptor, testConfig);
@@ -153,7 +153,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.NamedValue,
-        name: 'my-nv',
+        nameParts: ['my-nv'],
       };
 
       await publishResource(client, store, testContext, descriptor, configWithOverrides);
@@ -186,7 +186,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Backend,
-        name: 'my-backend',
+        nameParts: ['my-backend'],
       };
 
       await publishResource(client, store, testContext, descriptor, testConfig);
@@ -207,7 +207,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ServicePolicy,
-        name: 'policy',
+        nameParts: [],
       };
 
       const result = await publishResource(client, store, testContext, descriptor, testConfig);
@@ -228,7 +228,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ApiPolicy,
-        name: 'my-api',
+        nameParts: ['my-api'],
       };
 
       const result = await publishResource(client, store, testContext, descriptor, testConfig);
@@ -245,7 +245,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ProductApi,
-        name: 'my-product',
+        nameParts: ['my-product'],
       };
 
       const result = await publishResource(client, store, testContext, descriptor, testConfig);
@@ -254,18 +254,18 @@ describe('resource-publisher', () => {
       // readAssociation must be called with a Product descriptor, not ProductApi
       expect(store.readAssociation).toHaveBeenCalledWith(
         testConfig.sourceDir,
-        expect.objectContaining({ type: ResourceType.Product, name: 'my-product' }),
+        expect.objectContaining({ type: ResourceType.Product, nameParts: ['my-product'] }),
         'apis'
       );
       expect(client.putResource).toHaveBeenCalledTimes(2);
       expect(client.putResource).toHaveBeenCalledWith(
         testContext,
-        expect.objectContaining({ type: ResourceType.ProductApi, name: 'my-product', parent: 'api-1' }),
+        expect.objectContaining({ type: ResourceType.ProductApi, nameParts: ['my-product', 'api-1'] }),
         {}
       );
       expect(client.putResource).toHaveBeenCalledWith(
         testContext,
-        expect.objectContaining({ type: ResourceType.ProductApi, name: 'my-product', parent: 'api-2' }),
+        expect.objectContaining({ type: ResourceType.ProductApi, nameParts: ['my-product', 'api-2'] }),
         {}
       );
     });
@@ -277,7 +277,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ProductGroup,
-        name: 'my-product',
+        nameParts: ['my-product'],
       };
 
       const result = await publishResource(client, store, testContext, descriptor, testConfig);
@@ -286,12 +286,12 @@ describe('resource-publisher', () => {
       // readAssociation must be called with a Product descriptor, not ProductGroup
       expect(store.readAssociation).toHaveBeenCalledWith(
         testConfig.sourceDir,
-        expect.objectContaining({ type: ResourceType.Product, name: 'my-product' }),
+        expect.objectContaining({ type: ResourceType.Product, nameParts: ['my-product'] }),
         'groups'
       );
       expect(client.putResource).toHaveBeenCalledWith(
         testContext,
-        expect.objectContaining({ type: ResourceType.ProductGroup, name: 'my-product', parent: 'group-1' }),
+        expect.objectContaining({ type: ResourceType.ProductGroup, nameParts: ['my-product', 'group-1'] }),
         {}
       );
     });
@@ -303,7 +303,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.GatewayApi,
-        name: 'my-gateway',
+        nameParts: ['my-gateway'],
       };
 
       const result = await publishResource(client, store, testContext, descriptor, testConfig);
@@ -312,12 +312,12 @@ describe('resource-publisher', () => {
       // readAssociation must be called with a Gateway descriptor, not GatewayApi
       expect(store.readAssociation).toHaveBeenCalledWith(
         testConfig.sourceDir,
-        expect.objectContaining({ type: ResourceType.Gateway, name: 'my-gateway' }),
+        expect.objectContaining({ type: ResourceType.Gateway, nameParts: ['my-gateway'] }),
         'apis'
       );
       expect(client.putResource).toHaveBeenCalledWith(
         testContext,
-        expect.objectContaining({ type: ResourceType.GatewayApi, name: 'my-gateway', parent: 'api-1' }),
+        expect.objectContaining({ type: ResourceType.GatewayApi, nameParts: ['my-gateway', 'api-1'] }),
         {}
       );
     });
@@ -340,7 +340,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.NamedValue,
-        name: 'kv-secret',
+        nameParts: ['kv-secret'],
       };
 
       await publishResource(client, store, testContext, descriptor, testConfig);
@@ -367,7 +367,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.NamedValue,
-        name: 'plain-nv',
+        nameParts: ['plain-nv'],
       };
 
       await publishResource(client, store, testContext, descriptor, testConfig);
@@ -395,7 +395,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.NamedValue,
-        name: 'kv-nv',
+        nameParts: ['kv-nv'],
       };
 
       await publishResource(client, store, testContext, descriptor, testConfig);
@@ -423,7 +423,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.NamedValue,
-        name: 'kv-nv',
+        nameParts: ['kv-nv'],
       };
 
       await publishResource(client, store, testContext, descriptor, testConfig);
@@ -458,7 +458,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.NamedValue,
-        name: 'kv-nv',
+        nameParts: ['kv-nv'],
       };
 
       const result = await publishResource(client, store, testContext, descriptor, testConfig);
@@ -480,7 +480,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.NamedValue,
-        name: 'plain-nv',
+        nameParts: ['plain-nv'],
       };
 
       await publishResource(client, store, testContext, descriptor, testConfig);
@@ -498,8 +498,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ApiWiki,
-        name: 'my-api',
-        parent: 'my-api',
+        nameParts: ['my-api'],
       };
 
       const result = await publishResource(client, store, testContext, descriptor, testConfig);
@@ -543,7 +542,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Subscription,
-        name: 'master',
+        nameParts: ['master'],
       };
 
       const result = await publishResource(client, store, testContext, descriptor, testConfig);
@@ -574,7 +573,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Subscription,
-        name: 'sub-1',
+        nameParts: ['sub-1'],
       };
 
       await publishResource(client, store, testContext, descriptor, testConfig);
@@ -600,7 +599,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Subscription,
-        name: 'sub-1',
+        nameParts: ['sub-1'],
       };
 
       await publishResource(client, store, testContext, descriptor, testConfig);
@@ -632,7 +631,7 @@ describe('resource-publisher', () => {
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Subscription,
-        name: 'master',
+        nameParts: ['master'],
       };
 
       const result = await publishResource(client, store, testContext, descriptor, testConfig);

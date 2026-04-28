@@ -39,7 +39,7 @@ function createMockStore(resources: ResourceDescriptor[] = []) {
     writeContent: vi.fn(),
     writeAssociation: vi.fn(),
     readResource: vi.fn().mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) => {
-      return { name: descriptor.name, properties: {} };
+      return { name: (descriptor.nameParts[descriptor.nameParts.length - 1] ?? ""), properties: {} };
     }),
     readContent: vi.fn().mockResolvedValue(undefined),
     readAssociation: vi.fn().mockResolvedValue([]),
@@ -73,7 +73,7 @@ describe('publish-service', () => {
     vi.mocked(computeDeleteActions).mockResolvedValue([]);
     
     vi.mocked(publishApi).mockResolvedValue({
-      descriptor: { type: ResourceType.Api, name: 'test-api' },
+      descriptor: { type: ResourceType.Api, nameParts: ['test-api'] },
       status: 'success',
       action: 'put',
     });
@@ -82,9 +82,9 @@ describe('publish-service', () => {
   describe('runPublish', () => {
     it('should call publishResource for each artifact in dependency order', async () => {
       const resources = [
-        { type: ResourceType.NamedValue, name: 'nv1' },
-        { type: ResourceType.Api, name: 'api1' },
-        { type: ResourceType.Backend, name: 'backend1' },
+        { type: ResourceType.NamedValue, nameParts: ['nv1'] },
+        { type: ResourceType.Api, nameParts: ['api1'] },
+        { type: ResourceType.Backend, nameParts: ['backend1'] },
       ];
 
       const client = createMockClient();
@@ -106,7 +106,7 @@ describe('publish-service', () => {
 
     it('should return exit code 0 when all succeed', async () => {
       const resources = [
-        { type: ResourceType.Tag, name: 'tag1' },
+        { type: ResourceType.Tag, nameParts: ['tag1'] },
       ];
 
       const client = createMockClient();
@@ -128,13 +128,13 @@ describe('publish-service', () => {
 
     it('should return exit code 1 when some fail', async () => {
       const resources = [
-        { type: ResourceType.NamedValue, name: 'nv1' },
-        { type: ResourceType.NamedValue, name: 'nv2' },
+        { type: ResourceType.NamedValue, nameParts: ['nv1'] },
+        { type: ResourceType.NamedValue, nameParts: ['nv2'] },
       ];
 
       const client = createMockClient();
       client.putResource.mockImplementation(async (ctx, descriptor) => {
-        if (descriptor.name === 'nv2') {
+        if ((descriptor.nameParts[descriptor.nameParts.length - 1] ?? '') === 'nv2') {
           throw new Error('PUT failed');
         }
       });
@@ -156,7 +156,7 @@ describe('publish-service', () => {
 
     it('should return exit code 2 when all fail or fatal error', async () => {
       const resources = [
-        { type: ResourceType.NamedValue, name: 'nv1' },
+        { type: ResourceType.NamedValue, nameParts: ['nv1'] },
       ];
 
       const client = createMockClient();
@@ -178,7 +178,7 @@ describe('publish-service', () => {
 
     it('should use publishApi for Api type resources', async () => {
       const resources = [
-        { type: ResourceType.Api, name: 'my-api' },
+        { type: ResourceType.Api, nameParts: ['my-api'] },
       ];
 
       const client = createMockClient();
@@ -199,7 +199,7 @@ describe('publish-service', () => {
 
     it('should call generateDryRunReport in dry-run mode', async () => {
       const resources = [
-        { type: ResourceType.Tag, name: 'tag1' },
+        { type: ResourceType.Tag, nameParts: ['tag1'] },
       ];
 
       const client = createMockClient();
@@ -226,7 +226,7 @@ describe('publish-service', () => {
 
       vi.mocked(computeGitDiff).mockResolvedValue({
         changedDescriptors: [
-          { type: ResourceType.NamedValue, name: 'nv1' },
+          { type: ResourceType.NamedValue, nameParts: ['nv1'] },
         ],
         deletedDescriptors: [],
       });
@@ -247,14 +247,14 @@ describe('publish-service', () => {
 
     it('should call computeDeleteActions when deleteUnmatched is true', async () => {
       const resources = [
-        { type: ResourceType.Tag, name: 'tag1' },
+        { type: ResourceType.Tag, nameParts: ['tag1'] },
       ];
 
       const client = createMockClient();
       const store = createMockStore(resources);
 
       vi.mocked(computeDeleteActions).mockResolvedValue([
-        { type: ResourceType.Backend, name: 'old-backend' },
+        { type: ResourceType.Backend, nameParts: ['old-backend'] },
       ]);
 
       const config: PublishConfig = {
@@ -275,7 +275,7 @@ describe('publish-service', () => {
       const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
       const resources = [
-        { type: ResourceType.Tag, name: 'tag1' },
+        { type: ResourceType.Tag, nameParts: ['tag1'] },
       ];
 
       const client = createMockClient();
@@ -298,8 +298,8 @@ describe('publish-service', () => {
 
     it('should handle resources in tier order', async () => {
       const resources = [
-        { type: ResourceType.Backend, name: 'backend1' },
-        { type: ResourceType.NamedValue, name: 'nv1' },
+        { type: ResourceType.Backend, nameParts: ['backend1'] },
+        { type: ResourceType.NamedValue, nameParts: ['nv1'] },
       ];
 
       const client = createMockClient();
@@ -323,7 +323,7 @@ describe('publish-service', () => {
   describe('pre-flight validation', () => {
     it('should call validatePreFlight before publishing', async () => {
       const client = createMockClient();
-      const store = createMockStore([{ type: ResourceType.Tag, name: 'tag1' }]);
+      const store = createMockStore([{ type: ResourceType.Tag, nameParts: ['tag1'] }]);
 
       const config: PublishConfig = {
         service: testContext,
@@ -385,7 +385,7 @@ describe('publish-service', () => {
       vi.mocked(client.validatePreFlight).mockRejectedValue(
         new Error("Resource group 'rg-missing' not found.")
       );
-      const store = createMockStore([{ type: ResourceType.Tag, name: 'tag1' }]);
+      const store = createMockStore([{ type: ResourceType.Tag, nameParts: ['tag1'] }]);
 
       const config: PublishConfig = {
         service: testContext,
@@ -406,22 +406,22 @@ describe('publish-service', () => {
       const publishOrder: string[] = [];
 
       const resources: ResourceDescriptor[] = [
-        { type: ResourceType.Logger, name: 'appinsights-logger' },
-        { type: ResourceType.NamedValue, name: 'AppInsights-InstrumentationKey' },
-        { type: ResourceType.NamedValue, name: 'Gemini-ApiKey' },
-        { type: ResourceType.Backend, name: 'my-backend' },
+        { type: ResourceType.Logger, nameParts: ['appinsights-logger'] },
+        { type: ResourceType.NamedValue, nameParts: ['AppInsights-InstrumentationKey'] },
+        { type: ResourceType.NamedValue, nameParts: ['Gemini-ApiKey'] },
+        { type: ResourceType.Backend, nameParts: ['my-backend'] },
       ];
 
       const client = createMockClient();
       vi.mocked(client.putResource).mockImplementation(
         async (_ctx, descriptor) => {
-          publishOrder.push(descriptor.name);
+          publishOrder.push(descriptor.nameParts[descriptor.nameParts.length - 1] ?? "");
         }
       );
 
       const store = createMockStore(resources);
       vi.mocked(store.readResource).mockImplementation(
-        async (_sourceDir, descriptor) => ({ name: descriptor.name, properties: {} })
+        async (_sourceDir, descriptor) => ({ name: (descriptor.nameParts[descriptor.nameParts.length - 1] ?? ""), properties: {} })
       );
 
       const config: PublishConfig = {
@@ -455,25 +455,25 @@ describe('publish-service', () => {
       const publishOrder: string[] = [];
 
       const resources: ResourceDescriptor[] = [
-        { type: ResourceType.Backend, name: 'pool-b' },
-        { type: ResourceType.Backend, name: 'regular-b' },
-        { type: ResourceType.NamedValue, name: 'my-nv' },
+        { type: ResourceType.Backend, nameParts: ['pool-b'] },
+        { type: ResourceType.Backend, nameParts: ['regular-b'] },
+        { type: ResourceType.NamedValue, nameParts: ['my-nv'] },
       ];
 
       const client = createMockClient();
       vi.mocked(client.putResource).mockImplementation(
         async (_ctx, descriptor) => {
-          publishOrder.push(descriptor.name);
+          publishOrder.push(descriptor.nameParts[descriptor.nameParts.length - 1] ?? "");
         }
       );
 
       const store = createMockStore(resources);
       vi.mocked(store.readResource).mockImplementation(
         async (_sourceDir, descriptor) => {
-          if (descriptor.name === 'pool-b') {
-            return { name: descriptor.name, properties: { type: 'Pool' } };
+          if ((descriptor.nameParts[descriptor.nameParts.length - 1] ?? '') === 'pool-b') {
+            return { name: (descriptor.nameParts[descriptor.nameParts.length - 1] ?? ""), properties: { type: 'Pool' } };
           }
-          return { name: descriptor.name, properties: {} };
+          return { name: (descriptor.nameParts[descriptor.nameParts.length - 1] ?? ""), properties: {} };
         }
       );
 
@@ -503,15 +503,15 @@ describe('publish-service', () => {
       const publishOrder: string[] = [];
 
       const resources: ResourceDescriptor[] = [
-        { type: ResourceType.Backend, name: 'premium-pool' },
-        { type: ResourceType.Backend, name: 'premium-service-1' },
-        { type: ResourceType.Backend, name: 'premium-service-2' },
+        { type: ResourceType.Backend, nameParts: ['premium-pool'] },
+        { type: ResourceType.Backend, nameParts: ['premium-service-1'] },
+        { type: ResourceType.Backend, nameParts: ['premium-service-2'] },
       ];
 
       const client = createMockClient();
       vi.mocked(client.putResource).mockImplementation(
         async (_ctx, descriptor) => {
-          publishOrder.push(descriptor.name);
+          publishOrder.push(descriptor.nameParts[descriptor.nameParts.length - 1] ?? "");
         }
       );
 
@@ -522,9 +522,9 @@ describe('publish-service', () => {
       // resource publisher (FR-009) and are not inspected here.
       vi.mocked(store.readResource).mockImplementation(
         async (_sourceDir, descriptor) => {
-          if (descriptor.name === 'premium-pool') {
+          if ((descriptor.nameParts[descriptor.nameParts.length - 1] ?? '') === 'premium-pool') {
             return {
-              name: descriptor.name,
+              name: descriptor.nameParts[descriptor.nameParts.length - 1] ?? "",
               properties: {
                 type: 'Pool',
                 pool: {
@@ -536,7 +536,7 @@ describe('publish-service', () => {
               },
             };
           }
-          return { name: descriptor.name, properties: { url: 'https://example.com', protocol: 'http' } };
+          return { name: (descriptor.nameParts[descriptor.nameParts.length - 1] ?? ""), properties: { url: 'https://example.com', protocol: 'http' } };
         }
       );
 
@@ -564,7 +564,7 @@ describe('publish-service', () => {
 
     it('should treat a Backend with no type property as a regular backend', async () => {
       const resources: ResourceDescriptor[] = [
-        { type: ResourceType.Backend, name: 'plain-backend' },
+        { type: ResourceType.Backend, nameParts: ['plain-backend'] },
       ];
 
       const client = createMockClient();
@@ -592,24 +592,24 @@ describe('publish-service', () => {
       const publishOrder: string[] = [];
 
       const resources: ResourceDescriptor[] = [
-        { type: ResourceType.Backend, name: 'POOL-backend' },
-        { type: ResourceType.Backend, name: 'member-backend' },
+        { type: ResourceType.Backend, nameParts: ['POOL-backend'] },
+        { type: ResourceType.Backend, nameParts: ['member-backend'] },
       ];
 
       const client = createMockClient();
       vi.mocked(client.putResource).mockImplementation(
         async (_ctx, descriptor) => {
-          publishOrder.push(descriptor.name);
+          publishOrder.push(descriptor.nameParts[descriptor.nameParts.length - 1] ?? "");
         }
       );
 
       const store = createMockStore(resources);
       vi.mocked(store.readResource).mockImplementation(
         async (_sourceDir, descriptor) => {
-          if (descriptor.name === 'POOL-backend') {
-            return { name: descriptor.name, properties: { type: 'pool' } };
+          if ((descriptor.nameParts[descriptor.nameParts.length - 1] ?? '') === 'POOL-backend') {
+            return { name: (descriptor.nameParts[descriptor.nameParts.length - 1] ?? ""), properties: { type: 'pool' } };
           }
-          return { name: descriptor.name, properties: { url: 'https://example.com', protocol: 'http' } };
+          return { name: (descriptor.nameParts[descriptor.nameParts.length - 1] ?? ""), properties: { url: 'https://example.com', protocol: 'http' } };
         }
       );
 
@@ -631,20 +631,20 @@ describe('publish-service', () => {
 
     it('should publish all tier 1 resources including pool backends', async () => {
       const resources: ResourceDescriptor[] = [
-        { type: ResourceType.NamedValue, name: 'nv1' },
-        { type: ResourceType.Tag, name: 'tag1' },
-        { type: ResourceType.Backend, name: 'pool-b' },
-        { type: ResourceType.Backend, name: 'regular-b' },
+        { type: ResourceType.NamedValue, nameParts: ['nv1'] },
+        { type: ResourceType.Tag, nameParts: ['tag1'] },
+        { type: ResourceType.Backend, nameParts: ['pool-b'] },
+        { type: ResourceType.Backend, nameParts: ['regular-b'] },
       ];
 
       const client = createMockClient();
       const store = createMockStore(resources);
       vi.mocked(store.readResource).mockImplementation(
         async (_sourceDir, descriptor) => {
-          if (descriptor.name === 'pool-b') {
-            return { name: descriptor.name, properties: { type: 'Pool' } };
+          if ((descriptor.nameParts[descriptor.nameParts.length - 1] ?? '') === 'pool-b') {
+            return { name: (descriptor.nameParts[descriptor.nameParts.length - 1] ?? ""), properties: { type: 'Pool' } };
           }
-          return { name: descriptor.name, properties: {} };
+          return { name: (descriptor.nameParts[descriptor.nameParts.length - 1] ?? ""), properties: {} };
         }
       );
 

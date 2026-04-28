@@ -23,7 +23,7 @@ describe('ArtifactStore', () => {
     it('should write and read back a resource', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.NamedValue,
-        name: 'mySecret',
+        nameParts: ['mySecret'],
       };
       const json = { properties: { displayName: 'My Secret', value: 'hidden' } };
 
@@ -36,7 +36,7 @@ describe('ArtifactStore', () => {
     it('should return undefined for non-existent resource', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Api,
-        name: 'does-not-exist',
+        nameParts: ['does-not-exist'],
       };
       const result = await store.readResource(tmpDir, descriptor);
       expect(result).toBeUndefined();
@@ -45,7 +45,7 @@ describe('ArtifactStore', () => {
     it('should create parent directories as needed', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Backend,
-        name: 'deep-backend',
+        nameParts: ['deep-backend'],
       };
 
       await store.writeResource(tmpDir, descriptor, { url: 'https://example.com' });
@@ -58,8 +58,7 @@ describe('ArtifactStore', () => {
     it('should handle types with no info file gracefully', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ApiOperation,
-        name: 'getUsers',
-        parent: 'my-api',
+        nameParts: ['my-api', 'getUsers'],
       };
 
       // writeResource should be a no-op
@@ -74,7 +73,7 @@ describe('ArtifactStore', () => {
     it('should write and read policy XML', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ApiPolicy,
-        name: 'my-api',
+        nameParts: ['my-api'],
       };
       const policy = '<policies><inbound /></policies>';
 
@@ -88,7 +87,7 @@ describe('ArtifactStore', () => {
     it('should write and read API specification', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Api,
-        name: 'my-api',
+        nameParts: ['my-api'],
       };
       const spec = 'openapi: "3.0.0"\ninfo:\n  title: My API';
 
@@ -103,7 +102,7 @@ describe('ArtifactStore', () => {
     it('should return undefined for non-existent policy', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ApiPolicy,
-        name: 'no-api',
+        nameParts: ['no-api'],
       };
       const result = await store.readContent(tmpDir, descriptor, 'policy');
       expect(result).toBeUndefined();
@@ -112,7 +111,7 @@ describe('ArtifactStore', () => {
     it('should return undefined for non-existent specification', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Api,
-        name: 'no-api',
+        nameParts: ['no-api'],
       };
       const result = await store.readContent(tmpDir, descriptor, 'specification');
       expect(result).toBeUndefined();
@@ -121,7 +120,7 @@ describe('ArtifactStore', () => {
     it('should decode HTML entities in policy XML (newlines)', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ApiPolicy,
-        name: 'my-api',
+        nameParts: ['my-api'],
       };
       // Simulate APIM's JSON response with encoded newlines
       const policyWithEntities = '<set-variable name="test" value="@{&#xD;&#xA;    var x = 1;&#xD;&#xA;}" />';
@@ -137,7 +136,7 @@ describe('ArtifactStore', () => {
     it('should decode HTML entities in policy XML (all standard entities)', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ServicePolicy,
-        name: 'service-level',
+        nameParts: [],
       };
       // Test multiple HTML entities
       const policyWithEntities =
@@ -154,7 +153,7 @@ describe('ArtifactStore', () => {
     it('should handle lowercase HTML entity variants', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ProductPolicy,
-        name: 'my-product',
+        nameParts: ['my-product'],
       };
       // APIM may return lowercase variants
       const policyWithEntities = '<set-variable value="@{&#xd;&#xa;test&#xd;&#xa;}" />';
@@ -170,7 +169,7 @@ describe('ArtifactStore', () => {
     it('should not decode entities in specifications, only policies', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Api,
-        name: 'my-api',
+        nameParts: ['my-api'],
       };
       // Specification should NOT be decoded (these are true entity references in YAML/OpenAPI)
       const spec = 'title: &quot;My API&quot;';
@@ -185,7 +184,7 @@ describe('ArtifactStore', () => {
     it('should preserve policy content without HTML entities', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ApiPolicy,
-        name: 'my-api',
+        nameParts: ['my-api'],
       };
       const policy = `<policies>
   <inbound>
@@ -205,7 +204,7 @@ describe('ArtifactStore', () => {
     it('should write and read product-api association', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Product,
-        name: 'starter',
+        nameParts: ['starter'],
       };
       const apis = ['api1', 'api2'];
 
@@ -218,7 +217,7 @@ describe('ArtifactStore', () => {
     it('should return empty array for missing association', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Product,
-        name: 'no-product',
+        nameParts: ['no-product'],
       };
       const result = await store.readAssociation(tmpDir, descriptor, 'apis');
       expect(result).toEqual([]);
@@ -229,7 +228,7 @@ describe('ArtifactStore', () => {
     it('should delete an existing resource directory', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Tag,
-        name: 'delete-me',
+        nameParts: ['delete-me'],
       };
 
       await store.writeResource(tmpDir, descriptor, { name: 'delete-me' });
@@ -249,7 +248,7 @@ describe('ArtifactStore', () => {
     it('should not throw when deleting non-existent resource', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Tag,
-        name: 'never-existed',
+        nameParts: ['never-existed'],
       };
       await expect(store.deleteResource(tmpDir, descriptor)).resolves.not.toThrow();
     });
@@ -267,23 +266,23 @@ describe('ArtifactStore', () => {
     });
 
     it('should list resources after writing them', async () => {
-      await store.writeResource(tmpDir, { type: ResourceType.Api, name: 'api1' }, { id: 1 });
-      await store.writeResource(tmpDir, { type: ResourceType.Api, name: 'api2' }, { id: 2 });
-      await store.writeResource(tmpDir, { type: ResourceType.Product, name: 'prod1' }, { id: 3 });
+      await store.writeResource(tmpDir, { type: ResourceType.Api, nameParts: ['api1'] }, { id: 1 });
+      await store.writeResource(tmpDir, { type: ResourceType.Api, nameParts: ['api2'] }, { id: 2 });
+      await store.writeResource(tmpDir, { type: ResourceType.Product, nameParts: ['prod1'] }, { id: 3 });
 
       const result = await store.listResources(tmpDir);
       expect(result.length).toBeGreaterThanOrEqual(3);
 
       const apiNames = result
         .filter((d) => d.type === ResourceType.Api)
-        .map((d) => d.name)
+        .map((d) => d.nameParts[0])
         .sort();
       expect(apiNames).toContain('api1');
       expect(apiNames).toContain('api2');
 
       const productNames = result
         .filter((d) => d.type === ResourceType.Product)
-        .map((d) => d.name);
+        .map((d) => d.nameParts[0]);
       expect(productNames).toContain('prod1');
     });
   });
@@ -292,7 +291,7 @@ describe('ArtifactStore', () => {
     it('should handle unicode resource names', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.NamedValue,
-        name: 'héllo-wörld',
+        nameParts: ['héllo-wörld'],
       };
       const json = { properties: { displayName: 'Héllo Wörld' } };
 

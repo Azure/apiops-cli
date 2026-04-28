@@ -98,7 +98,7 @@ describe('resource-extractor', () => {
 
       expect(result.totalCount).toBe(2);
       expect(result.extracted).toHaveLength(1);
-      expect(result.extracted[0]?.descriptor.name).toBe('nv-1');
+      expect(result.extracted[0]?.descriptor.nameParts[0]).toBe('nv-1');
     });
 
     it('should redact secret named values', async () => {
@@ -139,7 +139,7 @@ describe('resource-extractor', () => {
     it('should set parent descriptor for child resources', async () => {
       const parentDescriptor: ResourceDescriptor = {
         type: ResourceType.Api,
-        name: 'my-api',
+        nameParts: ['my-api'],
       };
       const client = createMockClient([
         { name: 'op-1' },
@@ -152,7 +152,79 @@ describe('resource-extractor', () => {
       );
 
       expect(result.extracted).toHaveLength(1);
-      expect(result.extracted[0]?.descriptor.parent).toBe('my-api');
+      expect(result.extracted[0]?.descriptor.nameParts[0]).toBe('my-api');
+      expect(result.extracted[0]?.descriptor.nameParts[1]).toBe('op-1');
+    });
+
+    it('should issue an individual GET for ApiSchema to capture properties.document', async () => {
+      // APIM's ApiSchema list response omits `properties.document` (the SDL /
+      // XSD / JSON schema body). The per-resource GET returns the full
+      // payload, which publish needs for round-trip.
+      const parentDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['gql-api'],
+      };
+      const listItem = {
+        name: 'graphql',
+        properties: { contentType: 'application/vnd.ms-azure-apim.graphql.schema' },
+      };
+      const fullItem = {
+        name: 'graphql',
+        properties: {
+          contentType: 'application/vnd.ms-azure-apim.graphql.schema',
+          document: { value: 'type Query { hello: String }' },
+        },
+      };
+      const client = createMockClient([listItem]);
+      client.getResource = vi.fn().mockResolvedValue(fullItem);
+      const store = createMockStore();
+
+      const result = await extractResourceType(
+        client, store, testContext,
+        ResourceType.ApiSchema, '/output', undefined, parentDescriptor
+      );
+
+      expect(result.extracted).toHaveLength(1);
+      expect(client.getResource).toHaveBeenCalledOnce();
+      const writtenJson = store.writeResource.mock.calls[0]?.[2] as Record<string, unknown>;
+      const props = writtenJson.properties as Record<string, unknown>;
+      const document = props.document as Record<string, unknown>;
+      expect(document.value).toBe('type Query { hello: String }');
+    });
+
+    it('should fall back to list payload for ApiSchema when GET returns undefined', async () => {
+      const parentDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['gql-api'],
+      };
+      const listItem = { name: 'graphql', properties: { contentType: 'graphql' } };
+      const client = createMockClient([listItem]);
+      client.getResource = vi.fn().mockResolvedValue(undefined);
+      const store = createMockStore();
+
+      const result = await extractResourceType(
+        client, store, testContext,
+        ResourceType.ApiSchema, '/output', undefined, parentDescriptor
+      );
+
+      expect(result.extracted).toHaveLength(1);
+      expect(result.errorCount).toBe(0);
+      const writtenJson = store.writeResource.mock.calls[0]?.[2] as Record<string, unknown>;
+      expect((writtenJson.properties as Record<string, unknown>).contentType).toBe('graphql');
+    });
+
+    it('should NOT issue an extra GET for non-ApiSchema resource types', async () => {
+      const client = createMockClient([
+        { name: 'nv-1', properties: { value: 'v1' } },
+      ]);
+      const store = createMockStore();
+
+      await extractResourceType(
+        client, store, testContext,
+        ResourceType.NamedValue, '/output'
+      );
+
+      expect(client.getResource).not.toHaveBeenCalled();
     });
   });
 
@@ -163,7 +235,7 @@ describe('resource-extractor', () => {
       const store = createMockStore();
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Api,
-        name: 'my-api',
+        nameParts: ['my-api'],
       };
 
       const result = await extractSingleResource(
@@ -180,7 +252,7 @@ describe('resource-extractor', () => {
       const store = createMockStore();
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Api,
-        name: 'missing-api',
+        nameParts: ['missing-api'],
       };
 
       const result = await extractSingleResource(

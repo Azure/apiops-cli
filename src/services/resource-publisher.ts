@@ -12,6 +12,7 @@ import type { PublishConfig } from '../models/config.js';
 import { ResourceType } from '../models/resource-types.js';
 import { applyOverrides } from './override-merger.js';
 import { checkKeyVaultSecretAccess } from './keyvault-checker.js';
+import { getNamePart } from '../lib/resource-path.js';
 
 export interface ResourcePublishResult {
   descriptor: ResourceDescriptor;
@@ -195,7 +196,7 @@ async function publishAssociation(
     const parentType = ASSOCIATION_PARENT_TYPES.get(descriptor.type)!;
     const parentDescriptor: ResourceDescriptor = {
       type: parentType,
-      name: descriptor.name,
+      nameParts: [getNamePart(descriptor.nameParts, 0)],
       workspace: descriptor.workspace,
     };
     const names = await store.readAssociation(
@@ -208,8 +209,7 @@ async function publishAssociation(
     for (const name of names) {
       const assocDescriptor: ResourceDescriptor = {
         type: descriptor.type,
-        name: descriptor.name,
-        parent: name,
+        nameParts: [getNamePart(descriptor.nameParts, 0), name],
       };
       // PUT empty body for association (APIM uses PUT to create association)
       await client.putResource(context, assocDescriptor, {});

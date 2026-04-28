@@ -5,7 +5,7 @@
 
 import * as path from 'node:path';
 import { ResourceDescriptor } from '../models/types.js';
-import { RESOURCE_TYPE_METADATA, ResourceType, PLACEHOLDER_NAME, PLACEHOLDER_PARENT_NAME, PLACEHOLDER_GRANDPARENT_NAME } from '../models/resource-types.js';
+import { RESOURCE_TYPE_METADATA, ResourceType } from '../models/resource-types.js';
 
 /**
  * Association resource types that represent parent-child relationships
@@ -21,9 +21,159 @@ const ASSOCIATION_TYPES = new Set<ResourceType>([
 ]);
 
 /**
+ * Fills all positional `{i}` tokens in a template string with `nameParts[i]`.
+ * Throws if a placeholder index has no corresponding entry in `nameParts`.
+ *
+ * Examples:
+ *   formatTemplatePath('apis/{0}/operations/{1}', ['petstore', 'get-user'])
+ *     → 'apis/petstore/operations/get-user'
+ *   formatTemplatePath('', []) → ''
+ */
+export function formatTemplatePath(template: string, nameParts: string[]): string {
+  return template.replace(/\{(\d+)\}/g, (_match, idx: string) => {
+    const i = +idx;
+    const value = nameParts[i];
+    if (value === undefined) {
+      throw new Error(
+        `formatTemplatePath: nameParts[${i}] is undefined for template "${template}" ` +
+        `(nameParts has ${nameParts.length} entries)`
+      );
+    }
+    return value;
+  });
+}
+
+/**
+ * Returns the number of positional `{i}` placeholders in a template string.
+ *
+ * Used by callers that need to validate that enough name-parts have been
+ * supplied before filling a template — without performing regex matching
+ * themselves.
+ *
+ * Example:
+ *   countTemplatePlaceholders('apis/{0}/operations/{1}') → 2
+ *   countTemplatePlaceholders('policies/policy')         → 0
+ */
+export function countTemplatePlaceholders(template: string): number {
+  return (template.match(/\{\d+\}/g) ?? []).length;
+}
+
+/**
+ * Ensures a path starts with a single leading slash.
+ *
+ * Example:
+ *   makeFullPath('namedValues/my-nv') → '/namedValues/my-nv'
+ *   makeFullPath('/namedValues/my-nv') → '/namedValues/my-nv'
+ */
+export function makeFullPath(relativePath: string): string {
+  return relativePath.startsWith('/') ? relativePath : `/${relativePath}`;
+}
+
+/**
+ * Strips a single leading slash from a path, if present.
+ *
+ * Example:
+ *   makeRelativePath('/namedValues/my-nv') → 'namedValues/my-nv'
+ *   makeRelativePath('namedValues/my-nv')  → 'namedValues/my-nv'
+ */
+export function makeRelativePath(absolutePath: string): string {
+  return absolutePath.startsWith('/') ? absolutePath.substring(1) : absolutePath;
+}
+
+/**
+ * Returns the resource's own name — the last element of `nameParts`.
+ *
+ * For 1-part types (e.g. Api, Product) `nameParts` contains only the own
+ * name, so this is equivalent to `nameParts[0]`.  For 2-part types (e.g.
+ * ApiOperation, ProductTag) the own name is always the final element, with
+ * the parent name preceding it.  Using this helper instead of a hard-coded
+ * index guards against future arity changes and avoids accidentally
+ * returning the parent name.
+ *
+ * Throws a `RangeError` if `nameParts` is empty.
+ *
+ * Examples:
+ *   getNameFromNameParts(['petstore'])                   → 'petstore'
+ *   getNameFromNameParts(['petstore', 'get-user'])       → 'get-user'
+ *   getNameFromNameParts([])                             → throws RangeError
+ */
+export function getNameFromNameParts(nameParts: string[]): string {
+  const value = nameParts[nameParts.length - 1];
+  if (value === undefined) {
+    throw new RangeError('getNameFromNameParts: nameParts is empty');
+  }
+  return value;
+}
+
+/**
+ * Returns `nameParts[index]`, throwing a descriptive `RangeError` if the
+ * index is out of range.
+ *
+ * Prefer this over direct bracket access (`nameParts[0]`) so that missing
+ * name-parts surface as an explicit error rather than a silent `undefined`.
+ *
+ * Examples:
+ *   getNamePart(['petstore', 'get-user'], 0)  → 'petstore'
+ *   getNamePart(['petstore', 'get-user'], 1)  → 'get-user'
+ *   getNamePart([], 0)                        → throws RangeError
+ */
+export function getNamePart(nameParts: string[], index: number): string {
+  const value = nameParts[index];
+  if (value === undefined) {
+    throw new RangeError(
+      `getNamePart: nameParts[${index}] is out of range ` +
+      `(nameParts has ${nameParts.length} ${nameParts.length === 1 ? 'entry' : 'entries'})`
+    );
+  }
+  return value;
+}
+
+/**
+ * Converts a positional template string to a capturing regex.
+ * Each `{i}` placeholder becomes a `([^/]+)` capture group; all other
+ * regex-special characters are escaped.  A trailing slash (if present)
+ * is stripped before building the pattern.
+ *
+ * This function is intentionally **not exported** — callers should use the
+ * higher-level `parseTemplatePath` helper rather than constructing regexes
+ * directly.
+ */
+function templateToRegex(template: string): RegExp {
+  const source = template
+    .replace(/\/+$/, '') // strip any trailing slash
+    .replace(/[.+^${}()|[\]\\]/g, (ch) => (ch === '{' || ch === '}' ? ch : `\\${ch}`))
+    .replace(/\{\d+\}/g, '([^/]+)');
+  return new RegExp(`^${source}$`);
+}
+
+/**
+ * Matches a positional template against a slash-delimited path string and
+ * returns the captured name-part values in positional order, or `undefined`
+ * if the path does not match the template.
+ *
+ * Both artifact-directory paths and ARM path suffixes use the same
+ * `{0}`, `{1}` placeholder syntax, so this single function handles both.
+ * Callers are not required to know anything about regexes.
+ *
+ * Examples:
+ *   parseTemplatePath('apis/{0}/operations/{1}', 'apis/petstore/operations/get')
+ *     → ['petstore', 'get']
+ *   parseTemplatePath('policies/policy', 'policies/policy')
+ *     → []
+ *   parseTemplatePath('apis/{0}', 'backends/b1')
+ *     → undefined
+ */
+export function parseTemplatePath(template: string, path: string): string[] | undefined {
+  const match = templateToRegex(template).exec(path);
+  if (!match) return undefined;
+  // Captures correspond directly to {0}, {1}, … positions in the template
+  return match.slice(1);
+}
+
+/**
  * Builds the artifact directory path for a given descriptor.
  * Returns the directory where this resource's files should be stored.
- * 
+ *
  * @param baseDir - Root artifact directory
  * @param descriptor - Resource descriptor
  * @returns Full directory path (OS-normalized)
@@ -33,29 +183,21 @@ export function buildArtifactDirectory(
   descriptor: ResourceDescriptor
 ): string {
   const metadata = RESOURCE_TYPE_METADATA[descriptor.type];
-  let dirPattern = metadata.artifactDirectory;
+
+  let resolvedDir = formatTemplatePath(metadata.artifactDirectory, descriptor.nameParts);
 
   // Handle workspace prefix
   if (descriptor.workspace) {
-    dirPattern = path.join('workspaces', descriptor.workspace, dirPattern);
+    resolvedDir = path.join('workspaces', descriptor.workspace, resolvedDir);
   }
 
-  // Replace placeholders with descriptor fields.
-  // Patterns use {name} for the resource's own name, {parent-name} for the parent resource,
-  // and {grandparent-name} for the grandparent (used by grandchild types such as
-  // ApiOperationPolicy and GraphQLResolverPolicy).
-  dirPattern = dirPattern
-    .replace(PLACEHOLDER_GRANDPARENT_NAME, descriptor.grandparent ?? '')
-    .replace(PLACEHOLDER_PARENT_NAME, descriptor.parent ?? '')
-    .replace(PLACEHOLDER_NAME, descriptor.name);
-
-  return path.join(baseDir, dirPattern);
+  return path.join(baseDir, resolvedDir);
 }
 
 /**
  * Builds the full artifact file path for a given descriptor.
  * Returns the path to the info file (JSON/XML/MD).
- * 
+ *
  * @param baseDir - Root artifact directory
  * @param descriptor - Resource descriptor
  * @returns Full file path (OS-normalized), or undefined if resource has no info file
@@ -65,7 +207,7 @@ export function buildArtifactFilePath(
   descriptor: ResourceDescriptor
 ): string | undefined {
   const metadata = RESOURCE_TYPE_METADATA[descriptor.type];
-  
+
   if (!metadata.infoFile) {
     return undefined;
   }
@@ -76,7 +218,7 @@ export function buildArtifactFilePath(
 
 /**
  * Builds the policy file path for a resource that supports policies.
- * 
+ *
  * @param baseDir - Root artifact directory
  * @param descriptor - Resource descriptor
  * @returns Full path to policy.xml file
@@ -91,7 +233,7 @@ export function buildPolicyFilePath(
 
 /**
  * Builds the API specification file path.
- * 
+ *
  * @param baseDir - Root artifact directory
  * @param descriptor - API descriptor
  * @param format - Specification format (yaml, json, graphql, wsdl, wadl)
@@ -107,7 +249,7 @@ export function buildSpecificationFilePath(
   }
 
   const directory = buildArtifactDirectory(baseDir, descriptor);
-  
+
   const extensionMap: Record<string, string> = {
     yaml: 'yaml',
     json: 'json',
@@ -122,7 +264,7 @@ export function buildSpecificationFilePath(
 
 /**
  * Builds the association file path (apis.json or groups.json).
- * 
+ *
  * @param baseDir - Root artifact directory
  * @param descriptor - Product or Gateway descriptor
  * @param associationType - Type of association (apis or groups)
@@ -145,9 +287,51 @@ export function buildAssociationFilePath(
 }
 
 /**
+ * Derives the list URL path segment(s) from an ARM path suffix template.
+ *
+ * The list path is structurally derivable from `armPathSuffix`:
+ * - Last segment is a fixed word (no placeholder) → singleton; neither path is present.
+ * - Exactly one `{N}` placeholder and it is the last segment → top-level resource;
+ *   `listPath` = the path before the placeholder (with a leading '/').
+ * - Two or more `{N}` placeholders and the last segment is the highest-index one →
+ *   child resource; `childListPath` = the collection segment immediately before the
+ *   last placeholder (with a leading '/').
+ *
+ * Examples:
+ *   deriveListPaths('namedValues/{0}')            → { listPath: '/namedValues' }
+ *   deriveListPaths('apis/{0}/operations/{1}')    → { childListPath: '/operations' }
+ *   deriveListPaths('policies/policy')            → {}  (singleton)
+ *   deriveListPaths('apis/{0}/policies/policy')   → {}  (singleton)
+ */
+export function deriveListPaths(template: string): {
+  listPath?: string;
+  childListPath?: string;
+} {
+  const segments = template.split('/');
+  const lastSeg = segments[segments.length - 1];
+
+  // Singleton: last segment is a fixed word (not a `{N}` placeholder)
+  if (!lastSeg || !/^\{\d+\}$/.test(lastSeg)) {
+    return {};
+  }
+
+  const placeholderCount = countTemplatePlaceholders(template);
+
+  if (placeholderCount === 1) {
+    // Top-level resource: list path = everything before the placeholder
+    const listBase = segments.slice(0, -1).join('/');
+    return { listPath: `/${listBase}` };
+  }
+
+  // Child resource: child-list path = collection segment immediately before the last placeholder
+  const collectionSeg = segments[segments.length - 2];
+  return { childListPath: `/${collectionSeg}` };
+}
+
+/**
  * Parses an artifact file path back into a ResourceDescriptor.
  * Inverse of buildArtifactFilePath.
- * 
+ *
  * @param baseDir - Root artifact directory
  * @param filePath - Full path to artifact file
  * @returns ResourceDescriptor or undefined if path doesn't match known patterns
@@ -188,92 +372,15 @@ export function parseArtifactPath(
       return undefined;
     }
 
-    // Extract resource names from path based on pattern
-    const descriptor = extractNamesFromPath(
-      parts.slice(startIndex, -1),
-      type,
-      workspace
+    const nameParts = parseTemplatePath(
+      metadata.artifactDirectory,
+      parts.slice(startIndex, -1).join('/')
     );
 
-    if (descriptor) {
-      return descriptor;
+    if (nameParts !== undefined) {
+      return { type, nameParts, workspace };
     }
   }
 
   return undefined;
-}
-
-/**
- * Helper to extract resource names from directory path parts.
- * Uses the artifact directory patterns from RESOURCE_TYPE_METADATA to match
- * all 33 resource types deterministically.
- */
-function extractNamesFromPath(
-  pathParts: string[],
-  type: ResourceType,
-  workspace?: string
-): ResourceDescriptor | undefined {
-  const metadata = RESOURCE_TYPE_METADATA[type];
-  // Split the artifact directory pattern into its expected segments and strip trailing '/'
-  const patternParts = metadata.artifactDirectory
-    .replace(/\/+$/, '')
-    .split('/')
-    .filter(Boolean);
-
-  // ServicePolicy has an empty artifactDirectory — matches zero path parts
-  if (patternParts.length === 0 && pathParts.length === 0) {
-    return { type, name: 'policy', workspace };
-  }
-
-  if (patternParts.length !== pathParts.length) {
-    return undefined;
-  }
-
-  // Walk through each segment comparing literal text against the pattern;
-  // collect placeholder values.
-  const placeholders = new Map<string, string>();
-
-  for (let i = 0; i < patternParts.length; i++) {
-    const pattern = patternParts[i];
-    const actual = pathParts[i];
-    if (!pattern || !actual) return undefined;
-
-    // Check if this segment is one of the known placeholder tokens
-    if (
-      pattern === PLACEHOLDER_NAME ||
-      pattern === PLACEHOLDER_PARENT_NAME ||
-      pattern === PLACEHOLDER_GRANDPARENT_NAME
-    ) {
-      placeholders.set(pattern, actual);
-    } else if (pattern !== actual) {
-      // Literal segment mismatch
-      return undefined;
-    }
-  }
-
-  const descriptor: ResourceDescriptor = { type, name: '', workspace };
-
-  const namePlaceholder = placeholders.get(PLACEHOLDER_NAME);
-  const parentNamePlaceholder = placeholders.get(PLACEHOLDER_PARENT_NAME);
-  const grandparentNamePlaceholder = placeholders.get(PLACEHOLDER_GRANDPARENT_NAME);
-
-  // Set descriptor.name from {name}.
-  // Grandchild types (ApiOperationPolicy, GraphQLResolverPolicy) omit {name} from their
-  // artifact directory patterns; fall back to {grandparent-name} (the API name) so that
-  // ARM URI construction — which uses descriptor.name for the {name} slot — works correctly.
-  if (namePlaceholder) {
-    descriptor.name = namePlaceholder;
-  } else if (grandparentNamePlaceholder) {
-    descriptor.name = grandparentNamePlaceholder;
-  }
-
-  if (parentNamePlaceholder) {
-    descriptor.parent = parentNamePlaceholder;
-  }
-
-  if (grandparentNamePlaceholder) {
-    descriptor.grandparent = grandparentNamePlaceholder;
-  }
-
-  return descriptor.name ? descriptor : undefined;
 }

@@ -140,15 +140,7 @@ function groupDescriptorsByType(
  * Format resource name for display
  */
 function formatResourceName(descriptor: ResourceDescriptor): string {
-  const parts: string[] = [];
-  if (descriptor.grandparent) {
-    parts.push(descriptor.grandparent);
-  }
-  if (descriptor.parent) {
-    parts.push(descriptor.parent);
-  }
-  parts.push(descriptor.name);
-  return parts.join('/');
+  return descriptor.nameParts.join('/');
 }
 
 /**

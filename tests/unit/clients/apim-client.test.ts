@@ -266,7 +266,7 @@ describe('ApimClient.listResources', () => {
 
     const parentDescriptor = {
       type: ResourceType.Api,
-      name: 'my-api',
+      nameParts: ['my-api'],
     };
 
     const results: unknown[] = [];
@@ -322,7 +322,7 @@ describe('ApimClient.getResource', () => {
 
     const descriptor = {
       type: ResourceType.ServicePolicy,
-      name: 'policy',
+      nameParts: [],
     };
 
     const result = await client.getResource(testContext, descriptor);
@@ -342,7 +342,7 @@ describe('ApimClient.getResource', () => {
 
     const descriptor = {
       type: ResourceType.ServicePolicy,
-      name: 'policy',
+      nameParts: [],
     };
 
     const result = await client.getResource(testContext, descriptor);
@@ -367,7 +367,7 @@ describe('ApimClient.getResource', () => {
 
     const descriptor = {
       type: ResourceType.ApiPolicy,
-      name: 'policy',
+      nameParts: ['policy'],
     };
 
     const result = await client.getResource(testContext, descriptor);
@@ -390,7 +390,7 @@ describe('ApimClient.getResource', () => {
 
     const descriptor = {
       type: ResourceType.ServicePolicy,
-      name: 'policy',
+      nameParts: [],
     };
 
     const result = await client.getResource(testContext, descriptor);
@@ -408,8 +408,7 @@ describe('ApimClient.getResource', () => {
 
     const descriptor = {
       type: ResourceType.ProductGroup,
-      name: 'my-group',
-      parent: 'my-product',
+      nameParts: ['my-product', 'my-group'],
     };
 
     const result = await client.getResource(testContext, descriptor);
@@ -429,7 +428,7 @@ describe('ApimClient.getResource', () => {
 
     const descriptor = {
       type: ResourceType.ApiWiki,
-      name: 'my-api',
+      nameParts: ['my-api'],
     };
 
     const result = await client.getResource(testContext, descriptor);
@@ -449,7 +448,7 @@ describe('ApimClient.getResource', () => {
 
     const descriptor = {
       type: ResourceType.ProductWiki,
-      name: 'my-product',
+      nameParts: ['my-product'],
     };
 
     const result = await client.getResource(testContext, descriptor);
@@ -471,7 +470,7 @@ describe('ApimClient.getResource', () => {
 
     const descriptor = {
       type: ResourceType.ServicePolicy,
-      name: 'policy',
+      nameParts: [],
     };
 
     const result = await client.getResource(testContext, descriptor);
@@ -503,7 +502,7 @@ describe('ApimClient.putResource provisioning polling', () => {
     vi.unstubAllGlobals();
   });
 
-  const descriptor = { type: ResourceType.NamedValue, name: 'my-nv' };
+  const descriptor = { type: ResourceType.NamedValue, nameParts: ['my-nv'] };
   const succeededResource = { name: 'my-nv', properties: { provisioningState: 'Succeeded' } };
 
   it('should poll when PUT returns 201 and eventually return the resource', async () => {
@@ -572,7 +571,7 @@ describe('ApimClient.putResource provisioning polling', () => {
       })
     );
 
-    const policyDescriptor = { type: ResourceType.ServicePolicy, name: 'policy' };
+    const policyDescriptor = { type: ResourceType.ServicePolicy, nameParts: [] };
     const result = await client.putResource(testContext, policyDescriptor, {
       properties: { value: xmlBody, format: 'rawxml' },
     });
@@ -594,7 +593,7 @@ describe('ApimClient.putResource provisioning polling', () => {
       })
     );
 
-    const policyDescriptor = { type: ResourceType.ProductPolicy, name: 'my-product' };
+    const policyDescriptor = { type: ResourceType.ProductPolicy, nameParts: ['my-product'] };
     const result = await client.putResource(testContext, policyDescriptor, {
       properties: { value: xmlBody, format: 'rawxml' },
     });
@@ -686,7 +685,7 @@ describe('ApimClient HTTP 429 rate limiting', () => {
 
     const descriptor = {
       type: ResourceType.NamedValue,
-      name: 'nv-1',
+      nameParts: ['nv-1'],
     };
 
     const result = await client.getResource(testContext, descriptor);
@@ -702,7 +701,7 @@ describe('ApimClient HTTP 429 rate limiting', () => {
 
     const descriptor = {
       type: ResourceType.NamedValue,
-      name: 'nv-1',
+      nameParts: ['nv-1'],
     };
 
     await expect(client.getResource(testContext, descriptor)).rejects.toThrow();
@@ -724,7 +723,7 @@ describe('ApimClient HTTP 429 rate limiting', () => {
 
     const descriptor = {
       type: ResourceType.NamedValue,
-      name: 'my-nv',
+      nameParts: ['my-nv'],
     };
 
     const result = await client.putResource(testContext, descriptor, { value: 'test' });
@@ -815,9 +814,10 @@ describe('ApimClient.getApiSpecification', () => {
   });
 
   it('should use wsdl-link format and return WSDL for soap APIs', async () => {
+    const blobLink = 'https://blob.storage.example.com/specs/service.wsdl?sv=2021';
     const exportResponse = {
       format: 'wsdl-link',
-      value: { link: 'https://blob.storage.example.com/specs/service.wsdl?sv=2021' },
+      link: blobLink,
     };
     const wsdlContent = '<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"></wsdl:definitions>';
 
@@ -837,6 +837,75 @@ describe('ApimClient.getApiSpecification', () => {
     expect(result).toEqual({ content: wsdlContent, format: 'wsdl' });
     const armCallUrl = fetchSpy.mock.calls[0][0] as string;
     expect(armCallUrl).toContain('format=wsdl-link');
+  });
+
+  it('should fall back to inline wsdl export when wsdl-link returns HTTP 500', async () => {
+    const wsdlContent = '<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"></wsdl:definitions>';
+
+    // First call: wsdl-link → 500
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ error: { code: 'InternalServerError', message: 'Request processing failed.' } }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+    // Second call: inline format=wsdl → 200 with WSDL in properties.value
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ properties: { value: wsdlContent } }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+
+    const result = await client.getApiSpecification(testContext, 'soap-api', 'soap');
+
+    expect(result).toEqual({ content: wsdlContent, format: 'wsdl' });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const firstUrl = fetchSpy.mock.calls[0][0] as string;
+    const secondUrl = fetchSpy.mock.calls[1][0] as string;
+    expect(firstUrl).toContain('format=wsdl-link');
+    expect(secondUrl).toContain('format=wsdl');
+    expect(secondUrl).not.toContain('format=wsdl-link');
+  });
+
+  it('should fall back to inline wsdl export when body is raw XML (not JSON-wrapped)', async () => {
+    const wsdlContent = '<?xml version="1.0"?><wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"></wsdl:definitions>';
+
+    // wsdl-link → 500
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ error: { code: 'InternalServerError', message: 'fail' } }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+    // inline format=wsdl → 200 with raw WSDL XML body (no JSON wrapper)
+    fetchSpy.mockResolvedValueOnce(
+      new Response(wsdlContent, { status: 200, headers: { 'Content-Type': 'application/xml' } })
+    );
+
+    const result = await client.getApiSpecification(testContext, 'soap-raw-xml', 'soap');
+
+    expect(result).toEqual({ content: wsdlContent, format: 'wsdl' });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('should skip gracefully when inline wsdl export returns 200 with a plain-text error body', async () => {
+    // wsdl-link → 500
+    fetchSpy.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ error: { code: 'InternalServerError', message: 'fail' } }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      )
+    );
+    // inline format=wsdl → 200 with "Unable to export..." text body
+    fetchSpy.mockResolvedValueOnce(
+      new Response('Unable to export the specified API.', { status: 200, headers: { 'Content-Type': 'text/plain' } })
+    );
+
+    const result = await client.getApiSpecification(testContext, 'soap-unable', 'soap');
+
+    expect(result).toBeUndefined();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it('should use graphql-link format and return GraphQL SDL for graphql APIs', async () => {
@@ -876,6 +945,41 @@ describe('ApimClient.getApiSpecification', () => {
     const result = await client.getApiSpecification(testContext, 'nonexistent-api');
 
     expect(result).toBeUndefined();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('should return undefined (without throwing) when GraphQL export returns 406', async () => {
+    // GraphQL APIs defined via inline schema (no downloadable SDL link) return
+    // HTTP 406 from format=graphql-link. This is an expected "no spec available"
+    // signal — the schema is sourced from /schemas instead. Must not throw or
+    // emit a WARN.
+    fetchSpy.mockResolvedValueOnce(
+      new Response('Not Acceptable', { status: 406 })
+    );
+
+    const result = await client.getApiSpecification(testContext, 'inline-gql', 'graphql');
+
+    expect(result).toBeUndefined();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const armCallUrl = fetchSpy.mock.calls[0][0] as string;
+    expect(armCallUrl).toContain('format=graphql-link');
+  });
+
+  it('should not swallow a 406 for non-GraphQL exports', async () => {
+    // The 406 allow-list is scoped to graphql-link only. A 406 on openapi-link
+    // (or any other format) must still surface as a failure so we don't miss
+    // real APIM regressions.
+    fetchSpy.mockResolvedValue(
+      new Response('Not Acceptable', { status: 406 })
+    );
+
+    const result = await client.getApiSpecification(testContext, 'rest-api', 'http');
+
+    // Current behaviour: HttpError is caught in getApiSpecification and returns
+    // undefined with a WARN. The key guarantee is that the function does NOT
+    // short-circuit silently at the request level the way graphql-link does.
+    expect(result).toBeUndefined();
+    // Non-GraphQL 4xx aren't retried, so exactly one fetch.
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 

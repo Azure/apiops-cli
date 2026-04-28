@@ -8,6 +8,7 @@ import { ResourceDescriptor } from '../models/types.js';
 import { ResourceType } from '../models/resource-types.js';
 import { OverrideConfig } from '../models/config.js';
 import { logger } from '../lib/logger.js';
+import { getNameFromNameParts } from '../lib/resource-path.js';
 
 /**
  * Apply environment overrides from OverrideConfig to a resource JSON payload.
@@ -37,7 +38,7 @@ export function applyOverrides(
 
   // Find matching override using case-insensitive name comparison
   const matchingKey = Object.keys(overrideSection).find(
-    (key) => key.toLowerCase() === descriptor.name.toLowerCase()
+    (key) => key.toLowerCase() === getNameFromNameParts(descriptor.nameParts).toLowerCase()
   );
 
   if (!matchingKey) {
@@ -53,7 +54,7 @@ export function applyOverrides(
   const result = deepMerge(json, overrideValues as Record<string, unknown>);
 
   logger.debug(
-    `Applied overrides to ${descriptor.type} '${descriptor.name}'`,
+    `Applied overrides to ${descriptor.type} '${descriptor.nameParts.join('/')}'`,
     { overrideKeys: Object.keys(overrideValues) }
   );
 

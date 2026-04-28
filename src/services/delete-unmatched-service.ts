@@ -11,6 +11,7 @@ import type { ApimServiceContext, ResourceDescriptor } from '../models/types.js'
 import type { PublishConfig } from '../models/config.js';
 import { ResourceType } from '../models/resource-types.js';
 import { getTopologicalOrder } from '../lib/dependency-graph.js';
+import { getNameFromNameParts } from '../lib/resource-path.js';
 
 /**
  * Built-in groups that should never be deleted
@@ -97,17 +98,7 @@ function createResourceSet(descriptors: ResourceDescriptor[]): Set<string> {
  * Get unique key for a resource descriptor
  */
 function getResourceKey(descriptor: ResourceDescriptor): string {
-  const parts = [descriptor.type, descriptor.name];
-  if (descriptor.parent) {
-    parts.push(descriptor.parent);
-  }
-  if (descriptor.grandparent) {
-    parts.push(descriptor.grandparent);
-  }
-  if (descriptor.workspace) {
-    parts.push(descriptor.workspace);
-  }
-  return parts.join('::');
+  return [descriptor.type, ...descriptor.nameParts, descriptor.workspace ?? ''].join('::');
 }
 
 /**
@@ -126,7 +117,7 @@ function parseResourceDescriptor(
   // Build descriptor based on resource type
   const descriptor: ResourceDescriptor = {
     type: resourceType,
-    name,
+    nameParts: [name],
   };
 
   // Extract parent/grandparent from resource properties if needed
@@ -158,9 +149,12 @@ function extractResourceName(resource: Record<string, unknown>): string | null {
  * Check if a resource is a system resource that should not be deleted
  */
 function isSystemResource(descriptor: ResourceDescriptor): boolean {
+  if (descriptor.nameParts.length === 0) return false;
+  const ownName = getNameFromNameParts(descriptor.nameParts).toLowerCase();
+
   // Check built-in groups
   if (descriptor.type === ResourceType.Group) {
-    if (BUILT_IN_GROUPS.includes(descriptor.name.toLowerCase())) {
+    if (BUILT_IN_GROUPS.includes(ownName)) {
       return true;
     }
   }
@@ -170,14 +164,14 @@ function isSystemResource(descriptor: ResourceDescriptor): boolean {
     descriptor.type === ResourceType.Product ||
     descriptor.type === ResourceType.Api
   ) {
-    if (SYSTEM_RESOURCES.has(descriptor.name.toLowerCase())) {
+    if (SYSTEM_RESOURCES.has(ownName)) {
       return true;
     }
   }
 
   // Check if group name starts with built-in prefix
   if (descriptor.type === ResourceType.Group) {
-    if (descriptor.name.toLowerCase().startsWith('built-in')) {
+    if (ownName.startsWith('built-in')) {
       return true;
     }
   }

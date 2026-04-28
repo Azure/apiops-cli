@@ -30,6 +30,7 @@ import {
 import { logger } from '../lib/logger.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
 import { EXIT_SUCCESS, EXIT_PARTIAL, EXIT_FATAL } from '../lib/exit-codes.js';
+import { getNamePart, getNameFromNameParts } from '../lib/resource-path.js';
 
 /** Maximum concurrency for parallel extraction within a tier */
 const DEFAULT_CONCURRENCY = 5;
@@ -221,7 +222,7 @@ async function extractApiSubResources(
         const apiResult = await extractApiResources(
           client, store, context, api.descriptor, api.json, outputDir, filter
         );
-        return { apiName: api.descriptor.name, apiResult };
+        return { apiName: getNameFromNameParts(api.descriptor.nameParts), apiResult };
       });
 
     const taskResults = await runParallel(apiTasks, DEFAULT_CONCURRENCY);
@@ -235,7 +236,7 @@ async function extractApiSubResources(
       if (!taskResult) continue;
 
       if (taskResult.status === 'rejected') {
-        const apiName = apis[i]?.descriptor.name ?? 'unknown';
+        const apiName = buildResourceLabel(apis[i].descriptor);
         logger.error(
           `Failed to extract sub-resources for API "${apiName}": ${taskResult.reason?.message}`
         );
@@ -324,7 +325,7 @@ async function extractProductSubResources(
         const prodResult = await extractProductResources(
           client, store, context, product.descriptor, outputDir, filter
         );
-        return { productName: product.descriptor.name, prodResult };
+        return { productName: getNameFromNameParts(product.descriptor.nameParts), prodResult };
       });
 
     const taskResults = await runParallel(productTasks, DEFAULT_CONCURRENCY);
@@ -338,7 +339,7 @@ async function extractProductSubResources(
       if (!taskResult) continue;
 
       if (taskResult.status === 'rejected') {
-        const productName = products[i]?.descriptor.name ?? 'unknown';
+        const productName = buildResourceLabel(products[i].descriptor);
         logger.error(
           `Failed to extract sub-resources for product "${productName}": ${taskResult.reason?.message}`
         );
@@ -385,7 +386,7 @@ async function extractServicePolicy(
 ): Promise<void> {
   const descriptor: ResourceDescriptor = {
     type: ResourceType.ServicePolicy,
-    name: 'policy',
+    nameParts: [],
   };
 
   const policyJson = await client.getResource(context, descriptor);
@@ -436,10 +437,10 @@ async function extractGatewayAssociations(
         if (apiNames.length > 0) {
           await store.writeAssociation(outputDir, gw.descriptor, 'apis', apiNames);
           result.totalExtracted++;
-          logger.info(`Extracted ${apiNames.length} API associations for gateway "${gw.descriptor.name}"`);
+          logger.info(`Extracted ${apiNames.length} API associations for gateway "${getNamePart(gw.descriptor.nameParts, 0)}"`);
         }
       } catch (error) {
-        logger.warn(`Failed to extract API associations for gateway "${gw.descriptor.name}": ${(error as Error).message}`);
+        logger.warn(`Failed to extract API associations for gateway "${getNamePart(gw.descriptor.nameParts, 0)}": ${(error as Error).message}`);
       }
     }
   }
@@ -474,7 +475,7 @@ async function resolveAndExtractTransitive(
     const apiTypeResults = result.typeResults.filter((r) => r.type === ResourceType.Api);
     for (const atr of apiTypeResults) {
       for (const extracted of atr.extracted) {
-        if (extracted.status === 'success' && extracted.descriptor.name === apiResult.apiName) {
+        if (extracted.status === 'success' && getNamePart(extracted.descriptor.nameParts, 0) === apiResult.apiName) {
           apiJsonMap.set(apiResult.apiName, extracted.json);
         }
       }
@@ -488,14 +489,16 @@ async function resolveAndExtractTransitive(
   );
 
   // Filter out already-extracted resources
+  // Use buildResourceLabel for the key — it handles singleton types (e.g.
+  // ServicePolicy) whose nameParts are empty, avoiding a getNamePart crash.
   const alreadyExtracted = new Set(
     result.extractedDescriptors.map(
-      (d) => `${d.type}:${d.name.toLowerCase()}`
+      (d) => `${d.type}:${buildResourceLabel(d).toLowerCase()}`
     )
   );
 
   const newDeps = transitiveDeps.filter(
-    (dep) => !alreadyExtracted.has(`${dep.type}:${dep.name.toLowerCase()}`)
+    (dep) => !alreadyExtracted.has(`${dep.type}:${buildResourceLabel(dep).toLowerCase()}`)
   );
 
   if (newDeps.length === 0) {

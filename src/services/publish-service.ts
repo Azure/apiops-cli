@@ -13,6 +13,8 @@ import { getResourceTier } from '../lib/dependency-graph.js';
 import { runParallel } from '../lib/parallel-runner.js';
 import { logger } from '../lib/logger.js';
 import { EXIT_SUCCESS, EXIT_PARTIAL, EXIT_FATAL } from '../lib/exit-codes.js';
+import { buildResourceLabel } from '../lib/resource-uri.js';
+import { getNamePart } from '../lib/resource-path.js';
 
 // Import from other agents' files (will be created in parallel)
 import { publishResource, ResourcePublishResult } from './resource-publisher.js';
@@ -203,7 +205,7 @@ async function executePuts(
   const apiNames = new Set(
     (tierGroups.get(2) || [])
       .filter((d) => d.type === ResourceType.Api)
-      .map((d) => d.name)
+      .map((d) => getNamePart(d.nameParts, 0))
   );
 
   // Execute each tier in order (1, 2, 3, 4)
@@ -263,10 +265,9 @@ async function executePuts(
       if (apiNames.size > 0) {
         tierDescriptors = descriptors.filter((d) => {
           if (!API_CHILD_RESOURCE_TYPES.has(d.type)) return true;
-          // Tier 3 children reference parent API via d.parent
-          // Tier 4 children (operation/resolver policies) use d.grandparent
-          const owningApi = d.grandparent ?? d.parent;
-          return !owningApi || !apiNames.has(owningApi);
+          // API child resources always have the parent API name as nameParts[0]
+          const owningApi = getNamePart(d.nameParts, 0);
+          return !apiNames.has(owningApi);
         });
         const skipped = descriptors.length - tierDescriptors.length;
         if (skipped > 0) {
@@ -386,7 +387,7 @@ async function publishTier(
       return convertToActionResult(publishResult);
     } catch (error) {
       logger.error(
-        `Failed to publish ${descriptor.type} ${descriptor.name}:`,
+        `Failed to publish ${buildResourceLabel(descriptor)}:`,
         error
       );
       return {
@@ -493,7 +494,7 @@ async function deleteTier(
       };
     } catch (error) {
       logger.error(
-        `Failed to delete ${descriptor.type} ${descriptor.name}:`,
+        `Failed to delete ${buildResourceLabel(descriptor)}:`,
         error
       );
       return {
@@ -565,15 +566,7 @@ function buildResourcePath(descriptor: ResourceDescriptor): string {
     parts.push(`workspace:${descriptor.workspace}`);
   }
 
-  if (descriptor.grandparent) {
-    parts.push(descriptor.grandparent);
-  }
-
-  if (descriptor.parent) {
-    parts.push(descriptor.parent);
-  }
-
-  parts.push(descriptor.name);
+  parts.push(...descriptor.nameParts);
 
   return parts.join('/');
 }

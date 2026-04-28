@@ -85,7 +85,7 @@ describe('delete-unmatched-service', () => {
       ]);
 
       const localDescriptors: ResourceDescriptor[] = [
-        { type: ResourceType.Tag, name: 'tag-keep' },
+        { type: ResourceType.Tag, nameParts: ['tag-keep'] },
       ];
 
       const client = createMockClient(apimResources);
@@ -94,7 +94,7 @@ describe('delete-unmatched-service', () => {
       const result = await computeDeleteActions(client, store, testContext, testConfig);
 
       expect(result).toHaveLength(1);
-      expect(result[0].name).toBe('tag-delete');
+      expect(result[0]?.nameParts[0]).toBe('tag-delete');
     });
 
     it('should skip built-in groups', async () => {
@@ -112,7 +112,7 @@ describe('delete-unmatched-service', () => {
 
       const result = await computeDeleteActions(client, store, testContext, testConfig);
 
-      const groupNames = result.filter((d) => d.type === ResourceType.Group).map((d) => d.name);
+      const groupNames = result.filter((d) => d.type === ResourceType.Group).map((d) => d.nameParts[0]);
       expect(groupNames).not.toContain('administrators');
       expect(groupNames).not.toContain('developers');
       expect(groupNames).not.toContain('guests');
@@ -134,7 +134,7 @@ describe('delete-unmatched-service', () => {
 
       const result = await computeDeleteActions(client, store, testContext, testConfig);
 
-      const productNames = result.filter((d) => d.type === ResourceType.Product).map((d) => d.name);
+      const productNames = result.filter((d) => d.type === ResourceType.Product).map((d) => d.nameParts[0]);
       expect(productNames).not.toContain('master');
       expect(productNames).not.toContain('unlimited');
       expect(productNames).not.toContain('starter');
@@ -154,7 +154,7 @@ describe('delete-unmatched-service', () => {
 
       const result = await computeDeleteActions(client, store, testContext, testConfig);
 
-      const apiNames = result.filter((d) => d.type === ResourceType.Api).map((d) => d.name);
+      const apiNames = result.filter((d) => d.type === ResourceType.Api).map((d) => d.nameParts[0]);
       expect(apiNames).not.toContain('echo-api');
       expect(apiNames).toContain('custom-api');
     });
@@ -219,7 +219,7 @@ describe('delete-unmatched-service', () => {
       expect(result).toHaveLength(1);
       expect(result[0]).toMatchObject({
         type: ResourceType.Api,
-        name: 'api1',
+        nameParts: ['api1'],
       });
     });
   });

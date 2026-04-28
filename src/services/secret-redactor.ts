@@ -7,6 +7,7 @@
 import { ResourceType } from '../models/resource-types.js';
 import { ResourceDescriptor } from '../models/types.js';
 import { logger } from '../lib/logger.js';
+import { getNamePart } from '../lib/resource-path.js';
 
 /** Marker used to replace secret values in extracted artifacts */
 export const REDACTION_MARKER = '*** REDACTED ***';
@@ -41,7 +42,7 @@ export function redactSecrets(
 
   // Skip KeyVault-backed named values — the keyVault block is not secret
   if (properties.keyVault !== undefined && properties.keyVault !== null) {
-    logger.debug(`Named value "${descriptor.name}" is KeyVault-backed, preserving reference`);
+    logger.debug(`Named value "${getNamePart(descriptor.nameParts, 0)}" is KeyVault-backed, preserving reference`);
     return json;
   }
 
@@ -50,6 +51,6 @@ export function redactSecrets(
   const redactedProps = redacted.properties as Record<string, unknown>;
   redactedProps.value = REDACTION_MARKER;
 
-  logger.debug(`Redacted secret value for named value "${descriptor.name}"`);
+  logger.debug(`Redacted secret value for named value "${getNamePart(descriptor.nameParts, 0)}"`);
   return redacted;
 }

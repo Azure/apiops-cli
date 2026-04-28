@@ -14,6 +14,7 @@ import { publishResource, type ResourcePublishResult } from './resource-publishe
 import { runParallel } from '../lib/parallel-runner.js';
 import { applyOverrides } from './override-merger.js';
 import { logger } from '../lib/logger.js';
+import { getNamePart } from '../lib/resource-path.js';
 
 /**
  * API child resource types that should be published after the API itself
@@ -23,11 +24,13 @@ const API_CHILD_TYPES: ResourceType[] = [
   ResourceType.ApiTag,
   ResourceType.ApiDiagnostic,
   ResourceType.ApiOperation,
+  ResourceType.ApiOperationPolicy,
   ResourceType.ApiSchema,
   ResourceType.ApiRelease,
   ResourceType.ApiTagDescription,
   ResourceType.ApiWiki,
   ResourceType.GraphQLResolver,
+  ResourceType.GraphQLResolverPolicy,
 ];
 
 /**
@@ -154,7 +157,7 @@ async function publishRootApi(
         },
       };
       specImported = true;
-      logger.info(`Including ${specResult.format} specification in API import for "${descriptor.name}"`);
+      logger.info(`Including ${specResult.format} specification in API import for "${getNamePart(descriptor.nameParts, 0)}"`);
     }
   }
 
@@ -186,13 +189,13 @@ async function publishApiRevisions(
   const revisionDescriptors = allDescriptors.filter(
     (d) =>
       d.type === ResourceType.Api &&
-      d.name.startsWith(`${apiDescriptor.name};rev=`)
+      getNamePart(d.nameParts, 0).startsWith(`${getNamePart(apiDescriptor.nameParts, 0)};rev=`)
   );
 
   // Sort revisions by revision number
   const sortedRevisions = revisionDescriptors.sort((a, b) => {
-    const revA = extractRevisionNumber(a.name);
-    const revB = extractRevisionNumber(b.name);
+    const revA = extractRevisionNumber(getNamePart(a.nameParts, 0));
+    const revB = extractRevisionNumber(getNamePart(b.nameParts, 0));
     return revA - revB;
   });
 
@@ -231,32 +234,12 @@ async function publishApiChildren(
   const childDescriptors = allDescriptors.filter(
     (d) =>
       API_CHILD_TYPES.includes(d.type) &&
-      d.parent === apiDescriptor.name &&
+      getNamePart(d.nameParts, 0) === getNamePart(apiDescriptor.nameParts, 0) &&
       !(specImported && SPEC_MANAGED_CHILD_TYPES.has(d.type))
   );
 
-  // Also find operation policy children
-  const operationPolicyDescriptors = allDescriptors.filter(
-    (d) =>
-      d.type === ResourceType.ApiOperationPolicy &&
-      d.grandparent === apiDescriptor.name
-  );
-
-  // Also find GraphQL resolver policy children
-  const resolverPolicyDescriptors = allDescriptors.filter(
-    (d) =>
-      d.type === ResourceType.GraphQLResolverPolicy &&
-      d.grandparent === apiDescriptor.name
-  );
-
-  const allChildren = [
-    ...childDescriptors,
-    ...operationPolicyDescriptors,
-    ...resolverPolicyDescriptors,
-  ];
-
   // Publish in parallel with concurrency limit
-  const tasks = allChildren.map(
+  const tasks = childDescriptors.map(
     (childDescriptor) => () =>
       publishResource(client, store, context, childDescriptor, config)
   );

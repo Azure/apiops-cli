@@ -7,8 +7,9 @@
 import { DefaultAzureCredential } from '@azure/identity';
 import { IApimClient } from './iapim-client.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
-import { ResourceType } from '../models/resource-types.js';
-import { buildArmUri } from '../lib/resource-uri.js';
+import { RESOURCE_TYPE_METADATA, ResourceType } from '../models/resource-types.js';
+import { buildArmUri, buildResourceLabel } from '../lib/resource-uri.js';
+import { deriveListPaths } from '../lib/resource-path.js';
 import { logger } from '../lib/logger.js';
 
 /**
@@ -83,12 +84,15 @@ export class ApimClient implements IApimClient {
    *   without retrying (e.g. wiki endpoints that return 500 for missing wikis).
    * @param skipAuth - When true, skip adding Authorization/Content-Type headers
    *   (e.g. blob SAS URLs that are self-authenticating).
+   * @param allowedNonOkStatuses - Status codes the caller will handle itself
+   *   (response returned instead of throwing). 404 is always allowed for GETs.
    */
   private async request(
     url: string,
     options: RequestInit = {},
     noRetryOn5xx = false,
-    skipAuth = false
+    skipAuth = false,
+    allowedNonOkStatuses: readonly number[] = []
   ): Promise<Response> {
     const headers = new Headers(options.headers);
     if (!skipAuth) {
@@ -139,6 +143,13 @@ export class ApimClient implements IApimClient {
 
         // Handle 404 gracefully for GET operations (default method is GET when unspecified)
         if (response.status === 404 && (options.method === 'GET' || !options.method)) {
+          return response;
+        }
+
+        // Caller-opt-in: return specific non-OK statuses instead of throwing
+        // (e.g. 406 from GraphQL `graphql-link` export when the API has no
+        // downloadable SDL — a valid "no spec available" signal, not an error).
+        if (!response.ok && allowedNonOkStatuses.includes(response.status)) {
           return response;
         }
 
@@ -205,17 +216,28 @@ export class ApimClient implements IApimClient {
     // Build list URL based on resource type and parent
     let url: string;
 
+    const meta = RESOURCE_TYPE_METADATA[type];
+    const { listPath, childListPath } = deriveListPaths(meta.armPathSuffix);
+
     if (parent) {
       // For child resources, use parent's ARM URI as base.
       // buildArmUri already appends ?api-version=..., so strip the query string
       // before appending the child path to avoid a malformed double-query URL.
+      if (!childListPath) {
+        throw new Error(
+          `Resource type ${type} is a singleton — listResources() cannot be called on it with a parent`
+        );
+      }
       const parentUri = buildArmUri(context, parent);
       const parentUriBase = parentUri.split('?')[0];
-      const childPath = this.getChildListPath(type);
-      url = `${parentUriBase}${childPath}?api-version=${context.apiVersion}`;
+      url = `${parentUriBase}${childListPath}?api-version=${context.apiVersion}`;
     } else {
       // For top-level resources
-      const listPath = this.getListPath(type);
+      if (!listPath) {
+        throw new Error(
+          `Resource type ${type} is a singleton — listResources() cannot be called on it`
+        );
+      }
       url = `${context.baseUrl}${listPath}?api-version=${context.apiVersion}`;
     }
 
@@ -394,13 +416,55 @@ export class ApimClient implements IApimClient {
     if (exportFormat === undefined) {
       return undefined;
     }
-    const url = `${context.baseUrl}/apis/${encodeURIComponent(apiName)}?export=true&format=${exportFormat}&api-version=${context.apiVersion}`;
-    
+    const buildExportUrl = (format: string): string =>
+      `${context.baseUrl}/apis/${encodeURIComponent(apiName)}?export=true&format=${format}&api-version=${context.apiVersion}`;
+
+    // APIM's wsdl-link / wadl-link emitters frequently return HTTP 500 on
+    // real-world APIs. When the link variant fails, fall back to the inline
+    // (non-link) export which returns the raw XML in the response body. We
+    // must preserve WSDL/WADL fidelity so the spec can be re-imported on
+    // publish (the Azure/apiops reference tool skips on 500; we cannot —
+    // these APIs must round-trip).
+    const isXmlExport = exportFormat === 'wsdl-link' || exportFormat === 'wadl-link';
+    const inlineFormat: 'wsdl' | 'wadl' | undefined =
+      exportFormat === 'wsdl-link' ? 'wsdl' :
+      exportFormat === 'wadl-link' ? 'wadl' :
+      undefined;
+
+    // GraphQL APIs without a downloadable SDL link return HTTP 406 — handle it
+    // as a valid "no spec available" signal rather than an error.
+    const isGraphQLLink = exportFormat === 'graphql-link';
+    const allowedNonOkStatuses = isGraphQLLink ? [406] : [];
+
     try {
-      const response = await this.request(url);
-      
+      // Suppress the default 5xx retry loop for XML exports so we can fall
+      // back to the inline export instead of burning retries on a broken path.
+      const response = await this.request(
+        buildExportUrl(exportFormat),
+        {},
+        isXmlExport,
+        false,
+        allowedNonOkStatuses
+      );
+
       if (response.status === 404) {
         return undefined;
+      }
+
+      if (isGraphQLLink && response.status === 406) {
+        logger.debug(
+          `No graphql-link specification available for ${apiName} (HTTP 406); ` +
+          `GraphQL schema will be sourced from /schemas instead.`
+        );
+        return undefined;
+      }
+
+      if (isXmlExport && inlineFormat && response.status >= 500 && response.status < 600) {
+        logger.warn(
+          `APIM returned HTTP ${response.status} exporting ${exportFormat} for ${apiName}; ` +
+          `falling back to inline ${inlineFormat} export.`
+        );
+        return await this.getInlineXmlSpecification(buildExportUrl(inlineFormat), inlineFormat, apiName);
       }
 
       const data = await response.json() as { format?: string; link?: string; value?: { link?: string } };
@@ -434,6 +498,74 @@ export class ApimClient implements IApimClient {
   }
 
   /**
+   * Fall back to the non-link (inline) WSDL/WADL export when wsdl-link / wadl-link
+   * returns HTTP 500. APIM returns the XML in `properties.value` as a JSON-escaped
+   * string. The extracted content is suitable for re-import via PUT ?import=true
+   * with the matching non-link format (e.g. format=wsdl for SOAP APIs), so SOAP
+   * round-tripping is preserved.
+   */
+  private async getInlineXmlSpecification(
+    url: string,
+    inlineFormat: 'wsdl' | 'wadl',
+    apiName: string
+  ): Promise<{ content: string; format: 'wsdl' | 'wadl' } | undefined> {
+    try {
+      const response = await this.request(url);
+      if (response.status === 404) {
+        return undefined;
+      }
+      if (!response.ok) {
+        logger.warn(
+          `Inline ${inlineFormat} export for ${apiName} failed: HTTP ${response.status}. Specification will be skipped.`
+        );
+        return undefined;
+      }
+
+      // APIM's inline export endpoint is inconsistent: depending on the
+      // api-version and the API's internal representation, the body may be
+      // (a) raw XML (e.g. `<?xml ...><wsdl:definitions ...>`), or
+      // (b) a JSON wrapper `{ properties: { value: "<wsdl...>" } }` / `{ value: "<wsdl...>" }`,
+      // or (c) a plain-text error like "Unable to export ...".
+      // We read as text first and sniff, which is robust to all three shapes.
+      const text = await response.text();
+      const trimmed = text.trimStart();
+
+      let content: string | undefined;
+      if (trimmed.startsWith('<')) {
+        // Raw XML response — use the body directly.
+        content = text;
+      } else if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        try {
+          const body = JSON.parse(text) as {
+            properties?: { value?: unknown };
+            value?: unknown;
+          };
+          const raw = body.properties?.value ?? body.value;
+          content = typeof raw === 'string' ? raw : undefined;
+        } catch {
+          // Fall through to the "unexpected body" path below.
+        }
+      }
+
+      if (!content || content.length === 0) {
+        const preview = text.length > 120 ? `${text.slice(0, 120)}…` : text;
+        logger.warn(
+          `Inline ${inlineFormat} export for ${apiName} returned an unexpected body; skipping. Preview: ${preview}`
+        );
+        return undefined;
+      }
+
+      const format: 'wsdl' | 'wadl' = inlineFormat;
+      return { content, format };
+    } catch (error) {
+      logger.warn(
+        `Inline ${inlineFormat} export for ${apiName} threw: ${(error as Error).message}. Specification will be skipped.`
+      );
+      return undefined;
+    }
+  }
+
+  /**
    * Map APIM API type to the appropriate export format query parameter.
    * All APIM export formats return a SAS blob link (link-based, not inline content).
    *
@@ -443,10 +575,18 @@ export class ApimClient implements IApimClient {
    *   openapi-link          – OpenAPI 3.0 YAML        (type=http, default)
    *   undefined             –                         (type=websocket — no spec; callers should skip)
    *
+   * SOAP APIs use wsdl-link so the exported specification can be re-imported
+   * faithfully on publish (matches the Azure/apiops reference tool). APIM's
+   * wsdl-link emitter occasionally returns HTTP 500 on real-world SOAP APIs;
+   * getApiSpecification handles that by falling back to the inline (non-link)
+   * `format=wsdl` export, which returns the raw WSDL in the response body.
+   * The inline WSDL is re-importable via PUT ?import=true&format=wsdl, so SOAP
+   * round-tripping is preserved even when the link variant is broken.
+   *
    * Additional export formats supported by APIM for type=http REST APIs:
    *   swagger-link          – Swagger 2.0 YAML
    *   openapi+json-link     – OpenAPI 3.0 JSON
-   *   wadl-link-json        – WADL
+   *   wadl-link             – WADL
    * These cannot be auto-selected from properties.type alone because all REST APIs
    * (whether originally imported as Swagger 2.0, OpenAPI 3.0, or WADL) share
    * type=http in APIM. openapi-link is used as the preferred modern default.
@@ -557,7 +697,7 @@ export class ApimClient implements IApimClient {
         // resource will either appear on a subsequent poll or we time out after
         // MAX_POLLING_ATTEMPTS.
         logger.debug(
-          `Resource not yet visible during provisioning poll (attempt ${attempt + 1}/${ApimClient.MAX_POLLING_ATTEMPTS}): ${descriptor.type}/${descriptor.name}`
+          `Resource not yet visible during provisioning poll (attempt ${attempt + 1}/${ApimClient.MAX_POLLING_ATTEMPTS}): ${buildResourceLabel(descriptor)}`
         );
         continue;
       }
@@ -579,43 +719,5 @@ export class ApimClient implements IApimClient {
     throw new Error('Provisioning state polling timed out');
   }
 
-  private getListPath(type: ResourceType): string {
-    const paths: Partial<Record<ResourceType, string>> = {
-      [ResourceType.NamedValue]: '/namedValues',
-      [ResourceType.Tag]: '/tags',
-      [ResourceType.Gateway]: '/gateways',
-      [ResourceType.VersionSet]: '/apiVersionSets',
-      [ResourceType.Backend]: '/backends',
-      [ResourceType.Logger]: '/loggers',
-      [ResourceType.Group]: '/groups',
-      [ResourceType.Diagnostic]: '/diagnostics',
-      [ResourceType.PolicyFragment]: '/policyFragments',
-      [ResourceType.Product]: '/products',
-      [ResourceType.Api]: '/apis',
-      [ResourceType.Subscription]: '/subscriptions',
-      [ResourceType.GlobalSchema]: '/schemas',
-      [ResourceType.PolicyRestriction]: '/policyRestrictions',
-      [ResourceType.Documentation]: '/documentations',
-    };
-
-    return paths[type] ?? `/${type.toLowerCase()}s`;
-  }
-
-  private getChildListPath(type: ResourceType): string {
-    const paths: Partial<Record<ResourceType, string>> = {
-      [ResourceType.ProductApi]: '/apis',
-      [ResourceType.ProductGroup]: '/groups',
-      [ResourceType.ProductTag]: '/tags',
-      [ResourceType.ApiOperation]: '/operations',
-      [ResourceType.ApiTag]: '/tags',
-      [ResourceType.ApiDiagnostic]: '/diagnostics',
-      [ResourceType.ApiSchema]: '/schemas',
-      [ResourceType.ApiRelease]: '/releases',
-      [ResourceType.ApiTagDescription]: '/tagDescriptions',
-      [ResourceType.GraphQLResolver]: '/resolvers',
-      [ResourceType.GatewayApi]: '/apis',
-    };
-
-    return paths[type] ?? '';
-  }
 }
+

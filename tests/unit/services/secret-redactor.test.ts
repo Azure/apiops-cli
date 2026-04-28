@@ -12,7 +12,7 @@ describe('secret-redactor', () => {
     it('should not modify non-NamedValue resources', () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Api,
-        name: 'my-api',
+        nameParts: ['my-api'],
       };
       const json = { properties: { secret: true, value: 'sensitive' } };
       expect(redactSecrets(descriptor, json)).toBe(json);
@@ -21,7 +21,7 @@ describe('secret-redactor', () => {
     it('should not modify NamedValues without secret flag', () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.NamedValue,
-        name: 'my-value',
+        nameParts: ['my-value'],
       };
       const json = { properties: { secret: false, value: 'public-value' } };
       expect(redactSecrets(descriptor, json)).toBe(json);
@@ -30,7 +30,7 @@ describe('secret-redactor', () => {
     it('should not modify NamedValues without properties', () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.NamedValue,
-        name: 'my-value',
+        nameParts: ['my-value'],
       };
       const json = { name: 'my-value' };
       expect(redactSecrets(descriptor, json)).toBe(json);
@@ -39,7 +39,7 @@ describe('secret-redactor', () => {
     it('should redact secret NamedValue values', () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.NamedValue,
-        name: 'my-secret',
+        nameParts: ['my-secret'],
       };
       const json = {
         name: 'my-secret',
@@ -65,7 +65,7 @@ describe('secret-redactor', () => {
     it('should preserve KeyVault-backed NamedValues', () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.NamedValue,
-        name: 'kv-secret',
+        nameParts: ['kv-secret'],
       };
       const json = {
         name: 'kv-secret',
@@ -85,7 +85,7 @@ describe('secret-redactor', () => {
     it('should create a deep clone for redacted output', () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.NamedValue,
-        name: 'my-secret',
+        nameParts: ['my-secret'],
       };
       const json = {
         name: 'my-secret',
