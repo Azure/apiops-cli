@@ -1,0 +1,163 @@
+/**
+ * T036: Git diff service
+ * Compute changed resource artifacts between commits using simple-git.
+ * Maps file paths to ResourceDescriptors for incremental publish.
+ */
+
+import { simpleGit, SimpleGit } from 'simple-git';
+import * as path from 'node:path';
+import { ResourceDescriptor } from '../models/types.js';
+import { parseArtifactPath } from '../lib/resource-path.js';
+import { logger } from '../lib/logger.js';
+
+export interface GitDiffResult {
+  /** Resources modified or added in this commit */
+  changedDescriptors: ResourceDescriptor[];
+  /** Resources deleted in this commit */
+  deletedDescriptors: ResourceDescriptor[];
+}
+
+/**
+ * Compute which resource artifacts changed between commitId~1 and commitId.
+ * Uses simple-git. Maps file paths to ResourceDescriptors.
+ * Returns empty arrays if git is unavailable or path not in a repo.
+ * 
+ * @param sourceDir - Root artifact directory
+ * @param commitId - Commit SHA to diff against its parent
+ * @returns Changed and deleted resource descriptors
+ */
+export async function computeGitDiff(
+  sourceDir: string,
+  commitId: string
+): Promise<GitDiffResult> {
+  const git: SimpleGit = simpleGit(sourceDir);
+
+  try {
+    // Check if we're in a git repository
+    const isRepo = await git.checkIsRepo();
+    if (!isRepo) {
+      logger.warn('Not in a git repository; skipping incremental diff');
+      return { changedDescriptors: [], deletedDescriptors: [] };
+    }
+
+    // Verify the commit exists
+    try {
+      await git.revparse([commitId]);
+    } catch {
+      logger.warn(`Commit ${commitId} not found; skipping incremental diff`);
+      return { changedDescriptors: [], deletedDescriptors: [] };
+    }
+
+    // Check if parent commit exists (handle first commit case)
+    const parentCommit = `${commitId}~1`;
+    let hasParent = true;
+    try {
+      await git.revparse([parentCommit]);
+    } catch {
+      logger.debug(`Commit ${commitId} has no parent (first commit); treating all files as added`);
+      hasParent = false;
+    }
+
+    // Get diff between parent and current commit
+    // If no parent, diff against empty tree (shows all files as added)
+    const diffTarget = hasParent ? parentCommit : '4b825dc642cb6eb9a060e54bf8d69288fbee4904'; // Git empty tree SHA
+    const diffOutput = await git.diff(['--name-status', diffTarget, commitId]);
+
+    return parseDiffOutput(diffOutput, sourceDir);
+  } catch (error) {
+    logger.warn(`Git diff failed: ${error instanceof Error ? error.message : String(error)}`);
+    return { changedDescriptors: [], deletedDescriptors: [] };
+  }
+}
+
+/**
+ * Parse git diff --name-status output into changed and deleted descriptors.
+ * 
+ * Format: Each line is "{status}\t{filepath}"
+ * - M = modified
+ * - A = added
+ * - D = deleted
+ * - R = renamed (includes old and new paths)
+ * - C = copied
+ * 
+ * @param diffOutput - Raw output from git diff --name-status
+ * @param sourceDir - Base directory for artifact paths
+ * @returns Parsed descriptors
+ */
+function parseDiffOutput(diffOutput: string, sourceDir: string): GitDiffResult {
+  const changedDescriptors: ResourceDescriptor[] = [];
+  const deletedDescriptors: ResourceDescriptor[] = [];
+  const seenChanged = new Set<string>();
+  const seenDeleted = new Set<string>();
+
+  const lines = diffOutput.split('\n').filter((line) => line.trim());
+
+  for (const line of lines) {
+    const parts = line.split('\t');
+    if (parts.length < 2) {
+      continue;
+    }
+
+    const status = parts[0]?.charAt(0); // Get first character (M, A, D, R, C)
+    const filePath = parts[1];
+
+    if (!status || !filePath) {
+      continue;
+    }
+
+    // Convert relative path to absolute for parsing
+    const absolutePath = path.isAbsolute(filePath)
+      ? filePath
+      : path.join(sourceDir, filePath);
+
+    const descriptor = parseArtifactPath(sourceDir, absolutePath);
+    if (!descriptor) {
+      continue;
+    }
+
+    // Create unique key for deduplication
+    const key = descriptorKey(descriptor);
+
+    if (status === 'D') {
+      // Deleted file
+      if (!seenDeleted.has(key)) {
+        deletedDescriptors.push(descriptor);
+        seenDeleted.add(key);
+      }
+    } else if (status === 'M' || status === 'A' || status === 'R' || status === 'C') {
+      // Modified, added, renamed, or copied file
+      if (!seenChanged.has(key)) {
+        changedDescriptors.push(descriptor);
+        seenChanged.add(key);
+      }
+
+      // For renames, also parse the new path (in parts[2])
+      if (status === 'R' && parts[2]) {
+        const newPath = path.isAbsolute(parts[2])
+          ? parts[2]
+          : path.join(sourceDir, parts[2]);
+        const newDescriptor = parseArtifactPath(sourceDir, newPath);
+        if (newDescriptor) {
+          const newKey = descriptorKey(newDescriptor);
+          if (!seenChanged.has(newKey)) {
+            changedDescriptors.push(newDescriptor);
+            seenChanged.add(newKey);
+          }
+        }
+      }
+    }
+  }
+
+  logger.debug(
+    `Git diff found ${changedDescriptors.length} changed, ${deletedDescriptors.length} deleted resources`
+  );
+
+  return { changedDescriptors, deletedDescriptors };
+}
+
+/**
+ * Create a unique key for a resource descriptor to enable deduplication.
+ */
+function descriptorKey(descriptor: ResourceDescriptor): string {
+  return [descriptor.type, ...descriptor.nameParts, descriptor.workspace ?? ''].join('::');
+}

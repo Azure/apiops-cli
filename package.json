@@ -1,0 +1,65 @@
+{
+  "name": "apiops",
+  "version": "0.1.0",
+  "description": "CLI tool for Azure API Management configuration-as-code",
+  "type": "module",
+  "private": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "apiops": "dist/cli/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src tests",
+    "start": "tsx src/cli/index.ts"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Azure/apiops-cli.git"
+  },
+  "keywords": [
+    "azure",
+    "api-management",
+    "apim",
+    "cli",
+    "gitops",
+    "configuration-as-code"
+  ],
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Azure/apiops-cli/issues"
+  },
+  "homepage": "https://github.com/Azure/apiops-cli#readme",
+  "dependencies": {
+    "@azure/identity": "^4.13.1",
+    "any-ascii": "^0.3.3",
+    "commander": "^14.0.3",
+    "he": "^1.2.0",
+    "js-yaml": "^4.1.1",
+    "simple-git": "^3.35.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/he": "^1.2.3",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.5.2",
+    "@typescript-eslint/eslint-plugin": "^8.58.1",
+    "@typescript-eslint/parser": "^8.58.1",
+    "@vitest/coverage-v8": "^4.1.4",
+    "eslint": "^10.2.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.58.1",
+    "vitest": "^4.1.3"
+  }
+}
