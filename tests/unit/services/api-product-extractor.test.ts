@@ -502,6 +502,7 @@ describe('api-extractor', () => {
         if (type === ResourceType.GraphQLResolver) {
           throw new Error('Should not list resolvers for non-GraphQL API');
         }
+        yield* [];
       });
       client.listResources = listResourcesSpy;
 
