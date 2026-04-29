@@ -15,6 +15,7 @@
 
 import { DefaultAzureCredential } from '@azure/identity';
 import { logger } from '../lib/logger.js';
+import { USER_AGENT } from '../lib/user-agent.js';
 
 /* ------------------------------------------------------------------ */
 /*  ARM API versions                                                  */
@@ -88,12 +89,11 @@ function defaultTokenProviderFactory(): TokenProvider {
 }
 
 async function defaultArmRequest(url: string, token: string): Promise<ArmResponse> {
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: 'application/json',
-    },
-  });
+  const headers = new Headers();
+  headers.set('Authorization', `Bearer ${token}`);
+  headers.set('Accept', 'application/json');
+  headers.set('User-Agent', USER_AGENT);
+  const response = await fetch(url, { headers });
   return {
     status: response.status,
     json: () => response.json() as Promise<unknown>,
