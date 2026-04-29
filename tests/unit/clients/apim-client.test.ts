@@ -1126,3 +1126,61 @@ describe('ApimClient.getApiSpecification', () => {
     expect(fetchSpy.mock.calls[1][0]).toBe(exportResponse.link);
   });
 });
+
+describe('User-Agent header', () => {
+  let client: ApimClient;
+  let fetchSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    client = new ApimClient();
+    fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('should include User-Agent header on authenticated requests', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      makeResponse(200, {
+        value: [{ name: 'gw-1' }],
+      })
+    );
+
+    const results: unknown[] = [];
+    for await (const item of client.listResources(testContext, ResourceType.Gateway)) {
+      results.push(item);
+    }
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [_url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(init?.headers);
+    expect(headers.get('User-Agent')).toMatch(/^apiops-cli\/\d+\.\d+\.\d+/);
+  });
+
+  it('should include User-Agent header with correct format', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      makeResponse(200, {
+        value: [{ name: 'api-1' }],
+      })
+    );
+
+    const results: unknown[] = [];
+    for await (const item of client.listResources(testContext, ResourceType.Api)) {
+      results.push(item);
+    }
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [_url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(init?.headers);
+    const userAgent = headers.get('User-Agent');
+    expect(userAgent).toBeTruthy();
+    expect(userAgent).toContain('apiops-cli/');
+    expect(userAgent).toMatch(/\d+\.\d+\.\d+/);
+  });
+});
