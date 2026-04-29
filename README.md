@@ -17,12 +17,21 @@ npm install -g apiops
 
 ## Authentication
 
-`apiops` uses [`@azure/identity`](https://github.com/Azure/azure-sdk-for-js/tree/main/sdk/identity/identity) `DefaultAzureCredential` for authentication:
+`apiops` uses [`@azure/identity`](https://github.com/Azure/azure-sdk-for-js/tree/main/sdk/identity/identity) `DefaultAzureCredential` for authentication.
 
-- To use environment variables, set the following variables: `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID`
-- To specify authentication in command, use the following flags: `--client-id`, `--client-secret`, `--tenant-id`, and `--subscription-id`
-- **CI/CD:** A service principal with the **API Management Service Contributor** role is recommended.
-- **Azure-hosted environments:** Managed Identity and Workload Identity are also supported.
+### Generated GitHub Actions workflows (`apiops init`)
+
+Workflows scaffolded by `apiops init` authenticate via **OIDC (workload identity federation)** — no client secret is stored or needed. Run `apiops init` and use the generated `identity-setup.prompt.md` to create an Azure AD application with federated credentials for your GitHub repository.
+
+Required repository secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`
+
+### Local CLI / other CI systems
+
+When running `apiops` outside a GitHub Actions OIDC context you can supply credentials explicitly:
+
+- **Environment variables:** `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`
+- **CLI flags:** `--client-id`, `--client-secret`, `--tenant-id`, `--subscription-id`
+- **Managed Identity / Workload Identity:** Supported automatically via `DefaultAzureCredential` when running on Azure-hosted infrastructure (VMs, App Service, etc.) or in Azure Pipelines with workload identity federation configured.
 
 ## Commands
 
