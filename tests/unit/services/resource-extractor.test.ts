@@ -10,9 +10,11 @@ import {
   extractResourceType,
   extractSingleResource,
   extractResourceName,
+} from '../../../src/services/resource-extractor.js';
+import {
   isSingletonType,
   isChildType,
-} from '../../../src/services/resource-extractor.js';
+} from '../../../src/lib/resource-path.js';
 
 // Mock IApimClient
 function createMockClient(resources: Record<string, unknown>[] = []) {
@@ -154,6 +156,92 @@ describe('resource-extractor', () => {
       expect(result.extracted).toHaveLength(1);
       expect(result.extracted[0]?.descriptor.nameParts[0]).toBe('my-api');
       expect(result.extracted[0]?.descriptor.nameParts[1]).toBe('op-1');
+    });
+
+    it('should handle singleton child resources (ApiPolicy)', async () => {
+      // ApiPolicy has armPathSuffix 'apis/{0}/policies/policy' with 1 placeholder.
+      // When parent.nameParts.length (1) >= placeholderCount (1), it's a singleton:
+      // nameParts should be same as parent (no own name added).
+      const parentDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['my-api'],
+      };
+      const client = createMockClient([
+        { name: 'policy' },
+      ]);
+      const store = createMockStore();
+
+      const result = await extractResourceType(
+        client, store, testContext,
+        ResourceType.ApiPolicy, '/output', undefined, parentDescriptor
+      );
+
+      expect(result.extracted).toHaveLength(1);
+      // Singleton: nameParts should equal parent's nameParts
+      expect(result.extracted[0]?.descriptor.nameParts).toEqual(['my-api']);
+    });
+
+    it('should produce nameParts=[] for zero-placeholder top-level singletons (ServicePolicy)', async () => {
+      // ServicePolicy has armPathSuffix 'policies/policy' with 0 placeholders and no parent.
+      // The buildDescriptor path is: no parent + placeholderCount===0 → nameParts = []
+      const client = createMockClient([
+        { name: 'policy' },
+      ]);
+      const store = createMockStore();
+
+      const result = await extractResourceType(
+        client, store, testContext,
+        ResourceType.ServicePolicy, '/output'
+      );
+
+      expect(result.extracted).toHaveLength(1);
+      // Zero-placeholder top-level type: nameParts must be empty
+      expect(result.extracted[0]?.descriptor.nameParts).toEqual([]);
+      expect(result.extracted[0]?.descriptor.type).toBe(ResourceType.ServicePolicy);
+    });
+
+    it('should pass workspace parameter to descriptor', async () => {
+      const client = createMockClient([
+        { name: 'nv-1', properties: {} },
+      ]);
+      const store = createMockStore();
+
+      const result = await extractResourceType(
+        client, store, testContext,
+        ResourceType.NamedValue, '/output', undefined, undefined, 'ws-dev'
+      );
+
+      expect(result.extracted).toHaveLength(1);
+      expect(result.extracted[0]?.descriptor.workspace).toBe('ws-dev');
+    });
+
+    it('should continue extraction when writeResource fails for one item', async () => {
+      const client = createMockClient([
+        { name: 'nv-1', properties: {} },
+        { name: 'nv-2', properties: {} },
+        { name: 'nv-3', properties: {} },
+      ]);
+      const store = createMockStore();
+      // Make writeResource fail for the second item
+      store.writeResource.mockImplementation(async (_dir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.nameParts[0] === 'nv-2') {
+          throw new Error('Disk write error');
+        }
+      });
+
+      const result = await extractResourceType(
+        client, store, testContext,
+        ResourceType.NamedValue, '/output'
+      );
+
+      expect(result.totalCount).toBe(3);
+      expect(result.extracted).toHaveLength(3);
+      expect(result.errorCount).toBe(1);
+      // First and third should succeed
+      expect(result.extracted[0]?.status).toBe('success');
+      expect(result.extracted[1]?.status).toBe('error');
+      expect(result.extracted[1]?.error).toContain('Disk write error');
+      expect(result.extracted[2]?.status).toBe('success');
     });
 
     it('should issue an individual GET for ApiSchema to capture properties.document', async () => {

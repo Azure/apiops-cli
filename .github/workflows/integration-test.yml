@@ -1,0 +1,104 @@
+# ===========================================================================
+# Integration Test — Extract→Publish Round-Trip
+# ===========================================================================
+# Manually triggered workflow that deploys source + target APIM instances,
+# extracts from source, publishes to target, and compares the result.
+#
+# Required secrets (in the 'integration-test' environment):
+#   - AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID (OIDC login)
+#   - APIM_PUBLISHER_EMAIL
+# ===========================================================================
+
+name: Integration Test — Extract→Publish Round-Trip
+
+on:
+  workflow_dispatch:
+    inputs:
+      sku:
+        description: 'APIM SKU'
+        required: true
+        type: choice
+        options:
+          - StandardV2
+          - Developer
+          - Premium
+          - PremiumV2
+        default: StandardV2
+      location:
+        description: 'Azure region'
+        required: false
+        type: string
+        default: 'eastus2'
+      skip_teardown:
+        description: 'Skip teardown (for debugging)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: integration-test
+  cancel-in-progress: false # Don't cancel — would leave resources running
+
+env:
+  SOURCE_RG: rg-apiops-bvt-source-${{ github.run_id }}
+  TARGET_RG: rg-apiops-bvt-target-${{ github.run_id }}
+
+jobs:
+  roundtrip-test:
+    name: Extract→Publish Round-Trip
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: integration-test # Requires approval for cost protection
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - run: npm ci && npm run build
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run Round-Trip Test
+        shell: pwsh
+        run: |
+          $skipTeardown = '${{ inputs.skip_teardown }}' -eq 'true'
+          $params = @{
+            SourceResourceGroup = '${{ env.SOURCE_RG }}'
+            TargetResourceGroup = '${{ env.TARGET_RG }}'
+            SkuName            = '${{ inputs.sku }}'
+            Location           = '${{ inputs.location }}'
+            PublisherEmail     = '${{ secrets.APIM_PUBLISHER_EMAIL }}'
+            ExtractOutputDir   = './extracted-artifacts'
+          }
+          if ($skipTeardown) { $params.SkipTeardown = $true }
+
+          ./tests/integration/all-resource-types/run-roundtrip-test.ps1 @params
+
+      - name: Upload Extracted Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extracted-artifacts-${{ inputs.sku }}
+          path: ./extracted-artifacts/
+          if-no-files-found: ignore
+
+      - name: Emergency Teardown
+        if: failure() && inputs.skip_teardown != true
+        shell: pwsh
+        run: |
+          Write-Host "🚨 Emergency teardown — deleting resource groups..."
+          az group delete --name '${{ env.SOURCE_RG }}' --yes --no-wait 2>$null
+          az group delete --name '${{ env.TARGET_RG }}' --yes --no-wait 2>$null

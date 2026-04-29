@@ -28,6 +28,7 @@
         "vitest.explorer",
         "GitHub.vscode-pull-request-github",
         "GitHub.copilot-chat",
+        "GitHub.vscode-github-actions",
         "ms-azuretools.vscode-azureresourcegroups",
         "ms-azure-devops.azure-pipelines",
         "vitest.dev"

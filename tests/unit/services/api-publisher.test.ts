@@ -606,11 +606,12 @@ describe('api-publisher', () => {
 
     it('should skip ApiSchema and ApiOperation children when spec was imported', async () => {
       const client = createMockClient();
+      // Use auto-generated 24-char hex schema ID - these are skipped during spec import
       const children = [
         { type: ResourceType.ApiPolicy, nameParts: ['petstore', 'policy-1'] },
         { type: ResourceType.ApiTag, nameParts: ['petstore', 'tag-1'] },
         { type: ResourceType.ApiOperation, nameParts: ['petstore', 'get-pets'] },
-        { type: ResourceType.ApiSchema, nameParts: ['petstore', 'schema-1'] },
+        { type: ResourceType.ApiSchema, nameParts: ['petstore', '69f15c3c10a45d29d855583a'] },
       ];
       const store = createMockStore(children);
       store.readResource.mockResolvedValue({
@@ -629,9 +630,104 @@ describe('api-publisher', () => {
 
       await publishApi(client, store, testContext, apiDescriptor, testConfig);
 
-      // Only ApiPolicy and ApiTag should be published (2 tasks), not ApiOperation/ApiSchema
+      // Only ApiPolicy and ApiTag should be published (2 tasks)
+      // ApiOperation is skipped (no schema refs), auto-generated ApiSchema is skipped
       const tasks = mockRunParallel.mock.calls[0][0] as Array<() => Promise<unknown>>;
       expect(tasks).toHaveLength(2);
+    });
+
+    it('should re-publish operations with schema references even when spec was imported', async () => {
+      const client = createMockClient();
+      // Use auto-generated 24-char hex schema ID - these are skipped during spec import
+      const children = [
+        { type: ResourceType.ApiPolicy, nameParts: ['petstore', 'policy-1'] },
+        { type: ResourceType.ApiOperation, nameParts: ['petstore', 'create-item'] },
+        { type: ResourceType.ApiOperation, nameParts: ['petstore', 'get-items'] },
+        { type: ResourceType.ApiSchema, nameParts: ['petstore', '69f15c3c10a45d29d855583a'] },
+      ];
+      const store = createMockStore(children);
+
+      // Root API resource
+      store.readResource.mockImplementation(async (_dir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.Api) {
+          return { name: 'petstore', properties: { path: 'petstore' } };
+        }
+        if (
+          descriptor.type === ResourceType.ApiOperation &&
+          (descriptor.nameParts[1] ?? '') === 'create-item'
+        ) {
+          // create-item has a schema reference in request representations
+          return {
+            name: 'create-item',
+            properties: {
+              request: {
+                representations: [{ contentType: 'application/json', schemaId: 'my-schema', typeName: 'Item' }],
+              },
+            },
+          };
+        }
+        // get-items has no schema refs
+        return null;
+      });
+      store.readContent.mockResolvedValue({
+        content: 'openapi: "3.0.0"',
+        format: 'yaml',
+      });
+
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['petstore'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      // ApiPolicy (1) + create-item operation re-published (1) = 2 tasks
+      // Auto-generated ApiSchema and get-items (no schema ref) must be excluded
+      const tasks = mockRunParallel.mock.calls[0][0] as Array<() => Promise<unknown>>;
+      expect(tasks).toHaveLength(2);
+    });
+
+    it('should re-publish operations with schema references in response representations', async () => {
+      const client = createMockClient();
+      const children = [
+        { type: ResourceType.ApiOperation, nameParts: ['petstore', 'get-item'] },
+      ];
+      const store = createMockStore(children);
+
+      store.readResource.mockImplementation(async (_dir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.Api) {
+          return { name: 'petstore', properties: { path: 'petstore' } };
+        }
+        if (descriptor.type === ResourceType.ApiOperation) {
+          return {
+            name: 'get-item',
+            properties: {
+              responses: [
+                {
+                  statusCode: 200,
+                  representations: [{ contentType: 'application/json', schemaId: 'item-schema', typeName: 'Item' }],
+                },
+              ],
+            },
+          };
+        }
+        return null;
+      });
+      store.readContent.mockResolvedValue({
+        content: 'openapi: "3.0.0"',
+        format: 'yaml',
+      });
+
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['petstore'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      // get-item has schema refs in response → re-published (1 task)
+      const tasks = mockRunParallel.mock.calls[0][0] as Array<() => Promise<unknown>>;
+      expect(tasks).toHaveLength(1);
     });
 
     it('should publish all children when no specification file exists', async () => {

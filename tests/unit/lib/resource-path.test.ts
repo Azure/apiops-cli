@@ -232,6 +232,17 @@ describe('buildAssociationFilePath', () => {
     );
   });
 
+  it("accepts 'tags' as associationType for a Product descriptor", () => {
+    const descriptor: ResourceDescriptor = {
+      type: ResourceType.Product,
+      nameParts: ['starter'],
+    };
+    const filePath = buildAssociationFilePath(baseDir, descriptor, 'tags');
+    expect(filePath).toBe(
+      path.join(baseDir, 'products', 'starter', 'tags.json')
+    );
+  });
+
   it('should throw for non-Product/Gateway resource', () => {
     const descriptor: ResourceDescriptor = {
       type: ResourceType.Api,

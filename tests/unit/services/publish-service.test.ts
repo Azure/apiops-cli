@@ -13,6 +13,7 @@ vi.mock('../../../src/services/git-diff-service.js');
 vi.mock('../../../src/services/dry-run-reporter.js');
 vi.mock('../../../src/services/delete-unmatched-service.js');
 vi.mock('../../../src/services/api-publisher.js');
+vi.mock('../../../src/services/product-publisher.js');
 
 // Import the module under test and mocked modules
 import { runPublish } from '../../../src/services/publish-service.js';
@@ -20,6 +21,7 @@ import { computeGitDiff } from '../../../src/services/git-diff-service.js';
 import { generateDryRunReport } from '../../../src/services/dry-run-reporter.js';
 import { computeDeleteActions } from '../../../src/services/delete-unmatched-service.js';
 import { publishApi } from '../../../src/services/api-publisher.js';
+import { publishProduct } from '../../../src/services/product-publisher.js';
 
 function createMockClient() {
   return {
@@ -74,6 +76,12 @@ describe('publish-service', () => {
     
     vi.mocked(publishApi).mockResolvedValue({
       descriptor: { type: ResourceType.Api, nameParts: ['test-api'] },
+      status: 'success',
+      action: 'put',
+    });
+
+    vi.mocked(publishProduct).mockResolvedValue({
+      descriptor: { type: ResourceType.Product, nameParts: ['test-product'] },
       status: 'success',
       action: 'put',
     });
@@ -660,6 +668,73 @@ describe('publish-service', () => {
 
       // All 4 resources should be published
       expect(result.totalPuts).toBe(4);
+    });
+  });
+
+  describe('product publish routing', () => {
+    it('uses publishProduct for Product type resources', async () => {
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.Product, nameParts: ['my-product'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      await runPublish(client, store, config);
+
+      // publishProduct should be called with the right descriptor and config
+      expect(publishProduct).toHaveBeenCalledOnce();
+      expect(publishProduct).toHaveBeenCalledWith(
+        client,
+        store,
+        testContext,
+        { type: ResourceType.Product, nameParts: ['my-product'] },
+        config,
+      );
+
+      // Product must NOT be published via a direct putResource call
+      const productPutCalls = (client.putResource.mock.calls as unknown[][]).filter((c) => {
+        const d = c[1] as ResourceDescriptor;
+        return d?.type === ResourceType.Product;
+      });
+      expect(productPutCalls).toHaveLength(0);
+    });
+
+    it('skips ProductApi children when parent Product is in the batch', async () => {
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.Product, nameParts: ['my-product'] },
+        // ProductApi child with same parent name — should be skipped by tier filtering
+        { type: ResourceType.ProductApi, nameParts: ['my-product', 'petstore'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      await runPublish(client, store, config);
+
+      // ProductApi should NOT receive a standalone putResource call
+      // (publishProduct handles associations internally)
+      const productApiCalls = (client.putResource.mock.calls as unknown[][]).filter((c) => {
+        const d = c[1] as ResourceDescriptor;
+        return d.type === ResourceType.ProductApi;
+      });
+      expect(productApiCalls).toHaveLength(0);
     });
   });
 });
