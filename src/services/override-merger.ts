@@ -55,7 +55,7 @@ export function applyOverrides(
   const wrappedOverride = { properties: overrideValues };
 
   // Deep-merge the override into the resource JSON
-  const result = deepMerge(json, wrappedOverride as Record<string, unknown>);
+  const result = deepMerge(json, wrappedOverride);
 
   logger.debug(
     `Applied overrides to ${descriptor.type} '${descriptor.nameParts.join('/')}'`,
