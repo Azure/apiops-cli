@@ -15,6 +15,7 @@
 
 import { DefaultAzureCredential } from '@azure/identity';
 import { logger } from '../lib/logger.js';
+import { USER_AGENT } from '../lib/user-agent.js';
 
 /* ------------------------------------------------------------------ */
 /*  ARM API versions                                                  */
@@ -92,6 +93,7 @@ async function defaultArmRequest(url: string, token: string): Promise<ArmRespons
     headers: {
       Authorization: `Bearer ${token}`,
       Accept: 'application/json',
+      'User-Agent': USER_AGENT,
     },
   });
   return {
