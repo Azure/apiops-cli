@@ -2,12 +2,13 @@
  * Unit tests for keyvault-checker service (ARM-based approach)
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   checkKeyVaultSecretAccess,
   type TokenProviderFactory,
   type KeyVaultCheckContext,
 } from '../../../src/services/keyvault-checker.js';
+import { USER_AGENT } from '../../../src/lib/user-agent.js';
 
 describe('checkKeyVaultSecretAccess', () => {
   let mockGetToken: ReturnType<typeof vi.fn>;
@@ -571,5 +572,64 @@ describe('checkKeyVaultSecretAccess', () => {
         mockArmRequest,
       ),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('defaultArmRequest User-Agent header', () => {
+  let fetchSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('should include User-Agent header when defaultArmRequest is used', async () => {
+    // Arrange: mock all ARM responses so checkKeyVaultSecretAccess runs to completion
+    const apimIdentity = {
+      identity: { type: 'SystemAssigned', principalId: 'pid-1' },
+    };
+    const vaultList = { value: [{ id: '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.KeyVault/vaults/myvault' }] };
+    const vaultDetail = {
+      properties: {
+        enableRbacAuthorization: false,
+        accessPolicies: [
+          {
+            objectId: 'pid-1',
+            permissions: { secrets: ['get'] },
+          },
+        ],
+      },
+    };
+
+    fetchSpy
+      .mockResolvedValueOnce(new Response(JSON.stringify(apimIdentity), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(vaultList), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(vaultDetail), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+
+    const mockTokenProviderFactory: TokenProviderFactory = () => ({
+      getToken: vi.fn().mockResolvedValue({ token: 'fake-arm-token' }),
+    });
+
+    await checkKeyVaultSecretAccess(
+      'https://myvault.vault.azure.net/secrets/my-secret',
+      undefined,
+      { subscriptionId: 'sub-1', resourceGroup: 'rg-1', serviceName: 'apim-1' },
+      mockTokenProviderFactory,
+      // No armRequest override — uses defaultArmRequest which must include User-Agent
+    );
+
+    // All three fetch calls should include the User-Agent header
+    expect(fetchSpy.mock.calls.length).toBeGreaterThan(0);
+    for (const call of fetchSpy.mock.calls) {
+      const [_url, init] = call as [string, RequestInit];
+      const headers = new Headers(init?.headers);
+      expect(headers.get('User-Agent')).toBe(USER_AGENT);
+      expect(headers.get('User-Agent')).toMatch(/^apiops-cli\/\d+\.\d+\.\d+/);
+    }
   });
 });
