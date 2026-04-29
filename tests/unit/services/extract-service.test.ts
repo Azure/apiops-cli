@@ -299,7 +299,6 @@ describe('extract-service', () => {
       });
 
       // Handle GatewayApi requests for the gateway
-      const originalListResources = client.listResources;
       client.listResources = async function* (_ctx, type, parent?) {
         if (type === ResourceType.Gateway) {
           yield { name: 'gw-1', properties: {} };
@@ -318,7 +317,7 @@ describe('extract-service', () => {
         logLevel: LogLevel.INFO,
       };
 
-      const result = await runExtraction(client, store, config);
+      await runExtraction(client, store, config);
 
       expect(store.writeAssociation).toHaveBeenCalledWith(
         expect.anything(),
@@ -335,8 +334,7 @@ describe('extract-service', () => {
         ],
       });
 
-      // eslint-disable-next-line require-yield
-      client.listResources = async function* (_ctx, type, parent?) {
+      client.listResources = async function* (_ctx, type, _parent?) {
         if (type === ResourceType.Gateway) {
           yield { name: 'gw-1', properties: {} };
         }

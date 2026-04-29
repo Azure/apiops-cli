@@ -125,7 +125,7 @@ async function publishProductAssociations(
       await client.putResource(context, assocDescriptor, {});
       logger.debug(`Created ${resourceType} association: ${productName}/${name}`);
     } catch (error) {
-      logger.warn(`Failed to create ${resourceType} association ${productName}/${name}: ${error}`);
+      logger.warn(`Failed to create ${resourceType} association ${productName}/${name}: ${String(error)}`);
     }
   }
 }
@@ -168,7 +168,7 @@ async function publishProductTags(
       await client.putResource(context, tagDescriptor, {});
       logger.debug(`Created ProductTag association: ${productName}/${tagName}`);
     } catch (error) {
-      logger.warn(`Failed to create ProductTag association ${productName}/${tagName}: ${error}`);
+      logger.warn(`Failed to create ProductTag association ${productName}/${tagName}: ${String(error)}`);
     }
   }
   
