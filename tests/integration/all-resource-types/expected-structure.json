@@ -1,0 +1,733 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Expected artifact structure from all-resources source APIM extract",
+  "version": "1.0.0",
+  "skuVariants": {
+    "note": "Some resources only exist on certain SKUs",
+    "workspaces": ["Premium", "PremiumV2"],
+    "selfHostedGateways": ["Developer", "Premium"]
+  },
+  "serviceLevelArtifacts": {
+    "policy.xml": {
+      "description": "Service-level global policy",
+      "required": true,
+      "spotChecks": {
+        "contentIncludes": ["cors", "allowed-origins", "developer.contoso.com"]
+      }
+    }
+  },
+  "directories": {
+    "namedValues": {
+      "minCount": 3,
+      "expected": [
+        {
+          "name": "src-nv-plain",
+          "files": ["namedValueInformation.json"],
+          "spotChecks": {
+            "namedValueInformation.json": {
+              "properties.displayName": "src-nv-plain",
+              "properties.value": "plain-text-value",
+              "properties.tags": ["all-resources", "plain"],
+              "properties.secret": false
+            }
+          }
+        },
+        {
+          "name": "src-nv-secret",
+          "files": ["namedValueInformation.json"],
+          "spotChecks": {
+            "namedValueInformation.json": {
+              "properties.displayName": "src-nv-secret",
+              "properties.secret": true,
+              "properties.tags": ["all-resources", "secret"]
+            }
+          },
+          "notes": "Value should be redacted due to secret=true"
+        },
+        {
+          "name": "src-nv-keyvault",
+          "files": ["namedValueInformation.json"],
+          "spotChecks": {
+            "namedValueInformation.json": {
+              "properties.displayName": "src-nv-keyvault",
+              "properties.secret": true,
+              "properties.keyVault.secretIdentifier": "exists",
+              "properties.tags": ["all-resources", "keyvault"]
+            }
+          },
+          "notes": "KeyVault reference type"
+        }
+      ]
+    },
+    "tags": {
+      "minCount": 2,
+      "expected": [
+        {
+          "name": "src-tag-env",
+          "files": ["tagInformation.json"],
+          "spotChecks": {
+            "tagInformation.json": {
+              "properties.displayName": "src-tag-env"
+            }
+          }
+        },
+        {
+          "name": "src-tag-team",
+          "files": ["tagInformation.json"],
+          "spotChecks": {
+            "tagInformation.json": {
+              "properties.displayName": "src-tag-team"
+            }
+          }
+        }
+      ]
+    },
+    "gateways": {
+      "minCount": 0,
+      "skuDependent": true,
+      "skuFilter": ["Developer", "Premium"],
+      "expected": [
+        {
+          "name": "src-gateway-onprem",
+          "files": ["gatewayInformation.json", "apis.json"],
+          "spotChecks": {
+            "gatewayInformation.json": {
+              "properties.description": "Kitchen sink self-hosted gateway for BVT",
+              "properties.locationData.name": "On-Premises DC",
+              "properties.locationData.city": "Seattle"
+            },
+            "apis.json": {
+              "minLength": 1,
+              "contains": "src-rest-openapi"
+            }
+          }
+        }
+      ]
+    },
+    "versionSets": {
+      "minCount": 1,
+      "expected": [
+        {
+          "name": "src-versionset-urlpath",
+          "files": ["versionSetInformation.json"],
+          "spotChecks": {
+            "versionSetInformation.json": {
+              "properties.displayName": "Kitchen Sink Versioned API",
+              "properties.versioningScheme": "Segment"
+            }
+          }
+        }
+      ]
+    },
+    "backends": {
+      "minCount": 5,
+      "expected": [
+        {
+          "name": "src-backend-http",
+          "files": ["backendInformation.json"],
+          "spotChecks": {
+            "backendInformation.json": {
+              "properties.url": "https://src-backend.example.com/api",
+              "properties.protocol": "http",
+              "properties.tls.validateCertificateChain": true
+            }
+          }
+        },
+        {
+          "name": "src-backend-function",
+          "files": ["backendInformation.json"],
+          "spotChecks": {
+            "backendInformation.json": {
+              "properties.url": "https://src-func-app.azurewebsites.net/api",
+              "properties.protocol": "http",
+              "properties.resourceId": "exists"
+            }
+          }
+        },
+        {
+          "name": "src-backend-logicapp",
+          "files": ["backendInformation.json"],
+          "spotChecks": {
+            "backendInformation.json": {
+              "properties.url": "https://src-logic-app.azurewebsites.net/api",
+              "properties.resourceId": "exists"
+            }
+          }
+        },
+        {
+          "name": "src-backend-circuit-breaker",
+          "files": ["backendInformation.json"],
+          "spotChecks": {
+            "backendInformation.json": {
+              "properties.circuitBreaker.rules": "exists"
+            }
+          }
+        },
+        {
+          "name": "src-backend-pool",
+          "files": ["backendInformation.json"],
+          "spotChecks": {
+            "backendInformation.json": {
+              "properties.type": "Pool",
+              "properties.pool.services": "exists"
+            }
+          }
+        }
+      ]
+    },
+    "loggers": {
+      "minCount": 2,
+      "expected": [
+        {
+          "name": "src-logger-appinsights",
+          "files": ["loggerInformation.json"],
+          "spotChecks": {
+            "loggerInformation.json": {
+              "properties.loggerType": "applicationInsights",
+              "properties.credentials.instrumentationKey": "exists"
+            }
+          },
+          "notes": "Instrumentationkey should be redacted"
+        },
+        {
+          "name": "src-logger-eventhub",
+          "files": ["loggerInformation.json"],
+          "spotChecks": {
+            "loggerInformation.json": {
+              "properties.loggerType": "azureEventHub",
+              "properties.credentials.name": "src-apim-logs"
+            }
+          },
+          "notes": "Connection string should be redacted"
+        }
+      ]
+    },
+    "groups": {
+      "minCount": 1,
+      "expected": [
+        {
+          "name": "src-group-internal",
+          "files": ["groupInformation.json"],
+          "spotChecks": {
+            "groupInformation.json": {
+              "properties.displayName": "Kitchen Sink Internal Group",
+              "properties.type": "custom"
+            }
+          }
+        }
+      ]
+    },
+    "diagnostics": {
+      "minCount": 1,
+      "expected": [
+        {
+          "name": "applicationinsights",
+          "files": ["diagnosticInformation.json"],
+          "spotChecks": {
+            "diagnosticInformation.json": {
+              "properties.loggerId": "exists",
+              "properties.alwaysLog": "allErrors",
+              "properties.sampling.samplingType": "fixed"
+            }
+          }
+        }
+      ]
+    },
+    "policyFragments": {
+      "minCount": 2,
+      "expected": [
+        {
+          "name": "src-fragment-cors",
+          "files": ["policyFragmentInformation.json"],
+          "spotChecks": {
+            "policyFragmentInformation.json": {
+              "properties.description": "CORS policy fragment"
+            }
+          }
+        },
+        {
+          "name": "src-fragment-ratelimit",
+          "files": ["policyFragmentInformation.json"],
+          "spotChecks": {
+            "policyFragmentInformation.json": {
+              "properties.description": "Rate limit policy fragment"
+            }
+          }
+        }
+      ]
+    },
+    "schemas": {
+      "minCount": 1,
+      "expected": [
+        {
+          "name": "src-schema-json",
+          "files": ["schemaInformation.json"],
+          "spotChecks": {
+            "schemaInformation.json": {
+              "properties.schemaType": "json",
+              "properties.description": "Kitchen sink JSON schema"
+            }
+          }
+        }
+      ]
+    },
+    "policyRestrictions": {
+      "minCount": 1,
+      "skuDependent": true,
+      "skuFilter": ["Developer", "Premium"],
+      "expected": [
+        {
+          "name": "src-restriction-ip",
+          "files": ["policyRestrictionInformation.json"],
+          "spotChecks": {
+            "policyRestrictionInformation.json": {
+              "properties.scope": "All",
+              "properties.requireBase": "true"
+            }
+          }
+        }
+      ]
+    },
+    "documentations": {
+      "minCount": 1,
+      "skuDependent": true,
+      "skuFilter": ["Developer", "Premium"],
+      "expected": [
+        {
+          "name": "src-doc-getting-started",
+          "files": ["documentationInformation.json"],
+          "spotChecks": {
+            "documentationInformation.json": {
+              "properties.title": "Getting Started",
+              "properties.content": "exists"
+            }
+          }
+        }
+      ]
+    },
+    "products": {
+      "minCount": 2,
+      "expected": [
+        {
+          "name": "src-product-starter",
+          "files": ["productInformation.json", "apis.json", "groups.json"],
+          "spotChecks": {
+            "productInformation.json": {
+              "properties.displayName": "Kitchen Sink Starter",
+              "properties.subscriptionRequired": true,
+              "properties.approvalRequired": false,
+              "properties.state": "published"
+            },
+            "apis.json": {
+              "minLength": 2,
+              "contains": ["src-rest-openapi", "src-soap-passthrough"]
+            },
+            "groups.json": {
+              "minLength": 1,
+              "contains": "developers"
+            }
+          },
+          "children": {
+            "tags": {
+              "minCount": 1,
+              "note": "ProductTag is embedded in productInformation.json, not separate files"
+            }
+          },
+          "notes": "Product wiki exists but is stored as wiki.md, not in wikis/ directory"
+        },
+        {
+          "name": "src-product-premium",
+          "files": ["productInformation.json", "policy.xml", "apis.json", "groups.json"],
+          "spotChecks": {
+            "productInformation.json": {
+              "properties.displayName": "Kitchen Sink Premium",
+              "properties.subscriptionRequired": true,
+              "properties.approvalRequired": true,
+              "properties.state": "published"
+            },
+            "policy.xml": {
+              "contentIncludes": ["rate-limit", "1000"]
+            },
+            "apis.json": {
+              "minLength": 2,
+              "contains": ["src-rest-openapi", "src-graphql-synthetic"]
+            },
+            "groups.json": {
+              "minLength": 1,
+              "contains": "src-group-internal"
+            }
+          }
+        }
+      ]
+    },
+    "apis": {
+      "minCount": 8,
+      "expected": [
+        {
+          "name": "src-rest-openapi",
+          "files": ["apiInformation.json", "policy.xml", "specification.yaml"],
+          "spotChecks": {
+            "apiInformation.json": {
+              "properties.displayName": "KS REST OpenAPI",
+              "properties.path": "ks/rest",
+              "properties.protocols": ["https"],
+              "properties.subscriptionRequired": false
+            },
+            "policy.xml": {
+              "contentIncludes": ["set-header", "X-all-resources"]
+            },
+            "specification.yaml": {
+              "contentIncludes": ["openapi:", "KS REST OpenAPI"]
+            }
+          },
+          "children": {
+            "operations": {
+              "minCount": 1,
+              "notes": "Only operations with policies get directories (healthCheck has policy)"
+            },
+            "tags": {
+              "minCount": 2,
+              "expected": [
+                {
+                  "name": "src-tag-env",
+                  "files": ["tagInformation.json"]
+                },
+                {
+                  "name": "src-tag-team",
+                  "files": ["tagInformation.json"]
+                }
+              ]
+            },
+            "diagnostics": {
+              "minCount": 1,
+              "expected": [
+                {
+                  "name": "applicationinsights",
+                  "files": ["diagnosticInformation.json"]
+                }
+              ]
+            },
+            "schemas": {
+              "minCount": 1,
+              "expected": [
+                {
+                  "name": "src-rest-schema-item",
+                  "files": ["schemaInformation.json"]
+                }
+              ]
+            },
+            "tagDescriptions": {
+              "minCount": 1,
+              "expected": [
+                {
+                  "name": "src-tag-env",
+                  "files": ["tagDescriptionInformation.json"],
+                  "spotChecks": {
+                    "tagDescriptionInformation.json": {
+                      "properties.description": "Environment tag — indicates deployment environment"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "notes": "healthCheck operation has policy.xml"
+        },
+        {
+          "name": "src-soap-passthrough",
+          "files": ["apiInformation.json", "specification.wsdl"],
+          "spotChecks": {
+            "apiInformation.json": {
+              "properties.displayName": "KS SOAP Pass-Through",
+              "properties.path": "ks/soap",
+              "properties.protocols": ["https"],
+              "properties.type": "soap"
+            },
+            "specification.wsdl": {
+              "contentIncludes": ["tempuri.org", "wsdl"]
+            }
+          },
+          "notes": "SOAP API with WSDL specification"
+        },
+        {
+          "name": "src-graphql-synthetic",
+          "files": ["apiInformation.json"],
+          "spotChecks": {
+            "apiInformation.json": {
+              "properties.displayName": "KS GraphQL Synthetic",
+              "properties.path": "ks/graphql",
+              "properties.protocols": ["https"],
+              "properties.type": "graphql"
+            }
+          },
+          "children": {
+            "schemas": {
+              "minCount": 1,
+              "notes": "GraphQL schema stored as ApiSchema resource"
+            },
+            "resolvers": {
+              "minCount": 1,
+              "expected": [
+                {
+                  "name": "src-resolver-hero",
+                  "files": ["resolverInformation.json", "policy.xml"],
+                  "spotChecks": {
+                    "resolverInformation.json": {
+                      "properties.path": "Query/hero"
+                    },
+                    "policy.xml": {
+                      "contentIncludes": ["http-data-source", "http-request"]
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "notes": "Synthetic GraphQL with resolver policies"
+        },
+        {
+          "name": "src-graphql-passthrough",
+          "files": ["apiInformation.json"],
+          "spotChecks": {
+            "apiInformation.json": {
+              "properties.displayName": "KS GraphQL Pass-Through",
+              "properties.path": "ks/graphql-pt",
+              "properties.type": "graphql"
+            }
+          },
+          "children": {
+            "schemas": {
+              "minCount": 1,
+              "notes": "GraphQL schema for passthrough API"
+            }
+          },
+          "notes": "Passthrough GraphQL API"
+        },
+        {
+          "name": "src-websocket",
+          "files": ["apiInformation.json"],
+          "spotChecks": {
+            "apiInformation.json": {
+              "properties.displayName": "KS WebSocket",
+              "properties.path": "ks/ws",
+              "properties.protocols": ["wss"],
+              "properties.type": "websocket"
+            }
+          },
+          "notes": "WebSocket API — no OpenAPI specification"
+        },
+        {
+          "name": "src-rest-versioned-v1",
+          "files": ["apiInformation.json", "specification.yaml"],
+          "spotChecks": {
+            "apiInformation.json": {
+              "properties.displayName": "KS REST Versioned",
+              "properties.path": "ks/versioned",
+              "properties.apiVersion": "v1",
+              "properties.apiVersionSetId": "exists"
+            }
+          },
+          "notes": "Versioned API using version set"
+        },
+        {
+          "name": "src-rest-revisioned",
+          "files": ["apiInformation.json", "specification.yaml"],
+          "spotChecks": {
+            "apiInformation.json": {
+              "properties.displayName": "KS REST Revisioned",
+              "properties.path": "ks/revisioned",
+              "properties.isCurrent": true
+            }
+          },
+          "children": {
+            "releases": {
+              "minCount": 1,
+              "expected": [
+                {
+                  "name": "src-release-1",
+                  "files": ["releaseInformation.json"],
+                  "spotChecks": {
+                    "releaseInformation.json": {
+                      "properties.notes": "Initial release for BVT testing"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "notes": "API with revisions and releases. Revision 2 is a separate API resource (src-rest-revisioned;rev=2)"
+        },
+        {
+          "name": "src-rest-revisioned;rev=2",
+          "files": ["apiInformation.json"],
+          "spotChecks": {
+            "apiInformation.json": {
+              "properties.displayName": "KS REST Revisioned",
+              "properties.apiRevisionDescription": "Second revision for BVT testing"
+            }
+          },
+          "notes": "Revision 2 of src-rest-revisioned"
+        },
+        {
+          "name": "src-rest-mcp-style",
+          "files": ["apiInformation.json"],
+          "spotChecks": {
+            "apiInformation.json": {
+              "properties.displayName": "KS MCP-Style REST API",
+              "properties.path": "ks/mcp",
+              "properties.subscriptionRequired": false
+            }
+          },
+          "notes": "REST API with explicitly defined operation (no operation-level policies, so no operations directory)"
+        }
+      ]
+    },
+    "subscriptions": {
+      "minCount": 2,
+      "expected": [
+        {
+          "name": "src-sub-all-apis",
+          "files": ["subscriptionInformation.json"],
+          "spotChecks": {
+            "subscriptionInformation.json": {
+              "properties.displayName": "Kitchen Sink All APIs Subscription",
+              "properties.state": "active"
+            }
+          },
+          "notes": "scope contains /apis but full ARM path is returned; normalization tracked separately"
+        },
+        {
+          "name": "src-sub-product",
+          "files": ["subscriptionInformation.json"],
+          "spotChecks": {
+            "subscriptionInformation.json": {
+              "properties.displayName": "Kitchen Sink Product Subscription",
+              "properties.state": "active"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "workspaces": {
+    "note": "Workspaces only exist on Premium and PremiumV2 SKUs",
+    "skuDependent": true,
+    "skuFilter": ["Premium", "PremiumV2"],
+    "expected": [
+      {
+        "name": "src-workspace",
+        "path": "workspaces/src-workspace",
+        "directories": {
+          "namedValues": {
+            "minCount": 1,
+            "expected": [
+              {
+                "name": "src-ws-nv-plain",
+                "files": ["namedValueInformation.json"],
+                "spotChecks": {
+                  "namedValueInformation.json": {
+                    "properties.displayName": "src-ws-nv-plain",
+                    "properties.value": "workspace-scoped-value",
+                    "properties.tags": ["workspace"]
+                  }
+                }
+              }
+            ]
+          },
+          "tags": {
+            "minCount": 1,
+            "expected": [
+              {
+                "name": "src-ws-tag",
+                "files": ["tagInformation.json"],
+                "spotChecks": {
+                  "tagInformation.json": {
+                    "properties.displayName": "src-ws-tag"
+                  }
+                }
+              }
+            ]
+          },
+          "backends": {
+            "minCount": 1,
+            "expected": [
+              {
+                "name": "src-ws-backend-http",
+                "files": ["backendInformation.json"],
+                "spotChecks": {
+                  "backendInformation.json": {
+                    "properties.description": "Workspace-scoped HTTP backend",
+                    "properties.url": "https://src-ws-backend.example.com/api"
+                  }
+                }
+              }
+            ]
+          },
+          "products": {
+            "minCount": 1,
+            "expected": [
+              {
+                "name": "src-ws-product",
+                "files": ["productInformation.json"],
+                "spotChecks": {
+                  "productInformation.json": {
+                    "properties.displayName": "Workspace Product",
+                    "properties.subscriptionRequired": false,
+                    "properties.state": "published"
+                  }
+                }
+              }
+            ]
+          },
+          "apis": {
+            "minCount": 1,
+            "expected": [
+              {
+                "name": "src-ws-api-rest",
+                "files": ["apiInformation.json"],
+                "spotChecks": {
+                  "apiInformation.json": {
+                    "properties.displayName": "Workspace REST API",
+                    "properties.path": "ks/ws/rest"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "validationRules": {
+    "globalRules": [
+      "All JSON files must be valid JSON",
+      "All policy.xml files must be valid XML",
+      "All specification files must be valid for their format (YAML/JSON/GraphQL/WSDL/WADL)",
+      "File names must match resource type conventions from resource-types.ts",
+      "Directory structure must match artifactDirectory patterns from resource-types.ts"
+    ],
+    "secretRedactionRules": [
+      "NamedValue with secret=true: properties.value must be null or '[REDACTED]'",
+      "Logger credentials: instrumentationKey and connectionString must be redacted",
+      "Subscription keys: primaryKey and secondaryKey must be redacted"
+    ],
+    "protocolValidation": [
+      "REST APIs: protocols array should include 'https' or 'http'",
+      "SOAP APIs: type should be 'soap'",
+      "GraphQL APIs: type should be 'graphql'",
+      "WebSocket APIs: protocols should include 'wss' or 'ws', type should be 'websocket'"
+    ]
+  },
+  "notes": [
+    "This manifest is generated from all-resources.bicep and extraction service code",
+    "Actual counts may vary by SKU (Developer, Premium, StandardV2, PremiumV2)",
+    "Some resources (workspaces, self-hosted gateways) are SKU-dependent",
+    "Revision naming follows pattern: {apiName};rev={N}",
+    "Operations may not have individual info files (ApiOperation has infoFile: null)",
+    "ProductTag is embedded in productInformation.json, not separate files",
+    "ServicePolicy is stored at root as policy.xml, not in a policies/ directory",
+    "Wiki resources use wiki.md filename, not wikiInformation.json",
+    "Association files (apis.json, groups.json) contain arrays of {name: string} objects",
+    "Specification formats: yaml (default), json, graphql, wsdl, wadl"
+  ]
+}

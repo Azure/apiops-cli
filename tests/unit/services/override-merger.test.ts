@@ -39,9 +39,7 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         namedValues: {
           'my-nv': {
-            properties: {
-              value: 'overridden-value',
-            },
+            value: 'overridden-value',
           },
         },
       };
@@ -55,9 +53,7 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         namedValues: {
           'MY-NV': {
-            properties: {
-              value: 'case-insensitive-match',
-            },
+            value: 'case-insensitive-match',
           },
         },
       };
@@ -83,9 +79,7 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         backends: {
           'my-backend': {
-            properties: {
-              url: 'https://overridden.example.com',
-            },
+            url: 'https://overridden.example.com',
           },
         },
       };
@@ -112,9 +106,7 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         apis: {
           'my-api': {
-            properties: {
-              serviceUrl: 'https://overridden-api.example.com',
-            },
+            serviceUrl: 'https://overridden-api.example.com',
           },
         },
       };
@@ -128,10 +120,8 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         namedValues: {
           'my-nv': {
-            properties: {
-              keyVault: {
-                secretIdentifier: 'https://vault.azure.net/secrets/my-secret',
-              },
+            keyVault: {
+              secretIdentifier: 'https://vault.azure.net/secrets/my-secret',
             },
           },
         },
@@ -210,9 +200,7 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         namedValues: {
           'my-nv': {
-            properties: {
-              tags: ['env:prod', 'region:us'],
-            },
+            tags: ['env:prod', 'region:us'],
           },
         },
       };
@@ -233,9 +221,7 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         namedValues: {
           'my-nv': {
-            properties: {
-              displayName: 'New Display Name',
-            },
+            displayName: 'New Display Name',
           },
         },
       };
@@ -261,9 +247,7 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         loggers: {
           'my-logger': {
-            properties: {
-              resourceId: '/subscriptions/new/...',
-            },
+            resourceId: '/subscriptions/new/...',
           },
         },
       };
@@ -288,9 +272,7 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         diagnostics: {
           'my-diagnostic': {
-            properties: {
-              loggerId: '/loggers/new-logger',
-            },
+            loggerId: '/loggers/new-logger',
           },
         },
       };

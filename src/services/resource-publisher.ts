@@ -160,6 +160,33 @@ export async function publishResource(
       json = normalizeSubscriptionScope(json, context);
     }
 
+    // ApiRelease: normalize properties.apiId from source ARM path to target ARM path.
+    // APIM stores apiId as the full source ARM resource path, e.g.:
+    //   /subscriptions/{src-sub}/resourceGroups/{src-rg}/providers/
+    //   Microsoft.ApiManagement/service/{src-svc}/apis/my-api;rev=2
+    // The PUT to the target service must reference the target service path,
+    // otherwise APIM rejects the request with a validation error.
+    if (descriptor.type === ResourceType.ApiRelease) {
+      json = normalizeApiReleaseApiId(json, context);
+    }
+
+    // API Revisions (e.g., "my-api;rev=2") need sourceApiId so APIM knows which
+    // base API to copy structure from. Also strip null properties that cause
+    // validation errors in APIM's revision creation.
+    if (descriptor.type === ResourceType.Api) {
+      const apiName = getNamePart(descriptor.nameParts, 0);
+      if (apiName.includes(';rev=')) {
+        const baseApiName = apiName.split(';rev=')[0];
+        const props = json.properties as Record<string, unknown> | undefined;
+        const cleanProps: Record<string, unknown> = {};
+        for (const [key, val] of Object.entries(props ?? {})) {
+          if (val !== null) cleanProps[key] = val;
+        }
+        cleanProps.sourceApiId = `/subscriptions/${context.subscriptionId}/resourceGroups/${context.resourceGroup}/providers/Microsoft.ApiManagement/service/${context.serviceName}/apis/${baseApiName}`;
+        json = { ...json, properties: cleanProps };
+      }
+    }
+
     // PUT to APIM
     await client.putResource(context, descriptor, json);
 
@@ -368,6 +395,46 @@ function normalizeSubscriptionScope(
     return {
       ...json,
       properties: { ...props, scope: relativeScope },
+    };
+  }
+
+  return json;
+}
+
+/**
+ * Normalise the `properties.apiId` field of an ApiRelease resource.
+ *
+ * APIM returns apiId as a full ARM resource path that includes the source
+ * service coordinates, e.g.:
+ *   /subscriptions/{src-sub}/resourceGroups/{src-rg}/providers/
+ *   Microsoft.ApiManagement/service/{src-svc}/apis/my-api;rev=2
+ *
+ * The PUT to the target service must reference the TARGET service path;
+ * otherwise APIM rejects the request because the apiId does not match the
+ * service being written to. Rebuild the apiId using the target ARM prefix
+ * derived from the publish context.
+ */
+function normalizeApiReleaseApiId(
+  json: Record<string, unknown>,
+  context: ApimServiceContext
+): Record<string, unknown> {
+  const props = json.properties as Record<string, unknown> | undefined;
+  if (!props) return json;
+
+  const apiId = props.apiId as string | undefined;
+  if (!apiId) return json;
+
+  // The target ARM prefix for this service (no https:// host, no trailing slash)
+  const targetArmPrefix = context.baseUrl.replace(/^https?:\/\/[^/]+/, '');
+
+  // Extract the /apis/... suffix and rebuild with the target ARM prefix.
+  // The suffix includes the full API name, e.g. "/apis/my-api;rev=2".
+  const apisIndex = apiId.indexOf('/apis/');
+  if (apisIndex !== -1) {
+    const apisSuffix = apiId.slice(apisIndex);
+    return {
+      ...json,
+      properties: { ...props, apiId: targetArmPrefix + apisSuffix },
     };
   }
 

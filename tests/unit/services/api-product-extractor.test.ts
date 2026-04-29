@@ -5,6 +5,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
+import { FilterConfig } from '../../../src/models/config.js';
 import { extractApiResources } from '../../../src/services/api-extractor.js';
 import { extractProductResources } from '../../../src/services/product-extractor.js';
 
@@ -358,6 +359,394 @@ describe('api-extractor', () => {
       expect(result.revisions).toHaveLength(1);
       expect(result.revisions[0]?.descriptor.nameParts[0]).toBe('my-api;rev=2');
     });
+
+    it('should extract API operations', async () => {
+      const client = createMockClient({
+        getApiSpecification: vi.fn().mockResolvedValue(undefined),
+        getResource: vi.fn().mockResolvedValue(undefined),
+      });
+
+      // Mock listResources to return operations
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType) {
+        if (type === ResourceType.ApiOperation) {
+          yield { name: 'get-user', properties: {} };
+          yield { name: 'create-user', properties: {} };
+        }
+      };
+
+      const store = createMockStore();
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['my-api'],
+      };
+
+      const result = await extractApiResources(
+        client, store, testContext, apiDescriptor,
+        { name: 'my-api', properties: {} },
+        '/output'
+      );
+
+      expect(result.operations.length).toBe(2);
+      expect(result.operationPolicies.length).toBe(0);
+    });
+
+    it('should extract operation policies for operations', async () => {
+      const operationPolicyContent = '<policies><inbound><rate-limit /></inbound></policies>';
+      const client = createMockClient({
+        getApiSpecification: vi.fn().mockResolvedValue(undefined),
+        getResource: vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
+          if (desc.type === ResourceType.ApiOperationPolicy) {
+            return { name: 'policy', properties: { value: operationPolicyContent } };
+          }
+          return undefined;
+        }),
+      });
+
+      // Mock listResources to return one operation
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType) {
+        if (type === ResourceType.ApiOperation) {
+          yield { name: 'get-user', properties: {} };
+        }
+      };
+
+      const store = createMockStore();
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['my-api'],
+      };
+
+      const result = await extractApiResources(
+        client, store, testContext, apiDescriptor,
+        { name: 'my-api', properties: {} },
+        '/output'
+      );
+
+      expect(result.operations.length).toBe(1);
+      expect(result.operationPolicies.length).toBe(1);
+      expect(result.policies).toContain(operationPolicyContent);
+    });
+
+    it('should extract GraphQL resolvers for graphql-type APIs', async () => {
+      const client = createMockClient({
+        getApiSpecification: vi.fn().mockResolvedValue(undefined),
+        getResource: vi.fn().mockResolvedValue(undefined),
+      });
+
+      // Mock listResources to return a resolver
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType) {
+        if (type === ResourceType.GraphQLResolver) {
+          yield { name: 'Query.hello', properties: {} };
+        }
+      };
+
+      const store = createMockStore();
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['graphql-api'],
+      };
+
+      const result = await extractApiResources(
+        client, store, testContext, apiDescriptor,
+        { name: 'graphql-api', properties: { type: 'graphql' } },
+        '/output'
+      );
+
+      expect(result.resolvers.length).toBe(1);
+      expect(result.resolverPolicies.length).toBe(0);
+    });
+
+    it('should extract resolver policies for GraphQL resolvers', async () => {
+      const resolverPolicyContent = '<policies><inbound><set-backend-service /></inbound></policies>';
+      const client = createMockClient({
+        getApiSpecification: vi.fn().mockResolvedValue(undefined),
+        getResource: vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
+          if (desc.type === ResourceType.GraphQLResolverPolicy) {
+            return { name: 'policy', properties: { value: resolverPolicyContent } };
+          }
+          return undefined;
+        }),
+      });
+
+      // Mock listResources to return a resolver
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType) {
+        if (type === ResourceType.GraphQLResolver) {
+          yield { name: 'Query.hello', properties: {} };
+        }
+      };
+
+      const store = createMockStore();
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['graphql-api'],
+      };
+
+      const result = await extractApiResources(
+        client, store, testContext, apiDescriptor,
+        { name: 'graphql-api', properties: { type: 'graphql' } },
+        '/output'
+      );
+
+      expect(result.resolvers.length).toBe(1);
+      expect(result.resolverPolicies.length).toBe(1);
+      expect(result.policies).toContain(resolverPolicyContent);
+    });
+
+    it('should skip resolver extraction for non-GraphQL APIs', async () => {
+      const client = createMockClient({
+        getApiSpecification: vi.fn().mockResolvedValue(undefined),
+        getResource: vi.fn().mockResolvedValue(undefined),
+      });
+
+      // Mock listResources - should not be called for GraphQLResolver
+      const listResourcesSpy = vi.fn(async function* (_ctx: ApimServiceContext, type: ResourceType) {
+        if (type === ResourceType.GraphQLResolver) {
+          throw new Error('Should not list resolvers for non-GraphQL API');
+        }
+        yield* [];
+      });
+      client.listResources = listResourcesSpy;
+
+      const store = createMockStore();
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['http-api'],
+      };
+
+      const result = await extractApiResources(
+        client, store, testContext, apiDescriptor,
+        { name: 'http-api', properties: { type: 'http' } },
+        '/output'
+      );
+
+      expect(result.resolvers).toEqual([]);
+      expect(result.resolverPolicies).toEqual([]);
+    });
+
+    it('should extract wiki with documents array and write markdown JSON', async () => {
+      const documents = [
+        { documentationId: 'doc-1', title: 'Getting Started' },
+        { documentationId: 'doc-2', title: 'Reference' },
+      ];
+      const client = createMockClient({
+        getApiSpecification: vi.fn().mockResolvedValue(undefined),
+        getResource: vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
+          if (desc.type === ResourceType.ApiWiki) {
+            return { name: 'default', properties: { documents } };
+          }
+          return undefined;
+        }),
+      });
+      const store = createMockStore();
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['documented-api'],
+      };
+
+      const result = await extractApiResources(
+        client, store, testContext, apiDescriptor,
+        { name: 'documented-api' },
+        '/output'
+      );
+
+      expect(result.wiki).toBe(true);
+      // writeResource should have been called with a _markdownContent field
+      expect(store.writeResource).toHaveBeenCalledWith(
+        '/output',
+        expect.objectContaining({ type: ResourceType.ApiWiki }),
+        expect.objectContaining({ _markdownContent: expect.stringContaining('Getting Started') })
+      );
+    });
+
+    it('should return wiki=false and not throw when getResource throws for wiki', async () => {
+      const client = createMockClient({
+        getApiSpecification: vi.fn().mockResolvedValue(undefined),
+        getResource: vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
+          if (desc.type === ResourceType.ApiWiki) {
+            throw new Error('403 Forbidden');
+          }
+          return undefined;
+        }),
+      });
+      const store = createMockStore();
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['my-api'],
+      };
+
+      const result = await extractApiResources(
+        client, store, testContext, apiDescriptor,
+        { name: 'my-api' },
+        '/output'
+      );
+
+      expect(result.wiki).toBe(false);
+    });
+
+    it('should return specification=false and not throw when getApiSpecification throws', async () => {
+      const client = createMockClient({
+        getApiSpecification: vi.fn().mockRejectedValue(new Error('Network error')),
+        getResource: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['flaky-api'],
+      };
+
+      const result = await extractApiResources(
+        client, store, testContext, apiDescriptor,
+        { name: 'flaky-api', properties: {} },
+        '/output'
+      );
+
+      expect(result.specification).toBe(false);
+    });
+
+    it('should record error status when an individual revision getResource throws', async () => {
+      const client = createMockClient({
+        listApiRevisions: async function* () {
+          yield { apiRevision: '2' };
+        },
+        getResource: vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
+          if (desc.type === ResourceType.Api && (desc.nameParts[0] ?? '').includes(';rev=')) {
+            throw new Error('revision fetch failed');
+          }
+          return undefined;
+        }),
+        getApiSpecification: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+
+      const result = await extractApiResources(
+        client, store, testContext,
+        { type: ResourceType.Api, nameParts: ['my-api'] },
+        { name: 'my-api' },
+        '/output'
+      );
+
+      expect(result.revisions).toHaveLength(1);
+      expect(result.revisions[0]?.status).toBe('error');
+    });
+
+    it('should return empty revisions and not throw when listApiRevisions throws', async () => {
+      const client = createMockClient({
+        // eslint-disable-next-line require-yield
+        listApiRevisions: async function* () {
+          throw new Error('list revisions failed');
+        },
+        getResource: vi.fn().mockResolvedValue(undefined),
+        getApiSpecification: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+
+      const result = await extractApiResources(
+        client, store, testContext,
+        { type: ResourceType.Api, nameParts: ['my-api'] },
+        { name: 'my-api' },
+        '/output'
+      );
+
+      expect(result.revisions).toHaveLength(0);
+    });
+
+    it('should skip revision when getResource returns undefined (revision not found)', async () => {
+      const client = createMockClient({
+        listApiRevisions: async function* () {
+          yield { apiRevision: '2' };
+        },
+        getResource: vi.fn().mockResolvedValue(undefined),
+        getApiSpecification: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+
+      const result = await extractApiResources(
+        client, store, testContext,
+        { type: ResourceType.Api, nameParts: ['my-api'] },
+        { name: 'my-api' },
+        '/output'
+      );
+
+      // Revision listed but getResource returned undefined — not added to results
+      expect(result.revisions).toHaveLength(0);
+      expect(store.writeResource).not.toHaveBeenCalled();
+    });
+
+    it('should skip revision when revision has no revision number', async () => {
+      const client = createMockClient({
+        listApiRevisions: async function* () {
+          yield { someOtherField: 'value' }; // no apiRevision or revisionNumber
+          yield { apiRevision: '3' };
+        },
+        getResource: vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
+          if ((desc.nameParts[0] ?? '').includes(';rev=')) {
+            return { name: desc.nameParts[0] ?? '', properties: {} };
+          }
+          return undefined;
+        }),
+        getApiSpecification: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+
+      const result = await extractApiResources(
+        client, store, testContext,
+        { type: ResourceType.Api, nameParts: ['my-api'] },
+        { name: 'my-api' },
+        '/output'
+      );
+
+      // Only revision 3 extracted; the revision with no number was skipped
+      expect(result.revisions).toHaveLength(1);
+      expect(result.revisions[0]?.descriptor.nameParts[0]).toBe('my-api;rev=3');
+    });
+
+    it('should return no policy when policy JSON has no value field', async () => {
+      const client = createMockClient({
+        getResource: vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
+          if (desc.type === ResourceType.ApiPolicy) {
+            // properties exists but value is absent
+            return { name: 'policy', properties: {} };
+          }
+          return undefined;
+        }),
+        getApiSpecification: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+
+      const result = await extractApiResources(
+        client, store, testContext,
+        { type: ResourceType.Api, nameParts: ['my-api'] },
+        { name: 'my-api' },
+        '/output'
+      );
+
+      expect(result.policies).toHaveLength(0);
+      expect(store.writeContent).not.toHaveBeenCalledWith(
+        expect.anything(), expect.anything(), expect.anything(), 'policy'
+      );
+    });
+
+    it('should skip revision that does not match filter apiNames', async () => {
+      const filter: FilterConfig = { apiNames: ['other-api'] };
+      const client = createMockClient({
+        listApiRevisions: async function* () {
+          yield { apiRevision: '2' };
+        },
+        getResource: vi.fn().mockResolvedValue({ name: 'my-api;rev=2', properties: {} }),
+        getApiSpecification: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+
+      const result = await extractApiResources(
+        client, store, testContext,
+        { type: ResourceType.Api, nameParts: ['my-api'] },
+        { name: 'my-api', properties: {} },
+        '/output',
+        filter
+      );
+
+      // Revision filtered out — writeResource should not be called for it
+      expect(result.revisions).toHaveLength(0);
+    });
   });
 });
 
@@ -493,6 +882,74 @@ describe('product-extractor', () => {
         expect.anything(),
         expect.objectContaining({ type: ResourceType.ProductWiki, nameParts: ['starter'] })
       );
+    });
+  });
+
+  describe('extractProductResources - tags', () => {
+    it('extracts and writes tags.json when tags exist', async () => {
+      const client = createMockClient();
+      client.listResources = async function* (_ctx, type) {
+        if (type === ResourceType.ProductTag) {
+          yield { name: 'v1' };
+          yield { name: 'production' };
+        }
+      };
+      client.getResource = vi.fn().mockResolvedValue(undefined);
+      const store = createMockStore();
+
+      const result = await extractProductResources(
+        client, store, testContext,
+        { type: ResourceType.Product, nameParts: ['starter'] },
+        '/output'
+      );
+
+      expect(result.tags).toContain('v1');
+      expect(result.tags).toContain('production');
+      expect(store.writeAssociation).toHaveBeenCalledWith(
+        '/output',
+        expect.objectContaining({ type: ResourceType.Product, nameParts: ['starter'] }),
+        'tags',
+        expect.arrayContaining(['v1', 'production'])
+      );
+    });
+
+    it('handles empty tag list: writeAssociation not called for tags, result.tags is empty', async () => {
+      const client = createMockClient();
+      client.listResources = async function* () {};
+      client.getResource = vi.fn().mockResolvedValue(undefined);
+      const store = createMockStore();
+
+      const result = await extractProductResources(
+        client, store, testContext,
+        { type: ResourceType.Product, nameParts: ['starter'] },
+        '/output'
+      );
+
+      expect(result.tags).toEqual([]);
+      const tagsCalls = (store.writeAssociation.mock.calls as unknown[][]).filter(
+        (c) => c[2] === 'tags'
+      );
+      expect(tagsCalls).toHaveLength(0);
+    });
+
+    it('handles tag extraction error gracefully: result.tags is empty, no exception', async () => {
+      const client = createMockClient();
+      client.listResources = async function* (_ctx, type) {
+        if (type === ResourceType.ProductTag) {
+          throw new Error('APIM listing tags failed');
+        }
+        yield* ([] as Array<Record<string, unknown>>);
+      };
+      client.getResource = vi.fn().mockResolvedValue(undefined);
+      const store = createMockStore();
+
+      const result = await extractProductResources(
+        client, store, testContext,
+        { type: ResourceType.Product, nameParts: ['starter'] },
+        '/output'
+      );
+
+      expect(result.tags).toEqual([]);
     });
   });
 });

@@ -268,5 +268,173 @@ describe('extract-service', () => {
       const result = await runExtraction(client, store, config);
       expect(result.workspaceResults).toHaveLength(0);
     });
+
+    it('should count product sub-resources when products are extracted', async () => {
+      const client = createMockClient({
+        [ResourceType.Product]: [
+          { name: 'starter', properties: {} },
+        ],
+      });
+      const store = createMockStore();
+
+      const config: ExtractConfig = {
+        service: testContext,
+        outputDir: '/output',
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runExtraction(client, store, config);
+
+      // Product itself should be extracted, sub-resources depend on product-extractor
+      expect(result.productResults).toBeDefined();
+      expect(result.totalExtracted).toBeGreaterThan(0);
+    });
+
+    it('should extract gateway API associations', async () => {
+      const client = createMockClient({
+        [ResourceType.Gateway]: [
+          { name: 'gw-1', properties: {} },
+        ],
+      });
+
+      // Handle GatewayApi requests for the gateway
+      client.listResources = async function* (_ctx, type, parent?) {
+        if (type === ResourceType.Gateway) {
+          yield { name: 'gw-1', properties: {} };
+        }
+        if (type === ResourceType.GatewayApi && parent?.nameParts[0] === 'gw-1') {
+          yield { name: 'my-api' };
+        }
+      };
+
+      const store = createMockStore();
+
+      const config: ExtractConfig = {
+        service: testContext,
+        outputDir: '/output',
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      await runExtraction(client, store, config);
+
+      expect(store.writeAssociation).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ type: ResourceType.Gateway }),
+        'apis',
+        expect.arrayContaining(['my-api'])
+      );
+    });
+
+    it('should handle gateway association extraction error gracefully', async () => {
+      const client = createMockClient({
+        [ResourceType.Gateway]: [
+          { name: 'gw-1', properties: {} },
+        ],
+      });
+
+      client.listResources = async function* (_ctx, type, _parent?) {
+        if (type === ResourceType.Gateway) {
+          yield { name: 'gw-1', properties: {} };
+        }
+        if (type === ResourceType.GatewayApi) {
+          throw new Error('GatewayApi listing failed');
+        }
+      };
+
+      const store = createMockStore();
+
+      const config: ExtractConfig = {
+        service: testContext,
+        outputDir: '/output',
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runExtraction(client, store, config);
+
+      // Should not have fatal error
+      expect(result.exitCode).not.toBe(2);
+    });
+
+    it('should extract transitive dependencies when includeTransitive is true', async () => {
+      const client = createMockClient({
+        [ResourceType.Backend]: [
+          { name: 'backend-1', properties: {} },
+        ],
+      });
+
+      // Mock getResource for transitive backend
+      client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor) => {
+        if (descriptor.type === ResourceType.Backend && descriptor.nameParts[0] === 'transitive-backend') {
+          return { name: 'transitive-backend', properties: {} };
+        }
+        return undefined;
+      });
+
+      const store = createMockStore();
+
+      const config: ExtractConfig = {
+        service: testContext,
+        outputDir: '/output',
+        includeTransitive: true,
+        filter: { apiNames: [] }, // Trigger transitive resolution
+        logLevel: LogLevel.INFO,
+      };
+
+      // Since transitive resolution depends on finding dependencies in policies,
+      // and we don't have policies here, this tests the code path exists
+      const result = await runExtraction(client, store, config);
+
+      expect(result.exitCode).toBe(0);
+    });
+
+    it('should handle transitive dependency not found (getResource returns null)', async () => {
+      const client = createMockClient({});
+
+      // getResource returns undefined for transitive deps
+      client.getResource = vi.fn().mockResolvedValue(undefined);
+
+      const store = createMockStore();
+
+      const config: ExtractConfig = {
+        service: testContext,
+        outputDir: '/output',
+        includeTransitive: true,
+        filter: { apiNames: [] },
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runExtraction(client, store, config);
+
+      // Should complete without crashing
+      expect(result.exitCode).toBe(0);
+    });
+
+    it('should return EXIT_FATAL when errors > 0 and extracted === 0', async () => {
+      const client = createMockClient({});
+
+      // eslint-disable-next-line require-yield
+      client.listResources = async function* () {
+        throw new Error('All resource types fail');
+      };
+
+      const store = createMockStore();
+
+      const config: ExtractConfig = {
+        service: testContext,
+        outputDir: '/output',
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runExtraction(client, store, config);
+
+      // When all fail and nothing extracted, should be EXIT_FATAL (2)
+      expect(result.totalExtracted).toBe(0);
+      expect(result.totalErrors).toBeGreaterThan(0);
+      expect(result.exitCode).toBe(2);
+    });
   });
 });
