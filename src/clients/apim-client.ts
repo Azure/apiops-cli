@@ -11,6 +11,7 @@ import { RESOURCE_TYPE_METADATA, ResourceType } from '../models/resource-types.j
 import { buildArmUri, buildResourceLabel } from '../lib/resource-uri.js';
 import { deriveListPaths } from '../lib/resource-path.js';
 import { logger } from '../lib/logger.js';
+import { USER_AGENT } from '../lib/user-agent.js';
 
 /**
  * Structured HTTP error that carries the response status code.
@@ -104,6 +105,7 @@ export class ApimClient implements IApimClient {
       headers.delete('Proxy-Authorization');
       headers.delete('x-ms-authorization-auxiliary');
     }
+    headers.set('User-Agent', USER_AGENT);
 
     let attempt = 0;
     // For SAS blob URLs the query string contains the sig token — strip it before logging.

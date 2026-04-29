@@ -1126,3 +1126,61 @@ describe('ApimClient.getApiSpecification', () => {
     expect(fetchSpy.mock.calls[1][0]).toBe(exportResponse.link);
   });
 });
+
+describe('User-Agent header', () => {
+  let client: ApimClient;
+  let fetchSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    client = new ApimClient();
+    fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('should include User-Agent header on authenticated requests', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      makeResponse(200, {
+        value: [{ name: 'gw-1' }],
+      })
+    );
+
+    const results: unknown[] = [];
+    for await (const item of client.listResources(testContext, ResourceType.Gateway)) {
+      results.push(item);
+    }
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [_url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    const headers = new Headers(init?.headers);
+    expect(headers.get('User-Agent')).toMatch(/^apiops-cli\/\d+\.\d+\.\d+/);
+  });
+
+  it('should include User-Agent header on unauthenticated (skipAuth) blob requests', async () => {
+    // First fetch: authenticated APIM call returns an openapi-link SAS URL
+    fetchSpy.mockResolvedValueOnce(
+      makeResponse(200, { link: 'https://example.blob.core.windows.net/spec.json?sig=abc' })
+    );
+    // Second fetch: unauthenticated blob download (skipAuth=true)
+    fetchSpy.mockResolvedValueOnce(
+      new Response('openapi: 3.0.0', { status: 200, headers: { 'Content-Type': 'text/plain' } })
+    );
+
+    await client.getApiSpecification(testContext, 'test-api');
+
+    // The second call is the skipAuth blob fetch — verify it still carries User-Agent
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const [_blobUrl, blobInit] = fetchSpy.mock.calls[1] as [string, RequestInit];
+    const blobHeaders = new Headers(blobInit?.headers);
+    expect(blobHeaders.get('User-Agent')).toMatch(/^apiops-cli\/\d+\.\d+\.\d+/);
+    // Authorization must NOT be set on the unauthenticated call
+    expect(blobHeaders.get('Authorization')).toBeNull();
+  });
+});

@@ -79,4 +79,34 @@
 
 **Result:** 42 total tests in resource-uri.test.ts (32 existing + 13 new for buildResourceLabel, minus 3 restructured). All tests pass. Function behavior validated for all documented use cases.
 
+### 2026-04-29: User-Agent Header Testing (Issue #16)
+
+**Context:** Added test coverage for User-Agent header implementation across both lib and client layers.
+
+**Tests Created:**
+- `tests/unit/lib/user-agent.test.ts` - 3 tests
+  - ✅ USER_AGENT constant exports as string
+  - ✅ USER_AGENT matches format `apiops-cli/{version}`
+  - ✅ Version in USER_AGENT matches package.json version
+
+- `tests/unit/clients/apim-client.test.ts` - 2 new tests added to "User-Agent" describe block
+  - ✅ User-Agent header set on authenticated requests (Bearer token path)
+  - ✅ User-Agent header set on unauthenticated requests (skipAuth blob path)
+
+**Testing Approach:**
+- Verified header presence in both auth paths using standard mock setup
+- Both tests confirm header is set after auth logic via `headers.set()`
+- Used existing test patterns: mock fetch with Response objects, inspect headers in captured context
+
+**Code Review Feedback:**
+- One finding: duplicate test replaced with skipAuth blob path test to avoid redundancy
+- Ensures both auth flows are covered without test duplication
+
+**Pattern:** When testing client-wide headers:
+- Add lib unit test for constant/value verification
+- Add client integration tests for both supported request patterns
+- Verify header appears in expected request headers captured by mocks
+
+**Result:** 5 new User-Agent tests, all passing. Code review approved.
+
 <!-- Append new learnings here after each session -->
