@@ -128,8 +128,8 @@ Test the authentication by running a workflow manually or pushing to main branch
 
 ## Security Notes
 - Use GitHub Environments for production deployments with required reviewers
-- Rotate service principal credentials periodically
-- Review federated credential subjects regularly
+- Review federated credential subjects periodically (no secrets to rotate — OIDC authentication has no stored credentials)
+- Review RBAC role assignments regularly and remove any no longer needed
 - Use least-privilege RBAC assignments
 `;
   }
