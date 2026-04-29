@@ -267,13 +267,13 @@ export function buildSpecificationFilePath(
  *
  * @param baseDir - Root artifact directory
  * @param descriptor - Product or Gateway descriptor
- * @param associationType - Type of association (apis or groups)
+ * @param associationType - Type of association (apis, groups, or tags)
  * @returns Full path to association file
  */
 export function buildAssociationFilePath(
   baseDir: string,
   descriptor: ResourceDescriptor,
-  associationType: 'apis' | 'groups'
+  associationType: 'apis' | 'groups' | 'tags'
 ): string {
   const validTypes = [ResourceType.Product, ResourceType.Gateway];
   if (!validTypes.includes(descriptor.type)) {
@@ -383,4 +383,32 @@ export function parseArtifactPath(
   }
 
   return undefined;
+}
+
+/**
+ * Check if a resource type is a singleton (no list, only get).
+ * Singletons have armPathSuffix ending with a fixed segment (no `{n}` placeholder).
+ * E.g., ServicePolicy (`policies/policy`), ApiWiki (`apis/{0}/wikis/default`).
+ */
+export function isSingletonType(type: ResourceType): boolean {
+  const meta = RESOURCE_TYPE_METADATA[type];
+  // Singleton if the last segment doesn't contain a placeholder
+  const lastSegment = meta.armPathSuffix.split('/').pop() ?? '';
+  return !lastSegment.includes('{');
+}
+
+/**
+ * Check if a resource type is a child type requiring a parent.
+ * Child types have armPathSuffix with more path segments after the first placeholder.
+ * E.g., `apis/{0}/tags/{1}` or `apis/{0}/policies/policy`.
+ */
+export function isChildType(type: ResourceType): boolean {
+  const meta = RESOURCE_TYPE_METADATA[type];
+  const placeholderCount = countTemplatePlaceholders(meta.armPathSuffix);
+  // 2+ placeholders means it's definitely a child (e.g., apis/{0}/tags/{1})
+  if (placeholderCount >= 2) return true;
+  // Check for nested fixed-name resources under a parent (e.g., apis/{0}/policies/policy)
+  const parts = meta.armPathSuffix.split('/');
+  const firstPlaceholderIdx = parts.findIndex(p => p.includes('{'));
+  return firstPlaceholderIdx >= 0 && firstPlaceholderIdx < parts.length - 1;
 }

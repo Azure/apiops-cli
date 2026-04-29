@@ -1,0 +1,832 @@
+<#
+.SYNOPSIS
+    Compares two Azure API Management instances via ARM REST API.
+
+.DESCRIPTION
+    Enumerates child resources under each APIM instance and performs a deep
+    comparison after normalizing instance-specific values. Part of the
+    extract → publish round-trip integration test.
+
+.EXAMPLE
+    .\compare-apim-instances.ps1 `
+      -SourceSubscriptionId "aaaa-bbbb" -SourceResourceGroup "rg-source" -SourceApimName "src-apim" `
+      -TargetSubscriptionId "cccc-dddd" -TargetResourceGroup "rg-target" -TargetApimName "tgt-apim"
+#>
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)] [string] $SourceSubscriptionId,
+    [Parameter(Mandatory)] [string] $SourceResourceGroup,
+    [Parameter(Mandatory)] [string] $SourceApimName,
+    [Parameter(Mandatory)] [string] $TargetSubscriptionId,
+    [Parameter(Mandatory)] [string] $TargetResourceGroup,
+    [Parameter(Mandatory)] [string] $TargetApimName
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# ── Constants ───────────────────────────────────────────────────────────────
+
+$ApiVersion = '2024-05-01'
+
+$SourceBase = "https://management.azure.com/subscriptions/$SourceSubscriptionId/resourceGroups/$SourceResourceGroup/providers/Microsoft.ApiManagement/service/$SourceApimName"
+$TargetBase = "https://management.azure.com/subscriptions/$TargetSubscriptionId/resourceGroups/$TargetResourceGroup/providers/Microsoft.ApiManagement/service/$TargetApimName"
+
+# Fields that are instance-specific or read-only and must be stripped before comparison.
+$StripTopLevelFields = @('id', 'type', 'name', 'systemData', 'etag')
+$StripReadOnlyProperties = @(
+    'provisioningState', 'createdAtUtc', 'lastModifiedDate',
+    'isCurrent', 'isOnline', 'stateComment', 'createdDate'
+)
+# Timestamp properties stripped at ANY level (not just root) — these vary per publish
+$StripTimestampProperties = @(
+    'lastStatus',              # Key Vault named values (contains timeStampUtc)
+    'specificationLastUpdated', # API specification timestamp
+    'createdDateTime',         # Release/other resource creation timestamps
+    'updatedDateTime'          # Release/other resource update timestamps
+)
+
+# Properties ignored on request/response objects (have 'representations' array):
+# - description: WSDL/spec import generates varying descriptions
+$RequestResponseIgnoredProperties = @('description')
+
+# Properties ignored on representation objects (have 'contentType' or 'schemaId'):
+# - description: SOAP/WSDL import generates descriptions that vary
+# - schemaId/typeName: When APIs are published via spec import (OpenAPI/Swagger),
+#   APIM recreates operations from the spec but does NOT populate schemaId/typeName
+#   in representations — the spec itself provides schema resolution. These fields
+#   appear in extracted artifacts but are absent after spec-based publish.
+$RepresentationIgnoredProperties = @('description', 'schemaId', 'typeName')
+
+# ── Helpers ─────────────────────────────────────────────────────────────────
+
+function Get-ArmResourceList {
+    <#
+    .SYNOPSIS
+        GETs a paginated ARM list, following nextLink, and returns all items.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $Url
+    )
+
+    $items = [System.Collections.Generic.List[object]]::new()
+    $currentUrl = $Url
+
+    while ($currentUrl) {
+        $separator = if ($currentUrl -match '\?') { '&' } else { '?' }
+        $fullUrl = if ($currentUrl -match 'api-version=') { $currentUrl } else { "$currentUrl${separator}api-version=$ApiVersion" }
+
+        Write-Verbose "GET $fullUrl"
+        try {
+            $raw = az rest --method GET --url $fullUrl 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                throw "az rest failed (exit $LASTEXITCODE): $raw"
+            }
+            $response = $raw | ConvertFrom-Json
+        }
+        catch {
+            throw "ARM GET failed for $fullUrl — $_"
+        }
+
+        if ($response.PSObject.Properties['value']) {
+            foreach ($item in $response.value) { $items.Add($item) }
+        }
+
+        # nextLink may not exist when there's no pagination
+        $currentUrl = if ($response.PSObject.Properties['nextLink']) { $response.nextLink } else { $null }
+    }
+
+    return $items
+}
+
+function Get-ResourceName {
+    <# Extracts the last segment of an ARM resource ID. #>
+    param([string] $ResourceId)
+    return ($ResourceId -split '/')[-1]
+}
+
+function Build-ResourceMap {
+    <#
+    .SYNOPSIS
+        Builds a name-keyed map from an ARM resource list, handling exclusions and
+        auto-generated 24-character hex names.
+
+    .DESCRIPTION
+        Resources whose names are 24-character lowercase hex strings are auto-generated
+        by APIM (e.g. schema IDs). After an extract → publish round-trip APIM creates
+        new IDs, so the names never match between source and target. These resources are
+        instead keyed by their sorted position after normalising their content, producing
+        stable keys like {{auto-id-0}}, {{auto-id-1}}, … that align equivalent resources
+        across instances for comparison.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyCollection()] [object[]] $Items,
+        [string[]] $ExcludeNames = @(),
+        [Parameter(Mandatory)] [string] $SourceName,
+        [Parameter(Mandatory)] [string] $TargetName,
+        [Parameter(Mandatory)] [string] $SourceSub,
+        [Parameter(Mandatory)] [string] $TargetSub,
+        [Parameter(Mandatory)] [string] $SourceRg,
+        [Parameter(Mandatory)] [string] $TargetRg
+    )
+
+    $map = [ordered]@{}
+
+    # Handle empty or null input
+    if ($null -eq $Items -or $Items.Count -eq 0) {
+        return $map
+    }
+
+    $autoIdItems = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($item in $Items) {
+        $rName = Get-ResourceName -ResourceId $item.id
+        if ($rName -in $ExcludeNames) { continue }
+
+        # Auto-generated IDs: 24-char lowercase hex OR UUID format (8-4-4-4-12)
+        # These get regenerated on publish, so key by normalised content instead
+        if ($rName -match '^[0-9a-f]{24}$' -or $rName -match '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') {
+            $autoIdItems.Add($item)
+        } else {
+            $map[$rName] = $item
+        }
+    }
+
+    # Sort auto-ID items by their normalised JSON so equivalent schemas/operations
+    # from source and target receive the same positional key ({{auto-id-0}}, etc.)
+    if ($autoIdItems.Count -gt 0) {
+        $sorted = $autoIdItems | Sort-Object {
+            $normVal = Normalize-PropertyValue -Value $_ `
+                -SourceName $SourceName -TargetName $TargetName `
+                -SourceSub $SourceSub -TargetSub $TargetSub `
+                -SourceRg $SourceRg -TargetRg $TargetRg
+            $normVal | ConvertTo-Json -Depth 50 -Compress
+        }
+        $i = 0
+        foreach ($item in $sorted) {
+            $map["{{auto-id-$i}}"] = $item
+            $i++
+        }
+    }
+
+    return $map
+}
+
+function Normalize-PropertyValue {
+    <#
+    .SYNOPSIS
+        Recursively normalizes a property value: replaces instance-specific
+        strings, strips read-only fields, sorts arrays.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [AllowNull()] $Value,
+        [Parameter(Mandatory)] [string] $SourceName,
+        [Parameter(Mandatory)] [string] $TargetName,
+        [Parameter(Mandatory)] [string] $SourceSub,
+        [Parameter(Mandatory)] [string] $TargetSub,
+        [Parameter(Mandatory)] [string] $SourceRg,
+        [Parameter(Mandatory)] [string] $TargetRg,
+        [switch] $IsRoot
+    )
+
+    if ($null -eq $Value) { return $null }
+
+    # --- String ---
+    if ($Value -is [string]) {
+        $s = $Value
+        # Normalize ARM resource-ID paths (subscription, RG, service name)
+        $s = $s -replace [regex]::Escape("/subscriptions/$SourceSub/resourceGroups/$SourceRg/providers/Microsoft.ApiManagement/service/$SourceName"), '/subscriptions/{{sub}}/resourceGroups/{{rg}}/providers/Microsoft.ApiManagement/service/{{apim-name}}'
+        $s = $s -replace [regex]::Escape("/subscriptions/$TargetSub/resourceGroups/$TargetRg/providers/Microsoft.ApiManagement/service/$TargetName"), '/subscriptions/{{sub}}/resourceGroups/{{rg}}/providers/Microsoft.ApiManagement/service/{{apim-name}}'
+        # Broader subscription/RG normalization for other resource types
+        $s = $s -replace [regex]::Escape("/subscriptions/$SourceSub/resourceGroups/$SourceRg"), '/subscriptions/{{sub}}/resourceGroups/{{rg}}'
+        $s = $s -replace [regex]::Escape("/subscriptions/$TargetSub/resourceGroups/$TargetRg"), '/subscriptions/{{sub}}/resourceGroups/{{rg}}'
+        $s = $s -replace [regex]::Escape("/subscriptions/$SourceSub"), '/subscriptions/{{sub}}'
+        $s = $s -replace [regex]::Escape("/subscriptions/$TargetSub"), '/subscriptions/{{sub}}'
+        # Neutralize service name in any remaining positions
+        $s = $s -replace [regex]::Escape($SourceName), '{{apim-name}}'
+        $s = $s -replace [regex]::Escape($TargetName), '{{apim-name}}'
+        # Normalize Key Vault URIs — different vault names per RG
+        $s = $s -replace 'https://[a-zA-Z0-9-]+\.vault\.azure\.net', 'https://{{keyvault}}.vault.azure.net'
+        # Normalize Key Vault secret names (src-* vs tgt-*)
+        $s = $s -replace '/secrets/(src|tgt)-', '/secrets/{{prefix}}-'
+        # Normalize App Insights resource IDs (different AI instance names per RG)
+        $s = $s -replace '/providers/Microsoft\.Insights/components/[a-zA-Z0-9-]+', '/providers/Microsoft.Insights/components/{{appinsights}}'
+        # Normalize Event Hub namespace names in resource IDs
+        $s = $s -replace '/providers/Microsoft\.EventHub/namespaces/[a-zA-Z0-9-]+', '/providers/Microsoft.EventHub/namespaces/{{eventhub}}'
+        # Normalize auto-generated APIM IDs (24-char hex strings like schema IDs, named value IDs)
+        $s = $s -replace '\b[0-9a-f]{24}\b', '{{auto-id}}'
+        # Normalize GUIDs
+        $s = $s -replace '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '{{guid}}'
+        return $s
+    }
+
+    # --- Array ---
+    if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string] -and $Value -isnot [System.Collections.IDictionary]) {
+        $normalized = @(foreach ($item in $Value) {
+            Normalize-PropertyValue -Value $item `
+                -SourceName $SourceName -TargetName $TargetName `
+                -SourceSub $SourceSub -TargetSub $TargetSub `
+                -SourceRg $SourceRg -TargetRg $TargetRg
+        })
+        # Sort for order-independent comparison
+        $sorted = $normalized | Sort-Object { ($_ | ConvertTo-Json -Depth 50 -Compress) }
+        return @($sorted)
+    }
+
+    # --- Object / Hashtable ---
+    if ($Value -is [System.Collections.IDictionary]) {
+        $out = [ordered]@{}
+        # Detect request/response objects (have 'representations' array) and representation items
+        $isRequestResponse = $Value.Contains('representations')
+        $isRepresentation = $Value.Contains('contentType') -or $Value.Contains('schemaId')
+        foreach ($key in ($Value.Keys | Sort-Object)) {
+            if ($IsRoot -and $key -in $StripReadOnlyProperties) { continue }
+            if ($key -in $StripTimestampProperties) { continue }  # Strip timestamps at any level
+            if ($isRequestResponse -and $key -in $RequestResponseIgnoredProperties) { continue }
+            if ($isRepresentation -and $key -in $RepresentationIgnoredProperties) { continue }
+            $out[$key] = Normalize-PropertyValue -Value $Value[$key] `
+                -SourceName $SourceName -TargetName $TargetName `
+                -SourceSub $SourceSub -TargetSub $TargetSub `
+                -SourceRg $SourceRg -TargetRg $TargetRg
+        }
+        return $out
+    }
+
+    # PSCustomObject (from ConvertFrom-Json) — NOT primitives which also have PSObject
+    if ($Value -is [PSCustomObject]) {
+        $out = [ordered]@{}
+        # Detect request/response objects (have 'representations' array) and representation items
+        $isRequestResponse = $null -ne ($Value.PSObject.Properties | Where-Object { $_.Name -eq 'representations' })
+        $isRepresentation = $null -ne ($Value.PSObject.Properties | Where-Object { $_.Name -eq 'contentType' -or $_.Name -eq 'schemaId' })
+        foreach ($prop in ($Value.PSObject.Properties | Sort-Object Name)) {
+            if ($IsRoot -and $prop.Name -in $StripReadOnlyProperties) { continue }
+            if ($prop.Name -in $StripTimestampProperties) { continue }  # Strip timestamps at any level
+            if ($isRequestResponse -and $prop.Name -in $RequestResponseIgnoredProperties) { continue }
+            if ($isRepresentation -and $prop.Name -in $RepresentationIgnoredProperties) { continue }
+            $out[$prop.Name] = Normalize-PropertyValue -Value $prop.Value `
+                -SourceName $SourceName -TargetName $TargetName `
+                -SourceSub $SourceSub -TargetSub $TargetSub `
+                -SourceRg $SourceRg -TargetRg $TargetRg
+        }
+        return $out
+    }
+
+    # Primitive (int, bool, etc.)
+    return $Value
+}
+
+function Normalize-Resource {
+    <#
+    .SYNOPSIS
+        Strips top-level ARM envelope fields and applies property normalization.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] $Resource
+    )
+
+    $clone = [ordered]@{}
+    foreach ($prop in $Resource.PSObject.Properties) {
+        if ($prop.Name -in $StripTopLevelFields) { continue }
+        $clone[$prop.Name] = $prop.Value
+    }
+
+    # Normalize the properties bag (read-only fields, instance names, etc.)
+    if ($clone.Contains('properties')) {
+        $clone['properties'] = Normalize-PropertyValue -Value $clone['properties'] `
+            -SourceName $SourceApimName -TargetName $TargetApimName `
+            -SourceSub $SourceSubscriptionId -TargetSub $TargetSubscriptionId `
+            -SourceRg $SourceResourceGroup -TargetRg $TargetResourceGroup `
+            -IsRoot
+    }
+
+    # Normalize any other top-level bags (e.g., location, sku)
+    foreach ($key in @($clone.Keys)) {
+        if ($key -eq 'properties') { continue }
+        $clone[$key] = Normalize-PropertyValue -Value $clone[$key] `
+            -SourceName $SourceApimName -TargetName $TargetApimName `
+            -SourceSub $SourceSubscriptionId -TargetSub $TargetSubscriptionId `
+            -SourceRg $SourceResourceGroup -TargetRg $TargetResourceGroup
+    }
+
+    return $clone
+}
+
+function Compare-NormalizedResources {
+    <#
+    .SYNOPSIS
+        Deep-compares two normalized resource hashtables. Returns a list of diffs.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] $Source,
+        [Parameter(Mandatory)] $Target,
+        [string] $Path = ''
+    )
+
+    $diffs = [System.Collections.Generic.List[string]]::new()
+
+    $sourceJson = $Source | ConvertTo-Json -Depth 50 -Compress
+    $targetJson = $Target | ConvertTo-Json -Depth 50 -Compress
+
+    if ($sourceJson -eq $targetJson) { return ,$diffs }
+
+    # Walk keys for a readable diff
+    $allKeys = @()
+    if ($Source -is [System.Collections.IDictionary]) { $allKeys += $Source.Keys }
+    if ($Target -is [System.Collections.IDictionary]) { $allKeys += $Target.Keys }
+    $allKeys = $allKeys | Select-Object -Unique | Sort-Object
+
+    foreach ($key in $allKeys) {
+        $currentPath = if ($Path) { "$Path.$key" } else { $key }
+        $hasSource = $Source -is [System.Collections.IDictionary] -and $Source.Contains($key)
+        $hasTarget = $Target -is [System.Collections.IDictionary] -and $Target.Contains($key)
+
+        if ($hasSource -and -not $hasTarget) {
+            $diffs.Add("  MISSING in target: $currentPath")
+            continue
+        }
+        if (-not $hasSource -and $hasTarget) {
+            $diffs.Add("  EXTRA in target:   $currentPath")
+            continue
+        }
+
+        $sv = $Source[$key]
+        $tv = $Target[$key]
+        $svJson = $sv | ConvertTo-Json -Depth 50 -Compress
+        $tvJson = $tv | ConvertTo-Json -Depth 50 -Compress
+
+        if ($svJson -ne $tvJson) {
+            # If both are dicts, recurse for finer detail
+            if ($sv -is [System.Collections.IDictionary] -and $tv -is [System.Collections.IDictionary]) {
+                $sub = Compare-NormalizedResources -Source $sv -Target $tv -Path $currentPath
+                if ($sub -is [System.Collections.IEnumerable] -and $sub -isnot [string]) {
+                    foreach ($d in $sub) { $diffs.Add($d) }
+                }
+            }
+            else {
+                $svLen = if ($null -ne $svJson) { $svJson.Length } else { 0 }
+                $tvLen = if ($null -ne $tvJson) { $tvJson.Length } else { 0 }
+                $svShort = if ($svLen -gt 120) { $svJson.Substring(0, 117) + '...' } else { $svJson }
+                $tvShort = if ($tvLen -gt 120) { $tvJson.Substring(0, 117) + '...' } else { $tvJson }
+                $diffs.Add("  DIFF at $currentPath`n    source: $svShort`n    target: $tvShort")
+            }
+        }
+    }
+
+    # Fallback: if JSON differs but no key-level diffs found, report the full diff
+    if ($diffs.Count -eq 0) {
+        $pathPrefix = if ($Path) { "${Path}: " } else { '' }
+        $srcLen = if ($null -ne $sourceJson) { $sourceJson.Length } else { 0 }
+        $tgtLen = if ($null -ne $targetJson) { $targetJson.Length } else { 0 }
+        $srcShort = if ($srcLen -gt 200) { $sourceJson.Substring(0, 197) + '...' } else { $sourceJson }
+        $tgtShort = if ($tgtLen -gt 200) { $targetJson.Substring(0, 197) + '...' } else { $targetJson }
+        $diffs.Add("  ${pathPrefix}JSON differs`n    source: $srcShort`n    target: $tgtShort")
+    }
+
+    return ,$diffs
+}
+
+function Should-SkipSecretValue {
+    <# Returns $true if this resource is a secret named value whose .value should be skipped. #>
+    param($Resource)
+    if (-not $Resource.PSObject.Properties['properties']) { return $false }
+    $props = $Resource.properties
+    if (-not $props) { return $false }
+    $secret = if ($props.PSObject.Properties['secret']) { $props.secret } else { $null }
+    return ($secret -eq $true)
+}
+
+function Should-SkipLoggerCredentials {
+    <# Returns $true if this resource is an Event Hub or App Insights logger (credentials differ per instance). #>
+    param($Resource)
+    if (-not $Resource.PSObject.Properties['properties']) { return $false }
+    $props = $Resource.properties
+    if (-not $props) { return $false }
+    $lt = if ($props.PSObject.Properties['loggerType']) { $props.loggerType } else { $null }
+    return ($lt -eq 'azureEventHub' -or $lt -eq 'applicationInsights')
+}
+
+function Compare-ResourceType {
+    <#
+    .SYNOPSIS
+        Compares a single resource type between source and target APIM.
+        Returns the number of differences found.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $TypeLabel,
+        [Parameter(Mandatory)] [string] $SourceUrl,
+        [Parameter(Mandatory)] [string] $TargetUrl,
+        [string[]] $ExcludeNames = @(),
+        [switch] $SkipSecretValues,
+        [switch] $SkipLoggerCreds
+    )
+
+    Write-Host "  Comparing $TypeLabel ... " -NoNewline
+
+    # Fetch source
+    try {
+        $sourceItems = Get-ArmResourceList -Url $SourceUrl
+    }
+    catch {
+        Write-Host "⚠️  SKIPPED `n`tsource query failed: $_" -ForegroundColor Yellow
+        Write-Verbose "Source query error for $TypeLabel — $_"
+        return @{ Diffs = 0; Compared = 0; Skipped = $true }
+    }
+
+    # Fetch target
+    try {
+        $targetItems = Get-ArmResourceList -Url $TargetUrl
+    }
+    catch {
+        Write-Host "⚠️  SKIPPED `n`ttarget query failed: $_" -ForegroundColor Yellow
+        Write-Verbose "Target query error for $TypeLabel — $_"
+        return @{ Diffs = 0; Compared = 0; Skipped = $true }
+    }
+
+    $srcCount = @($sourceItems).Count
+    $tgtCount = @($targetItems).Count
+    Write-Host "[$srcCount src, $tgtCount tgt] " -NoNewline -ForegroundColor DarkGray
+    Write-Verbose "$TypeLabel — fetched $srcCount source, $tgtCount target"
+
+    # Both empty is a trivial match — no comparison needed
+    if ($srcCount -eq 0 -and $tgtCount -eq 0) {
+        Write-Host ""
+        return @{ Diffs = 0; Compared = 0; Skipped = $false }
+    }
+
+    # Index by name, handling auto-generated 24-char hex IDs via stable content keys
+    $buildParams = @{
+        ExcludeNames = $ExcludeNames
+        SourceName   = $SourceApimName
+        TargetName   = $TargetApimName
+        SourceSub    = $SourceSubscriptionId
+        TargetSub    = $TargetSubscriptionId
+        SourceRg     = $SourceResourceGroup
+        TargetRg     = $TargetResourceGroup
+    }
+    $sourceMap = Build-ResourceMap -Items @($sourceItems) @buildParams
+    $targetMap = Build-ResourceMap -Items @($targetItems) @buildParams
+
+    Write-Verbose "$TypeLabel — comparing $($sourceMap.Count) source vs $($targetMap.Count) target (after exclusions)"
+
+    $diffCount = 0
+    $compared = 0
+    $diffDetails = [System.Collections.Generic.List[string]]::new()
+
+    # Missing in target
+    foreach ($name in $sourceMap.Keys) {
+        if (-not $targetMap.Contains($name)) {
+            Write-Verbose "  Missing in target: $name"
+            $diffDetails.Add("  ❌ MISSING in target: $name")
+            $diffCount++
+        }
+    }
+
+    # Extra in target
+    foreach ($name in $targetMap.Keys) {
+        if (-not $sourceMap.Contains($name)) {
+            Write-Verbose "  Extra in target: $name"
+            $diffDetails.Add("  ❌ EXTRA in target:   $name")
+            $diffCount++
+        }
+    }
+
+    # Compare matched
+    foreach ($name in $sourceMap.Keys) {
+        if (-not $targetMap.Contains($name)) { continue }
+
+        Write-Verbose "  Comparing: $name"
+        $srcResource = $sourceMap[$name]
+        $tgtResource = $targetMap[$name]
+
+        $srcNorm = Normalize-Resource -Resource $srcResource
+        $tgtNorm = Normalize-Resource -Resource $tgtResource
+
+        # Skip secret named-value .value
+        if ($SkipSecretValues -and (Should-SkipSecretValue $srcResource)) {
+            Write-Verbose "    Skipping secret value for: $name"
+            if ($srcNorm.Contains('properties') -and $srcNorm['properties'] -is [System.Collections.IDictionary]) {
+                $srcNorm['properties'].Remove('value') | Out-Null
+            }
+            if ($tgtNorm.Contains('properties') -and $tgtNorm['properties'] -is [System.Collections.IDictionary]) {
+                $tgtNorm['properties'].Remove('value') | Out-Null
+            }
+        }
+
+        # Skip Event Hub logger credentials (connection strings differ per instance)
+        if ($SkipLoggerCreds -and (Should-SkipLoggerCredentials $srcResource)) {
+            Write-Verbose "    Skipping logger credentials for: $name"
+            if ($srcNorm.Contains('properties') -and $srcNorm['properties'] -is [System.Collections.IDictionary]) {
+                $srcNorm['properties'].Remove('credentials') | Out-Null
+            }
+            if ($tgtNorm.Contains('properties') -and $tgtNorm['properties'] -is [System.Collections.IDictionary]) {
+                $tgtNorm['properties'].Remove('credentials') | Out-Null
+            }
+        }
+
+        $diffs = Compare-NormalizedResources -Source $srcNorm -Target $tgtNorm
+        $diffCount2 = if ($diffs -is [System.Collections.IEnumerable] -and $diffs -isnot [string]) { @($diffs).Count } else { 0 }
+        $compared++
+
+        if ($diffCount2 -gt 0) {
+            Write-Verbose "    Found $diffCount2 diff(s) in: $name"
+            $diffCount++
+            $diffDetails.Add("  ❌ $name")
+            foreach ($d in $diffs) { 
+                if ($d -is [string] -and $d.Trim()) { $diffDetails.Add($d) }
+            }
+        }
+        else {
+            Write-Verbose "    ✓ $name matches"
+        }
+    }
+
+    if ($diffCount -eq 0) {
+        $total = $sourceMap.Count
+        Write-Host "✅ ($total resources)" -ForegroundColor Green
+    }
+    else {
+        Write-Host "❌ $diffCount difference(s)" -ForegroundColor Red
+        foreach ($line in $diffDetails) { Write-Host $line -ForegroundColor Red }
+    }
+
+    return @{ Diffs = $diffCount; Compared = $compared; Skipped = $false }
+}
+
+# ── Main comparison orchestration ───────────────────────────────────────────
+
+Write-Host ""
+Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
+Write-Host "║         APIM Instance Comparison                             ║" -ForegroundColor Cyan
+Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host "  Source: $SourceApimName ($SourceResourceGroup)" -ForegroundColor Cyan
+Write-Host "  Target: $TargetApimName ($TargetResourceGroup)" -ForegroundColor Cyan
+Write-Host ""
+
+$totalDiffs = 0
+$totalCompared = 0
+$totalTypes = 0
+$skippedTypes = 0
+
+try {
+
+    # ── Top-level resource types ────────────────────────────────────────────
+
+    $topLevelTypes = @(
+        @{ Label = 'Named Values';       Suffix = 'namedValues';      Exclude = @(); SkipSecret = $true  }
+        @{ Label = 'Tags';               Suffix = 'tags';             Exclude = @()                      }
+        @{ Label = 'Gateways';           Suffix = 'gateways';         Exclude = @()                      }
+        @{ Label = 'API Version Sets';   Suffix = 'apiVersionSets';   Exclude = @()                      }
+        @{ Label = 'Backends';           Suffix = 'backends';         Exclude = @()                      }
+        @{ Label = 'Groups';             Suffix = 'groups';           Exclude = @('administrators', 'developers', 'guests') }
+        @{ Label = 'Policy Fragments';   Suffix = 'policyFragments';  Exclude = @()                      }
+        @{ Label = 'Global Schemas';     Suffix = 'schemas';          Exclude = @()                      }
+        @{ Label = 'Loggers';            Suffix = 'loggers';          Exclude = @(); SkipLoggerCreds = $true }
+        @{ Label = 'Diagnostics';        Suffix = 'diagnostics';      Exclude = @()                      }
+        @{ Label = 'Service Policy';     Suffix = 'policies';         Exclude = @()                      }
+        @{ Label = 'Products';           Suffix = 'products';         Exclude = @('starter', 'unlimited') }
+        @{ Label = 'Subscriptions';      Suffix = 'subscriptions';    Exclude = @('master')              }
+        @{ Label = 'Workspaces';         Suffix = 'workspaces';       Exclude = @()                      }
+        @{ Label = 'Documentations';     Suffix = 'documentations';   Exclude = @()                      }
+        @{ Label = 'Policy Restrictions'; Suffix = 'policyRestrictions'; Exclude = @()                   }
+    )
+
+    Write-Host "── Top-level resources ──" -ForegroundColor White
+
+    foreach ($rt in $topLevelTypes) {
+        $params = @{
+            TypeLabel  = $rt.Label
+            SourceUrl  = "$SourceBase/$($rt.Suffix)"
+            TargetUrl  = "$TargetBase/$($rt.Suffix)"
+            ExcludeNames = $rt.Exclude
+        }
+        if ($rt.ContainsKey('SkipSecret') -and $rt.SkipSecret)         { $params['SkipSecretValues'] = $true }
+        if ($rt.ContainsKey('SkipLoggerCreds') -and $rt.SkipLoggerCreds) { $params['SkipLoggerCreds'] = $true }
+
+        $result = Compare-ResourceType @params
+        $totalTypes++
+        $totalDiffs += $result.Diffs
+        $totalCompared += $result.Compared
+        if ($result.Skipped) { $skippedTypes++ }
+    }
+
+    # ── APIs and their children ─────────────────────────────────────────────
+
+    Write-Host ""
+    Write-Host "── APIs ──" -ForegroundColor White
+
+    $apiResult = Compare-ResourceType -TypeLabel 'APIs' `
+        -SourceUrl "$SourceBase/apis" -TargetUrl "$TargetBase/apis" `
+        -ExcludeNames @('echo-api')
+    $totalTypes++
+    $totalDiffs += $apiResult.Diffs
+    $totalCompared += $apiResult.Compared
+
+    # Enumerate APIs from source to compare child resources
+    try {
+        $sourceApis = Get-ArmResourceList -Url "$SourceBase/apis"
+        $apiNames = @(foreach ($api in $sourceApis) {
+            $n = Get-ResourceName -ResourceId $api.id
+            if ($n -ne 'echo-api') { $n }
+        })
+    }
+    catch {
+        Write-Host "  ⚠️  Could not enumerate APIs for child comparison: $_" -ForegroundColor Yellow
+        $apiNames = @()
+    }
+
+    $apiChildTypes = @(
+        @{ Label = 'Operations';      Suffix = 'operations'      }
+        @{ Label = 'Policies';        Suffix = 'policies'        }
+        @{ Label = 'Schemas';         Suffix = 'schemas'         }
+        @{ Label = 'Tags';            Suffix = 'tags'            }
+        @{ Label = 'Diagnostics';     Suffix = 'diagnostics'     }
+        @{ Label = 'Resolvers';       Suffix = 'resolvers'       }
+        @{ Label = 'Releases';        Suffix = 'releases'        }
+        @{ Label = 'Wikis';           Suffix = 'wikis'           }
+        @{ Label = 'Tag Descriptions'; Suffix = 'tagDescriptions' }
+    )
+
+    foreach ($apiName in $apiNames) {
+        Write-Host "  API: $apiName" -ForegroundColor DarkCyan
+
+        foreach ($child in $apiChildTypes) {
+            $result = Compare-ResourceType `
+                -TypeLabel "  API/$apiName/$($child.Label)" `
+                -SourceUrl "$SourceBase/apis/$apiName/$($child.Suffix)" `
+                -TargetUrl "$TargetBase/apis/$apiName/$($child.Suffix)"
+            $totalTypes++
+            $totalDiffs += $result.Diffs
+            $totalCompared += $result.Compared
+            if ($result.Skipped) { $skippedTypes++ }
+        }
+
+        # API Operation Policies — enumerate operations then check each
+        try {
+            $ops = Get-ArmResourceList -Url "$SourceBase/apis/$apiName/operations"
+            foreach ($op in $ops) {
+                $opName = Get-ResourceName -ResourceId $op.id
+                $result = Compare-ResourceType `
+                    -TypeLabel "  API/$apiName/operations/$opName/Policies" `
+                    -SourceUrl "$SourceBase/apis/$apiName/operations/$opName/policies" `
+                    -TargetUrl "$TargetBase/apis/$apiName/operations/$opName/policies"
+                $totalTypes++
+                $totalDiffs += $result.Diffs
+                $totalCompared += $result.Compared
+                if ($result.Skipped) { $skippedTypes++ }
+            }
+        }
+        catch {
+            Write-Verbose "Could not enumerate operations for API $apiName — $_"
+        }
+
+        # API Resolver Policies — enumerate resolvers then check each
+        try {
+            $resolvers = Get-ArmResourceList -Url "$SourceBase/apis/$apiName/resolvers"
+            foreach ($resolver in $resolvers) {
+                $resolverName = Get-ResourceName -ResourceId $resolver.id
+                $result = Compare-ResourceType `
+                    -TypeLabel "  API/$apiName/resolvers/$resolverName/Policies" `
+                    -SourceUrl "$SourceBase/apis/$apiName/resolvers/$resolverName/policies" `
+                    -TargetUrl "$TargetBase/apis/$apiName/resolvers/$resolverName/policies"
+                $totalTypes++
+                $totalDiffs += $result.Diffs
+                $totalCompared += $result.Compared
+                if ($result.Skipped) { $skippedTypes++ }
+            }
+        }
+        catch {
+            Write-Verbose "Could not enumerate resolvers for API $apiName — $_"
+        }
+    }
+
+    # ── Products and their children ─────────────────────────────────────────
+
+    Write-Host ""
+    Write-Host "── Products ──" -ForegroundColor White
+
+    $productChildTypes = @(
+        @{ Label = 'Policies'; Suffix = 'policies' }
+        @{ Label = 'APIs';     Suffix = 'apis'     }
+        @{ Label = 'Groups';   Suffix = 'groups'   }
+        @{ Label = 'Tags';     Suffix = 'tags'     }
+        @{ Label = 'Wikis';    Suffix = 'wikis'    }
+    )
+
+    try {
+        $sourceProducts = Get-ArmResourceList -Url "$SourceBase/products"
+        $productNames = @(foreach ($p in $sourceProducts) {
+            $n = Get-ResourceName -ResourceId $p.id
+            if ($n -notin @('starter', 'unlimited')) { $n }
+        })
+    }
+    catch {
+        Write-Host "  ⚠️  Could not enumerate products: $_" -ForegroundColor Yellow
+        $productNames = @()
+    }
+
+    foreach ($productName in $productNames) {
+        Write-Host "  Product: $productName" -ForegroundColor DarkCyan
+
+        foreach ($child in $productChildTypes) {
+            $result = Compare-ResourceType `
+                -TypeLabel "  Product/$productName/$($child.Label)" `
+                -SourceUrl "$SourceBase/products/$productName/$($child.Suffix)" `
+                -TargetUrl "$TargetBase/products/$productName/$($child.Suffix)"
+            $totalTypes++
+            $totalDiffs += $result.Diffs
+            $totalCompared += $result.Compared
+            if ($result.Skipped) { $skippedTypes++ }
+        }
+    }
+
+    # ── Gateways and their child APIs ───────────────────────────────────────
+
+    Write-Host ""
+    Write-Host "── Gateway APIs ──" -ForegroundColor White
+
+    try {
+        $sourceGateways = Get-ArmResourceList -Url "$SourceBase/gateways"
+        foreach ($gw in $sourceGateways) {
+            $gwName = Get-ResourceName -ResourceId $gw.id
+            Write-Host "  Gateway: $gwName" -ForegroundColor DarkCyan
+
+            $result = Compare-ResourceType `
+                -TypeLabel "  Gateway/$gwName/APIs" `
+                -SourceUrl "$SourceBase/gateways/$gwName/apis" `
+                -TargetUrl "$TargetBase/gateways/$gwName/apis"
+            $totalTypes++
+            $totalDiffs += $result.Diffs
+            $totalCompared += $result.Compared
+            if ($result.Skipped) { $skippedTypes++ }
+        }
+    }
+    catch {
+        Write-Host "  ⚠️  Gateways not available (v2 SKU?): $_" -ForegroundColor Yellow
+    }
+
+    # ── Workspaces and their children ───────────────────────────────────────
+
+    Write-Host ""
+    Write-Host "── Workspace children ──" -ForegroundColor White
+
+    try {
+        $sourceWorkspaces = Get-ArmResourceList -Url "$SourceBase/workspaces"
+        foreach ($ws in $sourceWorkspaces) {
+            $wsName = Get-ResourceName -ResourceId $ws.id
+            Write-Host "  Workspace: $wsName" -ForegroundColor DarkCyan
+
+            # Compare common workspace child resource types
+            $wsChildTypes = @(
+                'apis', 'products', 'backends', 'namedValues', 'tags',
+                'groups', 'policyFragments', 'schemas', 'loggers',
+                'diagnostics', 'policies', 'subscriptions', 'apiVersionSets'
+            )
+
+            foreach ($wsChild in $wsChildTypes) {
+                $result = Compare-ResourceType `
+                    -TypeLabel "  Workspace/$wsName/$wsChild" `
+                    -SourceUrl "$SourceBase/workspaces/$wsName/$wsChild" `
+                    -TargetUrl "$TargetBase/workspaces/$wsName/$wsChild"
+                $totalTypes++
+                $totalDiffs += $result.Diffs
+                $totalCompared += $result.Compared
+                if ($result.Skipped) { $skippedTypes++ }
+            }
+        }
+    }
+    catch {
+        Write-Host "  ⚠️  Workspaces not available (requires Premium/PremiumV2): $_" -ForegroundColor Yellow
+    }
+
+    # ── Summary ─────────────────────────────────────────────────────────────
+
+    Write-Host ""
+    Write-Host "══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
+
+    if ($totalDiffs -eq 0) {
+        Write-Host "✅ PASS — $totalTypes resource types compared, $totalCompared total resources matched" -ForegroundColor Green
+        if ($skippedTypes -gt 0) {
+            Write-Host "   ($skippedTypes type(s) skipped due to query failures)" -ForegroundColor Yellow
+        }
+        exit 0
+    }
+    else {
+        Write-Host "❌ FAIL — $totalDiffs difference(s) found across $totalTypes resource types ($totalCompared resources compared)" -ForegroundColor Red
+        if ($skippedTypes -gt 0) {
+            Write-Host "   ($skippedTypes type(s) skipped due to query failures)" -ForegroundColor Yellow
+        }
+        exit 1
+    }
+}
+catch {
+    Write-Host ""
+    Write-Host "💥 ERROR — $_" -ForegroundColor Red
+    Write-Host $_.ScriptStackTrace -ForegroundColor DarkRed
+    exit 2
+}

@@ -70,7 +70,7 @@ export class ArtifactStore implements IArtifactStore {
   async writeAssociation(
     baseDir: string,
     descriptor: ResourceDescriptor,
-    associationType: 'apis' | 'groups',
+    associationType: 'apis' | 'groups' | 'tags',
     names: string[]
   ): Promise<void> {
     const filePath = buildAssociationFilePath(baseDir, descriptor, associationType);
@@ -158,7 +158,7 @@ export class ArtifactStore implements IArtifactStore {
   async readAssociation(
     baseDir: string,
     descriptor: ResourceDescriptor,
-    associationType: 'apis' | 'groups'
+    associationType: 'apis' | 'groups' | 'tags'
   ): Promise<string[]> {
     const filePath = buildAssociationFilePath(baseDir, descriptor, associationType);
     

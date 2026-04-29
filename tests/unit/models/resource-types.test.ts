@@ -61,4 +61,34 @@ describe('RESOURCE_TYPE_METADATA', () => {
     expect(RESOURCE_TYPE_METADATA[ResourceType.ProductApi].armPathSuffix).toContain('{0}');
     expect(RESOURCE_TYPE_METADATA[ResourceType.ProductApi].armPathSuffix).toContain('{1}');
   });
+
+  it('supportsGet is defined as a boolean for all resource types', () => {
+    for (const [type, meta] of Object.entries(RESOURCE_TYPE_METADATA)) {
+      expect(typeof meta.supportsGet, `${type} supportsGet should be boolean`).toBe('boolean');
+    }
+  });
+
+  it('association resource types have supportsGet=false', () => {
+    const associationTypes = [
+      ResourceType.ProductApi,
+      ResourceType.ProductGroup,
+      ResourceType.ProductTag,
+      ResourceType.GatewayApi,
+    ];
+    for (const type of associationTypes) {
+      expect(RESOURCE_TYPE_METADATA[type].supportsGet, `${type} should have supportsGet=false`).toBe(false);
+    }
+  });
+
+  it('non-association resource types have supportsGet=true', () => {
+    const nonAssociationTypes = [
+      ResourceType.Product,
+      ResourceType.Api,
+      ResourceType.Tag,
+      ResourceType.ServicePolicy,
+    ];
+    for (const type of nonAssociationTypes) {
+      expect(RESOURCE_TYPE_METADATA[type].supportsGet, `${type} should have supportsGet=true`).toBe(true);
+    }
+  });
 });

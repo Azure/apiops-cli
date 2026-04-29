@@ -1,6 +1,6 @@
 /**
  * T023: Product-specific extraction logic
- * Product associations (apis.json, groups.json), product policies, product wikis.
+ * Product associations (apis.json, groups.json, tags.json), product policies, product wikis.
  */
 
 import { IApimClient } from '../clients/iapim-client.js';
@@ -8,7 +8,7 @@ import { IArtifactStore } from '../clients/iartifact-store.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import { ResourceType } from '../models/resource-types.js';
 import { FilterConfig } from '../models/config.js';
-import { extractResourceType, extractResourceName, ExtractedResource } from './resource-extractor.js';
+import { extractResourceName } from './resource-extractor.js';
 import { logger } from '../lib/logger.js';
 import { getNamePart } from '../lib/resource-path.js';
 
@@ -21,7 +21,7 @@ export interface ProductExtractionResult {
   groups: string[];
   policy: string | undefined;
   wiki: boolean;
-  tags: ExtractedResource[];
+  tags: string[];
   policies: string[];
 }
 
@@ -35,8 +35,8 @@ export async function extractProductResources(
   context: ApimServiceContext,
   productDescriptor: ResourceDescriptor,
   outputDir: string,
-  filter?: FilterConfig,
-  workspace?: string
+  _filter?: FilterConfig,
+  _workspace?: string
 ): Promise<ProductExtractionResult> {
   const productName = getNamePart(productDescriptor.nameParts, 0);
   const result: ProductExtractionResult = {
@@ -72,12 +72,10 @@ export async function extractProductResources(
     client, store, context, productDescriptor, outputDir
   );
 
-  // Extract product tags
-  const tagResult = await extractResourceType(
-    client, store, context, ResourceType.ProductTag,
-    outputDir, filter, productDescriptor, workspace
+  // Extract product tags - store as tags.json association file
+  result.tags = await extractProductTags(
+    client, store, context, productDescriptor, outputDir
   );
-  result.tags = tagResult.extracted;
 
   return result;
 }
@@ -117,6 +115,42 @@ async function extractProductAssociations(
     }
   } catch (error) {
     logger.warn(`Failed to list ${associationType} for product "${getNamePart(productDescriptor.nameParts, 0)}": ${(error as Error).message}`);
+  }
+
+  return names;
+}
+
+/**
+ * Extract product tags and write to artifact store as tags.json.
+ */
+async function extractProductTags(
+  client: IApimClient,
+  store: IArtifactStore,
+  context: ApimServiceContext,
+  productDescriptor: ResourceDescriptor,
+  outputDir: string
+): Promise<string[]> {
+  const names: string[] = [];
+
+  try {
+    const resources = client.listResources(context, ResourceType.ProductTag, productDescriptor);
+
+    for await (const json of resources) {
+      try {
+        const name = extractResourceName(json);
+        names.push(name);
+      } catch (error) {
+        logger.warn(`Failed to extract tag name: ${(error as Error).message}`);
+      }
+    }
+
+    // Write tags association file
+    if (names.length > 0) {
+      await store.writeAssociation(outputDir, productDescriptor, 'tags', names);
+      logger.info(`Extracted ${names.length} tags for product "${getNamePart(productDescriptor.nameParts, 0)}"`);
+    }
+  } catch (error) {
+    logger.warn(`Failed to list tags for product "${getNamePart(productDescriptor.nameParts, 0)}": ${(error as Error).message}`);
   }
 
   return names;
