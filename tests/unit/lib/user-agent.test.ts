@@ -8,8 +8,6 @@ import { USER_AGENT } from '../../../src/lib/user-agent.js';
 describe('USER_AGENT', () => {
   it('should be a string', () => {
     expect(typeof USER_AGENT).toBe('string');
-    expect(USER_AGENT).toBeDefined();
-    expect(USER_AGENT).not.toBeNull();
   });
 
   it('should start with "apiops-cli/"', () => {
