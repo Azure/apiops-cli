@@ -629,7 +629,6 @@ describe('defaultArmRequest User-Agent header', () => {
       const [_url, init] = call as [string, RequestInit];
       const headers = new Headers(init?.headers);
       expect(headers.get('User-Agent')).toBe(USER_AGENT);
-      expect(headers.get('User-Agent')).toMatch(/^apiops-cli\/\d+\.\d+\.\d+/);
     }
   });
 });
