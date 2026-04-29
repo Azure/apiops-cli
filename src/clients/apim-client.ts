@@ -338,10 +338,17 @@ export class ApimClient implements IApimClient {
     });
 
     // Poll for long-running operations (201/202 responses).
+    // Skip polling for association resources that don't support GET (supportsGet: false in metadata).
     // Check status BEFORE reading the body so the body stream is not consumed
     // unnecessarily — and to avoid JSON-parsing failures when the 201/202 body
     // is XML (e.g. policy endpoints that echo back raw XML on creation).
     if (response.status === 201 || response.status === 202) {
+      const metadata = RESOURCE_TYPE_METADATA[descriptor.type];
+      if (!metadata.supportsGet) {
+        // Association resources don't support GET - return empty on success
+        logger.debug(`Skipping provisioning poll for association resource: ${buildResourceLabel(descriptor)}`);
+        return {};
+      }
       return await this.pollProvisioningState(context, descriptor);
     }
 

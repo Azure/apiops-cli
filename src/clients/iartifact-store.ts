@@ -30,12 +30,12 @@ export interface IArtifactStore {
   ): Promise<void>;
 
   /**
-   * Write an association file (e.g., product → apis.json, product → groups.json).
+   * Write an association file (e.g., product → apis.json, product → groups.json, product → tags.json).
    */
   writeAssociation(
     baseDir: string,
     descriptor: ResourceDescriptor,
-    associationType: 'apis' | 'groups',
+    associationType: 'apis' | 'groups' | 'tags',
     names: string[]
   ): Promise<void>;
 
@@ -65,7 +65,7 @@ export interface IArtifactStore {
   readAssociation(
     baseDir: string,
     descriptor: ResourceDescriptor,
-    associationType: 'apis' | 'groups'
+    associationType: 'apis' | 'groups' | 'tags'
   ): Promise<string[]>;
 
   /**

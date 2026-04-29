@@ -116,5 +116,46 @@ describe('workspace-extractor', () => {
       expect(results).toHaveLength(1);
       expect(results[0]?.errorCount).toBeGreaterThan(0);
     });
+
+    it('should extract API sub-resources within workspace', async () => {
+      const client = createMockClient();
+      // Return APIs when listing in workspace context
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType) {
+        if (type === ResourceType.Api) {
+          yield { name: 'ws-api-1', properties: {} };
+        }
+      };
+      client.getResource = vi.fn().mockResolvedValue(undefined);
+      const store = createMockStore();
+      const filter: FilterConfig = { workspaceNames: ['ws-1'] };
+
+      const results = await extractWorkspaces(
+        client, store, testContext, '/output', filter
+      );
+
+      expect(results).toHaveLength(1);
+      expect(results[0]?.resourceCount).toBeGreaterThan(0);
+      expect(results[0]?.workspaceName).toBe('ws-1');
+    });
+
+    it('should extract product resources within workspace', async () => {
+      const client = createMockClient();
+      // Return products when listing in workspace context
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType) {
+        if (type === ResourceType.Product) {
+          yield { name: 'ws-product', properties: {} };
+        }
+      };
+      client.getResource = vi.fn().mockResolvedValue(undefined);
+      const store = createMockStore();
+      const filter: FilterConfig = { workspaceNames: ['ws-1'] };
+
+      const results = await extractWorkspaces(
+        client, store, testContext, '/output', filter
+      );
+
+      expect(results).toHaveLength(1);
+      expect(results[0]?.resourceCount).toBeGreaterThan(0);
+    });
   });
 });

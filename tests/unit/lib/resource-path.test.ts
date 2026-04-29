@@ -14,6 +14,8 @@ import {
   buildAssociationFilePath,
   parseArtifactPath,
   deriveListPaths,
+  hasNestedParent,
+  getPublishTier,
 } from '../../../src/lib/resource-path.js';
 import { ResourceDescriptor } from '../../../src/models/types.js';
 import { ResourceType } from '../../../src/models/resource-types.js';
@@ -229,6 +231,17 @@ describe('buildAssociationFilePath', () => {
     const filePath = buildAssociationFilePath(baseDir, descriptor, 'apis');
     expect(filePath).toBe(
       path.join(baseDir, 'gateways', 'gw1', 'apis.json')
+    );
+  });
+
+  it("accepts 'tags' as associationType for a Product descriptor", () => {
+    const descriptor: ResourceDescriptor = {
+      type: ResourceType.Product,
+      nameParts: ['starter'],
+    };
+    const filePath = buildAssociationFilePath(baseDir, descriptor, 'tags');
+    expect(filePath).toBe(
+      path.join(baseDir, 'products', 'starter', 'tags.json')
     );
   });
 
@@ -584,5 +597,107 @@ describe('deriveListPaths', () => {
     expect(deriveListPaths('apis/{0}/wikis/default')).toEqual({});
     expect(deriveListPaths('products/{0}/wikis/default')).toEqual({});
     expect(deriveListPaths('apis/{0}/resolvers/{1}/policies/policy')).toEqual({});
+  });
+});
+
+describe('hasNestedParent', () => {
+  it('returns true for ApiOperationPolicy (has segments after last placeholder)', () => {
+    expect(hasNestedParent(ResourceType.ApiOperationPolicy)).toBe(true);
+  });
+
+  it('returns true for GraphQLResolverPolicy (has segments after last placeholder)', () => {
+    expect(hasNestedParent(ResourceType.GraphQLResolverPolicy)).toBe(true);
+  });
+
+  it('returns false for ApiOperation (ends at placeholder)', () => {
+    expect(hasNestedParent(ResourceType.ApiOperation)).toBe(false);
+  });
+
+  it('returns false for GraphQLResolver (ends at placeholder)', () => {
+    expect(hasNestedParent(ResourceType.GraphQLResolver)).toBe(false);
+  });
+
+  it('returns false for ApiPolicy (only one placeholder, fixed suffix)', () => {
+    expect(hasNestedParent(ResourceType.ApiPolicy)).toBe(false);
+  });
+
+  it('returns false for ApiTag (ends at placeholder)', () => {
+    expect(hasNestedParent(ResourceType.ApiTag)).toBe(false);
+  });
+
+  it('returns false for top-level types like NamedValue', () => {
+    expect(hasNestedParent(ResourceType.NamedValue)).toBe(false);
+  });
+
+  it('returns false for ServicePolicy (no placeholders)', () => {
+    expect(hasNestedParent(ResourceType.ServicePolicy)).toBe(false);
+  });
+
+  it('returns false for ProductPolicy (has suffix but only one placeholder)', () => {
+    expect(hasNestedParent(ResourceType.ProductPolicy)).toBe(false);
+  });
+});
+
+describe('getPublishTier', () => {
+  it('returns tier 0 for ServicePolicy (no placeholders)', () => {
+    // policies/policy → 0 placeholders → 0*2 + 0 = 0
+    expect(getPublishTier(ResourceType.ServicePolicy)).toBe(0);
+  });
+
+  it('returns tier 2 for top-level types like NamedValue (1 placeholder, ends at placeholder)', () => {
+    // namedValues/{0} → 1*2 + 0 = 2
+    expect(getPublishTier(ResourceType.NamedValue)).toBe(2);
+  });
+
+  it('returns tier 2 for Api (1 placeholder, ends at placeholder)', () => {
+    // apis/{0} → 1*2 + 0 = 2
+    expect(getPublishTier(ResourceType.Api)).toBe(2);
+  });
+
+  it('returns tier 3 for ApiPolicy (1 placeholder, has suffix)', () => {
+    // apis/{0}/policies/policy → 1*2 + 1 = 3
+    expect(getPublishTier(ResourceType.ApiPolicy)).toBe(3);
+  });
+
+  it('returns tier 3 for ApiWiki (1 placeholder, has suffix)', () => {
+    // apis/{0}/wikis/default → 1*2 + 1 = 3
+    expect(getPublishTier(ResourceType.ApiWiki)).toBe(3);
+  });
+
+  it('returns tier 4 for ApiOperation (2 placeholders, ends at placeholder)', () => {
+    // apis/{0}/operations/{1} → 2*2 + 0 = 4
+    expect(getPublishTier(ResourceType.ApiOperation)).toBe(4);
+  });
+
+  it('returns tier 4 for GraphQLResolver (2 placeholders, ends at placeholder)', () => {
+    // apis/{0}/resolvers/{1} → 2*2 + 0 = 4
+    expect(getPublishTier(ResourceType.GraphQLResolver)).toBe(4);
+  });
+
+  it('returns tier 4 for ApiTag (2 placeholders, ends at placeholder)', () => {
+    // apis/{0}/tags/{1} → 2*2 + 0 = 4
+    expect(getPublishTier(ResourceType.ApiTag)).toBe(4);
+  });
+
+  it('returns tier 5 for ApiOperationPolicy (2 placeholders, has suffix)', () => {
+    // apis/{0}/operations/{1}/policies/policy → 2*2 + 1 = 5
+    expect(getPublishTier(ResourceType.ApiOperationPolicy)).toBe(5);
+  });
+
+  it('returns tier 5 for GraphQLResolverPolicy (2 placeholders, has suffix)', () => {
+    // apis/{0}/resolvers/{1}/policies/policy → 2*2 + 1 = 5
+    expect(getPublishTier(ResourceType.GraphQLResolverPolicy)).toBe(5);
+  });
+
+  it('ensures operations are published before their policies (tier 4 < tier 5)', () => {
+    expect(getPublishTier(ResourceType.ApiOperation)).toBeLessThan(
+      getPublishTier(ResourceType.ApiOperationPolicy)
+    );
+  });
+
+  it('ensures resolvers are published before their policies (tier 4 < tier 5)', () => {
+    expect(getPublishTier(ResourceType.GraphQLResolver)).toBeLessThan(
+      getPublishTier(ResourceType.GraphQLResolverPolicy)
+    );
   });
 });

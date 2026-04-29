@@ -267,13 +267,13 @@ export function buildSpecificationFilePath(
  *
  * @param baseDir - Root artifact directory
  * @param descriptor - Product or Gateway descriptor
- * @param associationType - Type of association (apis or groups)
+ * @param associationType - Type of association (apis, groups, or tags)
  * @returns Full path to association file
  */
 export function buildAssociationFilePath(
   baseDir: string,
   descriptor: ResourceDescriptor,
-  associationType: 'apis' | 'groups'
+  associationType: 'apis' | 'groups' | 'tags'
 ): string {
   const validTypes = [ResourceType.Product, ResourceType.Gateway];
   if (!validTypes.includes(descriptor.type)) {
@@ -383,4 +383,97 @@ export function parseArtifactPath(
   }
 
   return undefined;
+}
+
+/**
+ * Check if a resource type is a singleton (no list, only get).
+ * Singletons have armPathSuffix ending with a fixed segment (no `{n}` placeholder).
+ * E.g., ServicePolicy (`policies/policy`), ApiWiki (`apis/{0}/wikis/default`).
+ */
+export function isSingletonType(type: ResourceType): boolean {
+  const meta = RESOURCE_TYPE_METADATA[type];
+  // Singleton if the last segment doesn't contain a placeholder
+  const lastSegment = meta.armPathSuffix.split('/').pop() ?? '';
+  return !lastSegment.includes('{');
+}
+
+/**
+ * Check if a resource type is a child type requiring a parent.
+ * Child types have armPathSuffix with more path segments after the first placeholder.
+ * E.g., `apis/{0}/tags/{1}` or `apis/{0}/policies/policy`.
+ */
+export function isChildType(type: ResourceType): boolean {
+  const meta = RESOURCE_TYPE_METADATA[type];
+  const placeholderCount = countTemplatePlaceholders(meta.armPathSuffix);
+  // 2+ placeholders means it's definitely a child (e.g., apis/{0}/tags/{1})
+  if (placeholderCount >= 2) return true;
+  // Check for nested fixed-name resources under a parent (e.g., apis/{0}/policies/policy)
+  const parts = meta.armPathSuffix.split('/');
+  const firstPlaceholderIdx = parts.findIndex(p => p.includes('{'));
+  return firstPlaceholderIdx >= 0 && firstPlaceholderIdx < parts.length - 1;
+}
+
+/**
+ * Compute the publish tier for a resource type based on ARM path structure.
+ * Resources are published from lowest tier to highest; same tier runs in parallel.
+ *
+ * Tier formula: `placeholderCount * 2 + (hasSegmentsAfterLastPlaceholder ? 1 : 0)`
+ *
+ * This ensures:
+ * - Fewer placeholders = earlier tier (parents before children)
+ * - Within same placeholder count, resources ending at a placeholder come
+ *   before those with fixed segments after (e.g., operations before operation policies)
+ *
+ * Examples:
+ *   `apis/{0}`                              → tier 2 (1 placeholder, ends at placeholder)
+ *   `apis/{0}/policies/policy`              → tier 3 (1 placeholder, has suffix)
+ *   `apis/{0}/operations/{1}`               → tier 4 (2 placeholders, ends at placeholder)
+ *   `apis/{0}/operations/{1}/policies/policy` → tier 5 (2 placeholders, has suffix)
+ */
+export function getPublishTier(type: ResourceType): number {
+  const meta = RESOURCE_TYPE_METADATA[type];
+  const parts = meta.armPathSuffix.split('/');
+  const placeholderCount = countTemplatePlaceholders(meta.armPathSuffix);
+
+  // Find the index of the last segment containing a placeholder
+  let lastPlaceholderIdx = -1;
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i].includes('{')) {
+      lastPlaceholderIdx = i;
+    }
+  }
+
+  // Check if there are segments after the last placeholder
+  const hasSegmentsAfter = lastPlaceholderIdx >= 0 && lastPlaceholderIdx < parts.length - 1;
+
+  return placeholderCount * 2 + (hasSegmentsAfter ? 1 : 0);
+}
+
+/**
+ * Check if a resource type is a "grandchild" - has path segments after the last placeholder.
+ * These types depend on an intermediate parent that must exist first.
+ *
+ * @deprecated Use getPublishTier() for N-tier ordering instead
+ */
+export function hasNestedParent(type: ResourceType): boolean {
+  const meta = RESOURCE_TYPE_METADATA[type];
+  const parts = meta.armPathSuffix.split('/');
+
+  // Find the index of the last segment containing a placeholder
+  let lastPlaceholderIdx = -1;
+  for (let i = 0; i < parts.length; i++) {
+    if (parts[i].includes('{')) {
+      lastPlaceholderIdx = i;
+    }
+  }
+
+  // No placeholders = top-level singleton (ServicePolicy), not a grandchild
+  if (lastPlaceholderIdx === -1) return false;
+
+  // Grandchild if there are segments after the last placeholder
+  // AND there are at least 2 placeholders (meaning there's an intermediate parent)
+  const hasSegmentsAfter = lastPlaceholderIdx < parts.length - 1;
+  const placeholderCount = countTemplatePlaceholders(meta.armPathSuffix);
+
+  return hasSegmentsAfter && placeholderCount >= 2;
 }

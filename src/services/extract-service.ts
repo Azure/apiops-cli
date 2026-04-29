@@ -19,8 +19,8 @@ import { runParallel } from '../lib/parallel-runner.js';
 import {
   extractResourceType,
   TypeExtractionResult,
-  isSingletonType,
 } from './resource-extractor.js';
+import { isSingletonType, isChildType } from '../lib/resource-path.js';
 import { extractApiResources, ApiExtractionResult } from './api-extractor.js';
 import { extractProductResources, ProductExtractionResult } from './product-extractor.js';
 import { extractWorkspaces, WorkspaceExtractionResult } from './workspace-extractor.js';
@@ -104,14 +104,14 @@ export async function runExtraction(
 
     // Phase 3: Extract Tier 3 child resources
     // Note: Many tier 3 types (ApiTag, ApiDiagnostic, etc.) are extracted as part
-    // of API-specific extraction above, so we only extract non-API/product children here
+    // of API-specific extraction above, so we only extract top-level listable types here.
+    // Child types (requiring a parent) are handled by api-extractor, product-extractor,
+    // or extractGatewayAssociations below.
     logger.info('Extracting tier 3 resources...');
-    const tier3NonChild = TIER_3_RESOURCES.filter(
-      (t) =>
-        t === ResourceType.GatewayApi ||
-        t === ResourceType.Subscription
+    const tier3TopLevel = TIER_3_RESOURCES.filter(
+      (t) => !isSingletonType(t) && !isChildType(t)
     );
-    await extractTier(client, store, service, tier3NonChild, outputDir, filter, result);
+    await extractTier(client, store, service, tier3TopLevel, outputDir, filter, result);
 
     // Extract gateway API associations
     await extractGatewayAssociations(client, store, service, outputDir, filter, result);
@@ -352,13 +352,13 @@ async function extractProductSubResources(
       const { productName, prodResult } = taskResult.value;
       result.productResults.push(prodResult);
 
-      // Count sub-resources (associations + policy + wiki)
+      // Count sub-resources (associations + policy + wiki + tags)
       const subCount =
         (prodResult.apis.length > 0 ? 1 : 0) +
         (prodResult.groups.length > 0 ? 1 : 0) +
         (prodResult.policy ? 1 : 0) +
         (prodResult.wiki ? 1 : 0) +
-        prodResult.tags.filter((r) => r.status === 'success').length;
+        (prodResult.tags.length > 0 ? 1 : 0);
 
       result.totalExtracted += subCount;
 

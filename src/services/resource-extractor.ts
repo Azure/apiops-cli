@@ -15,6 +15,15 @@ import { logger } from '../lib/logger.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
 
 /**
+ * Check if a resource type's LIST endpoint returns shallow data that omits
+ * fields required for round-trip publish. When true, extraction must issue
+ * an individual GET per item to fetch the complete resource.
+ */
+function typeNeedsFullFetch(type: ResourceType): boolean {
+  return RESOURCE_TYPE_METADATA[type].listOmitsFields === true;
+}
+
+/**
  * Result of extracting a single resource.
  */
 export interface ExtractedResource {
@@ -216,53 +225,4 @@ function buildDescriptor(
   }
 
   return { type, nameParts, workspace };
-}
-
-/**
- * Check if a resource type is a singleton (no list, only get).
- * E.g., ServicePolicy is always "policy", ApiWiki is "default".
- */
-export function isSingletonType(type: ResourceType): boolean {
-  return type === ResourceType.ServicePolicy ||
-    type === ResourceType.ApiWiki ||
-    type === ResourceType.ProductWiki;
-}
-
-/**
- * True when the list endpoint for this resource type returns a shallow payload
- * that omits fields required for round-trip publish, so we must issue an
- * individual GET per item.
- *
- * ApiSchema: list omits `properties.document` (GraphQL SDL, XSD, JSON schema
- * body). Without this, publish has nothing to upload and synthetic GraphQL
- * APIs cannot round-trip.
- */
-function typeNeedsFullFetch(type: ResourceType): boolean {
-  return type === ResourceType.ApiSchema;
-}
-
-/**
- * Check if a resource type is a child type requiring a parent.
- */
-export function isChildType(type: ResourceType): boolean {
-  const childTypes: ResourceType[] = [
-    ResourceType.ApiPolicy,
-    ResourceType.ApiTag,
-    ResourceType.ApiDiagnostic,
-    ResourceType.ApiOperation,
-    ResourceType.ApiOperationPolicy,
-    ResourceType.ApiSchema,
-    ResourceType.ApiRelease,
-    ResourceType.ApiTagDescription,
-    ResourceType.ApiWiki,
-    ResourceType.GraphQLResolver,
-    ResourceType.GraphQLResolverPolicy,
-    ResourceType.ProductPolicy,
-    ResourceType.ProductApi,
-    ResourceType.ProductGroup,
-    ResourceType.ProductTag,
-    ResourceType.ProductWiki,
-    ResourceType.GatewayApi,
-  ];
-  return childTypes.includes(type);
 }

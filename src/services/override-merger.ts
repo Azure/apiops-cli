@@ -50,8 +50,12 @@ export function applyOverrides(
     return { ...json };
   }
 
+  // ARM resources have all overridable fields inside 'properties'
+  // Wrap the override values inside 'properties' to merge at the correct level
+  const wrappedOverride = { properties: overrideValues };
+
   // Deep-merge the override into the resource JSON
-  const result = deepMerge(json, overrideValues as Record<string, unknown>);
+  const result = deepMerge(json, wrappedOverride);
 
   logger.debug(
     `Applied overrides to ${descriptor.type} '${descriptor.nameParts.join('/')}'`,
