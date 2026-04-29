@@ -160,3 +160,30 @@ vi.mocked(fs.access).mockImplementation(async (p) => {
 Same rule applies to `expect(fs.copyFile).toHaveBeenCalledWith(...)` assertions — use the resolved form.
 
 **Files:** `tests/unit/services/init-service.test.ts`.
+
+### 2026-04-29: User-Agent Header Implementation (Issue #16)
+
+**Context:** Implemented User-Agent header for all APIM REST API calls to identify the apiops-cli client.
+
+**Key Decisions:**
+- Created `src/lib/user-agent.ts` with `USER_AGENT` constant using module pattern: `createRequire` loads package.json at module initialization
+- Format: `apiops-cli/{version}` (e.g., `apiops-cli/0.1.0`)
+- Header set in `ApimClient.request()` at line 108, after auth logic but before retry loop
+- Applied universally to all request types: authenticated (Bearer token) and unauthenticated (SAS blob skipAuth paths)
+
+**Pattern:** When exporting client identifiers:
+- Use ES module pattern with `createRequire(import.meta.url)` to load package.json at import time
+- No runtime file system calls or dynamic version reads
+- Export as constant string from dedicated lib module
+- Consumed by clients that need the value
+
+**Files Modified:**
+- `src/lib/user-agent.ts` - New file
+- `src/clients/apim-client.ts` - Added header set at line 108
+
+**Implementation Details:**
+- `headers.set('User-Agent', USER_AGENT)` executes after skipping auth headers but maintaining compatibility
+- Tested on both auth paths: standard Bearer token and skipAuth (SAS blob)
+- Issue #16 closed
+
+**Tests:** Created `tests/unit/lib/user-agent.test.ts` (3 tests) and added to `apim-client.test.ts` (2 tests)
