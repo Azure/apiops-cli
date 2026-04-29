@@ -509,9 +509,13 @@ describe('api-publisher', () => {
 
       await publishApi(client, store, testContext, apiDescriptor, testConfig);
 
-      // Should only publish operation and operation policy with matching grandparent
-      const tasks = mockRunParallel.mock.calls[0][0] as Array<() => Promise<unknown>>;
-      expect(tasks).toHaveLength(2);
+      // Parents (operations) are published first, then grandchildren (policies)
+      // Should be 2 calls: first for parent resources, second for grandchildren
+      expect(mockRunParallel).toHaveBeenCalledTimes(2);
+      const parentTasks = mockRunParallel.mock.calls[0][0] as Array<() => Promise<unknown>>;
+      const grandchildTasks = mockRunParallel.mock.calls[1][0] as Array<() => Promise<unknown>>;
+      expect(parentTasks).toHaveLength(1); // Only the operation with matching API
+      expect(grandchildTasks).toHaveLength(1); // Only the policy with matching API
     });
 
     it('should include resolver policies with correct grandparent', async () => {
@@ -536,9 +540,13 @@ describe('api-publisher', () => {
 
       await publishApi(client, store, testContext, apiDescriptor, testConfig);
 
-      // Should only publish resolver and resolver policy with matching grandparent
-      const tasks = mockRunParallel.mock.calls[0][0] as Array<() => Promise<unknown>>;
-      expect(tasks).toHaveLength(2);
+      // Parents (resolvers) are published first, then grandchildren (policies)
+      // Should be 2 calls: first for parent resources, second for grandchildren
+      expect(mockRunParallel).toHaveBeenCalledTimes(2);
+      const parentTasks = mockRunParallel.mock.calls[0][0] as Array<() => Promise<unknown>>;
+      const grandchildTasks = mockRunParallel.mock.calls[1][0] as Array<() => Promise<unknown>>;
+      expect(parentTasks).toHaveLength(1); // Only the resolver with matching API
+      expect(grandchildTasks).toHaveLength(1); // Only the policy with matching API
     });
 
     it('should inject spec format and value when specification file exists', async () => {
@@ -630,10 +638,13 @@ describe('api-publisher', () => {
 
       await publishApi(client, store, testContext, apiDescriptor, testConfig);
 
-      // Only ApiPolicy and ApiTag should be published (2 tasks)
+      // Only ApiPolicy and ApiTag should be published (2 tasks total across tiers)
       // ApiOperation is skipped (no schema refs), auto-generated ApiSchema is skipped
-      const tasks = mockRunParallel.mock.calls[0][0] as Array<() => Promise<unknown>>;
-      expect(tasks).toHaveLength(2);
+      const totalTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
+        const tasks = call[0] as unknown[];
+        return sum + tasks.length;
+      }, 0);
+      expect(totalTasks).toBe(2);
     });
 
     it('should re-publish operations with schema references even when spec was imported', async () => {
@@ -681,10 +692,13 @@ describe('api-publisher', () => {
 
       await publishApi(client, store, testContext, apiDescriptor, testConfig);
 
-      // ApiPolicy (1) + create-item operation re-published (1) = 2 tasks
+      // ApiPolicy (1) + create-item operation re-published (1) = 2 tasks total
       // Auto-generated ApiSchema and get-items (no schema ref) must be excluded
-      const tasks = mockRunParallel.mock.calls[0][0] as Array<() => Promise<unknown>>;
-      expect(tasks).toHaveLength(2);
+      const totalTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
+        const tasks = call[0] as unknown[];
+        return sum + tasks.length;
+      }, 0);
+      expect(totalTasks).toBe(2);
     });
 
     it('should re-publish operations with schema references in response representations', async () => {
@@ -725,9 +739,12 @@ describe('api-publisher', () => {
 
       await publishApi(client, store, testContext, apiDescriptor, testConfig);
 
-      // get-item has schema refs in response → re-published (1 task)
-      const tasks = mockRunParallel.mock.calls[0][0] as Array<() => Promise<unknown>>;
-      expect(tasks).toHaveLength(1);
+      // get-item has schema refs in response → re-published (1 task total)
+      const totalTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
+        const tasks = call[0] as unknown[];
+        return sum + tasks.length;
+      }, 0);
+      expect(totalTasks).toBe(1);
     });
 
     it('should publish all children when no specification file exists', async () => {
@@ -748,9 +765,12 @@ describe('api-publisher', () => {
 
       await publishApi(client, store, testContext, apiDescriptor, testConfig);
 
-      // All 3 children should be published
-      const tasks = mockRunParallel.mock.calls[0][0] as Array<() => Promise<unknown>>;
-      expect(tasks).toHaveLength(3);
+      // All 3 children should be published (across tiers)
+      const totalTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
+        const tasks = call[0] as unknown[];
+        return sum + tasks.length;
+      }, 0);
+      expect(totalTasks).toBe(3);
     });
 
     it('should not inject spec for GraphQL format', async () => {
