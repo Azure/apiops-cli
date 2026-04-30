@@ -12,7 +12,7 @@
 **Prerequisites:** An Azure subscription with an existing APIM resource, and Node.js ≥ 22.
 
 ```bash
-npm install -g apiops
+npm install -g @peterhauge/apiops-cli
 ```
 
 ## Authentication
