@@ -94,5 +94,32 @@
 - Unknown commands log error to stderr and exit with code 1
 - Build and lint pass without errors
 
+### 2026-04-29: Version Management Pattern — Single Source of Truth
+
+**Problem:** Version was maintained in two places: `package.json` ("0.1.3-alpha.0") and hardcoded in `src/cli/index.ts` (".version('0.1.0')"). This caused version drift and required manual updates in both locations.
+
+**Solution:** Import version from `package.json` using ESM import attributes (Node 22+ with TypeScript):
+```typescript
+import packageJson from '../../package.json' with { type: 'json' };
+program.version(packageJson.version);
+```
+
+**Key Implementation Notes:**
+1. **Import syntax:** Use `with { type: 'json' }` (not `assert`) — TypeScript TS2880 error enforces the newer import attributes syntax
+2. **Path resolution:** From `src/cli/index.ts`, use `../../package.json` — when compiled to `dist/cli/index.js`, this resolves correctly to root `package.json`
+3. **tsconfig requirement:** `resolveJsonModule: true` (already configured) enables JSON imports in TypeScript
+4. **Node version:** Requires Node 22+ for import attributes support (already enforced via `"engines": {"node": ">=22.0.0"}`)
+
+**Benefits:**
+- Single source of truth: `package.json` version is the canonical version
+- Automated versioning: `npm version` updates package.json, CLI automatically reflects the change
+- Eliminates drift: No manual synchronization required between files
+- Standard pattern: Follows Node.js ecosystem conventions for CLI tools
+
+**Verification:**
+- Build passes: `npm run build` compiles successfully
+- Version output correct: `node dist/cli/index.js --version` displays "0.1.3-alpha.0" from package.json
+- No runtime dependencies: Uses native Node ESM features, no additional packages required
+
 <!-- Append new learnings here after each session -->
 
