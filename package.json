@@ -1,6 +1,6 @@
 {
   "name": "@peterhauge/apiops-cli",
-  "version": "0.1.4-alpha.0",
+  "version": "0.1.4-alpha.1",
   "description": "CLI tool for Azure API Management configuration-as-code",
   "type": "module",
   "private": false,
