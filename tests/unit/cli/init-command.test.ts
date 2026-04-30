@@ -51,12 +51,13 @@ describe('init-command', () => {
       expect(envOpt?.defaultValue).toBe('dev,prod');
     });
 
-    it('should have --cli-package required option', () => {
+    it('should have --cli-package optional option', () => {
       const cmd = createInitCommand();
       const opts = cmd.options;
       const cliPkgOpt = opts.find((o) => o.long === '--cli-package');
       expect(cliPkgOpt).toBeDefined();
-      expect(cliPkgOpt?.required).toBe(true);
+      // The option itself is not mandatory, but when present it requires a value
+      expect(cliPkgOpt?.mandatory).toBe(false);
     });
 
     it('should have --force option defaulting to false', () => {
@@ -67,11 +68,11 @@ describe('init-command', () => {
       expect(forceOpt?.defaultValue).toBe(false);
     });
 
-    it('should have all required options for non-interactive mode', () => {
+    it('should have all expected options for non-interactive mode', () => {
       const cmd = createInitCommand();
-      const requiredOptions = ['--ci', '--non-interactive', '--artifact-dir', '--environments', '--cli-package', '--force'];
+      const expectedOptions = ['--ci', '--non-interactive', '--artifact-dir', '--environments', '--cli-package', '--force'];
       
-      requiredOptions.forEach((optName) => {
+      expectedOptions.forEach((optName) => {
         const opt = cmd.options.find((o) => o.long === optName);
         expect(opt).toBeDefined();
       });
