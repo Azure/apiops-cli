@@ -378,7 +378,7 @@ describe('init-service', () => {
       );
     });
 
-    it('should generate package.json with file: dependency to tarball', async () => {
+    it('should generate package.json with file: dependency to tarball in local mode', async () => {
       const config: InitConfig = {
         ciProvider: 'github-actions',
         nonInteractive: true,
@@ -400,6 +400,49 @@ describe('init-service', () => {
       const pkg = JSON.parse(content);
       expect(pkg.dependencies.apiops).toContain('file:');
       expect(pkg.dependencies.apiops).toContain('apiops-0.1.0.tgz');
+    });
+
+    it('should generate package.json with npm dependency when cliPackage not provided', async () => {
+      const config: InitConfig = {
+        ciProvider: 'github-actions',
+        nonInteractive: true,
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+        outputDir: '/test',
+        // cliPackage is omitted — npm mode
+        force: false,
+      };
+
+      const result = await initService.run(config);
+
+      expect(result.configs).toContain('package.json');
+      const pkgCalls = vi.mocked(fs.writeFile).mock.calls.filter(
+        (call) => call[0] === path.join('/test', 'package.json')
+      );
+      expect(pkgCalls).toHaveLength(1);
+      const content = pkgCalls[0][1] as string;
+      const pkg = JSON.parse(content);
+      expect(pkg.dependencies['@peterhauge/apiops-cli']).toBe('latest');
+      expect(pkg.dependencies.apiops).toBeUndefined();
+    });
+
+    it('should NOT copy tarball or create .apiops directory in npm mode', async () => {
+      const config: InitConfig = {
+        ciProvider: 'github-actions',
+        nonInteractive: true,
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+        outputDir: '/test',
+        // cliPackage is omitted — npm mode
+        force: false,
+      };
+
+      const result = await initService.run(config);
+
+      // .apiops should NOT be in generated directories
+      expect(result.directories).not.toContain('.apiops');
+      // copyFile should NOT have been called
+      expect(vi.mocked(fs.copyFile)).not.toHaveBeenCalled();
     });
 
     it('should throw if CLI package tarball does not exist', async () => {
