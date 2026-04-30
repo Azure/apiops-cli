@@ -9,13 +9,14 @@ import { logger, parseLogLevel } from '../lib/logger.js';
 import { createExtractCommand } from './extract-command.js';
 import { createPublishCommand } from './publish-command.js';
 import { createInitCommand } from './init-command.js';
+import packageJson from '../../package.json' with { type: 'json' };
 
 const program = new Command();
 
 // Configure program metadata
 program
   .name('apiops')
-  .version('0.1.0')
+  .version(packageJson.version)
   .description('CLI tool for Azure API Management configuration-as-code');
 
 // Show global options in subcommand help (e.g. apiops extract --help)
