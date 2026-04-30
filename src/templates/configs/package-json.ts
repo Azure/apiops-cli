@@ -1,26 +1,29 @@
 /**
  * Generates a package.json for the target repo that references
- * the apiops CLI tarball via a local file dependency.
+ * either a local apiops CLI tarball or the public npm package.
  */
 
-export interface PackageJsonConfig {
-  /** Relative path from the target repo root to the copied tarball (e.g. '.apiops/apiops-0.1.0.tgz') */
-  tarballRelPath: string;
-}
+export type PackageJsonConfig =
+  | { mode: 'local'; tarballRelPath: string }
+  | { mode: 'npm' };
 
 export function generatePackageJson(config: PackageJsonConfig): string {
-  // Use forward slashes in the file: dependency regardless of OS
-  const posixPath = config.tarballRelPath.replace(/\\/g, '/');
-
-  const pkg = {
+  const pkg: Record<string, unknown> = {
     name: 'apim-ops-repo',
     version: '1.0.0',
     private: true,
     description: 'Azure API Management configuration-as-code repository',
-    dependencies: {
-      apiops: `file:${posixPath}`,
-    },
+    dependencies: {},
   };
+
+  if (config.mode === 'local') {
+    // Use forward slashes in the file: dependency regardless of OS
+    const posixPath = config.tarballRelPath.replace(/\\/g, '/');
+    (pkg.dependencies as Record<string, string>).apiops = `file:${posixPath}`;
+  } else {
+    // Public npm registry mode
+    (pkg.dependencies as Record<string, string>)['@peterhauge/apiops-cli'] = 'latest';
+  }
 
   return JSON.stringify(pkg, null, 2) + '\n';
 }
