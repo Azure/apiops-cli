@@ -94,5 +94,68 @@
 - Unknown commands log error to stderr and exit with code 1
 - Build and lint pass without errors
 
+### 2026-04-29: Version Management Pattern — Single Source of Truth
+
+**Problem:** Version was maintained in two places: `package.json` ("0.1.3-alpha.0") and hardcoded in `src/cli/index.ts` (".version('0.1.0')"). This caused version drift and required manual updates in both locations.
+
+**Solution:** Import version from `package.json` using ESM import attributes (Node 22+ with TypeScript):
+```typescript
+import packageJson from '../../package.json' with { type: 'json' };
+program.version(packageJson.version);
+```
+
+**Key Implementation Notes:**
+1. **Import syntax:** Use `with { type: 'json' }` (not `assert`) — TypeScript TS2880 error enforces the newer import attributes syntax
+2. **Path resolution:** From `src/cli/index.ts`, use `../../package.json` — when compiled to `dist/cli/index.js`, this resolves correctly to root `package.json`
+3. **tsconfig requirement:** `resolveJsonModule: true` (already configured) enables JSON imports in TypeScript
+4. **Node version:** Requires Node 22+ for import attributes support (already enforced via `"engines": {"node": ">=22.0.0"}`)
+
+**Benefits:**
+- Single source of truth: `package.json` version is the canonical version
+- Automated versioning: `npm version` updates package.json, CLI automatically reflects the change
+- Eliminates drift: No manual synchronization required between files
+- Standard pattern: Follows Node.js ecosystem conventions for CLI tools
+
+**Verification:**
+- Build passes: `npm run build` compiles successfully
+- Version output correct: `node dist/cli/index.js --version` displays "0.1.3-alpha.0" from package.json
+- No runtime dependencies: Uses native Node ESM features, no additional packages required
+
+### 2026-04-29: Dual-Mode Init — Public npm vs Local Tarball
+
+**Problem:** After publishing `@peterhauge/apiops-cli` to npm, `apiops init` still required `--cli-package <path>` pointing to a local .tgz tarball, making the workflow cumbersome for users who just want to use the public package.
+
+**Solution:** Made `--cli-package` optional and implemented two modes:
+
+1. **Local tarball mode** (when `--cli-package` provided):
+   - Creates `.apiops/` directory, copies tarball
+   - Generates package.json with `"apiops": "file:.apiops/{tarball}"`
+   - Use case: Local development, pre-release testing
+
+2. **Public npm mode** (when `--cli-package` NOT provided):
+   - No tarball copy, no `.apiops/` directory
+   - Generates package.json with `"@peterhauge/apiops-cli": "latest"`
+   - Use case: Standard consumption after publishing to npm
+
+**Implementation Details:**
+- Changed `.requiredOption()` to `.option()` in init-command.ts
+- Made `cliPackage?: string` optional in InitConfig interface
+- Conditional validation: `validateCliPackage()` only runs if `cliPackage` provided
+- Conditional file operations in `generateFiles()`: tarball copy and `.apiops/` creation only in local mode
+- Refactored package-json.ts to accept discriminated union config: `{ mode: 'local', tarballRelPath } | { mode: 'npm' }`
+
+**Key Pattern:** The package.json generator uses a discriminated union for type safety:
+```typescript
+export type PackageJsonConfig =
+  | { mode: 'local'; tarballRelPath: string }
+  | { mode: 'npm' };
+```
+This enforces that `tarballRelPath` is only accessible when `mode === 'local'`, preventing runtime errors.
+
+**Testing:**
+- All 467 tests pass (init-command.test.ts validates both modes)
+- ESLint clean (no warnings or errors)
+- Backward compatible: Existing workflows with `--cli-package` continue to work
+
 <!-- Append new learnings here after each session -->
 

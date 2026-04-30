@@ -88,6 +88,6 @@ export interface InitConfig {
   artifactDir: string;
   environments: string[];
   outputDir: string;
-  cliPackage: string;
+  cliPackage?: string;
   force: boolean;
 }

@@ -109,4 +109,54 @@
 
 **Result:** 5 new User-Agent tests, all passing. Code review approved.
 
+### 2026-04-29: Test Fixes for Optional --cli-package Flag
+
+**Context:** NodeJsDev made `--cli-package` optional in `apiops init` command, introducing a discriminated union for package consumption modes (local tarball vs public npm). Test suite had 3 files with failures due to outdated interface usage.
+
+**Problem:**
+- `PackageJsonConfig` changed from `{ tarballRelPath: string }` to discriminated union:
+  - `{ mode: 'local'; tarballRelPath: string }` - local tarball mode
+  - `{ mode: 'npm' }` - public npm registry mode
+- Tests expected old interface format
+- `init-command.test.ts` expected `--cli-package` to be required (now optional)
+
+**Changes:**
+1. **init-command.test.ts**:
+   - Fixed line 56: Changed from checking `required` to checking `mandatory` (Commander uses `mandatory` for options with `<value>` arguments)
+   - Updated test name to reflect optional status
+   - Updated test description for "all expected options" (not "all required options")
+
+2. **package-json.test.ts**:
+   - Restructured all tests into two describe blocks: "local mode" and "npm mode"
+   - Updated local mode tests to use `{ mode: 'local', tarballRelPath: '...' }`
+   - Added 6 new tests for npm mode covering:
+     - Valid JSON generation
+     - `@peterhauge/apiops-cli` dependency with `latest` version
+     - No `apiops` dependency (should be undefined)
+     - Standard package.json properties (private, name, version)
+     - Newline termination
+
+3. **init-service.test.ts**:
+   - Renamed existing test to clarify "local mode"
+   - Added 2 new tests for npm mode (when `cliPackage` undefined):
+     - Package.json contains npm dependency, not file: dependency
+     - No tarball copy, no `.apiops` directory created
+
+**Commander Option Properties:**
+- Options with required arguments (`<value>`) use `mandatory` property (e.g., `--ci <provider>`, `--cli-package <path>`)
+- Boolean flags (no arguments) use `required` property (e.g., `--non-interactive`, `--force`)
+
+**Pattern:** When interface changes to discriminated union:
+- Organize tests into describe blocks by union variant (mode: 'local', mode: 'npm')
+- Test each mode's unique behaviors separately
+- Ensure all union variants have equivalent coverage (valid JSON, expected properties, edge cases)
+- Update existing tests to use new interface structure (add discriminant property)
+
+**Result:** 850 tests passing (43 in modified files). All failures resolved. Coverage added for both package consumption modes.
+
+**Orchestration artifacts:**
+- `.squad/orchestration-log/2026-04-29T150000Z-testengineer.md` — test work completion log
+- `.squad/log/2026-04-29T150000Z-test-fixes-cli-package.md` — session summary
+- History updated with dual-mode package consumption patterns
+
 <!-- Append new learnings here after each session -->

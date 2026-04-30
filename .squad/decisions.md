@@ -2,6 +2,12 @@
 
 ## Active Decisions
 
+### 2026-04-29T14:30:00Z: apiops init Dual-Mode Package Consumption
+**By:** NodeJsDev  
+**Status:** Implemented  
+**What:** Made `--cli-package` optional in `apiops init`. The command now supports two package consumption modes: (1) **Public npm mode** (default, when `--cli-package` NOT provided): generates package.json with `"@peterhauge/apiops-cli": "latest"`, no local tarball copy, no `.apiops/` directory created, standard consumption pattern after npm publish. (2) **Local tarball mode** (when `--cli-package <path>` provided): copies tarball to `.apiops/` directory, generates package.json with `"apiops": "file:.apiops/{tarball}"`, preserves existing behavior for local development/testing.
+**Why:** After publishing to npm as `@peterhauge/apiops-cli`, requiring users to download the package and run `apiops init --cli-package ./tarball.tgz` added unnecessary friction. Most users want to reference the public package directly. The change is backward compatible — existing workflows with `--cli-package` continue to work unchanged. Improves user experience with simpler onboarding.
+
 ### 2026-04-21T19:35:00Z: SOAP/WADL spec extraction prefers link format with inline XML fallback
 **By:** ApimExpert (via Squad session with enewman)
 **Status:** Implemented
