@@ -49,8 +49,10 @@ class InitServiceImpl implements InitService {
   async run(config: InitConfig): Promise<GeneratedFiles> {
     logger.info('Starting APIM repository initialization...');
 
-    // Validate that the CLI package tarball exists
-    await this.validateCliPackage(config.cliPackage);
+    // Validate that the CLI package tarball exists (only if provided)
+    if (config.cliPackage) {
+      await this.validateCliPackage(config.cliPackage);
+    }
 
     // Gather configuration (interactive or from flags)
     const finalConfig = await this.gatherConfiguration(config);
@@ -247,17 +249,24 @@ class InitServiceImpl implements InitService {
     await fs.writeFile(gitkeepPath, '');
     generatedFiles.directories.push(config.artifactDir);
 
-    // Copy CLI tarball into .apiops/ directory
-    const apiopsDir = path.join(config.outputDir, '.apiops');
-    await fs.mkdir(apiopsDir, { recursive: true });
-    const tarballFilename = path.basename(config.cliPackage);
-    const tarballDest = path.join(apiopsDir, tarballFilename);
-    await fs.copyFile(path.resolve(config.cliPackage), tarballDest);
-    generatedFiles.directories.push('.apiops');
+    // Generate package.json - mode depends on whether cliPackage is provided
+    let packageJsonContent: string;
+    if (config.cliPackage) {
+      // Local tarball mode: copy tarball and reference via file: dependency
+      const apiopsDir = path.join(config.outputDir, '.apiops');
+      await fs.mkdir(apiopsDir, { recursive: true });
+      const tarballFilename = path.basename(config.cliPackage);
+      const tarballDest = path.join(apiopsDir, tarballFilename);
+      await fs.copyFile(path.resolve(config.cliPackage), tarballDest);
+      generatedFiles.directories.push('.apiops');
 
-    // Generate package.json with local tarball dependency
-    const tarballRelPath = path.join('.apiops', tarballFilename);
-    const packageJsonContent = generatePackageJson({ tarballRelPath });
+      const tarballRelPath = path.join('.apiops', tarballFilename);
+      packageJsonContent = generatePackageJson({ mode: 'local', tarballRelPath });
+    } else {
+      // Public npm mode: use registry package
+      packageJsonContent = generatePackageJson({ mode: 'npm' });
+    }
+
     const packageJsonPath = path.join(config.outputDir, 'package.json');
     await fs.writeFile(packageJsonPath, packageJsonContent);
     generatedFiles.configs.push('package.json');

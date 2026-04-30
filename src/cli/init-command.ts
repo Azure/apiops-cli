@@ -17,7 +17,7 @@ interface InitOptions {
   nonInteractive: boolean;
   artifactDir: string;
   environments: string;
-  cliPackage: string;
+  cliPackage?: string;
   force: boolean;
 }
 
@@ -31,7 +31,7 @@ export function createInitCommand(): Command {
     .option('--non-interactive', 'Skip interactive prompts (requires --ci)', false)
     .option('--artifact-dir <dir>', 'Artifact directory path', './apim-artifacts')
     .option('--environments <list>', 'Comma-separated environment names', 'dev,prod')
-    .requiredOption('--cli-package <path>', 'Path to apiops npm tarball (from npm pack)')
+    .option('--cli-package <path>', 'Path to apiops npm tarball (from npm pack). If not provided, uses @peterhauge/apiops-cli from npm registry')
     .option('--force', 'Overwrite existing files without prompting', false)
     .action(async (options: InitOptions) => {
       try {
