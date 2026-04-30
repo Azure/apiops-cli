@@ -139,17 +139,8 @@ Test the authentication by running a workflow manually or pushing to main branch
     resourceGroup: string,
     environments: string[]
   ): string {
-    const envConnections = environments
-      .map(
-        (env) => `# Create connection for ${env} environment
-az devops service-endpoint azurerm create \\
-  --name "AZURE_SERVICE_CONNECTION_${env.toUpperCase()}" \\
-  --azure-rm-service-principal-id "$APP_ID" \\
-  --azure-rm-subscription-id "$SUBSCRIPTION_ID" \\
-  --azure-rm-subscription-name "$SUBSCRIPTION_NAME" \\
-  --azure-rm-tenant-id "$TENANT_ID"`
-      )
-      .join('\n\n');
+    const environmentsArrayPowerShell = environments.map((e) => `"${e}"`).join(', ');
+    const environmentsArrayBash = environments.map((e) => `"${e}"`).join(' ');
 
     return `# Azure DevOps Identity Setup Guide
 
@@ -157,142 +148,261 @@ az devops service-endpoint azurerm create \\
 - Azure subscription: ${subscriptionId}
 - Resource group: ${resourceGroup}
 - Azure DevOps organization and project
+- Azure CLI installed and authenticated (\`az login\`)
 
-## Step 1: Create Service Principal
+> **Note:** All commands use only built-in tools—no additional installations required. Commands are shown for both **PowerShell** and **Git Bash** where syntax differs.
 
-Set environment variables.
+---
+
+## Step 1: Set Variables
+
+**PowerShell:**
+\`\`\`powershell
+$SUBSCRIPTION_ID = "${subscriptionId}"
+$RESOURCE_GROUP = "${resourceGroup}"
+$APP_NAME = "apiops-azdo-sp"
+$ENVIRONMENTS = @(${environmentsArrayPowerShell})
+\`\`\`
+
+**Git Bash:**
 \`\`\`bash
-# Set variables
 SUBSCRIPTION_ID="${subscriptionId}"
 RESOURCE_GROUP="${resourceGroup}"
 APP_NAME="apiops-azdo-sp"
+ENVIRONMENTS=(${environmentsArrayBash})
 \`\`\`
 
-Create a service principal for each environment or use a single shared one:
+---
 
-\`\`\`bash
-# Create Service Principal with Contributor role
-SP_OUTPUT=$(az ad sp create-for-rbac \\
-  --name "$APP_NAME" \\
-  --role "API Management Service Contributor" \\
-  --scopes "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP")
+## Step 2: Create Service Principal
+
+**PowerShell:**
+\`\`\`powershell
+$SP_OUTPUT = az ad sp create-for-rbac --name $APP_NAME --role "API Management Service Contributor" --scopes "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP"
+$spObj = $SP_OUTPUT | ConvertFrom-Json
+$APP_ID = $spObj.appId
+$PASSWORD = $spObj.password
+$TENANT_ID = $spObj.tenant
 \`\`\`
 
-**Note:** If using Git Bash on Windows, prefix with \`MSYS_NO_PATHCONV=1\` to prevent path conversion:
+**Git Bash:** (use \`MSYS_NO_PATHCONV=1\` to prevent path conversion on Windows)
 \`\`\`bash
-SP_OUTPUT=$(MSYS_NO_PATHCONV=1 az ad sp create-for-rbac \\
-  --name "$APP_NAME" \\
-  --role "API Management Service Contributor" \\
-  --scopes "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP")
+SP_OUTPUT=$(MSYS_NO_PATHCONV=1 az ad sp create-for-rbac --name "$APP_NAME" --role "API Management Service Contributor" --scopes "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP")
+APP_ID=$(echo "$SP_OUTPUT" | grep -o '"appId": *"[^"]*"' | cut -d'"' -f4)
+PASSWORD=$(echo "$SP_OUTPUT" | grep -o '"password": *"[^"]*"' | cut -d'"' -f4)
+TENANT_ID=$(echo "$SP_OUTPUT" | grep -o '"tenant": *"[^"]*"' | cut -d'"' -f4)
 \`\`\`
 
-Gather service principal values needed for later:
+**Important:** The password is only shown once during creation. Save it securely now!
 
+---
+
+## Step 3: Configure Azure DevOps CLI
+
+Install the extension (works in both shells):
 \`\`\`bash
-echo "$SP_OUTPUT"
-
-# Save the output - you'll need these values:
-# - appId (client ID)
-# - password (client secret)
-# - tenant
-\`\`\`
-
-## Step 2: Create Azure Service Connections
-
-Install and configure the Azure DevOps CLI extension:
-
-\`\`\`bash
-# Install Azure DevOps extension
 az extension add --name azure-devops
+\`\`\`
 
-# Configure defaults (replace with your org and project)
+Set organization defaults:
+
+**PowerShell:**
+\`\`\`powershell
+$AZDO_ORG = "https://dev.azure.com/<your-org>"
+$AZDO_PROJECT = "<your-project>"
+az devops configure --defaults organization=$AZDO_ORG project=$AZDO_PROJECT
+$SUBSCRIPTION_NAME = az account show --subscription $SUBSCRIPTION_ID --query name -o tsv
+\`\`\`
+
+**Git Bash:**
+\`\`\`bash
 AZDO_ORG="https://dev.azure.com/<your-org>"
 AZDO_PROJECT="<your-project>"
-
 az devops configure --defaults organization="$AZDO_ORG" project="$AZDO_PROJECT"
-
-# Get subscription name automatically
 SUBSCRIPTION_NAME=$(az account show --subscription "$SUBSCRIPTION_ID" --query name -o tsv)
 \`\`\`
 
-Extract values from the service principal output:
+---
 
-\`\`\`bash
-# Parse service principal values
-APP_ID=$(echo "$SP_OUTPUT" | jq -r '.appId')
-PASSWORD=$(echo "$SP_OUTPUT" | jq -r '.password')
-TENANT_ID=$(echo "$SP_OUTPUT" | jq -r '.tenant')
+## Step 4: Create Azure Service Connections
+
+Set the service principal key for non-interactive creation:
+
+**PowerShell:**
+\`\`\`powershell
+$env:AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY = $PASSWORD
 \`\`\`
 
-Create service connections using the CLI:
-
+**Git Bash:**
 \`\`\`bash
-# Set the service principal key for non-interactive creation
 export AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY="$PASSWORD"
+\`\`\`
 
-# Create connection for extract pipeline
-az devops service-endpoint azurerm create \\
-  --name "AZURE_SERVICE_CONNECTION" \\
-  --azure-rm-service-principal-id "$APP_ID" \\
-  --azure-rm-subscription-id "$SUBSCRIPTION_ID" \\
-  --azure-rm-subscription-name "$SUBSCRIPTION_NAME" \\
-  --azure-rm-tenant-id "$TENANT_ID"
+Create the base service connection and one per environment:
 
-${envConnections}
+**PowerShell:**
+\`\`\`powershell
+az devops service-endpoint azurerm create --name "AZURE_SERVICE_CONNECTION" --azure-rm-service-principal-id $APP_ID --azure-rm-subscription-id $SUBSCRIPTION_ID --azure-rm-subscription-name $SUBSCRIPTION_NAME --azure-rm-tenant-id $TENANT_ID
 
-# Clean up environment variable
+foreach ($env in $ENVIRONMENTS) {
+    $envUpper = $env.ToUpper()
+    az devops service-endpoint azurerm create --name "AZURE_SERVICE_CONNECTION_$envUpper" --azure-rm-service-principal-id $APP_ID --azure-rm-subscription-id $SUBSCRIPTION_ID --azure-rm-subscription-name $SUBSCRIPTION_NAME --azure-rm-tenant-id $TENANT_ID
+}
+\`\`\`
+
+**Git Bash:**
+\`\`\`bash
+az devops service-endpoint azurerm create --name "AZURE_SERVICE_CONNECTION" --azure-rm-service-principal-id "$APP_ID" --azure-rm-subscription-id "$SUBSCRIPTION_ID" --azure-rm-subscription-name "$SUBSCRIPTION_NAME" --azure-rm-tenant-id "$TENANT_ID"
+
+for env in "\${ENVIRONMENTS[@]}"; do
+    env_upper=$(echo "$env" | tr '[:lower:]' '[:upper:]')
+    az devops service-endpoint azurerm create --name "AZURE_SERVICE_CONNECTION_$env_upper" --azure-rm-service-principal-id "$APP_ID" --azure-rm-subscription-id "$SUBSCRIPTION_ID" --azure-rm-subscription-name "$SUBSCRIPTION_NAME" --azure-rm-tenant-id "$TENANT_ID"
+done
+\`\`\`
+
+Clean up the environment variable:
+
+**PowerShell:**
+\`\`\`powershell
+Remove-Item Env:AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY
+\`\`\`
+
+**Git Bash:**
+\`\`\`bash
 unset AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY
 \`\`\`
 
-Verify the connections were created:
-
+Verify (works in both shells):
 \`\`\`bash
 az devops service-endpoint list --query "[].name" -o table
 \`\`\`
 
-## Step 3: Create Variable Groups
+---
 
-Create variable groups in Azure DevOps Library:
+## Step 5: Create Variable Groups
 
-### Common Variable Group (\`apim-common\`):
-- \`AZURE_SUBSCRIPTION_ID\`: ${subscriptionId}
-- \`APIM_RESOURCE_GROUP\`: ${resourceGroup}
-- \`APIM_SERVICE_NAME\`: <your-apim-service-name>
-- \`AZURE_SERVICE_CONNECTION\`: Name from Step 2
+Set target environment variables:
 
-${environments.map((env) => `
-### ${env} Environment Variable Group (\`apim-${env}\`):
-- \`APIM_RESOURCE_GROUP_${env.toUpperCase()}\`: Resource group for ${env}
-- \`APIM_SERVICE_NAME_${env.toUpperCase()}\`: APIM service name for ${env}
-- \`AZURE_SERVICE_CONNECTION_${env.toUpperCase()}\`: Service connection name for ${env}
-`).join('\n')}
+**PowerShell:**
+\`\`\`powershell
+$TARGET_SUBSCRIPTION_ID = "${subscriptionId}"
+$TARGET_APIM_BASE_NAME = "<your-apim-base-name>"
+$TARGET_RESOURCE_GROUP_BASE_NAME = "${resourceGroup}"
+\`\`\`
 
-## Step 4: Configure Pipeline Permissions
+**Git Bash:**
+\`\`\`bash
+TARGET_SUBSCRIPTION_ID="${subscriptionId}"
+TARGET_APIM_BASE_NAME="<your-apim-base-name>"
+TARGET_RESOURCE_GROUP_BASE_NAME="${resourceGroup}"
+\`\`\`
 
-1. Go to Pipelines → Library → Variable Groups
-2. For each variable group, click "Pipeline permissions"
-3. Allow the extract and publish pipelines to use these variable groups
+Create the common variable group:
 
-## Step 5: Create Environments
+**PowerShell:**
+\`\`\`powershell
+az pipelines variable-group create --name "apim-common" --variables AZURE_SUBSCRIPTION_ID=$TARGET_SUBSCRIPTION_ID APIM_RESOURCE_GROUP=$TARGET_RESOURCE_GROUP_BASE_NAME APIM_SERVICE_NAME=$TARGET_APIM_BASE_NAME AZURE_SERVICE_CONNECTION="AZURE_SERVICE_CONNECTION"
+\`\`\`
 
-Create deployment environments in Azure DevOps:
+**Git Bash:**
+\`\`\`bash
+az pipelines variable-group create --name "apim-common" --variables AZURE_SUBSCRIPTION_ID="$TARGET_SUBSCRIPTION_ID" APIM_RESOURCE_GROUP="$TARGET_RESOURCE_GROUP_BASE_NAME" APIM_SERVICE_NAME="$TARGET_APIM_BASE_NAME" AZURE_SERVICE_CONNECTION="AZURE_SERVICE_CONNECTION"
+\`\`\`
 
-1. Go to Pipelines → Environments
-2. Create new environment for each:
-${environments.map((env) => `   - \`${env}\``).join('\n')}
-3. Configure approvals and checks as needed for production environments
+Create environment-specific variable groups:
 
-## Step 6: Enable Pipeline Contributions
+**PowerShell:**
+\`\`\`powershell
+foreach ($env in $ENVIRONMENTS) {
+    $envUpper = $env.ToUpper()
+    az pipelines variable-group create --name "apim-$env" --variables "APIM_RESOURCE_GROUP_$envUpper=\${TARGET_RESOURCE_GROUP_BASE_NAME}-$env" "APIM_SERVICE_NAME_$envUpper=\${TARGET_APIM_BASE_NAME}-$env" "AZURE_SERVICE_CONNECTION_$envUpper=AZURE_SERVICE_CONNECTION_$envUpper"
+}
+\`\`\`
 
-For the extract pipeline to commit changes:
+**Git Bash:**
+\`\`\`bash
+for env in "\${ENVIRONMENTS[@]}"; do
+    env_upper=$(echo "$env" | tr '[:lower:]' '[:upper:]')
+    az pipelines variable-group create --name "apim-$env" --variables "APIM_RESOURCE_GROUP_$env_upper=\${TARGET_RESOURCE_GROUP_BASE_NAME}-$env" "APIM_SERVICE_NAME_$env_upper=\${TARGET_APIM_BASE_NAME}-$env" "AZURE_SERVICE_CONNECTION_$env_upper=AZURE_SERVICE_CONNECTION_$env_upper"
+done
+\`\`\`
 
-1. Go to Project Settings → Repositories → Security
-2. Find "Build Service" account
-3. Grant "Contribute" and "Contribute to pull requests" permissions
+Verify variable groups were created:
+\`\`\`bash
+az pipelines variable-group list --query "[].name" -o table
+\`\`\`
 
-## Step 7: Verify Setup
+---
+
+## Step 6: Configure Pipeline Permissions
+
+Authorize all pipelines to use the variable groups:
+
+**PowerShell:**
+\`\`\`powershell
+$groupIds = az pipelines variable-group list --query "[].id" -o tsv
+foreach ($id in $groupIds) {
+    az pipelines variable-group update --group-id $id --authorize true
+}
+\`\`\`
+
+**Git Bash:**
+\`\`\`bash
+for id in $(az pipelines variable-group list --query "[].id" -o tsv); do
+    az pipelines variable-group update --group-id "$id" --authorize true
+done
+\`\`\`
+
+---
+
+## Step 7: Create Environments
+
+Create deployment environments:
+
+**PowerShell:**
+\`\`\`powershell
+foreach ($env in $ENVIRONMENTS) {
+    $body = @{ name = $env } | ConvertTo-Json -Compress
+    $body | Out-File -Encoding utf8 -FilePath env-body.json
+    az devops invoke --area environments --resource environments --route-parameters project=$AZDO_PROJECT --http-method POST --api-version 7.1 --in-file env-body.json
+}
+Remove-Item env-body.json -ErrorAction SilentlyContinue
+\`\`\`
+
+**Git Bash:**
+\`\`\`bash
+for env in "\${ENVIRONMENTS[@]}"; do
+    echo "{\\"name\\": \\"$env\\"}" > env-body.json
+    az devops invoke --area environments --resource environments --route-parameters project="$AZDO_PROJECT" --http-method POST --api-version 7.1 --in-file env-body.json
+done
+rm -f env-body.json
+\`\`\`
+
+**Note:** Environment approvals and checks must be configured via the Azure DevOps UI (Project Settings > Environments).
+
+---
+
+## Step 8: Enable Pipeline Contributions
+
+Grant the build service permission to contribute to the repository:
+
+\`\`\`bash
+# Get the project ID
+PROJECT_ID=$(az devops project show --project "$AZDO_PROJECT" --query id -o tsv)
+
+# The Build Service account format is: {Project Name} Build Service ({Organization Name})
+# Permissions must be set via UI: Project Settings > Repositories > Security > Build Service > Contribute = Allow
+\`\`\`
+
+**Note:** Repository permissions for the Build Service account must be configured via the Azure DevOps UI.
+
+---
+
+## Step 9: Verify Setup
 
 Run the extract pipeline manually to verify authentication and permissions.
+
+---
 
 ## Security Notes
 - Use separate service principals for production environments
