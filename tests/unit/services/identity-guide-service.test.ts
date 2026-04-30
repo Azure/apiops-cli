@@ -137,15 +137,25 @@ describe('identity-guide-service', () => {
       expect(guide).toContain('API Management Service Contributor');
     });
 
-    it('should include service connection setup', () => {
+    it('should include Git Bash note for path conversion', () => {
+      const guide = identityGuideService.generateAzureDevOpsGuide(
+        'sub-12345',
+        'my-rg',
+        ['dev']
+      );
+      expect(guide).toContain('MSYS_NO_PATHCONV=1');
+      expect(guide).toContain('Git Bash on Windows');
+    });
+
+    it('should include service connection setup via CLI', () => {
       const guide = identityGuideService.generateAzureDevOpsGuide(
         'sub-12345',
         'my-rg',
         ['dev']
       );
       expect(guide).toContain('Create Azure Service Connections');
-      expect(guide).toContain('Azure Resource Manager');
-      expect(guide).toContain('Service principal (manual)');
+      expect(guide).toContain('az extension add --name azure-devops');
+      expect(guide).toContain('az devops service-endpoint azurerm create');
     });
 
     it('should include variable group setup', () => {

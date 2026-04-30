@@ -139,6 +139,18 @@ Test the authentication by running a workflow manually or pushing to main branch
     resourceGroup: string,
     environments: string[]
   ): string {
+    const envConnections = environments
+      .map(
+        (env) => `# Create connection for ${env} environment
+az devops service-endpoint azurerm create \\
+  --name "AZURE_SERVICE_CONNECTION_${env.toUpperCase()}" \\
+  --azure-rm-service-principal-id "$APP_ID" \\
+  --azure-rm-subscription-id "$SUBSCRIPTION_ID" \\
+  --azure-rm-subscription-name "$SUBSCRIPTION_NAME" \\
+  --azure-rm-tenant-id "$TENANT_ID"`
+      )
+      .join('\n\n');
+
     return `# Azure DevOps Identity Setup Guide
 
 ## Prerequisites
@@ -148,21 +160,35 @@ Test the authentication by running a workflow manually or pushing to main branch
 
 ## Step 1: Create Service Principal
 
-Create a service principal for each environment or use a single shared one:
-
+Set environment variables.
 \`\`\`bash
 # Set variables
 SUBSCRIPTION_ID="${subscriptionId}"
 RESOURCE_GROUP="${resourceGroup}"
 APP_NAME="apiops-azdo-sp"
+\`\`\`
 
+Create a service principal for each environment or use a single shared one:
+
+\`\`\`bash
 # Create Service Principal with Contributor role
 SP_OUTPUT=$(az ad sp create-for-rbac \\
   --name "$APP_NAME" \\
   --role "API Management Service Contributor" \\
-  --scopes "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP" \\
-  --sdk-auth)
+  --scopes "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP")
+\`\`\`
 
+**Note:** If using Git Bash on Windows, prefix with \`MSYS_NO_PATHCONV=1\` to prevent path conversion:
+\`\`\`bash
+SP_OUTPUT=$(MSYS_NO_PATHCONV=1 az ad sp create-for-rbac \\
+  --name "$APP_NAME" \\
+  --role "API Management Service Contributor" \\
+  --scopes "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP")
+\`\`\`
+
+Gather service principal values needed for later:
+
+\`\`\`bash
 echo "$SP_OUTPUT"
 
 # Save the output - you'll need these values:
@@ -173,26 +199,56 @@ echo "$SP_OUTPUT"
 
 ## Step 2: Create Azure Service Connections
 
-In Azure DevOps, create service connections for Azure Resource Manager:
+Install and configure the Azure DevOps CLI extension:
 
-1. Go to Project Settings → Service connections
-2. Click "New service connection" → "Azure Resource Manager" → "Service principal (manual)"
-3. Fill in the details from Step 1:
-   - **Subscription ID**: ${subscriptionId}
-   - **Subscription Name**: (your subscription name)
-   - **Service Principal ID**: appId from Step 1
-   - **Service Principal Key**: password from Step 1
-   - **Tenant ID**: tenant from Step 1
+\`\`\`bash
+# Install Azure DevOps extension
+az extension add --name azure-devops
 
-${environments.map((env) => `
-**For ${env} environment:**
-- Connection name: \`AZURE_SERVICE_CONNECTION_${env.toUpperCase()}\`
-- Verify: Test the connection
-`).join('\n')}
+# Configure defaults (replace with your org and project)
+AZDO_ORG="https://dev.azure.com/<your-org>"
+AZDO_PROJECT="<your-project>"
 
-**For extract pipeline:**
-- Connection name: \`AZURE_SERVICE_CONNECTION\`
-- Verify: Test the connection
+az devops configure --defaults organization="$AZDO_ORG" project="$AZDO_PROJECT"
+
+# Get subscription name automatically
+SUBSCRIPTION_NAME=$(az account show --subscription "$SUBSCRIPTION_ID" --query name -o tsv)
+\`\`\`
+
+Extract values from the service principal output:
+
+\`\`\`bash
+# Parse service principal values
+APP_ID=$(echo "$SP_OUTPUT" | jq -r '.appId')
+PASSWORD=$(echo "$SP_OUTPUT" | jq -r '.password')
+TENANT_ID=$(echo "$SP_OUTPUT" | jq -r '.tenant')
+\`\`\`
+
+Create service connections using the CLI:
+
+\`\`\`bash
+# Set the service principal key for non-interactive creation
+export AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY="$PASSWORD"
+
+# Create connection for extract pipeline
+az devops service-endpoint azurerm create \\
+  --name "AZURE_SERVICE_CONNECTION" \\
+  --azure-rm-service-principal-id "$APP_ID" \\
+  --azure-rm-subscription-id "$SUBSCRIPTION_ID" \\
+  --azure-rm-subscription-name "$SUBSCRIPTION_NAME" \\
+  --azure-rm-tenant-id "$TENANT_ID"
+
+${envConnections}
+
+# Clean up environment variable
+unset AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY
+\`\`\`
+
+Verify the connections were created:
+
+\`\`\`bash
+az devops service-endpoint list --query "[].name" -o table
+\`\`\`
 
 ## Step 3: Create Variable Groups
 
