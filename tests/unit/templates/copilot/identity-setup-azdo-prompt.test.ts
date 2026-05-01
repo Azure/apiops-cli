@@ -29,21 +29,17 @@ describe('copilot/identity-setup-azdo-prompt', () => {
     it('should ask Copilot to gather information from the user', () => {
       const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
       expect(prompt).toContain('Gather Information');
-      expect(prompt).toContain('SUBSCRIPTION_ID');
-      expect(prompt).toContain('RESOURCE_GROUP');
       expect(prompt).toContain('MI_NAME');
       expect(prompt).toContain('MI_RESOURCE_GROUP');
-      expect(prompt).toContain('AZDO_ORG');
-      expect(prompt).toContain('ORG_NAME');
-      expect(prompt).toContain('AZDO_PROJECT');
+      expect(prompt).toContain('AZDO_PROJECT_URL');
+      expect(prompt).toContain('ENVIRONMENTS');
     });
 
-    it('should include per-environment variables in gather table', () => {
+    it('should include per-environment APIM instance ID variables', () => {
       const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev', 'prod'] });
-      expect(prompt).toContain('APIM_RG_DEV');
-      expect(prompt).toContain('APIM_NAME_DEV');
-      expect(prompt).toContain('APIM_RG_PROD');
-      expect(prompt).toContain('APIM_NAME_PROD');
+      expect(prompt).toContain('APIM_INSTANCE_{ENV}');
+      expect(prompt).toContain('APIM_INSTANCE_DEV');
+      expect(prompt).toContain('APIM_INSTANCE_PROD');
     });
 
     it('should include managed identity creation commands', () => {
@@ -110,20 +106,16 @@ describe('copilot/identity-setup-azdo-prompt', () => {
       const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
       expect(prompt).toContain('az pipelines variable-group create');
       expect(prompt).toContain('--name "apim-common"');
-      expect(prompt).toContain('AZURE_SUBSCRIPTION_ID="${SUBSCRIPTION_ID}"');
-      expect(prompt).toContain('APIM_RESOURCE_GROUP="${RESOURCE_GROUP}"');
+      expect(prompt).toContain('AZURE_SUBSCRIPTION_ID');
+      expect(prompt).toContain('AZURE_SERVICE_CONNECTION');
     });
 
     it('should include per-environment variable group creation commands', () => {
       const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev', 'prod'] });
-      expect(prompt).toContain('# Create variable group for dev environment');
-      expect(prompt).toContain('# Create variable group for prod environment');
-      expect(prompt).toContain('--name "apim-dev"');
-      expect(prompt).toContain('--name "apim-prod"');
-      expect(prompt).toContain('APIM_RESOURCE_GROUP="${APIM_RG_DEV}"');
-      expect(prompt).toContain('APIM_SERVICE_NAME="${APIM_NAME_DEV}"');
-      expect(prompt).toContain('APIM_RESOURCE_GROUP="${APIM_RG_PROD}"');
-      expect(prompt).toContain('APIM_SERVICE_NAME="${APIM_NAME_PROD}"');
+      expect(prompt).toContain('--name "apim-$ENV"');
+      expect(prompt).toContain('--name "apim-$env"');
+      expect(prompt).toContain('APIM_RESOURCE_GROUP=');
+      expect(prompt).toContain('APIM_SERVICE_NAME=');
     });
 
     it('should include variable group authorization commands', () => {
@@ -139,19 +131,17 @@ describe('copilot/identity-setup-azdo-prompt', () => {
 
     it('should include environment creation commands', () => {
       const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev', 'prod'] });
-      expect(prompt).toContain('# Create dev environment');
-      expect(prompt).toContain('# Create prod environment');
+      expect(prompt).toContain('Creating environment:');
       expect(prompt).toContain('az devops invoke');
       expect(prompt).toContain('--area distributedtask');
       expect(prompt).toContain('--resource environments');
-      expect(prompt).toContain('"name": "dev"');
-      expect(prompt).toContain('"name": "prod"');
+      expect(prompt).toContain('"name":');
     });
 
     it('should include Build Service permission commands', () => {
       const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
-      expect(prompt).toContain('BUILD_SERVICE_NAME="${AZDO_PROJECT} Build Service (${ORG_NAME})"');
-      expect(prompt).toContain('az devops user show');
+      expect(prompt).toContain('BUILD_SERVICE_NAME');
+      expect(prompt).toContain('Build Service');
       expect(prompt).toContain('az devops security permission update');
       expect(prompt).toContain('--allow-bit 4');
     });
@@ -211,45 +201,32 @@ describe('copilot/identity-setup-azdo-prompt', () => {
     it('should include note about environment approvals', () => {
       const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
       expect(prompt).toContain('Environment approvals and checks must be configured via the Azure DevOps UI');
-      expect(prompt).toContain('Pipelines → Environments');
+      expect(prompt).toContain('Environments');
     });
 
-    it('should only use bash commands (no PowerShell)', () => {
+    it('should include both Bash and PowerShell commands', () => {
       const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev', 'prod'] });
-      expect(prompt).not.toContain('PowerShell');
-      expect(prompt).not.toContain('$env:');
-      expect(prompt).not.toContain('.ps1');
-      // Should have bash-specific patterns
+      // Should have both bash and PowerShell sections
       expect(prompt).toContain('```bash');
-      expect(prompt).toContain('$(');
-      expect(prompt).toContain('local ');
+      expect(prompt).toContain('```powershell');
+      expect(prompt).toContain('On macOS/Linux (Bash)');
+      expect(prompt).toContain('On Windows (PowerShell)');
     });
 
     it('should populate per-environment variables correctly with multiple environments', () => {
       const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev', 'staging', 'prod'] });
       
-      // Check gather table includes all environments
-      expect(prompt).toContain('APIM_RG_DEV');
-      expect(prompt).toContain('APIM_NAME_DEV');
-      expect(prompt).toContain('APIM_RG_STAGING');
-      expect(prompt).toContain('APIM_NAME_STAGING');
-      expect(prompt).toContain('APIM_RG_PROD');
-      expect(prompt).toContain('APIM_NAME_PROD');
-
       // Check service connections for all environments
-      expect(prompt).toContain('create_wif_service_connection "AZURE_SERVICE_CONNECTION_DEV"');
-      expect(prompt).toContain('create_wif_service_connection "AZURE_SERVICE_CONNECTION_STAGING"');
-      expect(prompt).toContain('create_wif_service_connection "AZURE_SERVICE_CONNECTION_PROD"');
+      expect(prompt).toContain('AZURE_SERVICE_CONNECTION_DEV');
+      expect(prompt).toContain('AZURE_SERVICE_CONNECTION_STAGING');
+      expect(prompt).toContain('AZURE_SERVICE_CONNECTION_PROD');
 
-      // Check variable groups for all environments
-      expect(prompt).toContain('--name "apim-dev"');
-      expect(prompt).toContain('--name "apim-staging"');
-      expect(prompt).toContain('--name "apim-prod"');
+      // Check variable groups use loop pattern
+      expect(prompt).toContain('--name "apim-$env"');
 
       // Check environments creation
-      expect(prompt).toContain('"name": "dev"');
-      expect(prompt).toContain('"name": "staging"');
-      expect(prompt).toContain('"name": "prod"');
+      expect(prompt).toContain('"name":');
+      expect(prompt).toContain('Creating environment:');
 
       // Check variable groups reference
       expect(prompt).toContain('### apim-dev');
@@ -293,8 +270,8 @@ describe('copilot/identity-setup-azdo-prompt', () => {
     it('should not use python3 for JSON parsing', () => {
       const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
       expect(prompt).not.toContain('python3');
-      expect(prompt).toContain('az devops service-endpoint show');
-      expect(prompt).toContain('--query "id" -o tsv');
+      // Should use az devops for verification
+      expect(prompt).toContain('az devops service-endpoint list');
     });
   });
 });

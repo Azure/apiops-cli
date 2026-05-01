@@ -11,65 +11,71 @@ export interface PublishPipelineConfig {
 export function generatePublishPipeline(config: PublishPipelineConfig): string {
   const envValues = config.environments.map((env) => `      - '${env}'`).join('\n');
 
+  // Generate stages with ${{ if }} conditionals for environment selection
   const stages = config.environments.map((env, idx) => {
-    const dependsOn = idx === 0 ? '' : `  dependsOn: Publish_${config.environments[idx - 1]}\n`;
+    // For non-first environments, add conditional dependsOn when running 'all'
+    const dependsOnBlock = idx === 0 
+      ? '' 
+      : `    \${{ if eq(parameters.ENVIRONMENT, 'all') }}:
+      dependsOn: Publish_${config.environments[idx - 1]}
+`;
 
-    return `${dependsOn}- stage: Publish_${env}
-  displayName: 'Publish to ${env}'
-  condition: or(eq('\${{ parameters.ENVIRONMENT }}', '${env}'), eq('\${{ parameters.ENVIRONMENT }}', 'all'))
-  variables:
-    - group: apim-${env}
-  jobs:
-    - deployment: Deploy
-      displayName: 'Deploy to ${env}'
-      environment: ${env}
-      pool:
-        vmImage: 'ubuntu-latest'
-      strategy:
-        runOnce:
-          deploy:
-            steps:
-              - checkout: self
-                fetchDepth: 2
+    return `- \${{ if or(eq(parameters.ENVIRONMENT, '${env}'), eq(parameters.ENVIRONMENT, 'all')) }}:
+  - stage: Publish_${env}
+    displayName: 'Publish to ${env}'
+${dependsOnBlock}    variables:
+      - group: apim-${env}
+    jobs:
+      - deployment: Deploy
+        displayName: 'Deploy to ${env}'
+        environment: ${env}
+        pool:
+          vmImage: 'ubuntu-latest'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                  fetchDepth: 2
 
-              - task: NodeTool@0
-                displayName: 'Setup Node.js'
-                inputs:
-                  versionSpec: '22.x'
+                - task: NodeTool@0
+                  displayName: 'Setup Node.js'
+                  inputs:
+                    versionSpec: '22.x'
 
-              - script: npm ci
-                displayName: 'Install dependencies'
+                - script: npm ci
+                  displayName: 'Install dependencies'
 
-              - task: AzureCLI@2
-                displayName: 'Publish to ${env} (incremental - last commit only)'
-                condition: ne('\${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo')
-                inputs:
-                  azureSubscription: '$(AZURE_SERVICE_CONNECTION_${env.toUpperCase()})'
-                  scriptType: 'bash'
-                  scriptLocation: 'inlineScript'
-                  inlineScript: |
-                    npx apiops publish \\
-                      --resource-group $(APIM_RESOURCE_GROUP_${env.toUpperCase()}) \\
-                      --service-name $(APIM_SERVICE_NAME_${env.toUpperCase()}) \\
-                      --source ${config.artifactDir} \\
-                      --override configuration.${env}.yaml \\
-                      --commit-id $(Build.SourceVersion) \\
-                      --subscription-id $(AZURE_SUBSCRIPTION_ID)
+                - task: AzureCLI@2
+                  displayName: 'Publish to ${env} (incremental - last commit only)'
+                  condition: ne('\${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo')
+                  inputs:
+                    azureSubscription: 'AZURE_SERVICE_CONNECTION_${env.toUpperCase()}'
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    inlineScript: |
+                      npx apiops publish \\
+                        --resource-group $(APIM_RESOURCE_GROUP) \\
+                        --service-name $(APIM_SERVICE_NAME) \\
+                        --source ${config.artifactDir} \\
+                        --override configuration.${env}.yaml \\
+                        --commit-id $(Build.SourceVersion) \\
+                        --subscription-id $(AZURE_SUBSCRIPTION_ID)
 
-              - task: AzureCLI@2
-                displayName: 'Publish to ${env} (all artifacts)'
-                condition: eq('\${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo')
-                inputs:
-                  azureSubscription: '$(AZURE_SERVICE_CONNECTION_${env.toUpperCase()})'
-                  scriptType: 'bash'
-                  scriptLocation: 'inlineScript'
-                  inlineScript: |
-                    npx apiops publish \\
-                      --resource-group $(APIM_RESOURCE_GROUP_${env.toUpperCase()}) \\
-                      --service-name $(APIM_SERVICE_NAME_${env.toUpperCase()}) \\
-                      --source ${config.artifactDir} \\
-                      --override configuration.${env}.yaml \\
-                      --subscription-id $(AZURE_SUBSCRIPTION_ID)
+                - task: AzureCLI@2
+                  displayName: 'Publish to ${env} (all artifacts)'
+                  condition: eq('\${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo')
+                  inputs:
+                    azureSubscription: 'AZURE_SERVICE_CONNECTION_${env.toUpperCase()}'
+                    scriptType: 'bash'
+                    scriptLocation: 'inlineScript'
+                    inlineScript: |
+                      npx apiops publish \\
+                        --resource-group $(APIM_RESOURCE_GROUP) \\
+                        --service-name $(APIM_SERVICE_NAME) \\
+                        --source ${config.artifactDir} \\
+                        --override configuration.${env}.yaml \\
+                        --subscription-id $(AZURE_SUBSCRIPTION_ID)
 `;
   }).join('\n');
 
