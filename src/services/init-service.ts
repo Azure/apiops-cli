@@ -367,6 +367,7 @@ class InitServiceImpl implements InitService {
     // Copilot identity setup prompt — goes in .azdo/prompts/
     const azdoPromptConfig: IdentitySetupAzdoPromptConfig = {
       environments: config.environments,
+      cloud: config.cloud ?? 'public',
     };
     const azdoPromptContent = generateIdentitySetupAzdoPrompt(azdoPromptConfig);
     const azdoPromptsDir = path.join(config.outputDir, '.azdo/prompts');
@@ -420,7 +421,8 @@ class InitServiceImpl implements InitService {
       guide = identityGuideService.generateAzureDevOpsGuide(
         subscriptionId,
         resourceGroup,
-        config.environments
+        config.environments,
+        config.cloud ?? 'public'
       );
     }
 

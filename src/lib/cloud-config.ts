@@ -51,6 +51,14 @@ const OFFICIAL_NAME_MAP: Record<OfficialCloudName, CloudName> = {
   AzureGermanCloud: 'germany',
 };
 
+/** Map canonical short names to official Azure cloud environment names */
+const SHORT_TO_OFFICIAL: Record<CloudName, OfficialCloudName> = {
+  public: 'AzureCloud',
+  china: 'AzureChinaCloud',
+  usgov: 'AzureUSGovernment',
+  germany: 'AzureGermanCloud',
+};
+
 /**
  * Resolve a cloud name (short or official long form) to its configuration.
  * Throws if the name is not recognized.
@@ -73,6 +81,27 @@ export function getCloudConfig(cloudName: string): CloudConfig {
     ...Object.keys(OFFICIAL_NAME_MAP),
   ].join(', ');
   throw new Error(`Unknown cloud "${cloudName}". Valid values: ${validNames}`);
+}
+
+/**
+ * Return the official Azure cloud environment name (e.g. 'AzureCloud') for a
+ * given cloud name (either a short name like 'public' or an official long name
+ * like 'AzureCloud'). Used when generating CLI scripts that require the
+ * official name, such as Azure DevOps service connection JSON bodies.
+ */
+export function getOfficialCloudName(cloudName: string): string {
+  // Already an official name?
+  if (cloudName in OFFICIAL_NAME_MAP) {
+    return cloudName;
+  }
+  // Short name — map to official name
+  const shortName = cloudName as CloudName;
+  if (SHORT_TO_OFFICIAL[shortName]) {
+    return SHORT_TO_OFFICIAL[shortName];
+  }
+  // Fall back to validation error via getCloudConfig
+  getCloudConfig(cloudName);
+  return 'AzureCloud'; // unreachable
 }
 
 /**
