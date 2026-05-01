@@ -270,5 +270,31 @@ describe('copilot/identity-setup-azdo-prompt', () => {
       expect(prompt).toContain('APIM Extractor');
       expect(prompt).toContain('Run pipeline');
     });
+
+    it('should default to public cloud ARM URL and environment name', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('https://management.azure.com/');
+      expect(prompt).toContain('AzureCloud');
+    });
+
+    it('should use US Government ARM URL when cloud is usgov', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'], cloud: 'usgov' });
+      expect(prompt).toContain('https://management.usgovcloudapi.net/');
+      expect(prompt).toContain('AzureUSGovernment');
+      expect(prompt).not.toContain('management.azure.com');
+    });
+
+    it('should use China ARM URL when cloud is china', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'], cloud: 'china' });
+      expect(prompt).toContain('https://management.chinacloudapi.cn/');
+      expect(prompt).toContain('AzureChinaCloud');
+    });
+
+    it('should not use python3 for JSON parsing', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).not.toContain('python3');
+      expect(prompt).toContain('az devops service-endpoint show');
+      expect(prompt).toContain('--query "id" -o tsv');
+    });
   });
 });

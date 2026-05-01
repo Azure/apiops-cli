@@ -11,11 +11,19 @@
  *   8. Creating pipelines
  */
 
+import { getCloudConfig, getOfficialCloudName } from '../../lib/cloud-config.js';
+
 export interface IdentitySetupAzdoPromptConfig {
   environments: string[];
+  cloud?: string;
 }
 
 export function generateIdentitySetupAzdoPrompt(config: IdentitySetupAzdoPromptConfig): string {
+  const cloud = config.cloud ?? 'public';
+  const cloudConfig = getCloudConfig(cloud);
+  const armBaseUrl = `${cloudConfig.armBaseUrl}/`;
+  const officialCloudName = getOfficialCloudName(cloud);
+
   const envGatherTable = config.environments.map((env) =>
     `| \`APIM_RG_${env.toUpperCase()}\` | Resource group for **${env}** APIM instance | \`rg-apim-${env}\` |
 | \`APIM_NAME_${env.toUpperCase()}\` | APIM service name for **${env}** | \`apim-${env}\` |`
@@ -198,8 +206,6 @@ SUBSCRIPTION_NAME=$(az account show --subscription "\${SUBSCRIPTION_ID}" --query
 
 > ⚠️ **Note:** Workload identity federation means Azure DevOps exchanges its own OIDC token for an Azure token at runtime — no stored secrets. Creating a WIF service connection is a two-step process: create the connection (which generates an issuer/subject), then create a federated credential on the managed identity.
 
-> **Cloud environment:** The JSON below uses \`https://management.azure.com/\` and \`AzureCloud\`, which are correct for public Azure. For sovereign clouds use the appropriate values: Azure US Government → \`https://management.usgovcloudapi.net/\` / \`AzureUSGovernment\`; Azure China → \`https://management.chinacloudapi.cn/\` / \`AzureChinaCloud\`. For on-premises Azure DevOps Server connecting to Azure Stack, use your custom endpoint URL and environment name.
-
 The function below handles both steps. Call it once for each service connection:
 
 \`\`\`bash
@@ -207,18 +213,19 @@ The function below handles both steps. Call it once for each service connection:
 create_wif_service_connection() {
   local SC_NAME="$1"
 
-  # Step A: Create the service connection (returns issuer + subject for federation)
-  ENDPOINT_JSON=$(az devops invoke \\
+  # Step A: Create the service connection; use --query and -o tsv to get the endpoint ID directly
+  ENDPOINT_ID=$(az devops invoke \\
     --area serviceEndpoint \\
     --resource endpoints \\
     --route-parameters project="\${AZDO_PROJECT}" \\
     --http-method POST \\
     --api-version "7.1" \\
+    --query "id" -o tsv \\
     --in-file - << ENDJSON
 {
   "name": "\${SC_NAME}",
   "type": "azurerm",
-  "url": "https://management.azure.com/",
+  "url": "${armBaseUrl}",
   "authorization": {
     "scheme": "WorkloadIdentityFederation",
     "parameters": {
@@ -229,7 +236,7 @@ create_wif_service_connection() {
   "data": {
     "subscriptionId": "\${SUBSCRIPTION_ID}",
     "subscriptionName": "\${SUBSCRIPTION_NAME}",
-    "environment": "AzureCloud",
+    "environment": "${officialCloudName}",
     "scopeLevel": "Subscription",
     "creationMode": "Manual"
   }
@@ -237,11 +244,11 @@ create_wif_service_connection() {
 ENDJSON
   )
 
-  ENDPOINT_ID=$(echo "\${ENDPOINT_JSON}" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-  ISSUER=$(echo "\${ENDPOINT_JSON}" | python3 -c "import sys,json; print(json.load(sys.stdin)['authorization']['parameters']['workloadIdentityFederationIssuer'])")
-  SUBJECT=$(echo "\${ENDPOINT_JSON}" | python3 -c "import sys,json; print(json.load(sys.stdin)['authorization']['parameters']['workloadIdentityFederationSubject'])")
+  # Step B: Retrieve the WIF issuer and subject from the created endpoint
+  ISSUER=$(az devops service-endpoint show --id "\${ENDPOINT_ID}" --query "authorization.parameters.workloadIdentityFederationIssuer" -o tsv)
+  SUBJECT=$(az devops service-endpoint show --id "\${ENDPOINT_ID}" --query "authorization.parameters.workloadIdentityFederationSubject" -o tsv)
 
-  # Step B: Create federated credential on the managed identity
+  # Step C: Create federated credential on the managed identity
   az identity federated-credential create \\
     --name "azdo-$(echo "\${SC_NAME}" | tr '[:upper:]' '[:lower:]' | tr '_' '-')" \\
     --identity-name "\${MI_NAME}" \\

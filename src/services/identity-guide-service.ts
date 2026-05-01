@@ -4,6 +4,8 @@
  * pipeline secrets/service connections. Optional az CLI automation per FR-021.
  */
 
+import { getCloudConfig, getOfficialCloudName } from '../lib/cloud-config.js';
+
 export interface IdentityGuideService {
   generateGitHubActionsGuide(
     subscriptionId: string,
@@ -14,7 +16,8 @@ export interface IdentityGuideService {
   generateAzureDevOpsGuide(
     subscriptionId: string,
     resourceGroup: string,
-    environments: string[]
+    environments: string[],
+    cloud?: string
   ): string;
 }
 
@@ -137,8 +140,12 @@ Test the authentication by running a workflow manually or pushing to main branch
   generateAzureDevOpsGuide(
     subscriptionId: string,
     resourceGroup: string,
-    environments: string[]
+    environments: string[],
+    cloud = 'public'
   ): string {
+    const cloudConfig = getCloudConfig(cloud);
+    const armBaseUrl = `${cloudConfig.armBaseUrl}/`;
+    const officialCloudName = getOfficialCloudName(cloud);
     const environmentsArrayPowerShell = environments.map((e) => `"${e}"`).join(', ');
     const environmentsArrayBash = environments.map((e) => `"${e}"`).join(' ');
 
@@ -243,8 +250,6 @@ SUBSCRIPTION_NAME=$(az account show --subscription "$SUBSCRIPTION_ID" --query na
 
 Create service connections using workload identity federation:
 
-> **Cloud environment:** The commands below use \`https://management.azure.com/\` and \`AzureCloud\`, which are correct for public Azure. For sovereign clouds use the appropriate values: Azure US Government → \`https://management.usgovcloudapi.net/\` / \`AzureUSGovernment\`; Azure China → \`https://management.chinacloudapi.cn/\` / \`AzureChinaCloud\`. For on-premises Azure DevOps Server connecting to Azure Stack, use your custom endpoint URL and environment name.
-
 **PowerShell:**
 \`\`\`powershell
 $SUBSCRIPTION_NAME = az account show --subscription $SUBSCRIPTION_ID --query name -o tsv
@@ -252,9 +257,9 @@ $SUBSCRIPTION_NAME = az account show --subscription $SUBSCRIPTION_ID --query nam
 function New-WifServiceConnection {
     param($SC_NAME)
     $body = @{
-        name = $SC_NAME; type = "azurerm"; url = "https://management.azure.com/"
+        name = $SC_NAME; type = "azurerm"; url = "${armBaseUrl}"
         authorization = @{ scheme = "WorkloadIdentityFederation"; parameters = @{ servicePrincipalId = $MI_CLIENT_ID; tenantid = $TENANT_ID } }
-        data = @{ subscriptionId = $SUBSCRIPTION_ID; subscriptionName = $SUBSCRIPTION_NAME; environment = "AzureCloud"; scopeLevel = "Subscription"; creationMode = "Manual" }
+        data = @{ subscriptionId = $SUBSCRIPTION_ID; subscriptionName = $SUBSCRIPTION_NAME; environment = "${officialCloudName}"; scopeLevel = "Subscription"; creationMode = "Manual" }
     } | ConvertTo-Json -Depth 10 -Compress
     $body | Out-File -Encoding utf8 sc-body.json
     $ep = az devops invoke --area serviceEndpoint --resource endpoints --route-parameters project=$AZDO_PROJECT --http-method POST --api-version "7.1" --in-file sc-body.json | ConvertFrom-Json
@@ -279,16 +284,19 @@ SUBSCRIPTION_NAME=$(az account show --subscription "$SUBSCRIPTION_ID" --query na
 
 create_wif_service_connection() {
     local SC_NAME="$1"
-    ENDPOINT_JSON=$(az devops invoke \\
+    # Create the service connection; use --query and -o tsv to extract the endpoint ID directly
+    ENDPOINT_ID=$(az devops invoke \\
         --area serviceEndpoint --resource endpoints \\
         --route-parameters project="$AZDO_PROJECT" \\
         --http-method POST --api-version "7.1" \\
+        --query "id" -o tsv \\
         --in-file - << ENDJSON
-{"name":"$SC_NAME","type":"azurerm","url":"https://management.azure.com/","authorization":{"scheme":"WorkloadIdentityFederation","parameters":{"servicePrincipalId":"$MI_CLIENT_ID","tenantid":"$TENANT_ID"}},"data":{"subscriptionId":"$SUBSCRIPTION_ID","subscriptionName":"$SUBSCRIPTION_NAME","environment":"AzureCloud","scopeLevel":"Subscription","creationMode":"Manual"}}
+{"name":"$SC_NAME","type":"azurerm","url":"${armBaseUrl}","authorization":{"scheme":"WorkloadIdentityFederation","parameters":{"servicePrincipalId":"$MI_CLIENT_ID","tenantid":"$TENANT_ID"}},"data":{"subscriptionId":"$SUBSCRIPTION_ID","subscriptionName":"$SUBSCRIPTION_NAME","environment":"${officialCloudName}","scopeLevel":"Subscription","creationMode":"Manual"}}
 ENDJSON
     )
-    ISSUER=$(echo "$ENDPOINT_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['authorization']['parameters']['workloadIdentityFederationIssuer'])")
-    SUBJECT=$(echo "$ENDPOINT_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['authorization']['parameters']['workloadIdentityFederationSubject'])")
+    # Retrieve the WIF issuer and subject from the created endpoint
+    ISSUER=$(az devops service-endpoint show --id "$ENDPOINT_ID" --query "authorization.parameters.workloadIdentityFederationIssuer" -o tsv)
+    SUBJECT=$(az devops service-endpoint show --id "$ENDPOINT_ID" --query "authorization.parameters.workloadIdentityFederationSubject" -o tsv)
     CRED_NAME=$(echo "$SC_NAME" | tr '[:upper:]' '[:lower:]' | tr '_' '-')
     az identity federated-credential create \\
         --name "azdo-$CRED_NAME" --identity-name "$MI_NAME" --resource-group "$MI_RESOURCE_GROUP" \\

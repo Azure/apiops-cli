@@ -90,4 +90,5 @@ export interface InitConfig {
   outputDir: string;
   cliPackage?: string;
   force: boolean;
+  cloud?: string;
 }
