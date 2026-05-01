@@ -180,7 +180,7 @@ class InitServiceImpl implements InitService {
       );
       const promptFile = path.join(
         config.outputDir,
-        '.azdo/prompts/apiops-setup-identity.prompt.md'
+        '.github/prompts/apiops-setup-identity.prompt.md'
       );
 
       if (await this.fileExists(extractPipeline)) {
@@ -364,17 +364,17 @@ class InitServiceImpl implements InitService {
     await fs.writeFile(publishPath, publishContent);
     generatedFiles.pipelines.push('.azdo/pipelines/run-apim-publisher.yml');
 
-    // Copilot identity setup prompt — goes in .azdo/prompts/
+    // Copilot identity setup prompt — goes in .github/prompts/ (same as GitHub Actions)
     const azdoPromptConfig: IdentitySetupAzdoPromptConfig = {
       environments: config.environments,
       cloud: config.cloud ?? 'public',
     };
     const azdoPromptContent = generateIdentitySetupAzdoPrompt(azdoPromptConfig);
-    const azdoPromptsDir = path.join(config.outputDir, '.azdo/prompts');
+    const azdoPromptsDir = path.join(config.outputDir, '.github/prompts');
     await fs.mkdir(azdoPromptsDir, { recursive: true });
     const azdoPromptPath = path.join(azdoPromptsDir, 'apiops-setup-identity.prompt.md');
     await fs.writeFile(azdoPromptPath, azdoPromptContent);
-    generatedFiles.configs.push('.azdo/prompts/apiops-setup-identity.prompt.md');
+    generatedFiles.configs.push('.github/prompts/apiops-setup-identity.prompt.md');
   }
 
   /**

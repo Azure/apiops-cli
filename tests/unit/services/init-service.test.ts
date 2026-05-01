@@ -546,9 +546,9 @@ describe('init-service', () => {
 
       const result = await initService.run(config);
 
-      expect(result.configs).toContain('.azdo/prompts/apiops-setup-identity.prompt.md');
+      expect(result.configs).toContain('.github/prompts/apiops-setup-identity.prompt.md');
       const promptCalls = vi.mocked(fs.writeFile).mock.calls.filter(
-        (call) => call[0] === path.join('/test', '.azdo/prompts/apiops-setup-identity.prompt.md')
+        (call) => call[0] === path.join('/test', '.github/prompts/apiops-setup-identity.prompt.md')
       );
       expect(promptCalls).toHaveLength(1);
       const content = promptCalls[0][1] as string;

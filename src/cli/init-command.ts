@@ -95,7 +95,8 @@ export function createInitCommand(): Command {
           logger.info('     - Follow ./IDENTITY-SETUP-GITHUB.md for manual setup, OR');
           logger.info('     - Open ./.github/prompts/apiops-setup-identity.prompt.md with GitHub Copilot for guided setup');
         } else {
-          logger.info('     - Follow ./IDENTITY-SETUP-AZDO.md for manual setup');
+          logger.info('     - Follow ./IDENTITY-SETUP-AZDO.md for manual setup, OR');
+          logger.info('     - Open ./.github/prompts/apiops-setup-identity.prompt.md with GitHub Copilot for guided setup');
         }
         logger.info('');
       } catch (error) {
