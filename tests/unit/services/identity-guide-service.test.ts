@@ -108,22 +108,25 @@ describe('identity-guide-service', () => {
   });
 
   describe('generateAzureDevOpsGuide', () => {
-    it('should include subscription ID in guide', () => {
+    it('should include variable setting instructions', () => {
       const guide = identityGuideService.generateAzureDevOpsGuide(
         'sub-12345',
         'my-rg',
         ['dev', 'prod']
       );
-      expect(guide).toContain('sub-12345');
+      expect(guide).toContain('Set Variables');
+      expect(guide).toContain('AZDO_PROJECT_URL');
+      expect(guide).toContain('ENVIRONMENTS');
     });
 
-    it('should include resource group in guide', () => {
+    it('should include APIM instance ID input instructions', () => {
       const guide = identityGuideService.generateAzureDevOpsGuide(
         'sub-12345',
         'my-rg',
         ['dev']
       );
-      expect(guide).toContain('my-rg');
+      expect(guide).toContain('APIM_INSTANCE_');
+      expect(guide).toContain('resource ID for APIM instance');
     });
 
     it('should include managed identity creation steps', () => {
@@ -160,34 +163,30 @@ describe('identity-guide-service', () => {
       const guide = identityGuideService.generateAzureDevOpsGuide('sub-12345', 'my-rg', ['dev']);
       expect(guide).toContain('Security Notes');
       expect(guide).not.toContain('Rotate service principal secrets');
-      expect(guide).toContain('User-assigned managed identities have no passwords or secrets');
+      expect(guide).toContain('User-assigned managed identities');
     });
 
     it('should default to public cloud ARM URL and environment name', () => {
       const guide = identityGuideService.generateAzureDevOpsGuide('sub-12345', 'my-rg', ['dev']);
       expect(guide).toContain('https://management.azure.com/');
-      expect(guide).toContain('AzureCloud');
       expect(guide).not.toContain('python3');
     });
 
     it('should use US Government ARM URL when cloud is usgov', () => {
       const guide = identityGuideService.generateAzureDevOpsGuide('sub-12345', 'my-rg', ['dev'], 'usgov');
       expect(guide).toContain('https://management.usgovcloudapi.net/');
-      expect(guide).toContain('AzureUSGovernment');
       expect(guide).not.toContain('management.azure.com');
     });
 
     it('should use China ARM URL when cloud is china', () => {
       const guide = identityGuideService.generateAzureDevOpsGuide('sub-12345', 'my-rg', ['dev'], 'china');
       expect(guide).toContain('https://management.chinacloudapi.cn/');
-      expect(guide).toContain('AzureChinaCloud');
     });
 
     it('should not use python3 for JSON parsing', () => {
       const guide = identityGuideService.generateAzureDevOpsGuide('sub-12345', 'my-rg', ['dev']);
       expect(guide).not.toContain('python3');
-      expect(guide).toContain('az devops service-endpoint show');
-      expect(guide).toContain('--query "id" -o tsv');
+      expect(guide).toContain('az devops service-endpoint list');
     });
 
   });

@@ -92,14 +92,14 @@ describe('azure-devops/publish-pipeline', () => {
       expect(pipeline).toContain('dependsOn: Publish_staging');
     });
 
-    it('should filter stages by ENVIRONMENT parameter', () => {
+    it('should filter stages by ENVIRONMENT parameter using template conditionals', () => {
       const pipeline = generatePublishPipeline({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
-      expect(pipeline).toContain("eq('${{ parameters.ENVIRONMENT }}', 'dev')");
-      expect(pipeline).toContain("eq('${{ parameters.ENVIRONMENT }}', 'prod')");
-      expect(pipeline).toContain("eq('${{ parameters.ENVIRONMENT }}', 'all')");
+      // Uses ${{ if or(...) }} blocks, not condition: property
+      expect(pipeline).toContain("or(eq(parameters.ENVIRONMENT, 'dev'), eq(parameters.ENVIRONMENT, 'all'))");
+      expect(pipeline).toContain("or(eq(parameters.ENVIRONMENT, 'prod'), eq(parameters.ENVIRONMENT, 'all'))");
     });
 
     it('should use environment-specific variable groups', () => {
@@ -177,19 +177,19 @@ describe('azure-devops/publish-pipeline', () => {
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
-      expect(pipeline).toContain('$(AZURE_SERVICE_CONNECTION_DEV)');
-      expect(pipeline).toContain('$(AZURE_SERVICE_CONNECTION_PROD)');
+      // Service connections are now literal strings (not variable references)
+      expect(pipeline).toContain("azureSubscription: 'AZURE_SERVICE_CONNECTION_DEV'");
+      expect(pipeline).toContain("azureSubscription: 'AZURE_SERVICE_CONNECTION_PROD'");
     });
 
-    it('should use environment-specific resource group and service name', () => {
+    it('should use environment-specific resource group and service name from variable group', () => {
       const pipeline = generatePublishPipeline({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
-      expect(pipeline).toContain('$(APIM_RESOURCE_GROUP_DEV)');
-      expect(pipeline).toContain('$(APIM_SERVICE_NAME_DEV)');
-      expect(pipeline).toContain('$(APIM_RESOURCE_GROUP_PROD)');
-      expect(pipeline).toContain('$(APIM_SERVICE_NAME_PROD)');
+      // Variables are now without environment suffix (from env-specific variable groups)
+      expect(pipeline).toContain('$(APIM_RESOURCE_GROUP)');
+      expect(pipeline).toContain('$(APIM_SERVICE_NAME)');
     });
 
     it('should use environment-specific override files', () => {
