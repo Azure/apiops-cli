@@ -198,6 +198,8 @@ SUBSCRIPTION_NAME=$(az account show --subscription "\${SUBSCRIPTION_ID}" --query
 
 > ⚠️ **Note:** Workload identity federation means Azure DevOps exchanges its own OIDC token for an Azure token at runtime — no stored secrets. Creating a WIF service connection is a two-step process: create the connection (which generates an issuer/subject), then create a federated credential on the managed identity.
 
+> **Cloud environment:** The JSON below uses \`https://management.azure.com/\` and \`AzureCloud\`, which are correct for public Azure. For sovereign clouds use the appropriate values: Azure US Government → \`https://management.usgovcloudapi.net/\` / \`AzureUSGovernment\`; Azure China → \`https://management.chinacloudapi.cn/\` / \`AzureChinaCloud\`. For on-premises Azure DevOps Server connecting to Azure Stack, use your custom endpoint URL and environment name.
+
 The function below handles both steps. Call it once for each service connection:
 
 \`\`\`bash
@@ -248,7 +250,7 @@ ENDJSON
     --subject "\${SUBJECT}" \\
     --audiences "api://AzureADTokenExchange"
 
-  echo "✅ Service connection '\${SC_NAME}' created (ID: \${ENDPOINT_ID})"
+  echo "Service connection '\${SC_NAME}' created (ID: \${ENDPOINT_ID})"
 }
 
 # Get subscription name (needed for service connection metadata)

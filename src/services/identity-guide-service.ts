@@ -160,7 +160,7 @@ Test the authentication by running a workflow manually or pushing to main branch
 \`\`\`powershell
 $SUBSCRIPTION_ID = "${subscriptionId}"
 $RESOURCE_GROUP = "${resourceGroup}"
-$MI_NAME = "apiops-azdo-mi"
+$MI_NAME = "apiops-azdo-mi"  # Name of the user-assigned managed identity
 $MI_RESOURCE_GROUP = "<your-mi-resource-group>"
 $ENVIRONMENTS = @(${environmentsArrayPowerShell})
 \`\`\`
@@ -169,7 +169,7 @@ $ENVIRONMENTS = @(${environmentsArrayPowerShell})
 \`\`\`bash
 SUBSCRIPTION_ID="${subscriptionId}"
 RESOURCE_GROUP="${resourceGroup}"
-MI_NAME="apiops-azdo-mi"
+MI_NAME="apiops-azdo-mi"  # Name of the user-assigned managed identity
 MI_RESOURCE_GROUP="<your-mi-resource-group>"
 ENVIRONMENTS=(${environmentsArrayBash})
 \`\`\`
@@ -242,6 +242,8 @@ SUBSCRIPTION_NAME=$(az account show --subscription "$SUBSCRIPTION_ID" --query na
 ## Step 4: Create Azure Service Connections
 
 Create service connections using workload identity federation:
+
+> **Cloud environment:** The commands below use \`https://management.azure.com/\` and \`AzureCloud\`, which are correct for public Azure. For sovereign clouds use the appropriate values: Azure US Government → \`https://management.usgovcloudapi.net/\` / \`AzureUSGovernment\`; Azure China → \`https://management.chinacloudapi.cn/\` / \`AzureChinaCloud\`. For on-premises Azure DevOps Server connecting to Azure Stack, use your custom endpoint URL and environment name.
 
 **PowerShell:**
 \`\`\`powershell
