@@ -532,5 +532,28 @@ describe('init-service', () => {
       // Should not throw, just warn and proceed
       await expect(initService.run(config)).resolves.toBeDefined();
     });
+
+    it('should generate Copilot identity setup prompt for Azure DevOps', async () => {
+      const config: InitConfig = {
+        ciProvider: 'azure-devops',
+        nonInteractive: true,
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+        outputDir: '/test',
+        cliPackage: TEST_CLI_PACKAGE,
+        force: false,
+      };
+
+      const result = await initService.run(config);
+
+      expect(result.configs).toContain('.azdo/prompts/apiops-setup-identity.prompt.md');
+      const promptCalls = vi.mocked(fs.writeFile).mock.calls.filter(
+        (call) => call[0] === path.join('/test', '.azdo/prompts/apiops-setup-identity.prompt.md')
+      );
+      expect(promptCalls).toHaveLength(1);
+      const content = promptCalls[0][1] as string;
+      expect(content).toContain('Setup Azure DevOps Identity');
+      expect(content).toContain('az devops service-endpoint azurerm create');
+    });
   });
 });
