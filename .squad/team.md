@@ -20,6 +20,8 @@
 | TestEngineer | 🧪 Test Engineer | [charter](.squad/agents/testengineer/charter.md) | ✅ Active |
 | OpenSourceExpert | ⚖️ Open Source Expert | [charter](.squad/agents/opensourceexpert/charter.md) | ✅ Active |
 | CodeReviewer | 🔍 Code Reviewer & Standards Enforcer | [charter](.squad/agents/codereviewer/charter.md) | ✅ Active |
+| AzdoExpert | 🔶 Azure DevOps Expert | [charter](.squad/agents/azdoexpert/charter.md) | ✅ Active |
+| GitHubExpert | ⚫ GitHub Expert | [charter](.squad/agents/githubexpert/charter.md) | ✅ Active |
 | Ralph | 🔄 Work Monitor | — | ✅ Active |
 
 ## Issue Source
@@ -39,6 +41,8 @@
 | NodeJsDev | `squad:nodejsdev` | 🟢 #339933 |
 | TestEngineer | `squad:testengineer` | 💜 #A855F7 |
 | OpenSourceExpert | `squad:opensourceexpert` | ⚪ #6B7280 |
+| AzdoExpert | `squad:azdoexpert` | 🔶 #F97316 |
+| GitHubExpert | `squad:githubexpert` | ⚫ #24292F |
 
 ## Milestones
 
