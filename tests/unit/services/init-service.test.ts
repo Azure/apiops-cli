@@ -553,7 +553,8 @@ describe('init-service', () => {
       expect(promptCalls).toHaveLength(1);
       const content = promptCalls[0][1] as string;
       expect(content).toContain('Setup Azure DevOps Identity');
-      expect(content).toContain('az devops service-endpoint azurerm create');
+      expect(content).toContain('create_wif_service_connection');
+      expect(content).toContain('WorkloadIdentityFederation');
     });
   });
 });
