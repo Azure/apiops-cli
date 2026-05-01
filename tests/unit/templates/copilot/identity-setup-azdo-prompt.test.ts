@@ -31,7 +31,8 @@ describe('copilot/identity-setup-azdo-prompt', () => {
       expect(prompt).toContain('Gather Information');
       expect(prompt).toContain('SUBSCRIPTION_ID');
       expect(prompt).toContain('RESOURCE_GROUP');
-      expect(prompt).toContain('APP_NAME');
+      expect(prompt).toContain('MI_NAME');
+      expect(prompt).toContain('MI_RESOURCE_GROUP');
       expect(prompt).toContain('AZDO_ORG');
       expect(prompt).toContain('ORG_NAME');
       expect(prompt).toContain('AZDO_PROJECT');
@@ -45,14 +46,14 @@ describe('copilot/identity-setup-azdo-prompt', () => {
       expect(prompt).toContain('APIM_NAME_PROD');
     });
 
-    it('should include service principal creation commands', () => {
+    it('should include managed identity creation commands', () => {
       const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
-      expect(prompt).toContain('az ad sp create-for-rbac');
-      expect(prompt).toContain('API Management Service Contributor');
-      expect(prompt).toContain('python3 -c "import sys,json');
-      expect(prompt).toContain('APP_ID=$(echo "$SP_OUTPUT"');
-      expect(prompt).toContain('PASSWORD=$(echo "$SP_OUTPUT"');
-      expect(prompt).toContain('TENANT_ID=$(echo "$SP_OUTPUT"');
+      expect(prompt).toContain('Create Managed Identity');
+      expect(prompt).toContain('az identity create');
+      expect(prompt).toContain('az identity show');
+      expect(prompt).toContain('MI_CLIENT_ID=');
+      expect(prompt).toContain('MI_PRINCIPAL_ID=');
+      expect(prompt).not.toContain('az ad sp create-for-rbac');
     });
 
     it('should include Azure DevOps CLI configuration commands', () => {
@@ -62,22 +63,34 @@ describe('copilot/identity-setup-azdo-prompt', () => {
       expect(prompt).toContain('SUBSCRIPTION_NAME=$(az account show');
     });
 
-    it('should include base service connection creation command', () => {
+    it('should include RBAC role assignment for managed identity', () => {
       const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
-      expect(prompt).toContain('az devops service-endpoint azurerm create');
-      expect(prompt).toContain('--name "AZURE_SERVICE_CONNECTION"');
-      expect(prompt).toContain('--azure-rm-service-principal-id "$APP_ID"');
-      expect(prompt).toContain('--azure-rm-subscription-id "$SUBSCRIPTION_ID"');
-      expect(prompt).toContain('--azure-rm-tenant-id "$TENANT_ID"');
+      expect(prompt).toContain('az role assignment create');
+      expect(prompt).toContain('--assignee-object-id');
+      expect(prompt).toContain('--assignee-principal-type ServicePrincipal');
+      expect(prompt).toContain('API Management Service Contributor');
+    });
+
+    it('should include workload identity federation setup', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('WorkloadIdentityFederation');
+      expect(prompt).toContain('az identity federated-credential create');
+      expect(prompt).toContain('create_wif_service_connection');
+      expect(prompt).toContain('workloadIdentityFederationIssuer');
+      expect(prompt).toContain('workloadIdentityFederationSubject');
+    });
+
+    it('should include base service connection creation with WIF', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('create_wif_service_connection "AZURE_SERVICE_CONNECTION"');
+      expect(prompt).toContain('az devops invoke');
+      expect(prompt).toContain('--area serviceEndpoint');
     });
 
     it('should include per-environment service connection creation commands', () => {
       const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev', 'prod'] });
-      expect(prompt).toContain('# Create service connection for dev environment');
-      expect(prompt).toContain('# Create service connection for prod environment');
-      expect(prompt).toContain('env_upper=$(echo "dev" | tr \'[:lower:]\' \'[:upper:]\')');
-      expect(prompt).toContain('env_upper=$(echo "prod" | tr \'[:lower:]\' \'[:upper:]\')');
-      expect(prompt).toContain('--name "AZURE_SERVICE_CONNECTION_${env_upper}"');
+      expect(prompt).toContain('create_wif_service_connection "AZURE_SERVICE_CONNECTION_DEV"');
+      expect(prompt).toContain('create_wif_service_connection "AZURE_SERVICE_CONNECTION_PROD"');
     });
 
     it('should include service connection verification command', () => {
@@ -85,10 +98,12 @@ describe('copilot/identity-setup-azdo-prompt', () => {
       expect(prompt).toContain('az devops service-endpoint list');
     });
 
-    it('should include password environment variable setup and cleanup', () => {
+    it('should NOT contain service principal password or secrets', () => {
       const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
-      expect(prompt).toContain('export AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY="$PASSWORD"');
-      expect(prompt).toContain('unset AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY');
+      expect(prompt).not.toContain('az ad sp create-for-rbac');
+      expect(prompt).not.toContain('AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY');
+      expect(prompt).not.toContain('PASSWORD');
+      expect(prompt).not.toContain('password is set via environment variable');
     });
 
     it('should include common variable group creation command', () => {
@@ -193,12 +208,6 @@ describe('copilot/identity-setup-azdo-prompt', () => {
       expect(prompt).toContain('Do NOT retry silently');
     });
 
-    it('should include security note about password handling', () => {
-      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
-      expect(prompt).toContain('⚠️ **Security Note:**');
-      expect(prompt).toContain('service principal password is set via environment variable');
-    });
-
     it('should include note about environment approvals', () => {
       const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
       expect(prompt).toContain('Environment approvals and checks must be configured via the Azure DevOps UI');
@@ -212,8 +221,8 @@ describe('copilot/identity-setup-azdo-prompt', () => {
       expect(prompt).not.toContain('.ps1');
       // Should have bash-specific patterns
       expect(prompt).toContain('```bash');
-      expect(prompt).toContain('export ');
-      expect(prompt).toContain('unset ');
+      expect(prompt).toContain('$(');
+      expect(prompt).toContain('local ');
     });
 
     it('should populate per-environment variables correctly with multiple environments', () => {
@@ -228,9 +237,9 @@ describe('copilot/identity-setup-azdo-prompt', () => {
       expect(prompt).toContain('APIM_NAME_PROD');
 
       // Check service connections for all environments
-      expect(prompt).toContain('# Create service connection for dev environment');
-      expect(prompt).toContain('# Create service connection for staging environment');
-      expect(prompt).toContain('# Create service connection for prod environment');
+      expect(prompt).toContain('create_wif_service_connection "AZURE_SERVICE_CONNECTION_DEV"');
+      expect(prompt).toContain('create_wif_service_connection "AZURE_SERVICE_CONNECTION_STAGING"');
+      expect(prompt).toContain('create_wif_service_connection "AZURE_SERVICE_CONNECTION_PROD"');
 
       // Check variable groups for all environments
       expect(prompt).toContain('--name "apim-dev"');

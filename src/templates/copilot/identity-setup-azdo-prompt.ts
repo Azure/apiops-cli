@@ -2,7 +2,7 @@
  * GitHub Copilot prompt template for automating Azure DevOps identity setup.
  * Generates a .prompt.md file that guides Copilot through:
  *   1. Gathering Azure & Azure DevOps info from the user
- *   2. Creating Azure AD service principal
+ *   2. Creating user-assigned managed identity
  *   3. Configuring Azure DevOps CLI
  *   4. Creating service connections
  *   5. Creating variable groups
@@ -22,15 +22,8 @@ export function generateIdentitySetupAzdoPrompt(config: IdentitySetupAzdoPromptC
   ).join('\n');
 
   const envServiceConnections = config.environments.map((env) =>
-    `# Create service connection for ${env} environment
-env_upper=$(echo "${env}" | tr '[:lower:]' '[:upper:]')
-az devops service-endpoint azurerm create \\
-  --name "AZURE_SERVICE_CONNECTION_\${env_upper}" \\
-  --azure-rm-service-principal-id "$APP_ID" \\
-  --azure-rm-subscription-id "$SUBSCRIPTION_ID" \\
-  --azure-rm-subscription-name "$SUBSCRIPTION_NAME" \\
-  --azure-rm-tenant-id "$TENANT_ID"`
-  ).join('\n\n');
+    `create_wif_service_connection "AZURE_SERVICE_CONNECTION_${env.toUpperCase()}"`
+  ).join('\n');
 
   const envVariableGroups = config.environments.map((env) =>
     `# Create variable group for ${env} environment
@@ -72,9 +65,9 @@ EOF`
 
 ## Goal
 
-Configure Azure service principal and Azure DevOps service connections, variable
+Configure a user-assigned managed identity and Azure DevOps service connections, variable
 groups, and environments so the APIOps extract and publish pipelines can
-authenticate to Azure and deploy to each environment.
+authenticate to Azure using workload identity federation — no stored secrets or passwords.
 
 ---
 
@@ -146,7 +139,8 @@ each answer for use in later steps.
 |----------|-------------|---------|
 | \`SUBSCRIPTION_ID\` | Azure subscription ID (used for all environments) | \`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\` |
 | \`RESOURCE_GROUP\` | Resource group prefix or base name | \`rg-apim\` |
-| \`APP_NAME\` | Display name for the service principal | \`apiops-azdo-sp\` |
+| \`MI_NAME\` | Display name for the managed identity | \`apiops-azdo-mi\` |
+| \`MI_RESOURCE_GROUP\` | Resource group where the managed identity will be created | \`rg-apiops-mi\` |
 | \`AZDO_ORG\` | Azure DevOps organization URL | \`https://dev.azure.com/my-org\` |
 | \`ORG_NAME\` | Short organization name (for Build Service) | \`my-org\` |
 | \`AZDO_PROJECT\` | Azure DevOps project name | \`apim-project\` |
@@ -154,27 +148,34 @@ ${envGatherTable}
 
 ---
 
-## Step 2 — Create Service Principal
+## Step 2 — Create Managed Identity
 
-> ⚠️ **Error Handling:** If any command fails, stop immediately and show the user the full error output verbatim. Do NOT retry silently. Common issues include insufficient permissions (requires Contributor role on the subscription or resource group).
+> ⚠️ **Error Handling:** If any command fails, stop immediately and show the user the full error output verbatim. Do NOT retry silently. Common issues include insufficient permissions (requires Contributor role on the resource group).
 
 \`\`\`bash
-# Create service principal with API Management Service Contributor role
-SP_OUTPUT=$(az ad sp create-for-rbac \\
-  --name "\${APP_NAME}" \\
+# Create user-assigned managed identity (no password — credentials-free)
+az identity create \\
+  --name "\${MI_NAME}" \\
+  --resource-group "\${MI_RESOURCE_GROUP}"
+
+# Retrieve managed identity properties
+MI_CLIENT_ID=$(az identity show --name "\${MI_NAME}" --resource-group "\${MI_RESOURCE_GROUP}" --query clientId -o tsv)
+MI_PRINCIPAL_ID=$(az identity show --name "\${MI_NAME}" --resource-group "\${MI_RESOURCE_GROUP}" --query principalId -o tsv)
+TENANT_ID=$(az account show --query tenantId -o tsv)
+
+echo "Managed Identity Client ID: $MI_CLIENT_ID"
+echo "Managed Identity Principal ID: $MI_PRINCIPAL_ID"
+echo "Tenant ID: $TENANT_ID"
+
+# Assign API Management Service Contributor role to the managed identity
+az role assignment create \\
+  --assignee-object-id "\${MI_PRINCIPAL_ID}" \\
+  --assignee-principal-type ServicePrincipal \\
   --role "API Management Service Contributor" \\
-  --scopes "/subscriptions/\${SUBSCRIPTION_ID}/resourceGroups/\${RESOURCE_GROUP}")
-
-# Extract credentials from JSON output
-APP_ID=$(echo "$SP_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['appId'])")
-PASSWORD=$(echo "$SP_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['password'])")
-TENANT_ID=$(echo "$SP_OUTPUT" | python3 -c "import sys,json; print(json.load(sys.stdin)['tenant'])")
-
-echo "APP_ID=$APP_ID  TENANT_ID=$TENANT_ID"
-echo "⚠️ PASSWORD is shown once only. Store it securely (used in next step)."
+  --scope "/subscriptions/\${SUBSCRIPTION_ID}/resourceGroups/\${RESOURCE_GROUP}"
 \`\`\`
 
-> **Note:** The password (client secret) is displayed only once. You'll use it in the next step to create service connections, then it will be securely stored in Azure DevOps.
+> **Note:** User-assigned managed identities have no passwords or secrets. The RBAC role is assigned using the managed identity's principal ID, not a client ID.
 
 ---
 
@@ -195,24 +196,69 @@ SUBSCRIPTION_NAME=$(az account show --subscription "\${SUBSCRIPTION_ID}" --query
 
 ## Step 4 — Create Service Connections
 
-> ⚠️ **Security Note:** The service principal password is set via environment variable and cleared immediately after creating service connections.
+> ⚠️ **Note:** Workload identity federation means Azure DevOps exchanges its own OIDC token for an Azure token at runtime — no stored secrets. Creating a WIF service connection is a two-step process: create the connection (which generates an issuer/subject), then create a federated credential on the managed identity.
+
+The function below handles both steps. Call it once for each service connection:
 
 \`\`\`bash
-# Set the service principal password as environment variable
-export AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY="$PASSWORD"
+# Helper function: create a WIF service connection and link it to the managed identity
+create_wif_service_connection() {
+  local SC_NAME="$1"
+
+  # Step A: Create the service connection (returns issuer + subject for federation)
+  ENDPOINT_JSON=$(az devops invoke \\
+    --area serviceEndpoint \\
+    --resource endpoints \\
+    --route-parameters project="\${AZDO_PROJECT}" \\
+    --http-method POST \\
+    --api-version "7.1" \\
+    --in-file - << ENDJSON
+{
+  "name": "\${SC_NAME}",
+  "type": "azurerm",
+  "url": "https://management.azure.com/",
+  "authorization": {
+    "scheme": "WorkloadIdentityFederation",
+    "parameters": {
+      "servicePrincipalId": "\${MI_CLIENT_ID}",
+      "tenantid": "\${TENANT_ID}"
+    }
+  },
+  "data": {
+    "subscriptionId": "\${SUBSCRIPTION_ID}",
+    "subscriptionName": "\${SUBSCRIPTION_NAME}",
+    "environment": "AzureCloud",
+    "scopeLevel": "Subscription",
+    "creationMode": "Manual"
+  }
+}
+ENDJSON
+  )
+
+  ENDPOINT_ID=$(echo "\${ENDPOINT_JSON}" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+  ISSUER=$(echo "\${ENDPOINT_JSON}" | python3 -c "import sys,json; print(json.load(sys.stdin)['authorization']['parameters']['workloadIdentityFederationIssuer'])")
+  SUBJECT=$(echo "\${ENDPOINT_JSON}" | python3 -c "import sys,json; print(json.load(sys.stdin)['authorization']['parameters']['workloadIdentityFederationSubject'])")
+
+  # Step B: Create federated credential on the managed identity
+  az identity federated-credential create \\
+    --name "azdo-$(echo "\${SC_NAME}" | tr '[:upper:]' '[:lower:]' | tr '_' '-')" \\
+    --identity-name "\${MI_NAME}" \\
+    --resource-group "\${MI_RESOURCE_GROUP}" \\
+    --issuer "\${ISSUER}" \\
+    --subject "\${SUBJECT}" \\
+    --audiences "api://AzureADTokenExchange"
+
+  echo "✅ Service connection '\${SC_NAME}' created (ID: \${ENDPOINT_ID})"
+}
+
+# Get subscription name (needed for service connection metadata)
+SUBSCRIPTION_NAME=$(az account show --subscription "\${SUBSCRIPTION_ID}" --query name -o tsv)
 
 # Create base service connection
-az devops service-endpoint azurerm create \\
-  --name "AZURE_SERVICE_CONNECTION" \\
-  --azure-rm-service-principal-id "$APP_ID" \\
-  --azure-rm-subscription-id "$SUBSCRIPTION_ID" \\
-  --azure-rm-subscription-name "$SUBSCRIPTION_NAME" \\
-  --azure-rm-tenant-id "$TENANT_ID"
+create_wif_service_connection "AZURE_SERVICE_CONNECTION"
 
+# Create per-environment service connections
 ${envServiceConnections}
-
-# Clear the password from environment
-unset AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY
 
 # Verify service connections were created
 az devops service-endpoint list --query "[].name" -o table
