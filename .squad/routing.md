@@ -14,6 +14,8 @@ How to decide who handles what.
 | Tests, mocking, edge cases, coverage | TestEngineer | Vitest unit tests, mock implementations, spec edge cases |
 | License compliance, OSS requirements, repo health | OpenSourceExpert | Dependency audits, LICENSE/SECURITY/CONTRIBUTING files, CLA |
 | Code review, standards enforcement | CodeReviewer | Review PRs, enforce constitution compliance, check testability, modern TypeScript standards |
+| Azure DevOps, `az devops`, pipelines, service connections | AzdoExpert | Azure Pipelines YAML, variable groups, service connections, workload identity, `az pipelines` |
+| GitHub Actions, `gh` CLI, repository settings | GitHubExpert | GitHub workflows, reusable actions, OIDC federation, branch protection, `gh` commands |
 | Architecture review, scope decisions | ApiOpsLead | High-level design review, spec alignment, scope gatekeeping |
 | Issue triage | ApiOpsLead | Read GitHub issues, assign `squad:{member}` labels |
 | Session logging | Scribe | Automatic — never needs routing |
@@ -32,6 +34,8 @@ How to decide who handles what.
 | `squad:testengineer` | Pick up issue — tests or coverage | TestEngineer |
 | `squad:opensourceexpert` | Pick up issue — license or OSS compliance | OpenSourceExpert |
 | `squad:codereviewer` | Pick up issue — code review or standards enforcement | CodeReviewer |
+| `squad:azdoexpert` | Pick up issue — Azure DevOps pipelines or CLI | AzdoExpert |
+| `squad:githubexpert` | Pick up issue — GitHub Actions or CLI | GitHubExpert |
 
 ### How Issue Assignment Works
 
