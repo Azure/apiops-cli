@@ -31,6 +31,7 @@ export interface ApiExtractionResult {
   releases: ExtractedResource[];
   tagDescriptions: ExtractedResource[];
   wiki: boolean;
+  mcpServer: boolean;
   resolvers: ExtractedResource[];
   resolverPolicies: ExtractedResource[];
   policies: string[];
@@ -63,6 +64,7 @@ export async function extractApiResources(
     releases: [],
     tagDescriptions: [],
     wiki: false,
+    mcpServer: false,
     resolvers: [],
     resolverPolicies: [],
     policies: [],
@@ -135,6 +137,11 @@ export async function extractApiResources(
 
   // Extract API wiki
   result.wiki = await extractApiWiki(
+    client, store, context, apiDescriptor, outputDir
+  );
+
+  // Extract MCP server configuration (if enabled for this API)
+  result.mcpServer = await extractApiMcpServer(
     client, store, context, apiDescriptor, outputDir
   );
 
@@ -234,6 +241,11 @@ async function extractApiSpecification(
   const apiType = properties?.type as string | undefined;
   if (apiType?.toLowerCase() === 'websocket') {
     logger.debug(`OpenAPI does not apply to WebSocket APIs`);
+    return false;
+  }
+
+  if (apiType?.toLowerCase() === 'mcp') {
+    logger.debug(`OpenAPI does not apply to MCP APIs`);
     return false;
   }
 
@@ -491,4 +503,38 @@ async function extractGraphQLResolvers(
   }
 
   return { resolvers, resolverPolicies, policies };
+}
+
+/**
+ * Extract MCP (Model Context Protocol) server configuration for an API.
+ * The MCP server is a singleton resource per API exposed at apis/{id}/mcpServers/default.
+ * Silently skips if the API does not have MCP enabled or the resource does not exist.
+ */
+async function extractApiMcpServer(
+  client: IApimClient,
+  store: IArtifactStore,
+  context: ApimServiceContext,
+  apiDescriptor: ResourceDescriptor,
+  outputDir: string
+): Promise<boolean> {
+  const mcpDescriptor: ResourceDescriptor = {
+    type: ResourceType.McpServer,
+    nameParts: [...apiDescriptor.nameParts],
+    workspace: apiDescriptor.workspace,
+  };
+
+  try {
+    const mcpJson = await client.getResource(context, mcpDescriptor);
+    if (!mcpJson) {
+      return false;
+    }
+
+    await store.writeResource(outputDir, mcpDescriptor, mcpJson);
+    logger.info(`Extracted ${buildResourceLabel(mcpDescriptor)}`);
+    return true;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.debug(`No MCP server configuration ${buildResourceLabel(mcpDescriptor)}: ${errorMessage}`);
+    return false;
+  }
 }
