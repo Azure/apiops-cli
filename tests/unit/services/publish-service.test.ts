@@ -737,4 +737,43 @@ describe('publish-service', () => {
       expect(productApiCalls).toHaveLength(0);
     });
   });
+
+  describe('singleton resources with empty nameParts', () => {
+    it('should handle ServicePolicy with empty nameParts without crashing', async () => {
+      // ServicePolicy is a singleton with no placeholders, resulting in empty nameParts
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.ServicePolicy, nameParts: [] },
+        { type: ResourceType.Api, nameParts: ['my-api'] },
+        { type: ResourceType.NamedValue, nameParts: ['my-nv'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      
+      // Mock readResource to handle empty nameParts for ServicePolicy
+      vi.mocked(store.readResource).mockImplementation(
+        async (_sourceDir, descriptor) => {
+          if (descriptor.type === ResourceType.ServicePolicy) {
+            return { properties: { format: 'xml', value: '<policies><inbound /></policies>' } };
+          }
+          return { name: (descriptor.nameParts[descriptor.nameParts.length - 1] ?? ""), properties: {} };
+        }
+      );
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      // This should NOT throw "RangeError: getNamePart: nameParts[0] is out of range"
+      const result = await runPublish(client, store, config);
+
+      expect(result.totalErrors).toBe(0);
+      expect(result.exitCode).toBe(0);
+      expect(result.totalPuts).toBe(3);
+    });
+  });
 });

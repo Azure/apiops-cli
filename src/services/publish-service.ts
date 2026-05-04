@@ -189,7 +189,8 @@ async function executePuts(
   const parentNamesByType = new Map<ResourceType, Set<string>>();
   for (const d of tierGroups.get(2) || []) {
     // Top-level types are those that are NOT child types
-    if (!isChildType(d.type)) {
+    // Skip singleton resources (e.g., ServicePolicy) with no name parts
+    if (!isChildType(d.type) && d.nameParts.length > 0) {
       if (!parentNamesByType.has(d.type)) {
         parentNamesByType.set(d.type, new Set());
       }
