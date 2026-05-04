@@ -32,7 +32,7 @@ function assertStringArray(value: unknown, fieldName: string): string[] {
 export async function loadFilterConfig(filePath: string): Promise<FilterConfig | undefined> {
   try {
     const content = await fs.readFile(filePath, 'utf-8');
-    const parsed = yaml.load(content) as Record<string, unknown> ?? {};
+    const parsed = (yaml.load(content) ?? {}) as Record<string, unknown>;
     
     // Validate structure — each field must be an array of strings
     const config: FilterConfig = {};
