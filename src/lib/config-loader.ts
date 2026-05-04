@@ -124,7 +124,7 @@ export async function loadOverrideConfig(filePath: string): Promise<OverrideConf
 export async function loadOTelConfig(filePath: string): Promise<Record<string, unknown> | undefined> {
   try {
     const content = await fs.readFile(filePath, 'utf-8');
-    const parsed = yaml.load(content) as Record<string, unknown> ?? {};
+    const parsed = (yaml.load(content) ?? {}) as Record<string, unknown>;
     
     logger.debug(`Loaded OTel config from ${filePath}`);
     return parsed;
