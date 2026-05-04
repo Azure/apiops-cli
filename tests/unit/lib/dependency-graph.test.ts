@@ -15,13 +15,13 @@ import { ResourceType } from '../../../src/models/resource-types.js';
 
 describe('dependency-graph', () => {
   describe('tier constants', () => {
-    it('should have 33 total resources across all tiers', () => {
+    it('should have 34 total resources across all tiers', () => {
       const total =
         TIER_1_RESOURCES.length +
         TIER_2_RESOURCES.length +
         TIER_3_RESOURCES.length +
         TIER_4_RESOURCES.length;
-      expect(total).toBe(33);
+      expect(total).toBe(34);
     });
 
     it('should not have duplicate resources across tiers', () => {
@@ -62,9 +62,9 @@ describe('dependency-graph', () => {
   });
 
   describe('getTopologicalOrder', () => {
-    it('should return all 33 resource types', () => {
+    it('should return all 34 resource types', () => {
       const order = getTopologicalOrder();
-      expect(order).toHaveLength(33);
+      expect(order).toHaveLength(34);
     });
 
     it('should return tier-1 resources before tier-2', () => {

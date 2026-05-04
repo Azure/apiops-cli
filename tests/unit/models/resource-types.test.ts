@@ -2,9 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { ResourceType, RESOURCE_TYPE_METADATA } from '../../../src/models/resource-types.js';
 
 describe('ResourceType enum', () => {
-  it('should have exactly 33 resource types', () => {
+  it('should have exactly 34 resource types', () => {
     const values = Object.values(ResourceType);
-    expect(values).toHaveLength(33);
+    expect(values).toHaveLength(34);
   });
 
   it('should have unique enum values', () => {
@@ -15,10 +15,10 @@ describe('ResourceType enum', () => {
 });
 
 describe('RESOURCE_TYPE_METADATA', () => {
-  it('should have metadata for all 33 resource types', () => {
+  it('should have metadata for all 34 resource types', () => {
     const metadataKeys = Object.keys(RESOURCE_TYPE_METADATA);
     const enumValues = Object.values(ResourceType);
-    expect(metadataKeys).toHaveLength(33);
+    expect(metadataKeys).toHaveLength(34);
     for (const val of enumValues) {
       expect(RESOURCE_TYPE_METADATA[val]).toBeDefined();
     }

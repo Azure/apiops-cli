@@ -261,6 +261,7 @@ async function extractApiSubResources(
         apiResult.releases.filter((r) => r.status === 'success').length +
         apiResult.tagDescriptions.filter((r) => r.status === 'success').length +
         (apiResult.wiki ? 1 : 0) +
+        (apiResult.mcpServer ? 1 : 0) +
         apiResult.resolvers.filter((r) => r.status === 'success').length +
         apiResult.resolverPolicies.filter((r) => r.status === 'success').length;
 
