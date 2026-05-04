@@ -140,7 +140,7 @@ export async function extractApiResources(
     client, store, context, apiDescriptor, outputDir
   );
 
-  // Extract MCP server configuration (if enabled for this API)
+  // Extract MCP server configuration (singleton per API; silently skipped when not present)
   result.mcpServer = await extractApiMcpServer(
     client, store, context, apiDescriptor, outputDir
   );
@@ -245,7 +245,7 @@ async function extractApiSpecification(
   }
 
   if (apiType?.toLowerCase() === 'mcp') {
-    logger.debug(`OpenAPI does not apply to MCP APIs`);
+    logger.debug(`Skipping spec export for MCP API "${getNamePart(apiDescriptor.nameParts, 0)}" — MCP APIs use the Model Context Protocol endpoint, not OpenAPI`);
     return false;
   }
 
