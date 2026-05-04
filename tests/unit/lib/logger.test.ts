@@ -146,6 +146,27 @@ describe('Logger', () => {
       expect(output).toContain('test');
       expect(output).toContain('42');
     });
+
+    it('should serialize Error objects with message and stack', () => {
+      const error = new Error('Something went wrong');
+      loggerInstance.error('Error occurred:', error);
+      const output = stderrSpy.mock.calls[0]![0] as string;
+      expect(output).toContain('Something went wrong');
+      expect(output).toContain('"name":"Error"');
+      expect(output).toContain('"message":"Something went wrong"');
+      // Stack trace should be present (not testing exact format)
+      expect(output).toContain('"stack"');
+    });
+
+    it('should serialize Error objects with cause', () => {
+      const innerError = new Error('Inner error');
+      const outerError = new Error('Outer error', { cause: innerError });
+      loggerInstance.error('Nested error:', outerError);
+      const output = stderrSpy.mock.calls[0]![0] as string;
+      expect(output).toContain('Outer error');
+      expect(output).toContain('Inner error');
+      expect(output).toContain('"cause"');
+    });
   });
 
   describe('non-ASCII punctuation normalization', () => {
