@@ -32,7 +32,7 @@ function assertStringArray(value: unknown, fieldName: string): string[] {
 export async function loadFilterConfig(filePath: string): Promise<FilterConfig | undefined> {
   try {
     const content = await fs.readFile(filePath, 'utf-8');
-    const parsed = yaml.load(content) as Record<string, unknown> ?? {};
+    const parsed = (yaml.load(content) ?? {}) as Record<string, unknown>;
     
     // Validate structure — each field must be an array of strings
     const config: FilterConfig = {};
@@ -124,7 +124,7 @@ export async function loadOverrideConfig(filePath: string): Promise<OverrideConf
 export async function loadOTelConfig(filePath: string): Promise<Record<string, unknown> | undefined> {
   try {
     const content = await fs.readFile(filePath, 'utf-8');
-    const parsed = yaml.load(content) as Record<string, unknown> ?? {};
+    const parsed = (yaml.load(content) ?? {}) as Record<string, unknown>;
     
     logger.debug(`Loaded OTel config from ${filePath}`);
     return parsed;
