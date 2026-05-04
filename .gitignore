@@ -37,6 +37,7 @@ Desktop.ini
 
 # Local testing output (use --output .local-extract for local runs)
 .local-extract/
+tests/integration/all-resource-types/extracted-artifacts/**
 
 # Environment variables
 .env
