@@ -37,6 +37,32 @@ export interface ApiExtractionResult {
   policies: string[];
 }
 
+function getApiProperties(apiJson: Record<string, unknown>): Record<string, unknown> | undefined {
+  return apiJson.properties as Record<string, unknown> | undefined;
+}
+
+function hasEmbeddedMcpConfiguration(apiJson: Record<string, unknown>): boolean {
+  const properties = getApiProperties(apiJson);
+  return properties?.mcpProperties !== undefined || properties?.mcpTools !== undefined;
+}
+
+function buildEmbeddedMcpServerResource(apiJson: Record<string, unknown>): Record<string, unknown> {
+  const properties = getApiProperties(apiJson) ?? {};
+  const resourceProperties: Record<string, unknown> = {};
+
+  if (properties.mcpProperties !== undefined) {
+    resourceProperties.mcpProperties = properties.mcpProperties;
+  }
+  if (properties.mcpTools !== undefined) {
+    resourceProperties.mcpTools = properties.mcpTools;
+  }
+
+  return {
+    name: 'default',
+    properties: resourceProperties,
+  };
+}
+
 /**
  * Extract all API-specific resources for a single API.
  * This includes revisions, specifications, operations, policies, etc.
@@ -142,7 +168,7 @@ export async function extractApiResources(
 
   // Extract MCP server configuration (singleton per API; silently skipped when not present)
   result.mcpServer = await extractApiMcpServer(
-    client, store, context, apiDescriptor, outputDir
+    client, store, context, apiDescriptor, apiJson, outputDir
   );
 
   // Extract GraphQL resolvers and their policies
@@ -461,7 +487,7 @@ async function extractGraphQLResolvers(
   const policies: string[] = [];
 
   // Only extract resolvers for GraphQL APIs — use the already-fetched apiJson
-  const properties = apiJson.properties as Record<string, unknown> | undefined;
+  const properties = getApiProperties(apiJson);
   const apiType = properties?.type as string | undefined;
   if (apiType?.toLowerCase() !== 'graphql') {
     return { resolvers, resolverPolicies, policies };
@@ -515,6 +541,7 @@ async function extractApiMcpServer(
   store: IArtifactStore,
   context: ApimServiceContext,
   apiDescriptor: ResourceDescriptor,
+  apiJson: Record<string, unknown>,
   outputDir: string
 ): Promise<boolean> {
   const mcpDescriptor: ResourceDescriptor = {
@@ -522,6 +549,12 @@ async function extractApiMcpServer(
     nameParts: [...apiDescriptor.nameParts],
     workspace: apiDescriptor.workspace,
   };
+
+  if (hasEmbeddedMcpConfiguration(apiJson)) {
+    await store.writeResource(outputDir, mcpDescriptor, buildEmbeddedMcpServerResource(apiJson));
+    logger.info(`Extracted ${buildResourceLabel(mcpDescriptor)} from API metadata`);
+    return true;
+  }
 
   try {
     const mcpJson = await client.getResource(context, mcpDescriptor);
