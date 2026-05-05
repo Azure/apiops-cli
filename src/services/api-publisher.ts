@@ -59,15 +59,7 @@ export async function publishApi(
 
     // Step 3: Publish child resources in parallel
     // When a spec was imported, operations and schemas are auto-created by APIM
-    await publishApiChildren(
-      client,
-      store,
-      context,
-      descriptor,
-      config,
-      rootResult.specImported,
-      rootResult.embeddedMcpApplied,
-    );
+    await publishApiChildren(client, store, context, descriptor, config, rootResult.specImported);
 
     return {
       descriptor,
@@ -111,26 +103,6 @@ function getImportFormat(specFormat: string, _apiType?: string): string | undefi
 interface RootApiResult {
   status: 'success' | 'skipped';
   specImported: boolean;
-  embeddedMcpApplied: boolean;
-}
-
-function getEmbeddedMcpProperties(
-  json: Record<string, unknown> | undefined
-): Record<string, unknown> | undefined {
-  const properties = json?.properties as Record<string, unknown> | undefined;
-  if (!properties) {
-    return undefined;
-  }
-
-  const embeddedProperties: Record<string, unknown> = {};
-  if (properties.mcpProperties !== undefined) {
-    embeddedProperties.mcpProperties = properties.mcpProperties;
-  }
-  if (properties.mcpTools !== undefined) {
-    embeddedProperties.mcpTools = properties.mcpTools;
-  }
-
-  return Object.keys(embeddedProperties).length > 0 ? embeddedProperties : undefined;
 }
 
 /**
@@ -153,32 +125,11 @@ async function publishRootApi(
       status: 'skipped',
       action: 'noop',
       specImported: false,
-      embeddedMcpApplied: false,
     };
   }
 
   // Apply overrides
   json = applyOverrides(descriptor, json, config.overrides);
-
-  const embeddedMcpProperties = getEmbeddedMcpProperties(
-    await store.readResource(config.sourceDir, {
-      type: ResourceType.McpServer,
-      nameParts: [...descriptor.nameParts],
-      workspace: descriptor.workspace,
-    })
-  );
-  const embeddedMcpApplied = embeddedMcpProperties !== undefined;
-  if (embeddedMcpApplied) {
-    const properties = json.properties as Record<string, unknown> | undefined;
-    json = {
-      ...json,
-      properties: {
-        ...(properties ?? {}),
-        ...embeddedMcpProperties,
-      },
-    };
-    logger.debug(`Merged MCP artifact into API payload for "${getNamePart(descriptor.nameParts, 0)}"`);
-  }
 
   // Try to read the specification file for this API
   let specImported = false;
@@ -227,7 +178,6 @@ async function publishRootApi(
     status: 'success',
     action: 'put',
     specImported,
-    embeddedMcpApplied,
   };
 }
 
@@ -288,8 +238,7 @@ async function publishApiChildren(
   context: ApimServiceContext,
   apiDescriptor: ResourceDescriptor,
   config: PublishConfig,
-  specImported: boolean = false,
-  embeddedMcpApplied: boolean = false
+  specImported: boolean = false
 ): Promise<void> {
   // List all resources from store
   const allDescriptors = await store.listResources(config.sourceDir);
@@ -299,8 +248,7 @@ async function publishApiChildren(
     (d) =>
       API_CHILD_TYPES.includes(d.type) &&
       getNamePart(d.nameParts, 0) === getNamePart(apiDescriptor.nameParts, 0) &&
-      !(specImported && SPEC_MANAGED_CHILD_TYPES.has(d.type)) &&
-      !(embeddedMcpApplied && d.type === ResourceType.McpServer)
+      !(specImported && SPEC_MANAGED_CHILD_TYPES.has(d.type))
   );
 
   // When a spec was imported, APIM auto-creates operations and schemas but loses

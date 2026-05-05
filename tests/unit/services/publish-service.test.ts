@@ -326,6 +326,49 @@ describe('publish-service', () => {
       expect(result.totalPuts).toBe(2);
       expect(client.putResource).toHaveBeenCalledTimes(2);
     });
+
+    it('should not throw RangeError when ServicePolicy (nameParts=[]) is in the batch', async () => {
+      // ServicePolicy is a tier-2 top-level singleton with no name segments (nameParts: []).
+      // The isTopLevelSingleton() guard in executePuts must fire so that
+      // getNamePart(d.nameParts, 0) is never called for this resource.
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.ServicePolicy, nameParts: [] },
+        { type: ResourceType.Api, nameParts: ['my-api'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      // ServicePolicy is a policy type — its artifact is policy.xml, not JSON.
+      // Mock readContent so the policy publish path reaches putResource.
+      vi.mocked(store.readContent).mockImplementation(
+        async (_sourceDir, descriptor, contentType) => {
+          if (
+            descriptor.type === ResourceType.ServicePolicy &&
+            contentType === 'policy'
+          ) {
+            // Minimal valid APIM policy XML — content doesn't matter for this test,
+            // only that readContent returns something so publishPolicy reaches putResource.
+            return { content: '<policies><inbound/></policies>', format: 'xml' };
+          }
+          return undefined;
+        }
+      );
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      await expect(runPublish(client, store, config)).resolves.not.toThrow();
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({ type: ResourceType.ServicePolicy }),
+        expect.anything(),
+      );
+    });
   });
 
   describe('pre-flight validation', () => {

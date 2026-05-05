@@ -83,7 +83,7 @@ async function executePublish(
 
   // Build service context
   const apiVersion =
-    globalOpts.apiVersion ?? process.env.AZURE_API_VERSION ?? '2024-10-01-preview';
+    globalOpts.apiVersion ?? process.env.AZURE_API_VERSION ?? '2024-05-01';
   const cloudName = globalOpts.cloud ?? 'public';
   const cloudConfig = getCloudConfig(cloudName);
   const baseUrl = buildArmBaseUrl(
