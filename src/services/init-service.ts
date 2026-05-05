@@ -348,6 +348,7 @@ class InitServiceImpl implements InitService {
     // Extract pipeline
     const extractPipelineConfig: ExtractPipelineConfig = {
       artifactDir: config.artifactDir,
+      environments: config.environments,
     };
     const extractContent = generateExtractPipeline(extractPipelineConfig);
     const extractPath = path.join(pipelinesDir, 'run-apim-extractor.yml');

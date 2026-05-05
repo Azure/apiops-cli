@@ -297,7 +297,9 @@ fi
 
 ---
 
-## Step 2: Create Managed Identity
+## Step 2: Create Managed Identity and Assign RBAC Roles
+
+### Create the Managed Identity
 
 **PowerShell:**
 \`\`\`powershell
@@ -309,13 +311,6 @@ $TENANT_ID = az account show --query tenantId -o tsv
 Write-Host "Managed Identity Client ID: $MI_CLIENT_ID"
 Write-Host "Managed Identity Principal ID: $MI_PRINCIPAL_ID"
 Write-Host "Tenant ID: $TENANT_ID"
-
-# Assign API Management Service Contributor role for each environment's resource group
-foreach ($env in $ENVIRONMENTS) {
-    $envUpper = $env.ToUpper()
-    $apimRg = Get-Variable -Name "APIM_RG_$envUpper" -ValueOnly
-    az role assignment create --assignee-object-id $MI_PRINCIPAL_ID --assignee-principal-type ServicePrincipal --role "API Management Service Contributor" --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$apimRg"
-}
 \`\`\`
 
 **Git Bash:**
@@ -328,15 +323,101 @@ TENANT_ID=$(az account show --query tenantId -o tsv)
 echo "Managed Identity Client ID: $MI_CLIENT_ID"
 echo "Managed Identity Principal ID: $MI_PRINCIPAL_ID"
 echo "Tenant ID: $TENANT_ID"
+\`\`\`
 
-# Assign API Management Service Contributor role for each environment's resource group
+---
+
+### Assign RBAC Roles to the Managed Identity
+
+> **Important:** The managed identity needs appropriate RBAC roles to access APIM resources:
+> - **API Management Service Reader Role** — Required for the **extract** pipeline to read APIM configurations (APIs, policies, backends, tags, etc.)
+> - **API Management Service Contributor** — Required for the **publish** pipeline to create/update APIM resources
+>
+> For security best practice, assign roles at the **APIM service scope** (not the resource group) to follow the principle of least privilege.
+
+**PowerShell:**
+\`\`\`powershell
+# Assign RBAC roles for each environment's APIM instance
+foreach ($env in $ENVIRONMENTS) {
+    $envUpper = $env.ToUpper()
+    $apimInstanceId = Get-Variable -Name "APIM_INSTANCE_$envUpper" -ValueOnly
+    
+    Write-Host "Assigning roles for $env environment (APIM: $apimInstanceId)"
+    
+    # API Management Service Reader Role (for extract pipeline)
+    az role assignment create \`
+        --assignee-object-id $MI_PRINCIPAL_ID \`
+        --assignee-principal-type ServicePrincipal \`
+        --role "API Management Service Reader Role" \`
+        --scope $apimInstanceId
+    
+    # API Management Service Contributor (for publish pipeline)
+    az role assignment create \`
+        --assignee-object-id $MI_PRINCIPAL_ID \`
+        --assignee-principal-type ServicePrincipal \`
+        --role "API Management Service Contributor" \`
+        --scope $apimInstanceId
+}
+
+Write-Host "\`nℹ️  Note: RBAC role assignments can take 5-10 minutes to propagate."
+\`\`\`
+
+**Git Bash:**
+\`\`\`bash
+# Assign RBAC roles for each environment's APIM instance
 for env in "\${ENVIRONMENTS[@]}"; do
     env_upper=$(echo "$env" | tr '[:lower:]' '[:upper:]')
-    apim_rg_var="APIM_RG_\${env_upper}"
-    apim_rg="\${!apim_rg_var}"
-    az role assignment create --assignee-object-id "$MI_PRINCIPAL_ID" --assignee-principal-type ServicePrincipal --role "API Management Service Contributor" --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$apim_rg"
+    apim_instance_var="APIM_INSTANCE_\${env_upper}"
+    apim_instance_id="\${!apim_instance_var}"
+    
+    echo "Assigning roles for $env environment (APIM: $apim_instance_id)"
+    
+    # API Management Service Reader Role (for extract pipeline)
+    az role assignment create \\
+        --assignee-object-id "$MI_PRINCIPAL_ID" \\
+        --assignee-principal-type ServicePrincipal \\
+        --role "API Management Service Reader Role" \\
+        --scope "$apim_instance_id"
+    
+    # API Management Service Contributor (for publish pipeline)
+    az role assignment create \\
+        --assignee-object-id "$MI_PRINCIPAL_ID" \\
+        --assignee-principal-type ServicePrincipal \\
+        --role "API Management Service Contributor" \\
+        --scope "$apim_instance_id"
+done
+
+echo ""
+echo "ℹ️  Note: RBAC role assignments can take 5-10 minutes to propagate."
+\`\`\`
+
+### Verify Role Assignments
+
+Verify the roles were assigned correctly:
+
+**PowerShell:**
+\`\`\`powershell
+foreach ($env in $ENVIRONMENTS) {
+    $envUpper = $env.ToUpper()
+    $apimInstanceId = Get-Variable -Name "APIM_INSTANCE_$envUpper" -ValueOnly
+    Write-Host "\`nRole assignments for $env environment:"
+    az role assignment list --assignee $MI_PRINCIPAL_ID --scope $apimInstanceId --query "[].{Role:roleDefinitionName, Scope:scope}" -o table
+}
+\`\`\`
+
+**Git Bash:**
+\`\`\`bash
+for env in "\${ENVIRONMENTS[@]}"; do
+    env_upper=$(echo "$env" | tr '[:lower:]' '[:upper:]')
+    apim_instance_var="APIM_INSTANCE_\${env_upper}"
+    apim_instance_id="\${!apim_instance_var}"
+    echo ""
+    echo "Role assignments for $env environment:"
+    az role assignment list --assignee "$MI_PRINCIPAL_ID" --scope "$apim_instance_id" --query "[].{Role:roleDefinitionName, Scope:scope}" -o table
 done
 \`\`\`
+
+> **Expected Output:** You should see both "API Management Service Reader Role" and "API Management Service Contributor" roles listed for each environment.
 
 ---
 
@@ -524,7 +605,7 @@ az pipelines variable-group create \`
     --name "apim-common" \`
     --project $AZDO_PROJECT \`
     --organization $AZDO_ORG \`
-    --variables AZURE_SUBSCRIPTION_ID=$SUBSCRIPTION_ID AZURE_SERVICE_CONNECTION="AZURE_SERVICE_CONNECTION"
+    --variables AZURE_SUBSCRIPTION_ID=$SUBSCRIPTION_ID APIOPS_CLI_VERSION="latest"
 \`\`\`
 
 **Git Bash:**
@@ -533,7 +614,7 @@ az pipelines variable-group create \\
     --name "apim-common" \\
     --project "$AZDO_PROJECT" \\
     --organization "$AZDO_ORG" \\
-    --variables AZURE_SUBSCRIPTION_ID="$SUBSCRIPTION_ID" AZURE_SERVICE_CONNECTION="AZURE_SERVICE_CONNECTION"
+    --variables AZURE_SUBSCRIPTION_ID="$SUBSCRIPTION_ID" APIOPS_CLI_VERSION="latest"
 \`\`\`
 
 Create environment-specific variable groups using values extracted from APIM instance IDs:
@@ -549,7 +630,7 @@ foreach ($env in $ENVIRONMENTS) {
         --name "apim-$env" \`
         --project $AZDO_PROJECT \`
         --organization $AZDO_ORG \`
-        --variables APIM_RESOURCE_GROUP=$apimRg APIM_SERVICE_NAME=$apimName AZURE_SUBSCRIPTION_ID=$SUBSCRIPTION_ID AZURE_SERVICE_CONNECTION="AZURE_SERVICE_CONNECTION_$envUpper"
+        --variables APIM_RESOURCE_GROUP=$apimRg APIM_SERVICE_NAME=$apimName AZURE_SUBSCRIPTION_ID=$SUBSCRIPTION_ID
 }
 \`\`\`
 
@@ -566,7 +647,7 @@ for env in "\${ENVIRONMENTS[@]}"; do
         --name "apim-$env" \\
         --project "$AZDO_PROJECT" \\
         --organization "$AZDO_ORG" \\
-        --variables APIM_RESOURCE_GROUP="$apim_rg" APIM_SERVICE_NAME="$apim_name" AZURE_SUBSCRIPTION_ID="$SUBSCRIPTION_ID" AZURE_SERVICE_CONNECTION="AZURE_SERVICE_CONNECTION_$env_upper"
+        --variables APIM_RESOURCE_GROUP="$apim_rg" APIM_SERVICE_NAME="$apim_name" AZURE_SUBSCRIPTION_ID="$SUBSCRIPTION_ID"
 done
 \`\`\`
 
