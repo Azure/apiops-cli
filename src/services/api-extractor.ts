@@ -43,7 +43,22 @@ function getApiProperties(apiJson: Record<string, unknown>): Record<string, unkn
 
 function hasEmbeddedMcpConfiguration(apiJson: Record<string, unknown>): boolean {
   const properties = getApiProperties(apiJson);
-  return properties?.mcpProperties !== undefined || properties?.mcpTools !== undefined;
+  if (!properties) {
+    return false;
+  }
+
+  // Check if mcpTools has actual content (non-empty array), excluding null
+  const mcpTools = properties.mcpTools as unknown[] | undefined | null;
+  if (Array.isArray(mcpTools) && mcpTools.length > 0) {
+    return true;
+  }
+
+  // Check if mcpProperties exists and is not null or undefined
+  if (properties.mcpProperties != null) {
+    return true;
+  }
+
+  return false;
 }
 
 function buildEmbeddedMcpServerResource(apiJson: Record<string, unknown>): Record<string, unknown> {
@@ -61,8 +76,28 @@ function buildEmbeddedMcpServerResource(apiJson: Record<string, unknown>): Recor
     name: 'default',
     properties: resourceProperties,
   };
+
 }
 
+function hasMeaningfulMcpContent(mcpJson: Record<string, unknown>): boolean {
+  const properties = mcpJson.properties as Record<string, unknown> | undefined;
+  if (!properties) {
+    return false;
+  }
+
+  // Check if mcpTools has actual content (non-empty array), excluding null
+  const mcpTools = properties.mcpTools as unknown[] | undefined | null;
+  if (Array.isArray(mcpTools) && mcpTools.length > 0) {
+    return true;
+  }
+
+  // Check if mcpProperties exists and is not null or undefined
+  if (properties.mcpProperties != null) {
+    return true;
+  }
+
+  return false;
+}
 /**
  * Extract all API-specific resources for a single API.
  * This includes revisions, specifications, operations, policies, etc.
@@ -544,6 +579,13 @@ async function extractApiMcpServer(
   apiJson: Record<string, unknown>,
   outputDir: string
 ): Promise<boolean> {
+  const apiType = (getApiProperties(apiJson)?.type as string | undefined)?.toLowerCase();
+
+  // Avoid creating MCP artifacts for non-MCP APIs unless they carry meaningful MCP metadata.
+  if (apiType !== 'mcp' && !hasEmbeddedMcpConfiguration(apiJson)) {
+    return false;
+  }
+
   const mcpDescriptor: ResourceDescriptor = {
     type: ResourceType.McpServer,
     nameParts: [...apiDescriptor.nameParts],
@@ -558,7 +600,7 @@ async function extractApiMcpServer(
 
   try {
     const mcpJson = await client.getResource(context, mcpDescriptor);
-    if (!mcpJson) {
+    if (!mcpJson || !hasMeaningfulMcpContent(mcpJson)) {
       return false;
     }
 
