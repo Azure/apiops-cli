@@ -793,7 +793,8 @@ describe('api-extractor', () => {
       const mcpJson = {
         name: 'default',
         properties: {
-          modelContextProtocol: { enabled: true, endpoint: 'https://apim.azure-api.net/my-api/mcp' },
+          mcpProperties: { serverUrl: 'https://apim.azure-api.net/my-api/mcp' },
+          mcpTools: [{ name: 'invokeTool', description: 'Tool for testing' }],
         },
       };
       const client = createMockClient({
@@ -813,7 +814,12 @@ describe('api-extractor', () => {
 
       const result = await extractApiResources(
         client, store, testContext, apiDescriptor,
-        { name: 'my-api' },
+        {
+          name: 'my-api',
+          properties: {
+            type: 'mcp',
+          },
+        },
         '/output'
       );
 
