@@ -101,6 +101,76 @@ describe('api-publisher', () => {
       );
     });
 
+    it('should merge embedded MCP artifact data into the root API payload', async () => {
+      const client = createMockClient();
+      const store = createMockStore([]);
+      store.readResource.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.Api) {
+          return { name: descriptor.nameParts[0] ?? '', properties: { type: 'mcp' } };
+        }
+        if (descriptor.type === ResourceType.McpServer) {
+          return {
+            name: 'default',
+            properties: {
+              mcpProperties: { serverUrl: 'https://example.com/mcp' },
+              mcpTools: [{ name: 'invokeTool' }],
+            },
+          };
+        }
+        return null;
+      });
+
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        apiDescriptor,
+        expect.objectContaining({
+          properties: expect.objectContaining({
+            type: 'mcp',
+            mcpProperties: { serverUrl: 'https://example.com/mcp' },
+            mcpTools: [{ name: 'invokeTool' }],
+          }),
+        })
+      );
+    });
+
+    it('should skip child MCP publish when MCP artifact was merged into the root API payload', async () => {
+      const client = createMockClient();
+      const children = [
+        { type: ResourceType.McpServer, nameParts: ['orders-api'] },
+        { type: ResourceType.ApiPolicy, nameParts: ['orders-api'] },
+      ];
+      const store = createMockStore(children);
+      store.readResource.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.Api) {
+          return { name: descriptor.nameParts[0] ?? '', properties: { type: 'mcp' } };
+        }
+        if (descriptor.type === ResourceType.McpServer) {
+          return {
+            name: 'default',
+            properties: { mcpProperties: { serverUrl: 'https://example.com/mcp' } },
+          };
+        }
+        return null;
+      });
+
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      const tasks = mockRunParallel.mock.calls[0][0] as Array<() => Promise<unknown>>;
+      expect(tasks).toHaveLength(1);
+    });
+
     it('should return failed result when root API publish fails', async () => {
       const client = createMockClient();
       const store = createMockStore([]);
