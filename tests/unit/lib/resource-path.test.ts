@@ -16,6 +16,7 @@ import {
   deriveListPaths,
   hasNestedParent,
   getPublishTier,
+  isTopLevelSingleton,
 } from '../../../src/lib/resource-path.js';
 import { ResourceDescriptor } from '../../../src/models/types.js';
 import { ResourceType } from '../../../src/models/resource-types.js';
@@ -635,6 +636,20 @@ describe('hasNestedParent', () => {
 
   it('returns false for ProductPolicy (has suffix but only one placeholder)', () => {
     expect(hasNestedParent(ResourceType.ProductPolicy)).toBe(false);
+  });
+});
+
+describe('isTopLevelSingleton', () => {
+  it('returns true for ServicePolicy', () => {
+    expect(isTopLevelSingleton(ResourceType.ServicePolicy)).toBe(true);
+  });
+
+  it('returns false for ApiWiki (child singleton)', () => {
+    expect(isTopLevelSingleton(ResourceType.ApiWiki)).toBe(false);
+  });
+
+  it('returns false for Api (not a singleton)', () => {
+    expect(isTopLevelSingleton(ResourceType.Api)).toBe(false);
   });
 });
 
