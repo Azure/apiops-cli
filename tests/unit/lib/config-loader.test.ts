@@ -49,6 +49,24 @@ tagNames:
       expect(config).toBeDefined();
     });
 
+    it('should handle completely empty file', async () => {
+      const filePath = path.join(tmpDir, 'blank.yaml');
+      await fs.writeFile(filePath, '', 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config).toEqual({});
+    });
+
+    it('should handle file with only comments', async () => {
+      const filePath = path.join(tmpDir, 'comments.yaml');
+      await fs.writeFile(filePath, '# This is a comment\n# Another comment', 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config).toEqual({});
+    });
+
     it('should throw for invalid type (non-array field)', async () => {
       const content = `
 apiNames: "not-an-array"
@@ -123,6 +141,24 @@ backends:
       const config = await loadOverrideConfig(path.join(tmpDir, 'nonexistent.yaml'));
       expect(config).toBeUndefined();
     });
+
+    it('should handle completely empty file', async () => {
+      const filePath = path.join(tmpDir, 'blank.yaml');
+      await fs.writeFile(filePath, '', 'utf-8');
+
+      const config = await loadOverrideConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config).toEqual({});
+    });
+
+    it('should handle file with only comments', async () => {
+      const filePath = path.join(tmpDir, 'comments.yaml');
+      await fs.writeFile(filePath, '# Override config\n# TODO: add overrides', 'utf-8');
+
+      const config = await loadOverrideConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config).toEqual({});
+    });
   });
 
   describe('loadOTelConfig', () => {
@@ -147,6 +183,24 @@ service:
     it('should return undefined for missing file', async () => {
       const config = await loadOTelConfig(path.join(tmpDir, 'nonexistent.yaml'));
       expect(config).toBeUndefined();
+    });
+
+    it('should handle completely empty file', async () => {
+      const filePath = path.join(tmpDir, 'blank.yaml');
+      await fs.writeFile(filePath, '', 'utf-8');
+
+      const config = await loadOTelConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config).toEqual({});
+    });
+
+    it('should handle file with only whitespace', async () => {
+      const filePath = path.join(tmpDir, 'whitespace.yaml');
+      await fs.writeFile(filePath, '   \n  \n  ', 'utf-8');
+
+      const config = await loadOTelConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config).toEqual({});
     });
   });
 });

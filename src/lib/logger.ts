@@ -56,12 +56,21 @@ function isSensitiveKey(key: string): boolean {
 
 /**
  * Recursively sanitize a value, replacing sensitive fields with '***'.
- * Handles objects, arrays, and inline bearer tokens in strings.
+ * Handles objects, arrays, inline bearer tokens in strings, and Error objects.
  */
 function sanitize(value: unknown): unknown {
   if (typeof value === 'string') {
     // Redact inline bearer tokens (e.g. "Bearer eyJ...")
     return value.replace(/Bearer\s+[A-Za-z0-9\-._~+/]+=*/gi, 'Bearer ***');
+  }
+  if (value instanceof Error) {
+    // Convert Error objects to a serializable form
+    return {
+      name: sanitize(value.name),
+      message: sanitize(value.message),
+      stack: value.stack === undefined ? undefined : sanitize(value.stack),
+      ...(value.cause ? { cause: sanitize(value.cause) } : {}),
+    };
   }
   if (Array.isArray(value)) {
     return value.map((item) => sanitize(item));
