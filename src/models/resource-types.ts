@@ -1,6 +1,6 @@
 /**
  * T006: ResourceType enum and metadata
- * All 33 APIM resource types with ARM path suffixes, artifact directories, and info file names
+ * All 34 APIM resource types with ARM path suffixes, artifact directories, and info file names
  */
 
 export enum ResourceType {
@@ -37,6 +37,8 @@ export enum ResourceType {
   ProductWiki = 'ProductWiki',
   GraphQLResolver = 'GraphQLResolver',
   GraphQLResolverPolicy = 'GraphQLResolverPolicy',
+  /** MCP (Model Context Protocol) server configuration per API. Singleton per API. */
+  McpServer = 'McpServer',
 }
 
 /**
@@ -264,6 +266,14 @@ export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> 
     armPathSuffix: 'apis/{0}/resolvers/{1}/policies/policy',
     artifactDirectory: 'apis/{0}/resolvers/{1}',
     infoFile: 'policy.xml',
+    supportsGet: true,
+  },
+  [ResourceType.McpServer]: {
+    // Singleton MCP (Model Context Protocol) server configuration per API.
+    // ARM path: apis/{apiId}/mcpServers/default
+    armPathSuffix: 'apis/{0}/mcpServers/default',
+    artifactDirectory: 'apis/{0}',
+    infoFile: 'mcpServerInformation.json',
     supportsGet: true,
   },
 };

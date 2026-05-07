@@ -747,6 +747,175 @@ describe('api-extractor', () => {
       // Revision filtered out — writeResource should not be called for it
       expect(result.revisions).toHaveLength(0);
     });
+
+    it('should skip specification export for MCP APIs without calling the client', async () => {
+      const getApiSpecification = vi.fn();
+      const client = createMockClient({
+        getApiSpecification,
+        getResource: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+
+      const result = await extractApiResources(
+        client, store, testContext,
+        { type: ResourceType.Api, nameParts: ['mcp-api'] },
+        { name: 'mcp-api', properties: { type: 'mcp' } },
+        '/output'
+      );
+
+      expect(result.specification).toBe(false);
+      expect(getApiSpecification).not.toHaveBeenCalled();
+      expect(store.writeContent).not.toHaveBeenCalledWith(
+        expect.anything(), expect.anything(), expect.anything(), 'specification', expect.anything()
+      );
+    });
+
+    it('should skip specification export for MCP APIs regardless of type casing', async () => {
+      const getApiSpecification = vi.fn();
+      const client = createMockClient({
+        getApiSpecification,
+        getResource: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+
+      const result = await extractApiResources(
+        client, store, testContext,
+        { type: ResourceType.Api, nameParts: ['mcp-api'] },
+        { name: 'mcp-api', properties: { type: 'MCP' } },
+        '/output'
+      );
+
+      expect(result.specification).toBe(false);
+      expect(getApiSpecification).not.toHaveBeenCalled();
+    });
+
+    it('should extract MCP server configuration when present', async () => {
+      const mcpJson = {
+        name: 'default',
+        properties: {
+          mcpProperties: { serverUrl: 'https://apim.azure-api.net/my-api/mcp' },
+          mcpTools: [{ name: 'invokeTool', description: 'Tool for testing' }],
+        },
+      };
+      const client = createMockClient({
+        getApiSpecification: vi.fn().mockResolvedValue(undefined),
+        getResource: vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
+          if (desc.type === ResourceType.McpServer) {
+            return mcpJson;
+          }
+          return undefined;
+        }),
+      });
+      const store = createMockStore();
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['my-api'],
+      };
+
+      const result = await extractApiResources(
+        client, store, testContext, apiDescriptor,
+        {
+          name: 'my-api',
+          properties: {
+            type: 'mcp',
+          },
+        },
+        '/output'
+      );
+
+      expect(result.mcpServer).toBe(true);
+      expect(store.writeResource).toHaveBeenCalledWith(
+        '/output',
+        expect.objectContaining({ type: ResourceType.McpServer, nameParts: ['my-api'] }),
+        mcpJson
+      );
+    });
+
+    it('should extract MCP server configuration from embedded API metadata when present', async () => {
+      const client = createMockClient({
+        getApiSpecification: vi.fn().mockResolvedValue(undefined),
+        getResource: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['my-api'],
+      };
+      const apiJson = {
+        name: 'my-api',
+        properties: {
+          type: 'mcp',
+          mcpProperties: { serverUrl: 'https://example.com/mcp' },
+          mcpTools: [{ name: 'invokeTool' }],
+        },
+      };
+
+      const result = await extractApiResources(
+        client, store, testContext, apiDescriptor, apiJson, '/output'
+      );
+
+      expect(result.mcpServer).toBe(true);
+      expect(client.getResource).not.toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({ type: ResourceType.McpServer })
+      );
+      expect(store.writeResource).toHaveBeenCalledWith(
+        '/output',
+        expect.objectContaining({ type: ResourceType.McpServer, nameParts: ['my-api'] }),
+        {
+          name: 'default',
+          properties: {
+            mcpProperties: { serverUrl: 'https://example.com/mcp' },
+            mcpTools: [{ name: 'invokeTool' }],
+          },
+        }
+      );
+    });
+
+    it('should return mcpServer=false and not throw when MCP server getResource returns undefined', async () => {
+      const client = createMockClient({
+        getApiSpecification: vi.fn().mockResolvedValue(undefined),
+        getResource: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['my-api'],
+      };
+
+      const result = await extractApiResources(
+        client, store, testContext, apiDescriptor,
+        { name: 'my-api' },
+        '/output'
+      );
+
+      expect(result.mcpServer).toBe(false);
+    });
+
+    it('should return mcpServer=false and not throw when getResource throws for McpServer', async () => {
+      const client = createMockClient({
+        getApiSpecification: vi.fn().mockResolvedValue(undefined),
+        getResource: vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
+          if (desc.type === ResourceType.McpServer) {
+            throw new Error('404 Not Found');
+          }
+          return undefined;
+        }),
+      });
+      const store = createMockStore();
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['my-api'],
+      };
+
+      const result = await extractApiResources(
+        client, store, testContext, apiDescriptor,
+        { name: 'my-api' },
+        '/output'
+      );
+
+      expect(result.mcpServer).toBe(false);
+    });
   });
 });
 

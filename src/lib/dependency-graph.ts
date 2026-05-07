@@ -51,6 +51,8 @@ export const DEPENDENCY_EDGES: DependencyEdge[] = [
   { from: ResourceType.Subscription, to: ResourceType.Product, required: false },
   { from: ResourceType.Subscription, to: ResourceType.Api, required: false },
 
+  { from: ResourceType.McpServer, to: ResourceType.Api, required: true },
+
   // Tier 3 -> Tier 4 dependencies
   { from: ResourceType.ApiOperationPolicy, to: ResourceType.ApiOperation, required: true },
   { from: ResourceType.GraphQLResolverPolicy, to: ResourceType.GraphQLResolver, required: true },
@@ -91,6 +93,7 @@ export const TIER_3_RESOURCES: ResourceType[] = [
   ResourceType.ApiRelease,
   ResourceType.ApiTagDescription,
   ResourceType.ApiWiki,
+  ResourceType.McpServer,
   ResourceType.GraphQLResolver,
   ResourceType.GatewayApi,
   ResourceType.Subscription,

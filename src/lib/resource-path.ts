@@ -414,6 +414,16 @@ export function isChildType(type: ResourceType): boolean {
 }
 
 /**
+ * Check if a resource type is a top-level singleton.
+ *
+ * Top-level singletons are singleton resources that are not children of
+ * another resource type (for example ServicePolicy).
+ */
+export function isTopLevelSingleton(type: ResourceType): boolean {
+  return isSingletonType(type) && !isChildType(type);
+}
+
+/**
  * Compute the publish tier for a resource type based on ARM path structure.
  * Resources are published from lowest tier to highest; same tier runs in parallel.
  *

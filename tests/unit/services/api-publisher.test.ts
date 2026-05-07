@@ -101,6 +101,71 @@ describe('api-publisher', () => {
       );
     });
 
+    it('should publish McpServer as a standard child resource without merging into root API payload', async () => {
+      const client = createMockClient();
+      const mcpChild = { type: ResourceType.McpServer, nameParts: ['orders-api'] };
+      const store = createMockStore([mcpChild]);
+      store.readResource.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.Api) {
+          return { name: descriptor.nameParts[0] ?? '', properties: { type: 'mcp' } };
+        }
+        if (descriptor.type === ResourceType.McpServer) {
+          return {
+            name: 'default',
+            properties: {
+              mcpProperties: { serverUrl: 'https://example.com/mcp' },
+              mcpTools: [{ name: 'invokeTool' }],
+            },
+          };
+        }
+        return null;
+      });
+
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      // Root API PUT should NOT contain MCP properties — they stay in the McpServer child
+      const [, , payload] = client.putResource.mock.calls[0] as [unknown, unknown, Record<string, unknown>];
+      const properties = payload.properties as Record<string, unknown> | undefined;
+      expect(properties).not.toHaveProperty('mcpProperties');
+    });
+
+    it('should include McpServer child in publish tasks (standard child, not skipped)', async () => {
+      const client = createMockClient();
+      const children = [
+        { type: ResourceType.McpServer, nameParts: ['orders-api'] },
+        { type: ResourceType.ApiPolicy, nameParts: ['orders-api'] },
+      ];
+      const store = createMockStore(children);
+      store.readResource.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.Api) {
+          return { name: descriptor.nameParts[0] ?? '', properties: { type: 'mcp' } };
+        }
+        if (descriptor.type === ResourceType.McpServer) {
+          return {
+            name: 'default',
+            properties: { mcpProperties: { serverUrl: 'https://example.com/mcp' } },
+          };
+        }
+        return null;
+      });
+
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      const tasks = mockRunParallel.mock.calls[0][0] as Array<() => Promise<unknown>>;
+      // Both McpServer and ApiPolicy should be included — McpServer is a standard child
+      expect(tasks).toHaveLength(2);
+    });
+
     it('should return failed result when root API publish fails', async () => {
       const client = createMockClient();
       const store = createMockStore([]);

@@ -30,6 +30,7 @@ const API_CHILD_TYPES: ResourceType[] = [
   ResourceType.ApiRelease,
   ResourceType.ApiTagDescription,
   ResourceType.ApiWiki,
+  ResourceType.McpServer,
   ResourceType.GraphQLResolver,
   ResourceType.GraphQLResolverPolicy,
 ];
