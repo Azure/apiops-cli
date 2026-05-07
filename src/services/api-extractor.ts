@@ -31,11 +31,73 @@ export interface ApiExtractionResult {
   releases: ExtractedResource[];
   tagDescriptions: ExtractedResource[];
   wiki: boolean;
+  mcpServer: boolean;
   resolvers: ExtractedResource[];
   resolverPolicies: ExtractedResource[];
   policies: string[];
 }
 
+function getApiProperties(apiJson: Record<string, unknown>): Record<string, unknown> | undefined {
+  return apiJson.properties as Record<string, unknown> | undefined;
+}
+
+function hasEmbeddedMcpConfiguration(apiJson: Record<string, unknown>): boolean {
+  const properties = getApiProperties(apiJson);
+  if (!properties) {
+    return false;
+  }
+
+  // Check if mcpTools has actual content (non-empty array), excluding null
+  const mcpTools = properties.mcpTools as unknown[] | undefined | null;
+  if (Array.isArray(mcpTools) && mcpTools.length > 0) {
+    return true;
+  }
+
+  // Check if mcpProperties exists and is not null or undefined
+  if (properties.mcpProperties != null) {
+    return true;
+  }
+
+  return false;
+}
+
+function buildEmbeddedMcpServerResource(apiJson: Record<string, unknown>): Record<string, unknown> {
+  const properties = getApiProperties(apiJson) ?? {};
+  const resourceProperties: Record<string, unknown> = {};
+
+  if (properties.mcpProperties !== undefined) {
+    resourceProperties.mcpProperties = properties.mcpProperties;
+  }
+  if (properties.mcpTools !== undefined) {
+    resourceProperties.mcpTools = properties.mcpTools;
+  }
+
+  return {
+    name: 'default',
+    properties: resourceProperties,
+  };
+
+}
+
+function hasMeaningfulMcpContent(mcpJson: Record<string, unknown>): boolean {
+  const properties = mcpJson.properties as Record<string, unknown> | undefined;
+  if (!properties) {
+    return false;
+  }
+
+  // Check if mcpTools has actual content (non-empty array), excluding null
+  const mcpTools = properties.mcpTools as unknown[] | undefined | null;
+  if (Array.isArray(mcpTools) && mcpTools.length > 0) {
+    return true;
+  }
+
+  // Check if mcpProperties exists and is not null or undefined
+  if (properties.mcpProperties != null) {
+    return true;
+  }
+
+  return false;
+}
 /**
  * Extract all API-specific resources for a single API.
  * This includes revisions, specifications, operations, policies, etc.
@@ -63,6 +125,7 @@ export async function extractApiResources(
     releases: [],
     tagDescriptions: [],
     wiki: false,
+    mcpServer: false,
     resolvers: [],
     resolverPolicies: [],
     policies: [],
@@ -136,6 +199,11 @@ export async function extractApiResources(
   // Extract API wiki
   result.wiki = await extractApiWiki(
     client, store, context, apiDescriptor, outputDir
+  );
+
+  // Extract MCP server configuration (singleton per API; silently skipped when not present)
+  result.mcpServer = await extractApiMcpServer(
+    client, store, context, apiDescriptor, apiJson, outputDir
   );
 
   // Extract GraphQL resolvers and their policies
@@ -234,6 +302,11 @@ async function extractApiSpecification(
   const apiType = properties?.type as string | undefined;
   if (apiType?.toLowerCase() === 'websocket') {
     logger.debug(`OpenAPI does not apply to WebSocket APIs`);
+    return false;
+  }
+
+  if (apiType?.toLowerCase() === 'mcp') {
+    logger.debug(`Skipping spec export for MCP API "${getNamePart(apiDescriptor.nameParts, 0)}" — MCP APIs use the Model Context Protocol endpoint, not OpenAPI`);
     return false;
   }
 
@@ -449,7 +522,7 @@ async function extractGraphQLResolvers(
   const policies: string[] = [];
 
   // Only extract resolvers for GraphQL APIs — use the already-fetched apiJson
-  const properties = apiJson.properties as Record<string, unknown> | undefined;
+  const properties = getApiProperties(apiJson);
   const apiType = properties?.type as string | undefined;
   if (apiType?.toLowerCase() !== 'graphql') {
     return { resolvers, resolverPolicies, policies };
@@ -491,4 +564,52 @@ async function extractGraphQLResolvers(
   }
 
   return { resolvers, resolverPolicies, policies };
+}
+
+/**
+ * Extract MCP (Model Context Protocol) server configuration for an API.
+ * The MCP server is a singleton resource per API exposed at apis/{id}/mcpServers/default.
+ * Silently skips if the API does not have MCP enabled or the resource does not exist.
+ */
+async function extractApiMcpServer(
+  client: IApimClient,
+  store: IArtifactStore,
+  context: ApimServiceContext,
+  apiDescriptor: ResourceDescriptor,
+  apiJson: Record<string, unknown>,
+  outputDir: string
+): Promise<boolean> {
+  const apiType = (getApiProperties(apiJson)?.type as string | undefined)?.toLowerCase();
+
+  // Avoid creating MCP artifacts for non-MCP APIs unless they carry meaningful MCP metadata.
+  if (apiType !== 'mcp' && !hasEmbeddedMcpConfiguration(apiJson)) {
+    return false;
+  }
+
+  const mcpDescriptor: ResourceDescriptor = {
+    type: ResourceType.McpServer,
+    nameParts: [...apiDescriptor.nameParts],
+    workspace: apiDescriptor.workspace,
+  };
+
+  if (hasEmbeddedMcpConfiguration(apiJson)) {
+    await store.writeResource(outputDir, mcpDescriptor, buildEmbeddedMcpServerResource(apiJson));
+    logger.info(`Extracted ${buildResourceLabel(mcpDescriptor)} from API metadata`);
+    return true;
+  }
+
+  try {
+    const mcpJson = await client.getResource(context, mcpDescriptor);
+    if (!mcpJson || !hasMeaningfulMcpContent(mcpJson)) {
+      return false;
+    }
+
+    await store.writeResource(outputDir, mcpDescriptor, mcpJson);
+    logger.info(`Extracted ${buildResourceLabel(mcpDescriptor)}`);
+    return true;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.debug(`No MCP server configuration ${buildResourceLabel(mcpDescriptor)}: ${errorMessage}`);
+    return false;
+  }
 }
