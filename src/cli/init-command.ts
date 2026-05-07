@@ -33,10 +33,13 @@ export function createInitCommand(): Command {
     .option('--environments <list>', 'Comma-separated environment names', 'dev,prod')
     .option('--cli-package <path>', 'Path to apiops npm tarball (from npm pack). If not provided, uses @peterhauge/apiops-cli from npm registry')
     .option('--force', 'Overwrite existing files without prompting', false)
-    .action(async (options: InitOptions) => {
+    .action(async (options: InitOptions, command: Command) => {
       try {
         // Use pretty log format for init (human-facing command)
         logger.setFormat('pretty');
+
+        // Read the global --cloud option
+        const globalOpts = command.optsWithGlobals<{ cloud?: string }>();
 
         // Validate CI provider if specified
         if (options.ci && options.ci !== 'github-actions' && options.ci !== 'azure-devops') {
@@ -64,6 +67,7 @@ export function createInitCommand(): Command {
           outputDir: process.cwd(),
           cliPackage: options.cliPackage,
           force: options.force,
+          cloud: globalOpts.cloud ?? 'public',
         };
 
         // Run init service
@@ -91,7 +95,8 @@ export function createInitCommand(): Command {
           logger.info('     - Follow ./IDENTITY-SETUP-GITHUB.md for manual setup, OR');
           logger.info('     - Open ./.github/prompts/apiops-setup-identity.prompt.md with GitHub Copilot for guided setup');
         } else {
-          logger.info('     - Follow ./IDENTITY-SETUP-AZDO.md for manual setup');
+          logger.info('     - Follow ./IDENTITY-SETUP-AZDO.md for manual setup, OR');
+          logger.info('     - Open ./.github/prompts/apiops-setup-identity.prompt.md with GitHub Copilot for guided setup');
         }
         logger.info('');
       } catch (error) {

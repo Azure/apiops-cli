@@ -76,6 +76,25 @@ export function getCloudConfig(cloudName: string): CloudConfig {
 }
 
 /**
+ * Return the official Azure cloud environment name (e.g. 'AzureCloud') for a
+ * given cloud name (either a short name like 'public' or an official long name
+ * like 'AzureCloud'). Used when generating CLI scripts that require the
+ * official name, such as Azure DevOps service connection JSON bodies.
+ */
+export function getOfficialCloudName(cloudName: string): string {
+  // Already an official name (key in OFFICIAL_NAME_MAP) — return as-is
+  if (cloudName in OFFICIAL_NAME_MAP) {
+    return cloudName;
+  }
+  // Short name — find the OFFICIAL_NAME_MAP key whose value matches it;
+  // getCloudConfig validates and throws for unknown names
+  getCloudConfig(cloudName);
+  const entry = (Object.entries(OFFICIAL_NAME_MAP) as [string, CloudName][])
+    .find(([, short]) => short === (cloudName as CloudName));
+  return entry?.[0] ?? 'AzureCloud';
+}
+
+/**
  * Build the APIM ARM base URL for a given cloud, subscription, resource group,
  * and service name. Replaces the hardcoded buildBaseUrl functions in command files.
  */

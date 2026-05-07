@@ -30,6 +30,10 @@ import { generateFilterConfig } from '../templates/configs/filter-config.js';
 import { generateOverrideConfig } from '../templates/configs/override-config.js';
 import { generatePackageJson } from '../templates/configs/package-json.js';
 import { generateIdentitySetupPrompt } from '../templates/copilot/identity-setup-prompt.js';
+import {
+  generateIdentitySetupAzdoPrompt,
+  IdentitySetupAzdoPromptConfig,
+} from '../templates/copilot/identity-setup-azdo-prompt.js';
 
 /** Placeholder values used in generated identity setup guides */
 const PLACEHOLDER_SUBSCRIPTION_ID = '<your-subscription-id>';
@@ -174,6 +178,10 @@ class InitServiceImpl implements InitService {
         config.outputDir,
         'IDENTITY-SETUP-AZDO.md'
       );
+      const promptFile = path.join(
+        config.outputDir,
+        '.github/prompts/apiops-setup-identity.prompt.md'
+      );
 
       if (await this.fileExists(extractPipeline)) {
         conflictingFiles.push(extractPipeline);
@@ -183,6 +191,9 @@ class InitServiceImpl implements InitService {
       }
       if (await this.fileExists(identityGuide)) {
         conflictingFiles.push(identityGuide);
+      }
+      if (await this.fileExists(promptFile)) {
+        conflictingFiles.push(promptFile);
       }
     }
 
@@ -337,6 +348,7 @@ class InitServiceImpl implements InitService {
     // Extract pipeline
     const extractPipelineConfig: ExtractPipelineConfig = {
       artifactDir: config.artifactDir,
+      environments: config.environments,
     };
     const extractContent = generateExtractPipeline(extractPipelineConfig);
     const extractPath = path.join(pipelinesDir, 'run-apim-extractor.yml');
@@ -352,6 +364,18 @@ class InitServiceImpl implements InitService {
     const publishPath = path.join(pipelinesDir, 'run-apim-publisher.yml');
     await fs.writeFile(publishPath, publishContent);
     generatedFiles.pipelines.push('.azdo/pipelines/run-apim-publisher.yml');
+
+    // Copilot identity setup prompt — goes in .github/prompts/ (same as GitHub Actions)
+    const azdoPromptConfig: IdentitySetupAzdoPromptConfig = {
+      environments: config.environments,
+      cloud: config.cloud ?? 'public',
+    };
+    const azdoPromptContent = generateIdentitySetupAzdoPrompt(azdoPromptConfig);
+    const azdoPromptsDir = path.join(config.outputDir, '.github/prompts');
+    await fs.mkdir(azdoPromptsDir, { recursive: true });
+    const azdoPromptPath = path.join(azdoPromptsDir, 'apiops-setup-identity.prompt.md');
+    await fs.writeFile(azdoPromptPath, azdoPromptContent);
+    generatedFiles.configs.push('.github/prompts/apiops-setup-identity.prompt.md');
   }
 
   /**
@@ -398,7 +422,8 @@ class InitServiceImpl implements InitService {
       guide = identityGuideService.generateAzureDevOpsGuide(
         subscriptionId,
         resourceGroup,
-        config.environments
+        config.environments,
+        config.cloud ?? 'public'
       );
     }
 

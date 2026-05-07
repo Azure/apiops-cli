@@ -1,0 +1,277 @@
+/**
+ * Unit tests for Azure DevOps Copilot identity setup prompt template
+ */
+
+import { describe, it, expect } from 'vitest';
+import { generateIdentitySetupAzdoPrompt } from '../../../../src/templates/copilot/identity-setup-azdo-prompt.js';
+
+describe('copilot/identity-setup-azdo-prompt', () => {
+  describe('generateIdentitySetupAzdoPrompt', () => {
+    it('should generate a prompt with the correct title', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev', 'prod'] });
+      expect(prompt).toContain('# Setup Azure DevOps Identity for APIOps');
+    });
+
+    it('should include all step sections (Step 0 through Step 9)', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('## Step 0');
+      expect(prompt).toContain('## Step 1');
+      expect(prompt).toContain('## Step 2');
+      expect(prompt).toContain('## Step 3');
+      expect(prompt).toContain('## Step 4');
+      expect(prompt).toContain('## Step 5');
+      expect(prompt).toContain('## Step 6');
+      expect(prompt).toContain('## Step 7');
+      expect(prompt).toContain('## Step 8');
+      expect(prompt).toContain('## Step 9');
+    });
+
+    it('should ask Copilot to gather information from the user', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('Gather Information');
+      expect(prompt).toContain('MI_NAME');
+      expect(prompt).toContain('MI_RESOURCE_GROUP');
+      expect(prompt).toContain('AZDO_PROJECT_URL');
+      expect(prompt).toContain('ENVIRONMENTS');
+    });
+
+    it('should include per-environment APIM instance ID variables', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev', 'prod'] });
+      expect(prompt).toContain('APIM_INSTANCE_{ENV}');
+      expect(prompt).toContain('APIM_INSTANCE_DEV');
+      expect(prompt).toContain('APIM_INSTANCE_PROD');
+    });
+
+    it('should include managed identity creation commands', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('Create Managed Identity');
+      expect(prompt).toContain('az identity create');
+      expect(prompt).toContain('az identity show');
+      expect(prompt).toContain('MI_CLIENT_ID=');
+      expect(prompt).toContain('MI_PRINCIPAL_ID=');
+      expect(prompt).not.toContain('az ad sp create-for-rbac');
+    });
+
+    it('should include Azure DevOps CLI configuration commands', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('az extension add --name azure-devops');
+      expect(prompt).toContain('az devops configure --defaults');
+      expect(prompt).toContain('SUBSCRIPTION_NAME=$(az account show');
+    });
+
+    it('should include RBAC role assignment for managed identity', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('az role assignment create');
+      expect(prompt).toContain('--assignee-object-id');
+      expect(prompt).toContain('--assignee-principal-type ServicePrincipal');
+      expect(prompt).toContain('API Management Service Contributor');
+    });
+
+    it('should include workload identity federation setup', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('WorkloadIdentityFederation');
+      expect(prompt).toContain('az identity federated-credential create');
+      expect(prompt).toContain('create_wif_service_connection');
+      expect(prompt).toContain('workloadIdentityFederationIssuer');
+      expect(prompt).toContain('workloadIdentityFederationSubject');
+    });
+
+    it('should include base service connection creation with WIF', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('create_wif_service_connection "AZURE_SERVICE_CONNECTION"');
+      expect(prompt).toContain('az devops invoke');
+      expect(prompt).toContain('--area serviceEndpoint');
+    });
+
+    it('should include per-environment service connection creation commands', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev', 'prod'] });
+      expect(prompt).toContain('create_wif_service_connection "AZURE_SERVICE_CONNECTION_DEV"');
+      expect(prompt).toContain('create_wif_service_connection "AZURE_SERVICE_CONNECTION_PROD"');
+    });
+
+    it('should include service connection verification command', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('az devops service-endpoint list');
+    });
+
+    it('should NOT contain service principal password or secrets', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).not.toContain('az ad sp create-for-rbac');
+      expect(prompt).not.toContain('AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY');
+      expect(prompt).not.toContain('PASSWORD');
+      expect(prompt).not.toContain('password is set via environment variable');
+    });
+
+    it('should include common variable group creation command', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('az pipelines variable-group create');
+      expect(prompt).toContain('--name "apim-common"');
+      expect(prompt).toContain('AZURE_SUBSCRIPTION_ID');
+      expect(prompt).toContain('AZURE_SERVICE_CONNECTION');
+    });
+
+    it('should include per-environment variable group creation commands', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev', 'prod'] });
+      expect(prompt).toContain('--name "apim-$ENV"');
+      expect(prompt).toContain('--name "apim-$env"');
+      expect(prompt).toContain('APIM_RESOURCE_GROUP=');
+      expect(prompt).toContain('APIM_SERVICE_NAME=');
+    });
+
+    it('should include variable group authorization commands', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('for id in $(az pipelines variable-group list');
+      expect(prompt).toContain('az pipelines variable-group update --group-id "$id" --authorize true');
+    });
+
+    it('should include variable group verification command', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('az pipelines variable-group list --query "[].name" -o table');
+    });
+
+    it('should include environment creation commands', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev', 'prod'] });
+      expect(prompt).toContain('Creating environment:');
+      expect(prompt).toContain('az devops invoke');
+      expect(prompt).toContain('--area distributedtask');
+      expect(prompt).toContain('--resource environments');
+      expect(prompt).toContain('"name":');
+    });
+
+    it('should include Build Service permission commands', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('BUILD_SERVICE_NAME');
+      expect(prompt).toContain('Build Service');
+      expect(prompt).toContain('az devops security permission update');
+      expect(prompt).toContain('--allow-bit 4');
+    });
+
+    it('should include pipeline creation commands', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('az pipelines create');
+      expect(prompt).toContain('--name "APIM Extractor"');
+      expect(prompt).toContain('--name "APIM Publisher"');
+      expect(prompt).toContain('--yml-path ".azdo/pipelines/run-apim-extractor.yml"');
+      expect(prompt).toContain('--yml-path ".azdo/pipelines/run-apim-publisher.yml"');
+    });
+
+    it('should include verification step with all checks', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('## Step 9 — Verify');
+      expect(prompt).toContain('Service Connections:');
+      expect(prompt).toContain('Variable Groups:');
+      expect(prompt).toContain('Pipelines:');
+    });
+
+    it('should include Variable Groups Reference section', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev', 'prod'] });
+      expect(prompt).toContain('## Variable Groups Reference');
+      expect(prompt).toContain('### apim-common');
+      expect(prompt).toContain('### apim-dev');
+      expect(prompt).toContain('### apim-prod');
+    });
+
+    it('should mention using the file with Copilot in VS Code', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('Open this file in VS Code with GitHub Copilot');
+    });
+
+    it('should include tool authentication check in Step 0', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('## Step 0 — Tool Authentication Check');
+      expect(prompt).toContain('az version');
+      expect(prompt).toContain('az account show');
+      expect(prompt).toContain('az extension show --name azure-devops');
+      expect(prompt).toContain('Tool Authentication Status:');
+    });
+
+    it('should include Azure DevOps extension installation instructions', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('Azure DevOps extension is required');
+      expect(prompt).toContain('az extension add --name azure-devops');
+    });
+
+    it('should include error handling reminders', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('⚠️ **Error Handling:**');
+      expect(prompt).toContain('stop immediately and show the user the full error output verbatim');
+      expect(prompt).toContain('Do NOT retry silently');
+    });
+
+    it('should include note about environment approvals', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('Environment approvals and checks must be configured via the Azure DevOps UI');
+      expect(prompt).toContain('Environments');
+    });
+
+    it('should include both Bash and PowerShell commands', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev', 'prod'] });
+      // Should have both bash and PowerShell sections
+      expect(prompt).toContain('```bash');
+      expect(prompt).toContain('```powershell');
+      expect(prompt).toContain('On macOS/Linux (Bash)');
+      expect(prompt).toContain('On Windows (PowerShell)');
+    });
+
+    it('should populate per-environment variables correctly with multiple environments', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev', 'staging', 'prod'] });
+      
+      // Check service connections for all environments
+      expect(prompt).toContain('AZURE_SERVICE_CONNECTION_DEV');
+      expect(prompt).toContain('AZURE_SERVICE_CONNECTION_STAGING');
+      expect(prompt).toContain('AZURE_SERVICE_CONNECTION_PROD');
+
+      // Check variable groups use loop pattern
+      expect(prompt).toContain('--name "apim-$env"');
+
+      // Check environments creation
+      expect(prompt).toContain('"name":');
+      expect(prompt).toContain('Creating environment:');
+
+      // Check variable groups reference
+      expect(prompt).toContain('### apim-dev');
+      expect(prompt).toContain('### apim-staging');
+      expect(prompt).toContain('### apim-prod');
+    });
+
+    it('should include expected output in verification step', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev', 'prod'] });
+      expect(prompt).toContain('Expected output:');
+      expect(prompt).toContain('AZURE_SERVICE_CONNECTION_DEV');
+      expect(prompt).toContain('AZURE_SERVICE_CONNECTION_PROD');
+    });
+
+    it('should include testing instructions', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('To test the extract pipeline');
+      expect(prompt).toContain('APIM Extractor');
+      expect(prompt).toContain('Run pipeline');
+    });
+
+    it('should default to public cloud ARM URL and environment name', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('https://management.azure.com/');
+      expect(prompt).toContain('AzureCloud');
+    });
+
+    it('should use US Government ARM URL when cloud is usgov', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'], cloud: 'usgov' });
+      expect(prompt).toContain('https://management.usgovcloudapi.net/');
+      expect(prompt).toContain('AzureUSGovernment');
+      expect(prompt).not.toContain('management.azure.com');
+    });
+
+    it('should use China ARM URL when cloud is china', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'], cloud: 'china' });
+      expect(prompt).toContain('https://management.chinacloudapi.cn/');
+      expect(prompt).toContain('AzureChinaCloud');
+    });
+
+    it('should not use python3 for JSON parsing', () => {
+      const prompt = generateIdentitySetupAzdoPrompt({ environments: ['dev'] });
+      expect(prompt).not.toContain('python3');
+      // Should use az devops for verification
+      expect(prompt).toContain('az devops service-endpoint list');
+    });
+  });
+});
