@@ -12,6 +12,7 @@
   "files": [
     "dist"
   ],
+  "readme": "README.md",
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
