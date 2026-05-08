@@ -43,6 +43,13 @@ describe('publish-command', () => {
       expect(overridesOpt).toBeDefined();
     });
 
+    it('should have --commit-id option', () => {
+      const cmd = createPublishCommand();
+      const opts = cmd.options;
+      const commitIdOpt = opts.find((o) => o.long === '--commit-id');
+      expect(commitIdOpt).toBeDefined();
+    });
+
     it('should have --dry-run flag with default false', () => {
       const cmd = createPublishCommand();
       const opts = cmd.options;
@@ -104,6 +111,13 @@ describe('publish-command', () => {
       // This test verifies the command is set up to support it
       const cmd = createPublishCommand();
       expect(cmd).toBeDefined();
+    });
+
+    it('should support --commit-id CLI override', () => {
+      const cmd = createPublishCommand();
+      const opts = cmd.options;
+      const commitIdOpt = opts.find((o) => o.long === '--commit-id');
+      expect(commitIdOpt).toBeDefined();
     });
 
     it('should read AZURE_SUBSCRIPTION_ID from environment', () => {

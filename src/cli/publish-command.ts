@@ -23,6 +23,7 @@ interface PublishOptions {
   serviceName: string;
   source: string;
   overrides?: string;
+  commitId?: string;
   dryRun: boolean;
   deleteUnmatched: boolean;
 }
@@ -37,6 +38,10 @@ export function createPublishCommand(): Command {
     .requiredOption('--service-name <name>', 'APIM service instance name')
     .option('--source <dir>', 'Source directory with artifacts', './apim-artifacts')
     .option('--overrides <path>', 'Override configuration YAML file')
+    .option(
+      '--commit-id <sha>',
+      'Git commit SHA for incremental publish (overrides COMMIT_ID env var)'
+    )
     .option('--dry-run', 'Preview changes without applying them', false)
     .option(
       '--delete-unmatched',
@@ -111,8 +116,8 @@ async function executePublish(
     }
   }
 
-  // Get commit ID from environment (for incremental publish)
-  const commitId = process.env.COMMIT_ID;
+  // Resolve commit ID for incremental publish
+  const commitId = options.commitId ?? process.env.COMMIT_ID;
   if (commitId) {
     logger.debug(`Using incremental publish with commit ID: ${commitId}`);
   }
