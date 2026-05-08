@@ -55,7 +55,7 @@ Publish local artifact files to an APIM instance.
 | `--overrides <path>` | string | no | — | Environment overrides YAML file |
 | `--commit-id <sha>` | string | no | — | Git commit SHA for incremental publish (overrides `COMMIT_ID`) |
 | `--dry-run` | boolean | no | `false` | Show planned changes without applying |
-| `--delete-unmatched` | boolean | no | `false` | Delete APIM resources not in artifacts. Does not apply if using 'commit-id' option. |
+| `--delete-unmatched` | boolean | no | `false` | Delete APIM resources not in artifacts. Does not apply if using `--commit-id` option. |
 
 **Environment variables** (publish-specific):
 | Variable | Description |
