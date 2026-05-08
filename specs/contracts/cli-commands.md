@@ -57,6 +57,8 @@ Publish local artifact files to an APIM instance.
 | `--dry-run` | boolean | no | `false` | Show planned changes without applying |
 | `--delete-unmatched` | boolean | no | `false` | Delete APIM resources not in artifacts |
 
+`--commit-id` (or `COMMIT_ID`) and `--delete-unmatched` are mutually exclusive.
+
 **Environment variables** (publish-specific):
 | Variable | Description |
 |----------|-------------|

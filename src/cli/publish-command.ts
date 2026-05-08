@@ -122,6 +122,13 @@ async function executePublish(
     logger.debug(`Using incremental publish with commit ID: ${commitId}`);
   }
 
+  if (hasMutuallyExclusivePublishOptions(options.deleteUnmatched, commitId)) {
+    logger.error(
+      'Options --commit-id (or COMMIT_ID) and --delete-unmatched are mutually exclusive.'
+    );
+    process.exit(2);
+  }
+
   // Build publish config
   const publishConfig: PublishConfig = {
     service: context,
@@ -148,6 +155,16 @@ async function executePublish(
   }
 
   process.exit(result.exitCode);
+}
+
+/**
+ * Returns true when publish options combine mutually exclusive modes.
+ */
+export function hasMutuallyExclusivePublishOptions(
+  deleteUnmatched: boolean,
+  commitId?: string
+): boolean {
+  return deleteUnmatched && Boolean(commitId);
 }
 
 /**
