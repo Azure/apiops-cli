@@ -7,6 +7,11 @@
 # Required secrets (in the 'integration-test' environment):
 #   - AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID (OIDC login)
 #   - APIM_PUBLISHER_EMAIL
+#
+# Required Azure role assignments for the managed identity (subscription scope):
+#   - Contributor
+#   - Key Vault Administrator
+#   - API Management Service Contributor
 # ===========================================================================
 
 name: Integration Test — Extract→Publish Round-Trip
