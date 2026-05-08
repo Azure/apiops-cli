@@ -255,21 +255,12 @@ export async function runCompare(
     }
 
     // ── Workspaces and their children ────────────────────────────────────────
-    logger.debug('Comparing workspace children...');
-
-    // Workspaces are a premium feature — skip gracefully if not available
-    try {
-      const sourceWorkspaces = await collectList(client, source, ResourceType.Subscription);
-      // Note: Workspace resource type uses 'subscriptions' suffix — we need to
-      // directly list workspaces via a URL. Since IApimClient.listResources works
-      // by ResourceType and there's no Workspace ResourceType, we skip workspace
-      // child comparison here. The workspace-level resources (apis, products, etc.)
-      // are not separately enumerated via the current ResourceType model.
-      // This matches the PowerShell behavior of checking workspaces as an optional section.
-      void sourceWorkspaces; // acknowledged — workspace child comparison skipped (no ResourceType for Workspace)
-    } catch {
-      logger.debug('Workspaces not available — skipping workspace child comparison');
-    }
+    // Workspace child comparison requires a dedicated Workspace ResourceType that
+    // does not currently exist in the resource model. Workspace-scoped resources
+    // (apis, products, etc.) are therefore not compared at this time.
+    // This is consistent with the PowerShell reference treating workspaces as
+    // an optional/premium section that silently skips when unavailable.
+    logger.debug('Workspace child comparison skipped (no Workspace ResourceType in model).');
   } catch (error) {
     logger.error(`Fatal error during comparison: ${error instanceof Error ? error.message : String(error)}`);
     return {
