@@ -1,0 +1,84 @@
+# ===========================================================================
+# Publish to npm — Gated by Integration Test
+# ===========================================================================
+# Manually triggered workflow that runs the all-resource-types round-trip
+# integration test before publishing a new package version to npm.
+#
+# Required secrets (in the 'integration-test' environment):
+#   - AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID (OIDC login)
+#   - APIM_PUBLISHER_EMAIL
+#
+# Required secrets (in the 'npm-publish' environment):
+#   - NPM_TOKEN
+# ===========================================================================
+
+name: Publish to npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      sku:
+        description: 'APIM SKU for integration test'
+        required: true
+        type: choice
+        options:
+          - StandardV2
+          - Developer
+          - Premium
+          - PremiumV2
+        default: StandardV2
+      location:
+        description: 'Azure region for integration test'
+        required: false
+        type: string
+        default: 'eastus2'
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false # Don't cancel — mid-publish state is unrecoverable
+
+jobs:
+  integration-test:
+    name: All-Resource-Types Integration Test
+    uses: ./.github/workflows/integration-test.yml
+    with:
+      sku: ${{ inputs.sku }}
+      location: ${{ inputs.location }}
+      skip_teardown: false
+    secrets:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      APIM_PUBLISHER_EMAIL: ${{ secrets.APIM_PUBLISHER_EMAIL }}
+
+  publish:
+    name: Publish to npm
+    needs: integration-test
+    runs-on: ubuntu-latest
+    environment: npm-publish
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm test
+
+      - run: npm run build
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
