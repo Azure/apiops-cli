@@ -8,7 +8,7 @@
 #   - AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID (OIDC login)
 #   - APIM_PUBLISHER_EMAIL
 #
-# Required Azure role assignments for the managed identity (subscription scope):
+# Required Azure role assignments:
 #   - Contributor
 #   - Key Vault Administrator
 #   - API Management Service Contributor
