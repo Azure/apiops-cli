@@ -91,3 +91,9 @@ export interface InitConfig {
   cliPackage?: string;
   force: boolean;
 }
+
+export interface CompareConfig {
+  source: ApimServiceContext;
+  target: ApimServiceContext;
+  logLevel: LogLevel;
+}

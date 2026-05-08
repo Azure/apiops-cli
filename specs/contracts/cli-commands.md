@@ -102,6 +102,36 @@ Initialize repository structure and CI/CD pipeline configuration.
 
 ---
 
+### `apiops compare`
+
+Compare two Azure API Management instances and report differences.
+
+| Flag | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `--source-resource-group <rg>` | string | yes | — | Source APIM resource group |
+| `--source-service-name <name>` | string | yes | — | Source APIM service instance name |
+| `--target-resource-group <rg>` | string | yes | — | Target APIM resource group |
+| `--target-service-name <name>` | string | yes | — | Target APIM service instance name |
+| `--source-subscription-id <id>` | string | no | `--subscription-id` or `AZURE_SUBSCRIPTION_ID` | Source subscription ID (overrides global `--subscription-id` for source) |
+| `--target-subscription-id <id>` | string | no | `--subscription-id` or `AZURE_SUBSCRIPTION_ID` | Target subscription ID (overrides global `--subscription-id` for target) |
+
+**stdout**: Comparison results with per-resource-type status lines and a summary  
+**stderr**: Structured log messages  
+**Exit codes**: `0` identical (no differences), `1` differences found, `2` fatal error  
+
+**Normalization**: Before comparing, instance-specific values are neutralized:
+- ARM resource IDs (subscription, resource group, service name) → placeholders
+- Key Vault URIs and secret name prefixes → placeholders
+- App Insights and Event Hub resource names → placeholders
+- Auto-generated APIM IDs (24-char hex, UUIDs) → positional keys `{{auto-id-N}}`
+- Timestamps and read-only fields stripped
+
+**Built-in exclusions**: Groups `administrators`, `developers`, `guests`; Products `starter`, `unlimited`; Subscriptions `master`; APIs `echo-api`
+
+**Secret safety**: Secret named value `.properties.value` is never compared (not extractable). EventHub/AppInsights logger `.properties.credentials` is skipped (connection strings differ per instance).
+
+---
+
 ## Shared Environment Variables
 
 | Variable | Description | Used By |
@@ -118,6 +148,6 @@ Initialize repository structure and CI/CD pipeline configuration.
 
 | Code | Meaning | When |
 |------|---------|------|
-| `0` | Success | All operations completed |
-| `1` | Partial failure | Some resources failed but others succeeded |
+| `0` | Success / Identical | All operations completed; or no differences found (compare) |
+| `1` | Partial failure / Differences | Some resources failed but others succeeded; or differences found (compare) |
 | `2` | Fatal error | Cannot proceed (auth failure, invalid config, network unreachable) |

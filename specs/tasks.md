@@ -164,6 +164,28 @@
 
 ---
 
+## Phase 9: User Story 6 — Compare APIM Instances (Priority: P2)
+
+**Goal**: Add `apiops compare` command to compare two APIM instances and report differences, enabling users to verify deployments or investigate environment drift.
+
+**Reference**: `tests/integration/all-resource-types/Compare-ApimInstance.ps1`
+
+- [x] T-CMP-06 Add `CompareConfig` to `src/models/config.ts`
+- [x] T-CMP-03 Implement normalization module in `src/lib/compare-normalizer.ts` (string/ID/timestamp normalization; auto-generated ID keying; resource map building)
+- [x] T-CMP-04 Implement diff engine in `src/lib/compare-differ.ts` (deep JSON diff; resource map comparison; secret/credential skip logic)
+- [x] T-CMP-05 Implement compare service orchestrator in `src/services/compare-service.ts` (hierarchical comparison: top-level, API children, product children, gateway children, workspaces; built-in exclusion lists)
+- [x] T-CMP-01 Add compare CLI command registration in `src/cli/compare-command.ts` (--source-resource-group, --source-service-name, --target-resource-group, --target-service-name, --source-subscription-id, --target-subscription-id)
+- [x] T-CMP-07 Add text/JSON output formatting in `src/cli/compare-command.ts`
+- [x] T-CMP-02 Register compare command in `src/cli/index.ts`
+- [x] T-CMP-08 Unit tests for normalizer in `tests/unit/lib/compare-normalizer.test.ts`
+- [x] T-CMP-09 Unit tests for differ in `tests/unit/lib/compare-differ.test.ts`
+- [x] T-CMP-10 Unit tests for compare service in `tests/unit/services/compare-service.test.ts`
+- [x] T-CMP-11 Update CLI commands spec doc in `specs/contracts/cli-commands.md`
+
+**Checkpoint**: `apiops compare` compares two APIM instances with full normalization and hierarchical child resource coverage
+
+---
+
 ## Dependencies & Execution Order
 
 ### Phase Dependencies
