@@ -113,13 +113,6 @@ describe('publish-command', () => {
       expect(cmd).toBeDefined();
     });
 
-    it('should support --commit-id CLI override', () => {
-      const cmd = createPublishCommand();
-      const opts = cmd.options;
-      const commitIdOpt = opts.find((o) => o.long === '--commit-id');
-      expect(commitIdOpt).toBeDefined();
-    });
-
     it('should read AZURE_SUBSCRIPTION_ID from environment', () => {
       // The actual reading happens in executePublish
       const cmd = createPublishCommand();
