@@ -97,15 +97,41 @@ export async function generateDryRunReport(
   // Otherwise, if delete-unmatched is enabled, calculate full unmatched deletes.
   if (incrementalDeletedDescriptors.length > 0) {
     for (const descriptor of incrementalDeletedDescriptors) {
-      const action: DryRunAction = {
-        operation: 'DELETE',
-        type: descriptor.type,
-        name: formatResourceName(descriptor),
-        descriptor,
-      };
-      actions.push(action);
-      deletes++;
-      logger.info(`[DRY RUN] DELETE ${buildResourceLabel(descriptor)}`);
+      try {
+        const existing = await client.getResource(descriptor, context);
+
+        if (existing) {
+          const action: DryRunAction = {
+            operation: 'DELETE',
+            type: descriptor.type,
+            name: formatResourceName(descriptor),
+            descriptor,
+          };
+          actions.push(action);
+          deletes++;
+          logger.info(`[DRY RUN] DELETE ${buildResourceLabel(descriptor)}`);
+        } else {
+          const action: DryRunAction = {
+            operation: 'SKIP',
+            type: descriptor.type,
+            name: formatResourceName(descriptor),
+            descriptor,
+          };
+          actions.push(action);
+          skips++;
+          logger.info(`[DRY RUN] SKIP ${buildResourceLabel(descriptor)} (already absent)`);
+        }
+      } catch {
+        const action: DryRunAction = {
+          operation: 'SKIP',
+          type: descriptor.type,
+          name: formatResourceName(descriptor),
+          descriptor,
+        };
+        actions.push(action);
+        skips++;
+        logger.info(`[DRY RUN] SKIP ${buildResourceLabel(descriptor)} (error)`);
+      }
     }
   } else if (config.deleteUnmatched) {
     const deleteActions = await computeDeleteActionsForDryRun(
