@@ -86,7 +86,7 @@ Publish local artifact files to an Azure APIM service.
 | `--overrides <path>` | | Path to overrides file |
 | `--commit-id <sha>` | | Git commit SHA for incremental publish |
 | `--dry-run` | | Preview changes without applying |
-| `--delete-unmatched` | | Delete resources not in artifacts |
+| `--delete-unmatched` | | Delete resources not in artifacts (mutually exclusive with `--commit-id`) |
 
 ```bash
 apiops publish --help

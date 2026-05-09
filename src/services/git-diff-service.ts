@@ -99,33 +99,21 @@ function parseDiffOutput(diffOutput: string, sourceDir: string): GitDiffResult {
     }
 
     const status = parts[0]?.charAt(0); // Get first character (M, A, D, R, C)
-    const filePath = parts[1];
-
-    if (!status || !filePath) {
+    if (!status) {
       continue;
     }
-
-    const descriptor = parseDescriptorFromDiffPath(sourceDir, filePath);
-    if (!descriptor) {
-      continue;
-    }
-
-    // Create unique key for deduplication
-    const key = descriptorKey(descriptor);
 
     if (status === 'D') {
-      addUniqueDescriptor(deletedDescriptors, seenDeleted, descriptor, key);
-    } else if (status === 'M' || status === 'A' || status === 'R' || status === 'C') {
-      addUniqueDescriptor(changedDescriptors, seenChanged, descriptor, key);
-
-      // For renames, also parse the new path (in parts[2])
-      if (status === 'R' && parts.length > 2 && parts[2]) {
-        const newDescriptor = parseDescriptorFromDiffPath(sourceDir, parts[2]);
-        if (newDescriptor) {
-          const newKey = descriptorKey(newDescriptor);
-          addUniqueDescriptor(changedDescriptors, seenChanged, newDescriptor, newKey);
-        }
-      }
+      addDescriptorFromDiffPath(parts[1], sourceDir, deletedDescriptors, seenDeleted);
+    } else if (status === 'M' || status === 'A') {
+      addDescriptorFromDiffPath(parts[1], sourceDir, changedDescriptors, seenChanged);
+    } else if (status === 'R') {
+      // Renames are effectively delete(old) + add(new)
+      addDescriptorFromDiffPath(parts[1], sourceDir, deletedDescriptors, seenDeleted);
+      addDescriptorFromDiffPath(parts[2], sourceDir, changedDescriptors, seenChanged);
+    } else if (status === 'C') {
+      // Copies only introduce/modify the new destination path
+      addDescriptorFromDiffPath(parts[2], sourceDir, changedDescriptors, seenChanged);
     }
   }
 
@@ -155,6 +143,24 @@ function addUniqueDescriptor(
 
   target.push(descriptor);
   seen.add(key);
+}
+
+function addDescriptorFromDiffPath(
+  diffPath: string | undefined,
+  sourceDir: string,
+  target: ResourceDescriptor[],
+  seen: Set<string>
+): void {
+  if (!diffPath) {
+    return;
+  }
+
+  const descriptor = parseDescriptorFromDiffPath(sourceDir, diffPath);
+  if (!descriptor) {
+    return;
+  }
+
+  addUniqueDescriptor(target, seen, descriptor, descriptorKey(descriptor));
 }
 
 function parseDescriptorFromDiffPath(
