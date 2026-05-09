@@ -388,7 +388,9 @@ export class ApimClient implements IApimClient {
 
       // Poll for long-running operations
       if (response.status === 202) {
-        await this.pollProvisioningState(context, descriptor);
+        await this.pollProvisioningState(context, descriptor, {
+          treatMissingAsSuccess: true,
+        });
       }
 
       return true;
@@ -692,14 +694,24 @@ export class ApimClient implements IApimClient {
 
   private async pollProvisioningState(
     context: ApimServiceContext,
-    descriptor: ResourceDescriptor
+    descriptor: ResourceDescriptor,
+    options: { treatMissingAsSuccess?: boolean } = {}
   ): Promise<Record<string, unknown>> {
+    const { treatMissingAsSuccess = false } = options;
+
     for (let attempt = 0; attempt < ApimClient.MAX_POLLING_ATTEMPTS; attempt++) {
       await this.delay(ApimClient.POLL_INTERVAL_MS);
       
       const resource = await this.getResource(context, descriptor);
       
       if (!resource) {
+        if (treatMissingAsSuccess) {
+          logger.debug(
+            `Resource no longer present; operation completed: ${buildResourceLabel(descriptor)}`
+          );
+          return {};
+        }
+
         // APIM can transiently return 404 while asynchronously provisioning a
         // resource (e.g. a Key Vault-backed named value). Treat a missing resource
         // as "not yet visible" and continue polling rather than aborting — the
