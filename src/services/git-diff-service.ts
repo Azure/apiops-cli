@@ -7,7 +7,7 @@
 import { simpleGit, SimpleGit } from 'simple-git';
 import * as path from 'node:path';
 import { ResourceDescriptor } from '../models/types.js';
-import { parseArtifactPath } from '../lib/resource-path.js';
+import { parseArtifactChangePath } from '../lib/resource-path.js';
 import { logger } from '../lib/logger.js';
 
 export interface GitDiffResult {
@@ -30,9 +30,9 @@ export async function computeGitDiff(
   sourceDir: string,
   commitId: string
 ): Promise<GitDiffResult> {
-  const git: SimpleGit = simpleGit(sourceDir);
-
   try {
+    const git: SimpleGit = simpleGit(sourceDir);
+
     // Check if we're in a git repository
     const isRepo = await git.checkIsRepo();
     if (!isRepo) {
@@ -61,7 +61,7 @@ export async function computeGitDiff(
     // Get diff between parent and current commit
     // If no parent, diff against empty tree (shows all files as added)
     const diffTarget = hasParent ? parentCommit : '4b825dc642cb6eb9a060e54bf8d69288fbee4904'; // Git empty tree SHA
-    const diffOutput = await git.diff(['--name-status', diffTarget, commitId]);
+    const diffOutput = await git.diff(['--name-status', '--relative', diffTarget, commitId]);
 
     return parseDiffOutput(diffOutput, sourceDir);
   } catch (error) {
@@ -99,52 +99,21 @@ function parseDiffOutput(diffOutput: string, sourceDir: string): GitDiffResult {
     }
 
     const status = parts[0]?.charAt(0); // Get first character (M, A, D, R, C)
-    const filePath = parts[1];
-
-    if (!status || !filePath) {
+    if (!status) {
       continue;
     }
-
-    // Convert relative path to absolute for parsing
-    const absolutePath = path.isAbsolute(filePath)
-      ? filePath
-      : path.join(sourceDir, filePath);
-
-    const descriptor = parseArtifactPath(sourceDir, absolutePath);
-    if (!descriptor) {
-      continue;
-    }
-
-    // Create unique key for deduplication
-    const key = descriptorKey(descriptor);
 
     if (status === 'D') {
-      // Deleted file
-      if (!seenDeleted.has(key)) {
-        deletedDescriptors.push(descriptor);
-        seenDeleted.add(key);
-      }
-    } else if (status === 'M' || status === 'A' || status === 'R' || status === 'C') {
-      // Modified, added, renamed, or copied file
-      if (!seenChanged.has(key)) {
-        changedDescriptors.push(descriptor);
-        seenChanged.add(key);
-      }
-
-      // For renames, also parse the new path (in parts[2])
-      if (status === 'R' && parts[2]) {
-        const newPath = path.isAbsolute(parts[2])
-          ? parts[2]
-          : path.join(sourceDir, parts[2]);
-        const newDescriptor = parseArtifactPath(sourceDir, newPath);
-        if (newDescriptor) {
-          const newKey = descriptorKey(newDescriptor);
-          if (!seenChanged.has(newKey)) {
-            changedDescriptors.push(newDescriptor);
-            seenChanged.add(newKey);
-          }
-        }
-      }
+      addDescriptorFromDiffPath(parts[1], sourceDir, deletedDescriptors, seenDeleted);
+    } else if (status === 'M' || status === 'A') {
+      addDescriptorFromDiffPath(parts[1], sourceDir, changedDescriptors, seenChanged);
+    } else if (status === 'R') {
+      // Renames are effectively delete(old) + add(new)
+      addDescriptorFromDiffPath(parts[1], sourceDir, deletedDescriptors, seenDeleted);
+      addDescriptorFromDiffPath(parts[2], sourceDir, changedDescriptors, seenChanged);
+    } else if (status === 'C') {
+      // Copies only introduce/modify the new destination path
+      addDescriptorFromDiffPath(parts[2], sourceDir, changedDescriptors, seenChanged);
     }
   }
 
@@ -160,4 +129,51 @@ function parseDiffOutput(diffOutput: string, sourceDir: string): GitDiffResult {
  */
 function descriptorKey(descriptor: ResourceDescriptor): string {
   return [descriptor.type, ...descriptor.nameParts, descriptor.workspace ?? ''].join('::');
+}
+
+function addUniqueDescriptor(
+  target: ResourceDescriptor[],
+  seen: Set<string>,
+  descriptor: ResourceDescriptor,
+  key: string
+): void {
+  if (seen.has(key)) {
+    return;
+  }
+
+  target.push(descriptor);
+  seen.add(key);
+}
+
+/**
+ * Parse a git diff path into a resource descriptor and add it to the target list.
+ * No-op when path is missing, not parseable, or descriptor was already seen.
+ */
+function addDescriptorFromDiffPath(
+  diffPath: string | undefined,
+  sourceDir: string,
+  target: ResourceDescriptor[],
+  seen: Set<string>
+): void {
+  if (!diffPath) {
+    return;
+  }
+
+  const descriptor = parseDescriptorFromDiffPath(sourceDir, diffPath);
+  if (!descriptor) {
+    return;
+  }
+
+  addUniqueDescriptor(target, seen, descriptor, descriptorKey(descriptor));
+}
+
+function parseDescriptorFromDiffPath(
+  sourceDir: string,
+  diffPath: string
+): ResourceDescriptor | undefined {
+  const absolutePath = path.isAbsolute(diffPath)
+    ? diffPath
+    : path.join(sourceDir, diffPath);
+
+  return parseArtifactChangePath(sourceDir, absolutePath);
 }

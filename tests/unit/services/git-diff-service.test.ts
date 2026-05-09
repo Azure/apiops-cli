@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { computeGitDiff } from '../../../src/services/git-diff-service.js';
+import { simpleGit } from 'simple-git';
 
 // Create mock git instance
 const mockGit = {
@@ -44,6 +45,17 @@ describe('git-diff-service', () => {
       expect(result.deletedDescriptors).toEqual([]);
     });
 
+    it('should return empty arrays when source directory does not exist', async () => {
+      vi.mocked(simpleGit).mockImplementationOnce(() => {
+        throw new Error('Cannot use simple-git on a directory that does not exist');
+      });
+
+      const result = await computeGitDiff('/missing-source', 'abc123');
+
+      expect(result.changedDescriptors).toEqual([]);
+      expect(result.deletedDescriptors).toEqual([]);
+    });
+
     it('should parse modified files as changed descriptors', async () => {
       // mockGit is at module scope
       mockGit.checkIsRepo.mockResolvedValue(true);
@@ -72,6 +84,42 @@ describe('git-diff-service', () => {
       expect(result.changedDescriptors.length).toBeGreaterThanOrEqual(0);
     });
 
+    it('should map api specification changes to Api descriptor', async () => {
+      mockGit.checkIsRepo.mockResolvedValue(true);
+      mockGit.revparse.mockResolvedValue('abc123');
+      mockGit.diff.mockResolvedValue('M\tapis/links/specification.yaml\n');
+
+      const result = await computeGitDiff('/source', 'abc123');
+
+      expect(result.deletedDescriptors).toEqual([]);
+      expect(result.changedDescriptors).toEqual([
+        {
+          type: 'Api',
+          nameParts: ['links'],
+          workspace: undefined,
+        },
+      ]);
+    });
+
+    it('should map workspace-scoped api specification changes to Api descriptor', async () => {
+      mockGit.checkIsRepo.mockResolvedValue(true);
+      mockGit.revparse.mockResolvedValue('abc123');
+      mockGit.diff.mockResolvedValue(
+        'M\tworkspaces/dev/apis/links/specification.yaml\n'
+      );
+
+      const result = await computeGitDiff('/source', 'abc123');
+
+      expect(result.deletedDescriptors).toEqual([]);
+      expect(result.changedDescriptors).toEqual([
+        {
+          type: 'Api',
+          nameParts: ['links'],
+          workspace: 'dev',
+        },
+      ]);
+    });
+
     it('should parse deleted files as deleted descriptors', async () => {
       // mockGit is at module scope
       mockGit.checkIsRepo.mockResolvedValue(true);
@@ -90,12 +138,25 @@ describe('git-diff-service', () => {
       mockGit.checkIsRepo.mockResolvedValue(true);
       mockGit.revparse.mockResolvedValue('abc123');
       mockGit.diff.mockResolvedValue(
-        'R\t/source/apis/old-api/apiInformation.json\t/source/apis/new-api/apiInformation.json\n'
+        'R100\tapis/old-api/specification.yaml\tapis/new-api/specification.yaml\n'
       );
 
       const result = await computeGitDiff('/source', 'abc123');
 
-      expect(result.changedDescriptors.length).toBeGreaterThanOrEqual(0);
+      expect(result.changedDescriptors).toEqual([
+        {
+          type: 'Api',
+          nameParts: ['new-api'],
+          workspace: undefined,
+        },
+      ]);
+      expect(result.deletedDescriptors).toEqual([
+        {
+          type: 'Api',
+          nameParts: ['old-api'],
+          workspace: undefined,
+        },
+      ]);
     });
 
     it('should handle copied files', async () => {
@@ -103,12 +164,19 @@ describe('git-diff-service', () => {
       mockGit.checkIsRepo.mockResolvedValue(true);
       mockGit.revparse.mockResolvedValue('abc123');
       mockGit.diff.mockResolvedValue(
-        'C\t/source/apis/api-1/apiInformation.json\t/source/apis/api-2/apiInformation.json\n'
+        'C100\tapis/api-1/specification.yaml\tapis/api-2/specification.yaml\n'
       );
 
       const result = await computeGitDiff('/source', 'abc123');
 
-      expect(result.changedDescriptors.length).toBeGreaterThanOrEqual(0);
+      expect(result.changedDescriptors).toEqual([
+        {
+          type: 'Api',
+          nameParts: ['api-2'],
+          workspace: undefined,
+        },
+      ]);
+      expect(result.deletedDescriptors).toEqual([]);
     });
 
     it('should handle multiple file changes', async () => {
@@ -140,6 +208,21 @@ describe('git-diff-service', () => {
       const result = await computeGitDiff('/source', 'abc123');
 
       expect(result.changedDescriptors.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should request relative diff paths from git', async () => {
+      mockGit.checkIsRepo.mockResolvedValue(true);
+      mockGit.revparse.mockResolvedValue('abc123');
+      mockGit.diff.mockResolvedValue('M\tapis/links/specification.yaml\n');
+
+      await computeGitDiff('/source', 'abc123');
+
+      expect(mockGit.diff).toHaveBeenCalledWith([
+        '--name-status',
+        '--relative',
+        'abc123~1',
+        'abc123',
+      ]);
     });
 
     it('should deduplicate descriptors', async () => {

@@ -20,6 +20,15 @@ const ASSOCIATION_TYPES = new Set<ResourceType>([
   ResourceType.GatewayApi,
 ]);
 
+const SUPPORTED_SPECIFICATION_EXTENSIONS = new Set([
+  'yaml',
+  'yml',
+  'json',
+  'graphql',
+  'wsdl',
+  'wadl',
+]);
+
 /**
  * Fills all positional `{i}` tokens in a template string with `nameParts[i]`.
  * Throws if a placeholder index has no corresponding entry in `nameParts`.
@@ -383,6 +392,79 @@ export function parseArtifactPath(
   }
 
   return undefined;
+}
+
+/**
+ * Parse a changed artifact file path into a ResourceDescriptor.
+ *
+ * This extends `parseArtifactPath` with support for supplemental artifact
+ * files that belong to a resource but are not the primary info file.
+ *
+ * Currently supports:
+ * - API specification files (`apis/{api}/specification.{ext}`)
+ * - Workspace-scoped API specification files
+ *   (`workspaces/{workspace}/apis/{api}/specification.{ext}`)
+ */
+export function parseArtifactChangePath(
+  baseDir: string,
+  filePath: string
+): ResourceDescriptor | undefined {
+  const directDescriptor = parseArtifactPath(baseDir, filePath);
+  if (directDescriptor) {
+    return directDescriptor;
+  }
+
+  const relativePath = toTemplatePath(path.relative(baseDir, filePath));
+
+  const rootApiSpec = parseTemplatePath('apis/{0}/specification.{1}', relativePath);
+  if (rootApiSpec && rootApiSpec.length === 2) {
+    const apiName = getCapture(rootApiSpec, 0);
+    const extension = getCapture(rootApiSpec, 1);
+    if (apiName && isSupportedSpecificationExtension(extension)) {
+      return {
+        type: ResourceType.Api,
+        nameParts: [apiName],
+      };
+    }
+  }
+
+  const workspaceApiSpec = parseTemplatePath(
+    'workspaces/{0}/apis/{1}/specification.{2}',
+    relativePath
+  );
+  if (workspaceApiSpec && workspaceApiSpec.length === 3) {
+    const workspace = getCapture(workspaceApiSpec, 0);
+    const apiName = getCapture(workspaceApiSpec, 1);
+    const extension = getCapture(workspaceApiSpec, 2);
+    if (workspace && apiName && isSupportedSpecificationExtension(extension)) {
+      return {
+        type: ResourceType.Api,
+        nameParts: [apiName],
+        workspace,
+      };
+    }
+  }
+
+  return undefined;
+}
+
+function toTemplatePath(relativePath: string): string {
+  return relativePath.split(path.sep).join('/');
+}
+
+function getCapture(captures: string[], index: number): string | undefined {
+  if (captures.length <= index) {
+    return undefined;
+  }
+  return captures[index];
+}
+
+function isSupportedSpecificationExtension(extension: string | undefined): boolean {
+  if (!extension) {
+    return false;
+  }
+
+  return SUPPORTED_SPECIFICATION_EXTENSIONS.has(extension.toLowerCase());
 }
 
 /**

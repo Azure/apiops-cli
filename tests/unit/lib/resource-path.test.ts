@@ -13,6 +13,7 @@ import {
   buildSpecificationFilePath,
   buildAssociationFilePath,
   parseArtifactPath,
+  parseArtifactChangePath,
   deriveListPaths,
   hasNestedParent,
   getPublishTier,
@@ -320,6 +321,65 @@ describe('parseArtifactPath', () => {
     expect(result).toBeDefined();
     expect(result!.type).toBe(ResourceType.ServicePolicy);
     expect(result!.nameParts).toEqual([]);
+  });
+});
+
+describe('parseArtifactChangePath', () => {
+  it('should parse regular info files via parseArtifactPath fallback', () => {
+    const filePath = path.join(baseDir, 'apis', 'my-api', 'apiInformation.json');
+    const result = parseArtifactChangePath(baseDir, filePath);
+
+    expect(result).toBeDefined();
+    expect(result!.type).toBe(ResourceType.Api);
+    expect(result!.nameParts).toEqual(['my-api']);
+  });
+
+  it('should parse API specification file to Api descriptor', () => {
+    const filePath = path.join(baseDir, 'apis', 'my-api', 'specification.yaml');
+    const result = parseArtifactChangePath(baseDir, filePath);
+
+    expect(result).toBeDefined();
+    expect(result!.type).toBe(ResourceType.Api);
+    expect(result!.nameParts).toEqual(['my-api']);
+    expect(result!.workspace).toBeUndefined();
+  });
+
+  it('should parse workspace-scoped API specification file', () => {
+    const filePath = path.join(
+      baseDir,
+      'workspaces',
+      'dev',
+      'apis',
+      'my-api',
+      'specification.json'
+    );
+    const result = parseArtifactChangePath(baseDir, filePath);
+
+    expect(result).toBeDefined();
+    expect(result!.type).toBe(ResourceType.Api);
+    expect(result!.nameParts).toEqual(['my-api']);
+    expect(result!.workspace).toBe('dev');
+  });
+
+  it('should ignore unsupported specification extensions', () => {
+    const filePath = path.join(baseDir, 'apis', 'my-api', 'specification.txt');
+    const result = parseArtifactChangePath(baseDir, filePath);
+
+    expect(result).toBeUndefined();
+  });
+
+  it('should return undefined for a path with no extension on the specification file', () => {
+    const filePath = path.join(baseDir, 'apis', 'my-api', 'specification');
+    const result = parseArtifactChangePath(baseDir, filePath);
+
+    expect(result).toBeUndefined();
+  });
+
+  it('should return undefined for a deeply nested path that does not match any pattern', () => {
+    const filePath = path.join(baseDir, 'apis', 'my-api', 'extra', 'specification.yaml');
+    const result = parseArtifactChangePath(baseDir, filePath);
+
+    expect(result).toBeUndefined();
   });
 });
 

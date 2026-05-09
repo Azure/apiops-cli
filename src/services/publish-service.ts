@@ -49,6 +49,11 @@ export interface PublishResult {
   dryRunReport?: DryRunReport;
 }
 
+interface PublishTargets {
+  targetDescriptors: ResourceDescriptor[];
+  deletedDescriptors: ResourceDescriptor[];
+}
+
 /**
  * Main publish orchestration function.
  * Coordinates PUT/DELETE operations across dependency tiers.
@@ -63,7 +68,10 @@ export async function runPublish(
     await client.validatePreFlight(config.service);
 
     // Step 1: Determine target descriptors based on incremental mode
-    const targetDescriptors = await determineTargetDescriptors(store, config);
+    const { targetDescriptors, deletedDescriptors } = await determinePublishTargets(
+      store,
+      config
+    );
 
     logger.debug(
       `Publishing ${targetDescriptors.length} resources (dry-run: ${config.dryRun})`
@@ -76,7 +84,8 @@ export async function runPublish(
         client,
         config.service,
         config,
-        targetDescriptors
+        targetDescriptors,
+        deletedDescriptors
       );
 
       return {
@@ -101,7 +110,13 @@ export async function runPublish(
 
     // Step 4: Execute DELETEs in reverse dependency order (tier 4 → tier 1) if requested
     let deleteResults: PublishActionResult[] = [];
-    if (config.deleteUnmatched) {
+    if (deletedDescriptors.length > 0) {
+      deleteResults = await executeDeletesForDescriptors(
+        client,
+        config.service,
+        deletedDescriptors
+      );
+    } else if (config.deleteUnmatched) {
       deleteResults = await executeDeletes(
         client,
         store,
@@ -143,21 +158,27 @@ export async function runPublish(
 /**
  * Determine which resources to publish based on incremental mode.
  */
-async function determineTargetDescriptors(
+async function determinePublishTargets(
   store: IArtifactStore,
   config: PublishConfig
-): Promise<ResourceDescriptor[]> {
+): Promise<PublishTargets> {
   if (config.commitId) {
     // Incremental mode: use git diff
     logger.debug(
       `Using incremental publish mode with commit ID: ${config.commitId}`
     );
     const diffResult = await computeGitDiff(config.sourceDir, config.commitId);
-    return diffResult.changedDescriptors;
+    return {
+      targetDescriptors: diffResult.changedDescriptors,
+      deletedDescriptors: diffResult.deletedDescriptors,
+    };
   } else {
     // Full mode: publish all artifacts
     logger.debug('Using full publish mode (all artifacts)');
-    return await store.listResources(config.sourceDir);
+    return {
+      targetDescriptors: await store.listResources(config.sourceDir),
+      deletedDescriptors: [],
+    };
   }
 }
 
@@ -461,6 +482,22 @@ async function executeDeletes(
   }
 
   logger.debug(`Deleting ${deleteDescriptors.length} unmatched resources`);
+
+  return executeDeletesForDescriptors(client, context, deleteDescriptors);
+}
+
+/**
+ * Execute DELETE operations for a precomputed descriptor list in reverse dependency order.
+ */
+async function executeDeletesForDescriptors(
+  client: IApimClient,
+  context: ApimServiceContext,
+  deleteDescriptors: ResourceDescriptor[]
+): Promise<PublishActionResult[]> {
+  if (deleteDescriptors.length === 0) {
+    logger.debug('No resources to delete');
+    return [];
+  }
 
   const results: PublishActionResult[] = [];
 

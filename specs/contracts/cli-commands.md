@@ -53,8 +53,9 @@ Publish local artifact files to an APIM instance.
 | `--service-name <name>` | string | yes | — | APIM service instance name |
 | `--source <dir>` | string | no | `./apim-artifacts` | Source artifact directory |
 | `--overrides <path>` | string | no | — | Environment overrides YAML file |
+| `--commit-id <sha>` | string | no | — | Git commit SHA for incremental publish (overrides `COMMIT_ID`) |
 | `--dry-run` | boolean | no | `false` | Show planned changes without applying |
-| `--delete-unmatched` | boolean | no | `false` | Delete APIM resources not in artifacts |
+| `--delete-unmatched` | boolean | no | `false` | Delete APIM resources not in artifacts. Mutually exclusive with `--commit-id`. |
 
 **Environment variables** (publish-specific):
 | Variable | Description |
