@@ -30,9 +30,9 @@ export async function computeGitDiff(
   sourceDir: string,
   commitId: string
 ): Promise<GitDiffResult> {
-  const git: SimpleGit = simpleGit(sourceDir);
-
   try {
+    const git: SimpleGit = simpleGit(sourceDir);
+
     // Check if we're in a git repository
     const isRepo = await git.checkIsRepo();
     if (!isRepo) {
