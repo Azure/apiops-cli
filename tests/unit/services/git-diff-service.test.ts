@@ -4,6 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { computeGitDiff } from '../../../src/services/git-diff-service.js';
+import { simpleGit } from 'simple-git';
 
 // Create mock git instance
 const mockGit = {
@@ -39,6 +40,17 @@ describe('git-diff-service', () => {
       mockGit.revparse.mockRejectedValue(new Error('Commit not found'));
 
       const result = await computeGitDiff('/source', 'invalid-commit');
+
+      expect(result.changedDescriptors).toEqual([]);
+      expect(result.deletedDescriptors).toEqual([]);
+    });
+
+    it('should return empty arrays when source directory does not exist', async () => {
+      vi.mocked(simpleGit).mockImplementationOnce(() => {
+        throw new Error('Cannot use simple-git on a directory that does not exist');
+      });
+
+      const result = await computeGitDiff('/missing-source', 'abc123');
 
       expect(result.changedDescriptors).toEqual([]);
       expect(result.deletedDescriptors).toEqual([]);
