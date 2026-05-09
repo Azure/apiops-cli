@@ -766,6 +766,35 @@ describe('api-publisher', () => {
       expect(totalTasks).toBe(2);
     });
 
+    it('should still re-publish explicitly named schemas in incremental mode after spec import', async () => {
+      const client = createMockClient();
+      // 'my-explicit-schema' is not a 24-char hex ID so it must be re-published
+      const children = [
+        { type: ResourceType.ApiSchema, nameParts: ['petstore', 'my-explicit-schema'] },
+        { type: ResourceType.ApiSchema, nameParts: ['petstore', '69f15c3c10a45d29d855583a'] },
+      ];
+      const store = createMockStore(children);
+      store.readResource.mockImplementation(async (_dir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.Api) {
+          return { name: 'petstore', properties: { path: 'petstore' } };
+        }
+        return null;
+      });
+      store.readContent.mockResolvedValue({ content: 'openapi: "3.0.0"', format: 'yaml' });
+
+      const apiDescriptor: ResourceDescriptor = { type: ResourceType.Api, nameParts: ['petstore'] };
+      const incrementalConfig: PublishConfig = { ...testConfig, commitId: 'abc123' };
+
+      await publishApi(client, store, testContext, apiDescriptor, incrementalConfig);
+
+      // Only the explicit schema should be published (auto-generated hex ID is skipped)
+      const totalTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
+        const tasks = call[0] as unknown[];
+        return sum + tasks.length;
+      }, 0);
+      expect(totalTasks).toBe(1);
+    });
+
     it('should not re-publish schema-reference operations in incremental mode after spec import', async () => {
       const client = createMockClient();
       const children = [
@@ -889,6 +918,20 @@ describe('api-publisher', () => {
         return sum + tasks.length;
       }, 0);
       expect(totalTasks).toBe(3);
+    });
+
+    it('should return skipped when root API resource file does not exist', async () => {
+      const client = createMockClient();
+      const store = createMockStore([]);
+      store.readResource.mockResolvedValue(null);
+      store.readContent.mockResolvedValue({ content: 'openapi: "3.0.0"', format: 'yaml' });
+
+      const apiDescriptor: ResourceDescriptor = { type: ResourceType.Api, nameParts: ['missing-api'] };
+
+      const result = await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      expect(result.status).toBe('skipped');
+      expect(client.putResource).not.toHaveBeenCalled();
     });
 
     it('should not inject spec for GraphQL format', async () => {
