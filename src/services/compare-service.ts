@@ -1,15 +1,12 @@
 /**
  * T-CMP-05: Compare service orchestrator.
  *
- * Coordinates hierarchical comparison of two APIM instances:
- *  1. Top-level resource types
- *  2. API children (operations, policies, schemas, tags, diagnostics,
- *     resolvers, releases, wikis, tagDescriptions)
- *  3. API operation policies
- *  4. API GraphQL resolver policies
- *  5. Product children (policies, APIs, groups, tags, wikis)
- *  6. Gateway child APIs
- *  7. Workspace children
+ * Coordinates hierarchical comparison of two APIM instances using the same
+ * resource-type model and dependency graph as the extract and publish commands:
+ *  - Top-level types are derived from TIER_1, TIER_2, and non-child TIER_3
+ *    resources in dependency-graph.ts.
+ *  - Child types per parent are derived from getDependencies() so that newly
+ *    added resource types are automatically included without changing this file.
  *
  * Uses compare-normalizer.ts and compare-differ.ts.
  * All APIM interaction goes through IApimClient (listResources).
@@ -18,7 +15,15 @@
 import { IApimClient } from '../clients/iapim-client.js';
 import { CompareConfig } from '../models/config.js';
 import { ApimServiceContext } from '../models/types.js';
-import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
+import { ResourceType } from '../models/resource-types.js';
+import {
+  TIER_1_RESOURCES,
+  TIER_2_RESOURCES,
+  TIER_3_RESOURCES,
+  TIER_4_RESOURCES,
+  getDependencies,
+} from '../lib/dependency-graph.js';
+import { isChildType } from '../lib/resource-path.js';
 import { logger } from '../lib/logger.js';
 import {
   NormalizeContext,
@@ -38,6 +43,83 @@ const EXCLUDE_PRODUCTS = new Set(['starter', 'unlimited']);
 const EXCLUDE_SUBSCRIPTIONS = new Set(['master']);
 const EXCLUDE_APIS = new Set(['echo-api']);
 
+// ── Display labels for resource types in comparison output ───────────────────
+//
+// Maps each ResourceType to a human-readable label used in log/output lines.
+// Types not present in this map fall back to the enum name (e.g. 'NamedValue').
+// Labels must be manually added here when a new resource type is introduced.
+
+const RESOURCE_TYPE_LABEL: Partial<Record<ResourceType, string>> = {
+  [ResourceType.NamedValue]: 'Named Values',
+  [ResourceType.Tag]: 'Tags',
+  [ResourceType.Gateway]: 'Gateways',
+  [ResourceType.VersionSet]: 'API Version Sets',
+  [ResourceType.Backend]: 'Backends',
+  [ResourceType.Logger]: 'Loggers',
+  [ResourceType.Group]: 'Groups',
+  [ResourceType.Diagnostic]: 'Diagnostics',
+  [ResourceType.PolicyFragment]: 'Policy Fragments',
+  [ResourceType.GlobalSchema]: 'Global Schemas',
+  [ResourceType.ServicePolicy]: 'Service Policy',
+  [ResourceType.Product]: 'Products',
+  [ResourceType.Subscription]: 'Subscriptions',
+  [ResourceType.Documentation]: 'Documentations',
+  [ResourceType.PolicyRestriction]: 'Policy Restrictions',
+  [ResourceType.Api]: 'APIs',
+  // API child types
+  [ResourceType.ApiOperation]: 'Operations',
+  [ResourceType.ApiPolicy]: 'Policies',
+  [ResourceType.ApiSchema]: 'Schemas',
+  [ResourceType.ApiTag]: 'Tags',
+  [ResourceType.ApiDiagnostic]: 'Diagnostics',
+  [ResourceType.GraphQLResolver]: 'Resolvers',
+  [ResourceType.ApiRelease]: 'Releases',
+  [ResourceType.ApiWiki]: 'Wikis',
+  [ResourceType.ApiTagDescription]: 'Tag Descriptions',
+  [ResourceType.McpServer]: 'MCP Servers',
+  [ResourceType.ApiOperationPolicy]: 'Policies',
+  [ResourceType.GraphQLResolverPolicy]: 'Policies',
+  // Product child types
+  [ResourceType.ProductPolicy]: 'Policies',
+  [ResourceType.ProductApi]: 'APIs',
+  [ResourceType.ProductGroup]: 'Groups',
+  [ResourceType.ProductTag]: 'Tags',
+  [ResourceType.ProductWiki]: 'Wikis',
+  // Gateway child types
+  [ResourceType.GatewayApi]: 'APIs',
+};
+
+// ── Per-type comparison options (exclusions and skip flags) ──────────────────
+//
+// Types not listed here use empty defaults (no exclusions, no skip flags).
+
+interface CompareTypeOptions {
+  excludeNames?: ReadonlySet<string>;
+  skipSecretValue?: boolean;
+  skipLoggerCredentials?: boolean;
+}
+
+const TYPE_OPTIONS: Partial<Record<ResourceType, CompareTypeOptions>> = {
+  [ResourceType.NamedValue]: { skipSecretValue: true },
+  [ResourceType.Logger]: { skipLoggerCredentials: true },
+  [ResourceType.Group]: { excludeNames: EXCLUDE_GROUPS },
+  [ResourceType.Product]: { excludeNames: EXCLUDE_PRODUCTS },
+  [ResourceType.Subscription]: { excludeNames: EXCLUDE_SUBSCRIPTIONS },
+  [ResourceType.Api]: { excludeNames: EXCLUDE_APIS },
+};
+
+// ── Top-level resource types ─────────────────────────────────────────────────
+//
+// Mirrors the extract-service pattern: TIER_1 + TIER_2 + non-child TIER_3 types.
+// Non-child TIER_3 types are those whose armPathSuffix is directly under the
+// service root (e.g. Subscription: 'subscriptions/{0}').
+
+const TOP_LEVEL_TYPES: ResourceType[] = [
+  ...TIER_1_RESOURCES,
+  ...TIER_2_RESOURCES,
+  ...TIER_3_RESOURCES.filter((t) => !isChildType(t)),
+];
+
 // ── Result types ──────────────────────────────────────────────────────────────
 
 export interface CompareResult {
@@ -51,6 +133,29 @@ export interface CompareResult {
   skippedTypes: number;
   /** Exit code: 0=identical, 1=differences found, 2=fatal error. */
   exitCode: number;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/** Return the display label for a resource type, falling back to the enum name. */
+function typeLabel(type: ResourceType): string {
+  return RESOURCE_TYPE_LABEL[type] ?? type;
+}
+
+/**
+ * Return the child resource types whose primary required parent is `parentType`.
+ *
+ * "Primary required parent" = the first dependency edge where `required === true`.
+ * This mirrors the dependency-graph structure and ensures new resource types
+ * added to the graph are automatically picked up here without code changes.
+ *
+ * Only considers TIER_3 + TIER_4 resources (children always live in these tiers).
+ */
+function getChildTypesOf(parentType: ResourceType): ResourceType[] {
+  return [...TIER_3_RESOURCES, ...TIER_4_RESOURCES].filter((type) => {
+    const primaryParent = getDependencies(type).find((e) => e.required)?.to;
+    return primaryParent === parentType;
+  });
 }
 
 // ── Orchestrator ──────────────────────────────────────────────────────────────
@@ -76,167 +181,98 @@ export async function runCompare(
 
   try {
     // ── Top-level resource types ─────────────────────────────────────────────
+    // TIER_1 + TIER_2 + non-child TIER_3 (e.g. Subscription), derived from the
+    // dependency graph — same approach as extract-service.ts.
     logger.debug('Comparing top-level resources...');
 
-    allResults.push(
-      await compareType(client, ctx, source, target, 'Named Values', ResourceType.NamedValue, {
-        excludeNames: new Set(),
-        skipSecretValue: true,
-      }),
-    );
-    allResults.push(
-      await compareType(client, ctx, source, target, 'Tags', ResourceType.Tag),
-    );
-    allResults.push(
-      await compareType(client, ctx, source, target, 'Gateways', ResourceType.Gateway),
-    );
-    allResults.push(
-      await compareType(client, ctx, source, target, 'API Version Sets', ResourceType.VersionSet),
-    );
-    allResults.push(
-      await compareType(client, ctx, source, target, 'Backends', ResourceType.Backend),
-    );
-    allResults.push(
-      await compareType(client, ctx, source, target, 'Loggers', ResourceType.Logger, {
-        skipLoggerCredentials: true,
-      }),
-    );
-    allResults.push(
-      await compareType(client, ctx, source, target, 'Groups', ResourceType.Group, {
-        excludeNames: EXCLUDE_GROUPS,
-      }),
-    );
-    allResults.push(
-      await compareType(client, ctx, source, target, 'Diagnostics', ResourceType.Diagnostic),
-    );
-    allResults.push(
-      await compareType(client, ctx, source, target, 'Policy Fragments', ResourceType.PolicyFragment),
-    );
-    allResults.push(
-      await compareType(client, ctx, source, target, 'Global Schemas', ResourceType.GlobalSchema),
-    );
-    allResults.push(
-      await compareType(client, ctx, source, target, 'Service Policy', ResourceType.ServicePolicy),
-    );
-    allResults.push(
-      await compareType(client, ctx, source, target, 'Products', ResourceType.Product, {
-        excludeNames: EXCLUDE_PRODUCTS,
-      }),
-    );
-    allResults.push(
-      await compareType(client, ctx, source, target, 'Subscriptions', ResourceType.Subscription, {
-        excludeNames: EXCLUDE_SUBSCRIPTIONS,
-      }),
-    );
-    allResults.push(
-      await compareType(client, ctx, source, target, 'Documentations', ResourceType.Documentation),
-    );
-    allResults.push(
-      await compareType(client, ctx, source, target, 'Policy Restrictions', ResourceType.PolicyRestriction),
-    );
+    for (const type of TOP_LEVEL_TYPES) {
+      allResults.push(
+        await compareType(
+          client, ctx, source, target,
+          typeLabel(type), type, TYPE_OPTIONS[type] ?? {},
+        ),
+      );
+    }
 
-    // ── APIs ─────────────────────────────────────────────────────────────────
-    logger.debug('Comparing APIs...');
-
-    allResults.push(
-      await compareType(client, ctx, source, target, 'APIs', ResourceType.Api, {
-        excludeNames: EXCLUDE_APIS,
-      }),
-    );
+    // ── APIs and their children ──────────────────────────────────────────────
+    logger.debug('Comparing API children...');
 
     // Enumerate source APIs for child comparison
+    const excludeApiNames = TYPE_OPTIONS[ResourceType.Api]?.excludeNames ?? new Set<string>();
     const sourceApis = await collectList(client, source, ResourceType.Api);
     const apiNames = sourceApis
       .map((a) => getResourceName(a))
-      .filter((n): n is string => !!n && !EXCLUDE_APIS.has(n));
+      .filter((n): n is string => !!n && !excludeApiNames.has(n));
+
+    // Direct API children (tier 3, primary required parent = Api).
+    // getChildTypesOf() derives this list from the dependency graph, so newly
+    // added API child types are automatically included.
+    const apiDirectChildTypes = getChildTypesOf(ResourceType.Api);
 
     for (const apiName of apiNames) {
       logger.debug(`  API children: ${apiName}`);
 
-      // API child types (flat list collections)
-      const apiChildTypes: Array<{ label: string; type: ResourceType }> = [
-        { label: 'Operations', type: ResourceType.ApiOperation },
-        { label: 'Policies', type: ResourceType.ApiPolicy },
-        { label: 'Schemas', type: ResourceType.ApiSchema },
-        { label: 'Tags', type: ResourceType.ApiTag },
-        { label: 'Diagnostics', type: ResourceType.ApiDiagnostic },
-        { label: 'Resolvers', type: ResourceType.GraphQLResolver },
-        { label: 'Releases', type: ResourceType.ApiRelease },
-        { label: 'Wikis', type: ResourceType.ApiWiki },
-        { label: 'Tag Descriptions', type: ResourceType.ApiTagDescription },
-      ];
-
       const parentDescriptor = { type: ResourceType.Api, nameParts: [apiName] };
 
-      for (const { label, type } of apiChildTypes) {
+      for (const type of apiDirectChildTypes) {
         allResults.push(
           await compareChildType(
             client, ctx, source, target,
-            `API/${apiName}/${label}`, type, parentDescriptor,
+            `API/${apiName}/${typeLabel(type)}`, type, parentDescriptor,
           ),
         );
       }
 
-      // API Operation Policies — enumerate operations
-      const ops = await collectList(client, source, ResourceType.ApiOperation, parentDescriptor);
-      const opNames = ops.map((o) => getResourceName(o)).filter((n): n is string => !!n);
-      for (const opName of opNames) {
-        const opDescriptor = { type: ResourceType.ApiOperation, nameParts: [apiName, opName] };
-        allResults.push(
-          await compareChildType(
-            client, ctx, source, target,
-            `API/${apiName}/operations/${opName}/Policies`,
-            ResourceType.ApiOperationPolicy,
-            opDescriptor,
-          ),
-        );
-      }
+      // Tier-4 types: children of API children — derived from the dependency graph.
+      // Each tier-3 type that itself has tier-4 children requires a second enumeration loop.
+      for (const tier3Type of apiDirectChildTypes) {
+        const grandchildTypes = getChildTypesOf(tier3Type);
+        if (grandchildTypes.length === 0) continue;
 
-      // API GraphQL Resolver Policies — enumerate resolvers
-      const resolvers = await collectList(client, source, ResourceType.GraphQLResolver, parentDescriptor);
-      const resolverNames = resolvers.map((r) => getResourceName(r)).filter((n): n is string => !!n);
-      for (const resolverName of resolverNames) {
-        const resolverDescriptor = { type: ResourceType.GraphQLResolver, nameParts: [apiName, resolverName] };
-        allResults.push(
-          await compareChildType(
-            client, ctx, source, target,
-            `API/${apiName}/resolvers/${resolverName}/Policies`,
-            ResourceType.GraphQLResolverPolicy,
-            resolverDescriptor,
-          ),
-        );
+        const tier3Items = await collectList(client, source, tier3Type, parentDescriptor);
+        const tier3Names = tier3Items.map((o) => getResourceName(o)).filter((n): n is string => !!n);
+
+        for (const tier3Name of tier3Names) {
+          const tier3Descriptor = { type: tier3Type, nameParts: [apiName, tier3Name] };
+
+          for (const gcType of grandchildTypes) {
+            allResults.push(
+              await compareChildType(
+                client, ctx, source, target,
+                `API/${apiName}/${typeLabel(tier3Type)}/${tier3Name}/${typeLabel(gcType)}`,
+                gcType, tier3Descriptor,
+              ),
+            );
+          }
+        }
       }
     }
 
     // ── Products and their children ──────────────────────────────────────────
     logger.debug('Comparing product children...');
 
+    const excludeProductNames = TYPE_OPTIONS[ResourceType.Product]?.excludeNames ?? new Set<string>();
     const sourceProducts = await collectList(client, source, ResourceType.Product);
     const productNames = sourceProducts
       .map((p) => getResourceName(p))
-      .filter((n): n is string => !!n && !EXCLUDE_PRODUCTS.has(n));
+      .filter((n): n is string => !!n && !excludeProductNames.has(n));
 
-    const productChildTypes: Array<{ label: string; type: ResourceType }> = [
-      { label: 'Policies', type: ResourceType.ProductPolicy },
-      { label: 'APIs', type: ResourceType.ProductApi },
-      { label: 'Groups', type: ResourceType.ProductGroup },
-      { label: 'Tags', type: ResourceType.ProductTag },
-      { label: 'Wikis', type: ResourceType.ProductWiki },
-    ];
+    // Derive product child types from the dependency graph
+    const productChildTypes = getChildTypesOf(ResourceType.Product);
 
     for (const productName of productNames) {
       const parentDescriptor = { type: ResourceType.Product, nameParts: [productName] };
-      for (const { label, type } of productChildTypes) {
+      for (const type of productChildTypes) {
         allResults.push(
           await compareChildType(
             client, ctx, source, target,
-            `Product/${productName}/${label}`, type, parentDescriptor,
+            `Product/${productName}/${typeLabel(type)}`, type, parentDescriptor,
           ),
         );
       }
     }
 
-    // ── Gateways and their child APIs ────────────────────────────────────────
+    // ── Gateways and their children ──────────────────────────────────────────
     logger.debug('Comparing gateway children...');
 
     const sourceGateways = await collectList(client, source, ResourceType.Gateway);
@@ -244,23 +280,28 @@ export async function runCompare(
       .map((g) => getResourceName(g))
       .filter((n): n is string => !!n);
 
+    // Derive gateway child types from the dependency graph
+    const gatewayChildTypes = getChildTypesOf(ResourceType.Gateway);
+
     for (const gwName of gatewayNames) {
       const parentDescriptor = { type: ResourceType.Gateway, nameParts: [gwName] };
-      allResults.push(
-        await compareChildType(
-          client, ctx, source, target,
-          `Gateway/${gwName}/APIs`, ResourceType.GatewayApi, parentDescriptor,
-        ),
-      );
+      for (const type of gatewayChildTypes) {
+        allResults.push(
+          await compareChildType(
+            client, ctx, source, target,
+            `Gateway/${gwName}/${typeLabel(type)}`, type, parentDescriptor,
+          ),
+        );
+      }
     }
 
-    // ── Workspaces and their children ────────────────────────────────────────
-    // Workspace child comparison requires a dedicated Workspace ResourceType that
-    // does not currently exist in the resource model. Workspace-scoped resources
-    // (apis, products, etc.) are therefore not compared at this time.
-    // This is consistent with the PowerShell reference treating workspaces as
-    // an optional/premium section that silently skips when unavailable.
-    logger.debug('Workspace child comparison skipped (no Workspace ResourceType in model).');
+    // ── Workspaces ───────────────────────────────────────────────────────────
+    // Workspace-scoped resources are not yet in the dependency graph (no Workspace
+    // ResourceType exists in resource-types.ts). This mirrors extract-service, which
+    // handles workspaces through a dedicated workspace-extractor. When a Workspace
+    // type is added to the model, getChildTypesOf(ResourceType.Workspace) will
+    // automatically pick up workspace children here.
+    logger.debug('Workspace child comparison skipped (Workspace type not in resource model).');
   } catch (error) {
     logger.error(`Fatal error during comparison: ${error instanceof Error ? error.message : String(error)}`);
     return {
@@ -298,12 +339,6 @@ export async function runCompare(
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
-
-interface CompareTypeOptions {
-  excludeNames?: ReadonlySet<string>;
-  skipSecretValue?: boolean;
-  skipLoggerCredentials?: boolean;
-}
 
 /**
  * Compare a top-level resource type between source and target.
@@ -410,7 +445,7 @@ function performComparison(
 
 /**
  * Normalize a list of raw ARM items and build a name → normalized map.
- * 
+ *
  * Order: extract names from ORIGINAL items (before normalization strips `id`),
  * then normalize each item's content.
  */
@@ -438,15 +473,6 @@ async function collectList(
   type: ResourceType,
   parent?: { type: ResourceType; nameParts: string[] },
 ): Promise<Record<string, unknown>[]> {
-  const meta = RESOURCE_TYPE_METADATA[type];
-  if (!meta.supportsGet) {
-    // Singleton types (like ServicePolicy) need getResource, not listResources.
-    // We handle them specially by returning an empty list here — the comparison
-    // is done differently since singletons have no "name" to key by.
-    // Actually for ServicePolicy we can still use listResources which returns
-    // the single item.
-  }
-
   const items: Record<string, unknown>[] = [];
   for await (const item of client.listResources(context, type, parent)) {
     items.push(item);
