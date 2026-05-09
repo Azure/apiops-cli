@@ -225,7 +225,9 @@ describe('dry-run-reporter', () => {
     });
 
     it('should include commit-scoped deletes even when delete-unmatched is false', async () => {
-      const client = createMockClient();
+      const client = createMockClient(new Map([
+        ['Tag:old-tag', true],
+      ]));
       const store = createMockStore();
 
       const report = await generateDryRunReport(
