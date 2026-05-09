@@ -138,12 +138,25 @@ describe('git-diff-service', () => {
       mockGit.checkIsRepo.mockResolvedValue(true);
       mockGit.revparse.mockResolvedValue('abc123');
       mockGit.diff.mockResolvedValue(
-        'R\t/source/apis/old-api/apiInformation.json\t/source/apis/new-api/apiInformation.json\n'
+        'R100\tapis/old-api/specification.yaml\tapis/new-api/specification.yaml\n'
       );
 
       const result = await computeGitDiff('/source', 'abc123');
 
-      expect(result.changedDescriptors.length).toBeGreaterThanOrEqual(0);
+      expect(result.changedDescriptors).toEqual([
+        {
+          type: 'Api',
+          nameParts: ['new-api'],
+          workspace: undefined,
+        },
+      ]);
+      expect(result.deletedDescriptors).toEqual([
+        {
+          type: 'Api',
+          nameParts: ['old-api'],
+          workspace: undefined,
+        },
+      ]);
     });
 
     it('should handle copied files', async () => {
@@ -151,12 +164,19 @@ describe('git-diff-service', () => {
       mockGit.checkIsRepo.mockResolvedValue(true);
       mockGit.revparse.mockResolvedValue('abc123');
       mockGit.diff.mockResolvedValue(
-        'C\t/source/apis/api-1/apiInformation.json\t/source/apis/api-2/apiInformation.json\n'
+        'C100\tapis/api-1/specification.yaml\tapis/api-2/specification.yaml\n'
       );
 
       const result = await computeGitDiff('/source', 'abc123');
 
-      expect(result.changedDescriptors.length).toBeGreaterThanOrEqual(0);
+      expect(result.changedDescriptors).toEqual([
+        {
+          type: 'Api',
+          nameParts: ['api-2'],
+          workspace: undefined,
+        },
+      ]);
+      expect(result.deletedDescriptors).toEqual([]);
     });
 
     it('should handle multiple file changes', async () => {
