@@ -367,6 +367,20 @@ describe('parseArtifactChangePath', () => {
 
     expect(result).toBeUndefined();
   });
+
+  it('should return undefined for a path with no extension on the specification file', () => {
+    const filePath = path.join(baseDir, 'apis', 'my-api', 'specification');
+    const result = parseArtifactChangePath(baseDir, filePath);
+
+    expect(result).toBeUndefined();
+  });
+
+  it('should return undefined for a deeply nested path that does not match any pattern', () => {
+    const filePath = path.join(baseDir, 'apis', 'my-api', 'extra', 'specification.yaml');
+    const result = parseArtifactChangePath(baseDir, filePath);
+
+    expect(result).toBeUndefined();
+  });
 });
 
 describe('buildArtifactFilePath + parseArtifactPath roundtrip', () => {
