@@ -145,6 +145,10 @@ function addUniqueDescriptor(
   seen.add(key);
 }
 
+/**
+ * Parse a git diff path into a resource descriptor and add it to the target list.
+ * No-op when path is missing, not parseable, or descriptor was already seen.
+ */
 function addDescriptorFromDiffPath(
   diffPath: string | undefined,
   sourceDir: string,
