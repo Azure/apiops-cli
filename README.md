@@ -84,8 +84,9 @@ Publish local artifact files to an Azure APIM service.
 | `--service-name <name>` | *(required)* | APIM service name |
 | `--source <dir>` | `./apim-artifacts` | Source artifacts directory |
 | `--overrides <path>` | | Path to overrides file |
+| `--commit-id <sha>` | | Git commit SHA for incremental publish |
 | `--dry-run` | | Preview changes without applying |
-| `--delete-unmatched` | | Delete resources not in artifacts |
+| `--delete-unmatched` | | Delete resources not in artifacts (mutually exclusive with `--commit-id`) |
 
 ```bash
 apiops publish --help
@@ -101,6 +102,12 @@ apiops publish \
   --resource-group <rg> \
   --service-name <name> \
   --delete-unmatched
+
+# Incremental publish for a specific commit
+apiops publish \
+  --resource-group <rg> \
+  --service-name <name> \
+  --commit-id <sha>
 ```
 
 ### `apiops init`

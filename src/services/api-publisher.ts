@@ -255,23 +255,34 @@ async function publishApiChildren(
   // schemaId/typeName references in representations. Re-include operations that
   // carry such references so those links are explicitly restored via PUT.
   if (specImported) {
+    // In incremental mode, avoid re-publishing operation artifacts after spec
+    // import. This prevents stale operation JSON from overwriting newly
+    // imported OpenAPI operation metadata (for example descriptions).
+    const shouldRepublishSchemaRefOps = !config.commitId;
+
     const operationDescriptors = allDescriptors.filter(
       (d) =>
         d.type === ResourceType.ApiOperation &&
         getNamePart(d.nameParts, 0) === getNamePart(apiDescriptor.nameParts, 0)
     );
 
-    const schemaRefOps = await filterOperationsWithSchemaRefs(
-      store,
-      config.sourceDir,
-      operationDescriptors
-    );
-
-    if (schemaRefOps.length > 0) {
-      logger.debug(
-        `Re-publishing ${schemaRefOps.length} operation(s) with schema references after spec import for "${getNamePart(apiDescriptor.nameParts, 0)}"`
+    if (shouldRepublishSchemaRefOps) {
+      const schemaRefOps = await filterOperationsWithSchemaRefs(
+        store,
+        config.sourceDir,
+        operationDescriptors
       );
-      childDescriptors = [...childDescriptors, ...schemaRefOps];
+
+      if (schemaRefOps.length > 0) {
+        logger.debug(
+          `Re-publishing ${schemaRefOps.length} operation(s) with schema references after spec import for "${getNamePart(apiDescriptor.nameParts, 0)}"`
+        );
+        childDescriptors = [...childDescriptors, ...schemaRefOps];
+      }
+    } else {
+      logger.debug(
+        `Skipping schema-reference operation re-publish for "${getNamePart(apiDescriptor.nameParts, 0)}" in incremental mode`
+      );
     }
 
     // Re-include explicitly named schemas (non-auto-generated IDs).

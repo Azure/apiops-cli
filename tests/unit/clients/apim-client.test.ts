@@ -630,6 +630,61 @@ describe('ApimClient.putResource provisioning polling', () => {
   });
 });
 
+describe('ApimClient.deleteResource provisioning polling', () => {
+  let client: ApimClient;
+  let fetchSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    client = new ApimClient();
+    fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
+    vi.spyOn(client as any, 'delay').mockResolvedValue(undefined);
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  const descriptor = { type: ResourceType.Api, nameParts: ['delay'] };
+
+  it('should treat 404 during delete polling as successful completion', async () => {
+    fetchSpy
+      // Initial DELETE accepted asynchronously
+      .mockResolvedValueOnce(new Response('', { status: 202 }))
+      // Poll GET returns 404 because delete completed
+      .mockResolvedValueOnce(new Response('', { status: 404 }));
+
+    const deleted = await client.deleteResource(testContext, descriptor);
+
+    expect(deleted).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('should continue polling delete until resource disappears', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(new Response('', { status: 202 }))
+      // First poll: resource still exists and is deleting
+      .mockResolvedValueOnce(
+        makeResponse(200, {
+          name: 'delay',
+          properties: { provisioningState: 'Deleting' },
+        })
+      )
+      // Second poll: gone
+      .mockResolvedValueOnce(new Response('', { status: 404 }));
+
+    const deleted = await client.deleteResource(testContext, descriptor);
+
+    expect(deleted).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+});
+
 describe('ApimClient HTTP 429 rate limiting', () => {
   let client: ApimClient;
   let fetchSpy: ReturnType<typeof vi.fn>;

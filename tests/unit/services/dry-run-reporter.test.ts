@@ -224,6 +224,29 @@ describe('dry-run-reporter', () => {
       expect(report.summary.skips).toBe(0);
     });
 
+    it('should include commit-scoped deletes even when delete-unmatched is false', async () => {
+      const client = createMockClient(new Map([
+        ['Tag:old-tag', true],
+      ]));
+      const store = createMockStore();
+
+      const report = await generateDryRunReport(
+        store,
+        client,
+        testContext,
+        testConfig,
+        [],
+        [{ type: ResourceType.Tag, nameParts: ['old-tag'] }]
+      );
+
+      expect(report.actions).toHaveLength(1);
+      expect(report.actions[0].operation).toBe('DELETE');
+      expect(report.summary.deletes).toBe(1);
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[DRY RUN] DELETE')
+      );
+    });
+
     it('should format hierarchical resource names correctly', async () => {
       const client = createMockClient(new Map([
         ['ApiOperation:get-user', false],
