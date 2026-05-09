@@ -163,29 +163,27 @@ export function normalizeValue(
 export function normalizeString(s: string, ctx: NormalizeContext): string {
   const { source: src, target: tgt } = ctx;
 
+  // Derive the APIM service ARM path from context.baseUrl (built by buildArmBaseUrl
+  // in cloud-config.ts using the cloud endpoint configuration and resource-types model).
+  // This avoids hardcoding 'Microsoft.ApiManagement/service' in the normalizer.
+  const srcApimPath = getArmPathFromBaseUrl(src.baseUrl);
+  const tgtApimPath = getArmPathFromBaseUrl(tgt.baseUrl);
+
+  // Extract subscription+RG path = everything before /providers/ in the APIM path
+  const srcSubRgPath = splitAtProviders(srcApimPath);
+  const tgtSubRgPath = splitAtProviders(tgtApimPath);
+
   // Full APIM ARM path (most specific — do first)
-  s = replaceAll(
-    s,
-    `/subscriptions/${src.subscriptionId}/resourceGroups/${src.resourceGroup}/providers/Microsoft.ApiManagement/service/${src.serviceName}`,
-    '/subscriptions/{{sub}}/resourceGroups/{{rg}}/providers/Microsoft.ApiManagement/service/{{apim-name}}',
-  );
-  s = replaceAll(
-    s,
-    `/subscriptions/${tgt.subscriptionId}/resourceGroups/${tgt.resourceGroup}/providers/Microsoft.ApiManagement/service/${tgt.serviceName}`,
-    '/subscriptions/{{sub}}/resourceGroups/{{rg}}/providers/Microsoft.ApiManagement/service/{{apim-name}}',
-  );
+  s = replaceAll(s, srcApimPath, '/subscriptions/{{sub}}/resourceGroups/{{rg}}/providers/Microsoft.ApiManagement/service/{{apim-name}}');
+  s = replaceAll(s, tgtApimPath, '/subscriptions/{{sub}}/resourceGroups/{{rg}}/providers/Microsoft.ApiManagement/service/{{apim-name}}');
 
   // Broader subscription+RG (no provider suffix)
-  s = replaceAll(
-    s,
-    `/subscriptions/${src.subscriptionId}/resourceGroups/${src.resourceGroup}`,
-    '/subscriptions/{{sub}}/resourceGroups/{{rg}}',
-  );
-  s = replaceAll(
-    s,
-    `/subscriptions/${tgt.subscriptionId}/resourceGroups/${tgt.resourceGroup}`,
-    '/subscriptions/{{sub}}/resourceGroups/{{rg}}',
-  );
+  if (srcSubRgPath) {
+    s = replaceAll(s, srcSubRgPath, '/subscriptions/{{sub}}/resourceGroups/{{rg}}');
+  }
+  if (tgtSubRgPath) {
+    s = replaceAll(s, tgtSubRgPath, '/subscriptions/{{sub}}/resourceGroups/{{rg}}');
+  }
 
   // Subscription only
   s = replaceAll(s, `/subscriptions/${src.subscriptionId}`, '/subscriptions/{{sub}}');
@@ -312,4 +310,42 @@ export function getResourceName(resource: Record<string, unknown>): string | und
 function replaceAll(s: string, needle: string, replacement: string): string {
   if (!needle) return s;
   return s.split(needle).join(replacement);
+}
+
+// ── URL path helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Extracts the path component from an ARM base URL string.
+ *
+ * `context.baseUrl` is built by `buildArmBaseUrl` in cloud-config.ts and has
+ * the form: `https://{management-host}/subscriptions/{sub}/resourceGroups/{rg}/providers/...`
+ *
+ * Stripping the protocol + host yields the path starting from `/subscriptions/`.
+ * URL.pathname is used so sovereign-cloud endpoints (China, USGov, Germany) are
+ * handled transparently without any hardcoded host names.
+ *
+ * @param baseUrl - Full ARM base URL for an APIM service instance.
+ * @returns Path component, e.g. `/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ApiManagement/service/name`
+ */
+export function getArmPathFromBaseUrl(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).pathname;
+  } catch {
+    // Fallback: strip everything up to (and including) the first occurrence of "://" then the host
+    const match = /^https?:\/\/[^/]+(\/.*)/i.exec(baseUrl);
+    return match?.[1] ?? '';
+  }
+}
+
+/**
+ * Returns the portion of an APIM ARM path before the `/providers/` segment.
+ *
+ * E.g. `/subscriptions/sub/resourceGroups/rg/providers/Microsoft.ApiManagement/service/name`
+ * → `/subscriptions/sub/resourceGroups/rg`
+ *
+ * Returns an empty string if `/providers/` is not found.
+ */
+export function splitAtProviders(armPath: string): string {
+  const idx = armPath.indexOf('/providers/');
+  return idx >= 0 ? armPath.slice(0, idx) : '';
 }
