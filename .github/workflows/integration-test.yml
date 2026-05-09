@@ -21,7 +21,7 @@
 #   - API Management Service Contributor
 # ===========================================================================
 
-name: Integration Test — Extract→Publish Round-Trip
+name: "Test: Extract→Publish Round-Trip"
 
 on:
   workflow_dispatch:
