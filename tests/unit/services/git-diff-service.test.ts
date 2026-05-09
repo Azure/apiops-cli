@@ -84,6 +84,42 @@ describe('git-diff-service', () => {
       expect(result.changedDescriptors.length).toBeGreaterThanOrEqual(0);
     });
 
+    it('should map api specification changes to Api descriptor', async () => {
+      mockGit.checkIsRepo.mockResolvedValue(true);
+      mockGit.revparse.mockResolvedValue('abc123');
+      mockGit.diff.mockResolvedValue('M\tapis/links/specification.yaml\n');
+
+      const result = await computeGitDiff('/source', 'abc123');
+
+      expect(result.deletedDescriptors).toEqual([]);
+      expect(result.changedDescriptors).toEqual([
+        {
+          type: 'Api',
+          nameParts: ['links'],
+          workspace: undefined,
+        },
+      ]);
+    });
+
+    it('should map workspace-scoped api specification changes to Api descriptor', async () => {
+      mockGit.checkIsRepo.mockResolvedValue(true);
+      mockGit.revparse.mockResolvedValue('abc123');
+      mockGit.diff.mockResolvedValue(
+        'M\tworkspaces/dev/apis/links/specification.yaml\n'
+      );
+
+      const result = await computeGitDiff('/source', 'abc123');
+
+      expect(result.deletedDescriptors).toEqual([]);
+      expect(result.changedDescriptors).toEqual([
+        {
+          type: 'Api',
+          nameParts: ['links'],
+          workspace: 'dev',
+        },
+      ]);
+    });
+
     it('should parse deleted files as deleted descriptors', async () => {
       // mockGit is at module scope
       mockGit.checkIsRepo.mockResolvedValue(true);
@@ -152,6 +188,21 @@ describe('git-diff-service', () => {
       const result = await computeGitDiff('/source', 'abc123');
 
       expect(result.changedDescriptors.length).toBeGreaterThanOrEqual(0);
+    });
+
+    it('should request relative diff paths from git', async () => {
+      mockGit.checkIsRepo.mockResolvedValue(true);
+      mockGit.revparse.mockResolvedValue('abc123');
+      mockGit.diff.mockResolvedValue('M\tapis/links/specification.yaml\n');
+
+      await computeGitDiff('/source', 'abc123');
+
+      expect(mockGit.diff).toHaveBeenCalledWith([
+        '--name-status',
+        '--relative',
+        'abc123~1',
+        'abc123',
+      ]);
     });
 
     it('should deduplicate descriptors', async () => {

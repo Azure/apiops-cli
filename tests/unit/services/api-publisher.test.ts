@@ -766,6 +766,59 @@ describe('api-publisher', () => {
       expect(totalTasks).toBe(2);
     });
 
+    it('should not re-publish schema-reference operations in incremental mode after spec import', async () => {
+      const client = createMockClient();
+      const children = [
+        { type: ResourceType.ApiPolicy, nameParts: ['petstore', 'policy-1'] },
+        { type: ResourceType.ApiOperation, nameParts: ['petstore', 'create-item'] },
+      ];
+      const store = createMockStore(children);
+
+      store.readResource.mockImplementation(async (_dir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.Api) {
+          return { name: 'petstore', properties: { path: 'petstore' } };
+        }
+        if (
+          descriptor.type === ResourceType.ApiOperation &&
+          (descriptor.nameParts[1] ?? '') === 'create-item'
+        ) {
+          return {
+            name: 'create-item',
+            properties: {
+              request: {
+                representations: [{ contentType: 'application/json', schemaId: 'my-schema' }],
+              },
+            },
+          };
+        }
+        return null;
+      });
+      store.readContent.mockResolvedValue({
+        content: 'openapi: "3.0.0"',
+        format: 'yaml',
+      });
+
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['petstore'],
+      };
+
+      const incrementalConfig: PublishConfig = {
+        ...testConfig,
+        commitId: 'abc123',
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, incrementalConfig);
+
+      // Only ApiPolicy should be published as child. The schema-ref operation
+      // must be skipped in incremental mode to preserve imported spec metadata.
+      const totalTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
+        const tasks = call[0] as unknown[];
+        return sum + tasks.length;
+      }, 0);
+      expect(totalTasks).toBe(1);
+    });
+
     it('should re-publish operations with schema references in response representations', async () => {
       const client = createMockClient();
       const children = [

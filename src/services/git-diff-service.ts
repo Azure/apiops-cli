@@ -7,7 +7,7 @@
 import { simpleGit, SimpleGit } from 'simple-git';
 import * as path from 'node:path';
 import { ResourceDescriptor } from '../models/types.js';
-import { parseArtifactPath } from '../lib/resource-path.js';
+import { parseArtifactChangePath } from '../lib/resource-path.js';
 import { logger } from '../lib/logger.js';
 
 export interface GitDiffResult {
@@ -61,7 +61,7 @@ export async function computeGitDiff(
     // Get diff between parent and current commit
     // If no parent, diff against empty tree (shows all files as added)
     const diffTarget = hasParent ? parentCommit : '4b825dc642cb6eb9a060e54bf8d69288fbee4904'; // Git empty tree SHA
-    const diffOutput = await git.diff(['--name-status', diffTarget, commitId]);
+    const diffOutput = await git.diff(['--name-status', '--relative', diffTarget, commitId]);
 
     return parseDiffOutput(diffOutput, sourceDir);
   } catch (error) {
@@ -105,12 +105,7 @@ function parseDiffOutput(diffOutput: string, sourceDir: string): GitDiffResult {
       continue;
     }
 
-    // Convert relative path to absolute for parsing
-    const absolutePath = path.isAbsolute(filePath)
-      ? filePath
-      : path.join(sourceDir, filePath);
-
-    const descriptor = parseArtifactPath(sourceDir, absolutePath);
+    const descriptor = parseDescriptorFromDiffPath(sourceDir, filePath);
     if (!descriptor) {
       continue;
     }
@@ -119,30 +114,16 @@ function parseDiffOutput(diffOutput: string, sourceDir: string): GitDiffResult {
     const key = descriptorKey(descriptor);
 
     if (status === 'D') {
-      // Deleted file
-      if (!seenDeleted.has(key)) {
-        deletedDescriptors.push(descriptor);
-        seenDeleted.add(key);
-      }
+      addUniqueDescriptor(deletedDescriptors, seenDeleted, descriptor, key);
     } else if (status === 'M' || status === 'A' || status === 'R' || status === 'C') {
-      // Modified, added, renamed, or copied file
-      if (!seenChanged.has(key)) {
-        changedDescriptors.push(descriptor);
-        seenChanged.add(key);
-      }
+      addUniqueDescriptor(changedDescriptors, seenChanged, descriptor, key);
 
       // For renames, also parse the new path (in parts[2])
-      if (status === 'R' && parts[2]) {
-        const newPath = path.isAbsolute(parts[2])
-          ? parts[2]
-          : path.join(sourceDir, parts[2]);
-        const newDescriptor = parseArtifactPath(sourceDir, newPath);
+      if (status === 'R' && parts.length > 2 && parts[2]) {
+        const newDescriptor = parseDescriptorFromDiffPath(sourceDir, parts[2]);
         if (newDescriptor) {
           const newKey = descriptorKey(newDescriptor);
-          if (!seenChanged.has(newKey)) {
-            changedDescriptors.push(newDescriptor);
-            seenChanged.add(newKey);
-          }
+          addUniqueDescriptor(changedDescriptors, seenChanged, newDescriptor, newKey);
         }
       }
     }
@@ -160,4 +141,29 @@ function parseDiffOutput(diffOutput: string, sourceDir: string): GitDiffResult {
  */
 function descriptorKey(descriptor: ResourceDescriptor): string {
   return [descriptor.type, ...descriptor.nameParts, descriptor.workspace ?? ''].join('::');
+}
+
+function addUniqueDescriptor(
+  target: ResourceDescriptor[],
+  seen: Set<string>,
+  descriptor: ResourceDescriptor,
+  key: string
+): void {
+  if (seen.has(key)) {
+    return;
+  }
+
+  target.push(descriptor);
+  seen.add(key);
+}
+
+function parseDescriptorFromDiffPath(
+  sourceDir: string,
+  diffPath: string
+): ResourceDescriptor | undefined {
+  const absolutePath = path.isAbsolute(diffPath)
+    ? diffPath
+    : path.join(sourceDir, diffPath);
+
+  return parseArtifactChangePath(sourceDir, absolutePath);
 }
