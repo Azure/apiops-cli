@@ -98,7 +98,7 @@ export async function generateDryRunReport(
   if (incrementalDeletedDescriptors.length > 0) {
     for (const descriptor of incrementalDeletedDescriptors) {
       try {
-        const existing = await client.getResource(descriptor, context);
+        const existing = await client.getResource(context, descriptor);
 
         if (existing) {
           const action: DryRunAction = {
