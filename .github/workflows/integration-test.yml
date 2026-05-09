@@ -8,8 +8,15 @@
 #   - AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID (OIDC login)
 #   - APIM_PUBLISHER_EMAIL
 #
-# Required Azure role assignments:
+# Required federated credential subject for GitHub OIDC:
+#   - Match the subject claim format configured for this repo/org.
+#   - Common formats for this workflow:
+#       repo:Azure/apiops-cli:environment:integration-test
+#       repository_owner_id:<owner_id>:repository_id:<repo_id>:environment:integration-test
+#
+# Required Azure role assignments for the managed identity (subscription scope):
 #   - Contributor
+#   - User Access Administrator (required for Microsoft.Authorization/roleAssignments/write)
 #   - Key Vault Administrator
 #   - API Management Service Contributor
 # ===========================================================================
@@ -114,6 +121,7 @@ jobs:
             Location           = '${{ inputs.location }}'
             PublisherEmail     = '${{ secrets.APIM_PUBLISHER_EMAIL }}'
             ExtractOutputDir   = './extracted-artifacts'
+            HardDelete         = $true
           }
           if ($skipTeardown) { $params.SkipTeardown = $true }
 
@@ -131,6 +139,36 @@ jobs:
         if: failure() && inputs.skip_teardown != true
         shell: pwsh
         run: |
+          $sourceRg = '${{ env.SOURCE_RG }}'
+          $targetRg = '${{ env.TARGET_RG }}'
+          $location = '${{ inputs.location }}'
+
+          # Capture APIM names before RG deletion so we can purge soft-deleted services.
+          $sourceApimName = az apim list --resource-group $sourceRg --query "[0].name" -o tsv 2>$null
+          $targetApimName = az apim list --resource-group $targetRg --query "[0].name" -o tsv 2>$null
+
           Write-Host "🚨 Emergency teardown — deleting resource groups..."
-          az group delete --name '${{ env.SOURCE_RG }}' --yes --no-wait 2>$null
-          az group delete --name '${{ env.TARGET_RG }}' --yes --no-wait 2>$null
+          az group delete --name $sourceRg --yes --no-wait 2>$null
+          az group delete --name $targetRg --yes --no-wait 2>$null
+
+          Write-Host "⏳ Waiting for resource group deletions before APIM purge..."
+          $maxWaitSeconds = 900
+          $waited = 0
+          $interval = 30
+
+          while ($waited -lt $maxWaitSeconds) {
+            $srcExists = (az group exists --name $sourceRg -o tsv 2>$null) -eq 'true'
+            $tgtExists = (az group exists --name $targetRg -o tsv 2>$null) -eq 'true'
+            if (-not $srcExists -and -not $tgtExists) {
+              break
+            }
+            Start-Sleep -Seconds $interval
+            $waited += $interval
+          }
+
+          foreach ($apimName in @($sourceApimName, $targetApimName)) {
+            if (-not [string]::IsNullOrWhiteSpace($apimName)) {
+              Write-Host "🗑️  Purging soft-deleted APIM: $apimName"
+              az apim deletedservice purge --service-name $apimName --location $location 2>$null
+            }
+          }

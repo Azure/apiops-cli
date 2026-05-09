@@ -60,6 +60,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Default to hard-delete on teardown unless explicitly disabled.
+if (-not $PSBoundParameters.ContainsKey('HardDelete')) {
+    $HardDelete = $true
+}
+
 # ---------------------------------------------------------------------------
 # Generate unique identifier for resource group naming
 # ---------------------------------------------------------------------------
