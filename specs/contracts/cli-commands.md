@@ -111,8 +111,17 @@ Compare two Azure API Management instances and report differences.
 | `--source-service-name <name>` | string | yes | — | Source APIM service instance name |
 | `--target-resource-group <rg>` | string | yes | — | Target APIM resource group |
 | `--target-service-name <name>` | string | yes | — | Target APIM service instance name |
-| `--source-subscription-id <id>` | string | no | `--subscription-id` or `AZURE_SUBSCRIPTION_ID` | Source subscription ID (overrides global `--subscription-id` for source) |
-| `--target-subscription-id <id>` | string | no | `--subscription-id` or `AZURE_SUBSCRIPTION_ID` | Target subscription ID (overrides global `--subscription-id` for target) |
+| `--source-subscription-id <id>` | string | no | — | Source subscription ID (see subscription note below) |
+| `--target-subscription-id <id>` | string | no | — | Target subscription ID (see subscription note below) |
+
+**Subscription ID options** (mutually exclusive):
+
+| Scenario | Flags to use |
+|----------|-------------|
+| Both instances in the **same** subscription | `--subscription-id <id>` (global flag) or `AZURE_SUBSCRIPTION_ID` env var |
+| Instances in **different** subscriptions | `--source-subscription-id <id>` **and** `--target-subscription-id <id>` |
+
+Combining `--subscription-id` with `--source-subscription-id` or `--target-subscription-id` is not allowed and exits with code `2`. Specifying only one of `--source-subscription-id` / `--target-subscription-id` (without the other) is also not allowed.
 
 **stdout**: Comparison results with per-resource-type status lines and a summary  
 **stderr**: Structured log messages  
