@@ -92,6 +92,7 @@ class InitServiceImpl implements InitService {
     let ciProvider = config.ciProvider;
     let artifactDir = config.artifactDir;
     let environments = config.environments;
+    let approvalEnvironments = config.approvalEnvironments ?? [];
 
     // Interactive mode
     if (!config.nonInteractive && promptService.isTTY()) {
@@ -103,6 +104,7 @@ class InitServiceImpl implements InitService {
 
       artifactDir = await promptService.askArtifactDir(artifactDir);
       environments = await promptService.askEnvironments(environments);
+      approvalEnvironments = await promptService.askApprovalEnvironments(environments);
     } else {
       // Non-interactive mode
       if (!ciProvider) {
@@ -118,6 +120,7 @@ class InitServiceImpl implements InitService {
       nonInteractive: config.nonInteractive,
       artifactDir,
       environments,
+      approvalEnvironments,
       outputDir: config.outputDir,
       cliPackage: config.cliPackage,
       force: config.force,
@@ -307,6 +310,7 @@ class InitServiceImpl implements InitService {
     const publishWorkflowConfig: PublishWorkflowConfig = {
       artifactDir: config.artifactDir,
       environments: config.environments,
+      approvalEnvironments: config.approvalEnvironments,
     };
     const publishContent = generatePublishWorkflow(publishWorkflowConfig);
     const publishPath = path.join(workflowsDir, 'run-apim-publisher.yml');
@@ -347,6 +351,7 @@ class InitServiceImpl implements InitService {
     const publishPipelineConfig: PublishPipelineConfig = {
       artifactDir: config.artifactDir,
       environments: config.environments,
+      approvalEnvironments: config.approvalEnvironments,
     };
     const publishContent = generatePublishPipeline(publishPipelineConfig);
     const publishPath = path.join(pipelinesDir, 'run-apim-publisher.yml');

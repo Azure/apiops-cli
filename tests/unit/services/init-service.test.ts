@@ -18,6 +18,7 @@ vi.mock('../../../src/services/prompt-service.js', () => ({
     askCIProvider: vi.fn(async () => 'github-actions'),
     askArtifactDir: vi.fn(async (def: string) => def),
     askEnvironments: vi.fn(async (def: string[]) => def),
+    askApprovalEnvironments: vi.fn(async () => []),
   },
 }));
 

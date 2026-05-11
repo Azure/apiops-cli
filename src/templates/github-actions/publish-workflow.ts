@@ -6,10 +6,12 @@
 export interface PublishWorkflowConfig {
   artifactDir: string;
   environments: string[];
+  approvalEnvironments?: string[];
 }
 
 export function generatePublishWorkflow(config: PublishWorkflowConfig): string {
   const envChoices = config.environments.map((env) => `          - ${env}`).join('\n');
+  const approvalSet = new Set(config.approvalEnvironments ?? []);
 
   const envJobs = config.environments.map((env, idx) => {
     const autoDeployComment = idx === 0
@@ -19,9 +21,15 @@ export function generatePublishWorkflow(config: PublishWorkflowConfig): string {
     # if: github.event.inputs.ENVIRONMENT == '${env}' || github.event_name == 'push'
     # And change needs to: needs: [get-commit, publish-${config.environments[idx - 1]}]`;
 
+    const approvalComment = approvalSet.has(env)
+      ? `    # ⚠️  APPROVAL REQUIRED: Configure required reviewers for the '${env}' environment in
+    # GitHub repository settings: Settings → Environments → ${env} → Required reviewers
+    # The job will pause here until an approver reviews and approves the deployment.\n`
+      : '';
+
     return `  publish-${env}:
 ${autoDeployComment}
-    if: github.event.inputs.ENVIRONMENT == '${env}'
+${approvalComment}    if: github.event.inputs.ENVIRONMENT == '${env}'
     runs-on: ubuntu-latest
     environment: ${env}
     needs: get-commit

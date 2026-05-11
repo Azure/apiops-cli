@@ -85,10 +85,11 @@ Initialize repository structure and CI/CD pipeline configuration.
 | `--ci <provider>` | string | no | — | CI/CD provider (`github-actions` or `azure-devops`) |
 | `--artifact-dir <dir>` | string | no | `./apim-artifacts` | APIM artifact directory referenced in generated pipelines |
 | `--environments <list>` | string | no | `dev,prod` | Comma-separated environment names for override templates and pipeline stages |
+| `--approval-environments <list>` | string | no | `""` (none) | Comma-separated subset of `--environments` that require human approval before publishing. Generates approval instructions in the pipeline files. |
 | `--non-interactive` | boolean | no | `false` | Skip interactive prompts |
 | `--force` | boolean | no | `false` | Overwrite existing files without prompting |
 
-**Interactive mode** (default): Prompts for CI provider, APIM instance details, directory preferences.  
+**Interactive mode** (default): Prompts for CI provider, APIM instance details, directory preferences, and which environments require human approval.  
 **Non-interactive mode**: Requires `--ci` flag; uses defaults for all other options.
 
 **File conflict detection**: Before generating any files, the command checks whether target file paths already exist. If conflicts are found and `--force` is not set, the command lists the conflicting files and exits with exit code `1`. If `--force` is set, it logs a warning and overwrites existing files.

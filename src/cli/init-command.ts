@@ -17,6 +17,7 @@ interface InitOptions {
   nonInteractive: boolean;
   artifactDir: string;
   environments: string;
+  approvalEnvironments: string;
   cliPackage?: string;
   force: boolean;
 }
@@ -31,6 +32,7 @@ export function createInitCommand(): Command {
     .option('--non-interactive', 'Skip interactive prompts (requires --ci)', false)
     .option('--artifact-dir <dir>', 'Artifact directory path', './apim-artifacts')
     .option('--environments <list>', 'Comma-separated environment names', 'dev,prod')
+    .option('--approval-environments <list>', 'Comma-separated environments that require human approval before publishing', '')
     .option('--cli-package <path>', 'Path to apiops npm tarball (from npm pack). If not provided, uses @peterhauge/apiops-cli from npm registry')
     .option('--force', 'Overwrite existing files without prompting', false)
     .action(async (options: InitOptions) => {
@@ -55,12 +57,31 @@ export function createInitCommand(): Command {
           process.exit(1);
         }
 
+        // Parse approval environments (validate they are a subset of environments)
+        const approvalEnvironments = options.approvalEnvironments
+          ? options.approvalEnvironments
+              .split(',')
+              .map((env) => env.trim())
+              .filter((env) => env.length > 0)
+          : [];
+
+        const invalidApprovalEnvs = approvalEnvironments.filter(
+          (env) => !environments.includes(env)
+        );
+        if (invalidApprovalEnvs.length > 0) {
+          logger.error(
+            `Invalid approval environments (must be a subset of --environments): ${invalidApprovalEnvs.join(', ')}`
+          );
+          process.exit(1);
+        }
+
         // Build config
         const config: InitConfig = {
           ciProvider: options.ci as 'github-actions' | 'azure-devops' | undefined,
           nonInteractive: options.nonInteractive,
           artifactDir: options.artifactDir,
           environments,
+          approvalEnvironments,
           outputDir: process.cwd(),
           cliPackage: options.cliPackage,
           force: options.force,

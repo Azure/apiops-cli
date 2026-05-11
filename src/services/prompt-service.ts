@@ -12,6 +12,7 @@ export interface PromptService {
   askCIProvider(): Promise<'github-actions' | 'azure-devops'>;
   askArtifactDir(defaultValue: string): Promise<string>;
   askEnvironments(defaultValue: string[]): Promise<string[]>;
+  askApprovalEnvironments(environments: string[]): Promise<string[]>;
 }
 
 class PromptServiceImpl implements PromptService {
@@ -67,6 +68,24 @@ class PromptServiceImpl implements PromptService {
       .split(',')
       .map((env) => env.trim())
       .filter((env) => env.length > 0);
+  }
+
+  /**
+   * Ask user which environments require human approval before publishing
+   */
+  async askApprovalEnvironments(environments: string[]): Promise<string[]> {
+    const answer = await this.ask(
+      `Which environments require human approval before publishing? (comma-separated, or leave blank for none)\n  Available: ${environments.join(', ')}\nApproval environments: `
+    );
+
+    if (!answer.trim()) {
+      return [];
+    }
+
+    return answer
+      .split(',')
+      .map((env) => env.trim())
+      .filter((env) => environments.includes(env));
   }
 
   /**

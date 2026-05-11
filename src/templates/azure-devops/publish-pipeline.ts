@@ -6,16 +6,24 @@
 export interface PublishPipelineConfig {
   artifactDir: string;
   environments: string[];
+  approvalEnvironments?: string[];
 }
 
 export function generatePublishPipeline(config: PublishPipelineConfig): string {
   const envValues = config.environments.map((env) => `      - '${env}'`).join('\n');
+  const approvalSet = new Set(config.approvalEnvironments ?? []);
 
   const stages = config.environments.map((env, idx) => {
     const dependsOn = idx === 0 ? '' : `  dependsOn: Publish_${config.environments[idx - 1]}\n`;
 
+    const approvalComment = approvalSet.has(env)
+      ? `  # ⚠️  APPROVAL REQUIRED: Configure approval checks for the '${env}' environment in
+  # Azure DevOps: Pipelines → Environments → ${env} → Approvals and checks
+  # The stage will pause here until an approver reviews and approves the deployment.\n`
+      : '';
+
     return `${dependsOn}- stage: Publish_${env}
-  displayName: 'Publish to ${env}'
+${approvalComment}  displayName: 'Publish to ${env}'
   condition: or(eq('\${{ parameters.ENVIRONMENT }}', '${env}'), eq('\${{ parameters.ENVIRONMENT }}', 'all'))
   variables:
     - group: apim-${env}

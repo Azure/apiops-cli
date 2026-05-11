@@ -87,6 +87,7 @@ export interface InitConfig {
   nonInteractive: boolean;
   artifactDir: string;
   environments: string[];
+  approvalEnvironments?: string[];
   outputDir: string;
   cliPackage?: string;
   force: boolean;

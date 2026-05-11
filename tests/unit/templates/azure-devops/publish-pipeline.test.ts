@@ -209,5 +209,55 @@ describe('azure-devops/publish-pipeline', () => {
       expect(pipeline).toContain('npm ci');
       expect(pipeline).toContain('npx apiops publish');
     });
+
+    it('should include approval comment for environments requiring human approval', () => {
+      const pipeline = generatePublishPipeline({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+        approvalEnvironments: ['prod'],
+      });
+      expect(pipeline).toContain('APPROVAL REQUIRED');
+      expect(pipeline).toContain('Pipelines → Environments → prod → Approvals and checks');
+    });
+
+    it('should not include approval comment for environments not requiring human approval', () => {
+      const pipeline = generatePublishPipeline({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+        approvalEnvironments: ['prod'],
+      });
+      const lines = pipeline.split('\n');
+      const devStageStart = lines.findIndex((l) => l.includes('stage: Publish_dev'));
+      const prodStageStart = lines.findIndex((l) => l.includes('stage: Publish_prod'));
+      const devSection = lines.slice(devStageStart, prodStageStart).join('\n');
+      expect(devSection).not.toContain('APPROVAL REQUIRED');
+    });
+
+    it('should include approval comments for all approval-required environments', () => {
+      const pipeline = generatePublishPipeline({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'staging', 'prod'],
+        approvalEnvironments: ['staging', 'prod'],
+      });
+      expect(pipeline).toContain('Pipelines → Environments → staging → Approvals and checks');
+      expect(pipeline).toContain('Pipelines → Environments → prod → Approvals and checks');
+    });
+
+    it('should produce no approval comments when approvalEnvironments is empty', () => {
+      const pipeline = generatePublishPipeline({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+        approvalEnvironments: [],
+      });
+      expect(pipeline).not.toContain('APPROVAL REQUIRED');
+    });
+
+    it('should produce no approval comments when approvalEnvironments is omitted', () => {
+      const pipeline = generatePublishPipeline({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+      });
+      expect(pipeline).not.toContain('APPROVAL REQUIRED');
+    });
   });
 });

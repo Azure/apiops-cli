@@ -203,5 +203,55 @@ describe('github-actions/publish-workflow', () => {
       expect(workflow).toContain('npm install');
       expect(workflow).toContain('npx apiops publish');
     });
+
+    it('should include approval comment for environments requiring human approval', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+        approvalEnvironments: ['prod'],
+      });
+      expect(workflow).toContain('APPROVAL REQUIRED');
+      expect(workflow).toContain("Settings → Environments → prod → Required reviewers");
+    });
+
+    it('should not include approval comment for environments not requiring human approval', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+        approvalEnvironments: ['prod'],
+      });
+      const lines = workflow.split('\n');
+      const devJobStart = lines.findIndex((l) => l.includes('publish-dev:'));
+      const prodJobStart = lines.findIndex((l) => l.includes('publish-prod:'));
+      const devSection = lines.slice(devJobStart, prodJobStart).join('\n');
+      expect(devSection).not.toContain('APPROVAL REQUIRED');
+    });
+
+    it('should include approval comments for all approval-required environments', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'staging', 'prod'],
+        approvalEnvironments: ['staging', 'prod'],
+      });
+      expect(workflow).toContain("Settings → Environments → staging → Required reviewers");
+      expect(workflow).toContain("Settings → Environments → prod → Required reviewers");
+    });
+
+    it('should produce no approval comments when approvalEnvironments is empty', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+        approvalEnvironments: [],
+      });
+      expect(workflow).not.toContain('APPROVAL REQUIRED');
+    });
+
+    it('should produce no approval comments when approvalEnvironments is omitted', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+      });
+      expect(workflow).not.toContain('APPROVAL REQUIRED');
+    });
   });
 });
