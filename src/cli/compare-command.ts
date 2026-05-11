@@ -2,14 +2,9 @@
  * T-CMP-01 & T-CMP-07: Compare command CLI registration and output formatting.
  *
  * Commander subcommand with:
- *   --source-resource-group, --source-service-name  (required)
- *   --target-resource-group, --target-service-name  (required)
- *
- * Subscription ID options (mutually exclusive):
- *   --subscription-id           (global) — both instances in the same subscription
- *   --source-subscription-id + --target-subscription-id — instances in different subscriptions
- *
- * Inherits global options: --subscription-id, --cloud, --format, --log-level, auth flags.
+ *   --source-subscription-id, --source-resource-group, --source-service-name  (required)
+ *   --target-subscription-id, --target-resource-group, --target-service-name  (required)
+ *   --format text|table|json  (optional, default: text)
  *
  * Exit codes:
  *   0 = identical
@@ -17,11 +12,11 @@
  *   2 = fatal error
  */
 
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { CompareConfig } from '../models/config.js';
 import { ApimServiceContext } from '../models/types.js';
 import { runCompare, CompareResult } from '../services/compare-service.js';
-import { logger, parseLogLevel } from '../lib/logger.js';
+import { parseLogLevel } from '../lib/logger.js';
 import { ApimClient } from '../clients/apim-client.js';
 import { getCloudConfig, buildArmBaseUrl } from '../lib/cloud-config.js';
 
@@ -29,85 +24,13 @@ import { getCloudConfig, buildArmBaseUrl } from '../lib/cloud-config.js';
  * Interface for compare command options (from CLI flags).
  */
 interface CompareOptions {
+  sourceSubscriptionId: string;
   sourceResourceGroup: string;
   sourceServiceName: string;
+  targetSubscriptionId: string;
   targetResourceGroup: string;
   targetServiceName: string;
-  sourceSubscriptionId?: string;
-  targetSubscriptionId?: string;
-}
-
-/**
- * Result of subscription ID resolution.
- *
- * On success, both IDs are populated. On failure, `error` contains a
- * human-readable message and the IDs are undefined.
- */
-export type SubscriptionResolution =
-  | { sourceSubscriptionId: string; targetSubscriptionId: string; error?: never }
-  | { sourceSubscriptionId?: never; targetSubscriptionId?: never; error: string };
-
-/**
- * Resolve source and target subscription IDs from CLI flags and environment.
- *
- * Two modes are mutually exclusive:
- *  A) Shared — `globalSubscriptionId` (from `--subscription-id` or env var) used for both.
- *  B) Per-side — `sourceSubscriptionId` **and** `targetSubscriptionId` each supplied explicitly.
- *
- * Mixing A and B is rejected. Using only one per-side flag (without its counterpart) is also
- * rejected.
- *
- * @param globalSubscriptionId - Value of `--subscription-id` or `AZURE_SUBSCRIPTION_ID` env var (undefined if absent).
- * @param hasGlobalFlag - Whether `--subscription-id` was explicitly set on the CLI (not just the env var).
- * @param sourceSubscriptionId - Value of `--source-subscription-id` (undefined if absent).
- * @param targetSubscriptionId - Value of `--target-subscription-id` (undefined if absent).
- */
-export function resolveSubscriptionIds(
-  globalSubscriptionId: string | undefined,
-  hasGlobalFlag: boolean,
-  sourceSubscriptionId: string | undefined,
-  targetSubscriptionId: string | undefined,
-): SubscriptionResolution {
-  const hasSourceFlag = !!sourceSubscriptionId;
-  const hasTargetFlag = !!targetSubscriptionId;
-
-  // Reject mixed usage
-  if (hasGlobalFlag && (hasSourceFlag || hasTargetFlag)) {
-    return {
-      error:
-        '--subscription-id is mutually exclusive with --source-subscription-id / --target-subscription-id. ' +
-        'Use --subscription-id when both instances are in the same subscription, ' +
-        'or use --source-subscription-id and --target-subscription-id when they are in different subscriptions.',
-    };
-  }
-
-  // When using per-side flags, both must be provided together
-  if (hasSourceFlag && !hasTargetFlag) {
-    return { error: '--target-subscription-id is required when --source-subscription-id is specified.' };
-  }
-  if (hasTargetFlag && !hasSourceFlag) {
-    return { error: '--source-subscription-id is required when --target-subscription-id is specified.' };
-  }
-
-  // Resolve final subscription IDs.
-  // At this point: either both per-side flags are set (both truthy) or neither is (both falsy).
-  // So resolvedSource === resolvedTarget === globalSubscriptionId in the "neither" case.
-  // The guard below catches the remaining missing-subscription case: no per-side flags AND
-  // no global subscription ID (neither --subscription-id nor AZURE_SUBSCRIPTION_ID env var).
-  const resolvedSource = hasSourceFlag ? sourceSubscriptionId : globalSubscriptionId;
-  const resolvedTarget = hasTargetFlag ? targetSubscriptionId : globalSubscriptionId;
-
-  if (!resolvedSource || !resolvedTarget) {
-    return {
-      error:
-        'Subscription ID required. Use one of:\n' +
-        '  --subscription-id <id>   (when both instances are in the same subscription)\n' +
-        '  --source-subscription-id <id> --target-subscription-id <id>   (when in different subscriptions)\n' +
-        '  AZURE_SUBSCRIPTION_ID env var   (fallback for same-subscription case)',
-    };
-  }
-
-  return { sourceSubscriptionId: resolvedSource, targetSubscriptionId: resolvedTarget };
+  format: string;
 }
 
 /**
@@ -116,24 +39,21 @@ export function resolveSubscriptionIds(
 export function createCompareCommand(): Command {
   const compare = new Command('compare')
     .description('Compare two Azure APIM instances and report differences')
+    .requiredOption('--source-subscription-id <id>', 'Source Azure subscription ID')
     .requiredOption('--source-resource-group <rg>', 'Source APIM resource group')
     .requiredOption('--source-service-name <name>', 'Source APIM service instance name')
+    .requiredOption('--target-subscription-id <id>', 'Target Azure subscription ID')
     .requiredOption('--target-resource-group <rg>', 'Target APIM resource group')
     .requiredOption('--target-service-name <name>', 'Target APIM service instance name')
-    .option(
-      '--source-subscription-id <id>',
-      'Source subscription ID — use with --target-subscription-id when instances are in different subscriptions (mutually exclusive with --subscription-id)',
-    )
-    .option(
-      '--target-subscription-id <id>',
-      'Target subscription ID — use with --source-subscription-id when instances are in different subscriptions (mutually exclusive with --subscription-id)',
+    .addOption(
+      new Option('--format <mode>', 'Output format: text, table, or json')
+        .choices(['text', 'table', 'json'])
+        .default('text'),
     )
     .action(async (options: CompareOptions, command: Command) => {
       const globalOpts = command.optsWithGlobals<{
         logLevel?: string;
-        subscriptionId?: string;
         cloud?: string;
-        format?: string;
         apiVersion?: string;
       }>();
 
@@ -150,63 +70,36 @@ async function executeCompare(
   options: CompareOptions,
   globalOpts: {
     logLevel?: string;
-    subscriptionId?: string;
     cloud?: string;
-    format?: string;
     apiVersion?: string;
   },
 ): Promise<void> {
-  // ── Subscription ID resolution ────────────────────────────────────────────
-  //
-  // Two mutually exclusive modes:
-  //   A) --subscription-id (or AZURE_SUBSCRIPTION_ID env) — both instances share one subscription
-  //   B) --source-subscription-id + --target-subscription-id — instances in different subscriptions
-  //
-  // Mixing A and B is not allowed: it creates ambiguity about which value takes precedence.
-
-  const globalSubscriptionId =
-    globalOpts.subscriptionId ?? process.env.AZURE_SUBSCRIPTION_ID;
-
-  const resolution = resolveSubscriptionIds(
-    globalSubscriptionId,
-    !!globalOpts.subscriptionId,
-    options.sourceSubscriptionId,
-    options.targetSubscriptionId,
-  );
-
-  if (resolution.error) {
-    logger.error(resolution.error);
-    process.exit(2);
-  }
-
-  const { sourceSubscriptionId, targetSubscriptionId } = resolution;
-
   const apiVersion =
     globalOpts.apiVersion ?? process.env.AZURE_API_VERSION ?? '2024-05-01';
   const cloudName = globalOpts.cloud ?? 'public';
   const cloudConfig = getCloudConfig(cloudName);
 
   const sourceContext: ApimServiceContext = {
-    subscriptionId: sourceSubscriptionId,
+    subscriptionId: options.sourceSubscriptionId,
     resourceGroup: options.sourceResourceGroup,
     serviceName: options.sourceServiceName,
     apiVersion,
     baseUrl: buildArmBaseUrl(
       cloudName,
-      sourceSubscriptionId,
+      options.sourceSubscriptionId,
       options.sourceResourceGroup,
       options.sourceServiceName,
     ),
   };
 
   const targetContext: ApimServiceContext = {
-    subscriptionId: targetSubscriptionId,
+    subscriptionId: options.targetSubscriptionId,
     resourceGroup: options.targetResourceGroup,
     serviceName: options.targetServiceName,
     apiVersion,
     baseUrl: buildArmBaseUrl(
       cloudName,
-      targetSubscriptionId,
+      options.targetSubscriptionId,
       options.targetResourceGroup,
       options.targetServiceName,
     ),
@@ -221,8 +114,10 @@ async function executeCompare(
   const client = new ApimClient(cloudConfig.authScope);
   const result = await runCompare(client, compareConfig);
 
-  if (globalOpts.format === 'json') {
+  if (options.format === 'json') {
     outputJson(result);
+  } else if (options.format === 'table') {
+    outputTable(result);
   } else {
     outputText(result);
   }
@@ -230,37 +125,99 @@ async function executeCompare(
   process.exit(result.exitCode);
 }
 
+/** Maximum number of diff detail entries to include in table/json Notes field. */
+const MAX_DIFF_NOTES = 3;
+
+// ── Row type for table / json output ─────────────────────────────────────────
+
+interface CompareRow {
+  resource: string;
+  status: 'missing' | 'extra' | 'different' | 'skipped';
+  notes: string;
+}
+
 /**
- * T-CMP-07: JSON output mode for compare.
- * Machine-readable JSON to stdout with per-type results and summary.
+ * Flatten a CompareResult into a list of rows for table/json output.
+ *
+ * Each row represents one resource or one skipped resource type.
+ * Matched resources are not enumerated (we only track counts, not names).
+ */
+function buildRows(result: CompareResult): CompareRow[] {
+  const rows: CompareRow[] = [];
+
+  for (const r of result.typeResults) {
+    if (r.skipped) {
+      rows.push({
+        resource: r.label,
+        status: 'skipped',
+        notes: r.skipReason ?? 'unknown',
+      });
+      continue;
+    }
+
+    for (const diff of r.differences) {
+      rows.push({
+        resource: `${r.label}/${diff.name}`,
+        status: diff.status,
+        notes: diff.status === 'different'
+          ? diff.diffs.slice(0, MAX_DIFF_NOTES).join('; ')
+          : '',
+      });
+    }
+  }
+
+  return rows;
+}
+
+/**
+ * T-CMP-07: JSON output mode — table-structured data in JSON form.
  */
 function outputJson(result: CompareResult): void {
   const output = {
-    status:
-      result.exitCode === 0
-        ? 'identical'
-        : result.exitCode === 1
-          ? 'differences'
-          : 'error',
     exitCode: result.exitCode,
     summary: {
       totalDiffs: result.totalDiffs,
       totalCompared: result.totalCompared,
       skippedTypes: result.skippedTypes,
     },
-    resourceTypes: result.typeResults.map((r) => ({
-      label: r.label,
-      compared: r.compared,
-      skipped: r.skipped,
-      skipReason: r.skipReason,
-      differences: r.differences.map((d) => ({
-        name: d.name,
-        diffs: d.diffs,
-      })),
-    })),
+    resources: buildRows(result),
   };
 
   process.stdout.write(JSON.stringify(output, null, 2) + '\n');
+}
+
+/**
+ * Table output mode — ASCII table with Resource, Status, Notes columns.
+ */
+function outputTable(result: CompareResult): void {
+  const rows = buildRows(result);
+
+  const COL_RESOURCE = 'Resource';
+  const COL_STATUS = 'Status';
+  const COL_NOTES = 'Notes';
+
+  const maxResource = Math.max(COL_RESOURCE.length, ...rows.map((r) => r.resource.length));
+  const maxStatus = Math.max(COL_STATUS.length, ...rows.map((r) => r.status.length));
+  const maxNotes = Math.max(COL_NOTES.length, ...rows.map((r) => r.notes.length));
+
+  const sep = `+-${'-'.repeat(maxResource)}-+-${'-'.repeat(maxStatus)}-+-${'-'.repeat(maxNotes)}-+`;
+  const header =
+    `| ${COL_RESOURCE.padEnd(maxResource)} | ${COL_STATUS.padEnd(maxStatus)} | ${COL_NOTES.padEnd(maxNotes)} |`;
+
+  process.stdout.write(`${sep}\n${header}\n${sep}\n`);
+
+  for (const row of rows) {
+    const line =
+      `| ${row.resource.padEnd(maxResource)} | ${row.status.padEnd(maxStatus)} | ${row.notes.padEnd(maxNotes)} |`;
+    process.stdout.write(`${line}\n`);
+  }
+
+  process.stdout.write(`${sep}\n`);
+
+  const summaryLine = result.totalDiffs === 0
+    ? `${result.typeResults.length} type(s) compared, ${result.totalCompared} matched, 0 differences, ${result.skippedTypes} skipped`
+    : `${result.typeResults.length} type(s) compared, ${result.totalCompared} matched, ${result.totalDiffs} difference(s), ${result.skippedTypes} skipped`;
+  process.stdout.write(`\n${summaryLine}\n`);
 }
 
 /**
@@ -268,22 +225,22 @@ function outputJson(result: CompareResult): void {
  */
 function outputText(result: CompareResult): void {
   process.stdout.write('\n');
-  process.stdout.write('╔══════════════════════════════════════════════════════════════╗\n');
-  process.stdout.write('║         APIM Instance Comparison                             ║\n');
-  process.stdout.write('╚══════════════════════════════════════════════════════════════╝\n');
+  process.stdout.write('==============================\n');
+  process.stdout.write(' APIM Instance Comparison\n');
+  process.stdout.write('==============================\n');
 
   for (const r of result.typeResults) {
     if (r.skipped) {
-      process.stdout.write(`  ⚠️  ${r.label}: SKIPPED (${r.skipReason ?? 'unknown'})\n`);
+      process.stdout.write(`  SKIPPED  ${r.label}: ${r.skipReason ?? 'unknown'}\n`);
       continue;
     }
 
     if (r.differences.length === 0) {
-      process.stdout.write(`  ✅ ${r.label}: ${r.compared} resource(s) matched\n`);
+      process.stdout.write(`  PASS     ${r.label}: ${r.compared} resource(s) matched\n`);
     } else {
-      process.stdout.write(`  ❌ ${r.label}: ${r.differences.length} difference(s)\n`);
+      process.stdout.write(`  FAIL     ${r.label}: ${r.differences.length} difference(s)\n`);
       for (const diff of r.differences) {
-        process.stdout.write(`     ${diff.name}\n`);
+        process.stdout.write(`     ${diff.name} [${diff.status}]\n`);
         for (const line of diff.diffs) {
           process.stdout.write(`       ${line}\n`);
         }
@@ -291,17 +248,17 @@ function outputText(result: CompareResult): void {
     }
   }
 
-  process.stdout.write('\n══════════════════════════════════════════════════════════════\n');
+  process.stdout.write('\n------------------------------\n');
 
   if (result.exitCode === 2) {
-    process.stdout.write('💥 ERROR — fatal error during comparison\n');
+    process.stdout.write('ERROR: fatal error during comparison\n');
   } else if (result.totalDiffs === 0) {
     process.stdout.write(
-      `✅ PASS — ${result.typeResults.length} resource type(s) compared, ${result.totalCompared} resource(s) matched\n`,
+      `PASS: ${result.typeResults.length} resource type(s) compared, ${result.totalCompared} resource(s) matched\n`,
     );
   } else {
     process.stdout.write(
-      `❌ FAIL — ${result.totalDiffs} difference(s) found across ${result.typeResults.length} resource type(s) (${result.totalCompared} compared)\n`,
+      `FAIL: ${result.totalDiffs} difference(s) found across ${result.typeResults.length} resource type(s) (${result.totalCompared} compared)\n`,
     );
   }
 

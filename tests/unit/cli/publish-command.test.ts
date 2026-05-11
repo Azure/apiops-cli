@@ -59,6 +59,14 @@ describe('publish-command', () => {
       expect(deleteOpt?.defaultValue).toBe(false);
     });
 
+    it('should have required --subscription-id option', () => {
+      const cmd = createPublishCommand();
+      const opts = cmd.options;
+      const subOpt = opts.find((o) => o.long === '--subscription-id');
+      expect(subOpt).toBeDefined();
+      expect(subOpt?.mandatory).toBe(true);
+    });
+
     it('should have a description', () => {
       const cmd = createPublishCommand();
       expect(cmd.description()).toBeTruthy();
@@ -69,9 +77,9 @@ describe('publish-command', () => {
   describe('executePublish behavior', () => {
     it('should require subscription-id', () => {
       const cmd = createPublishCommand();
-      // Subscription ID is a global option, not on this command
-      // Just verify the command exists
-      expect(cmd).toBeDefined();
+      // Subscription ID is now a per-command required option
+      const subOpt = cmd.options.find((o) => o.long === '--subscription-id');
+      expect(subOpt?.mandatory).toBe(true);
     });
   });
 

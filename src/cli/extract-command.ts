@@ -5,7 +5,7 @@
  * Includes --format json: machine-readable JSON output mode.
  */
 
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { ExtractConfig } from '../models/config.js';
 import { ApimServiceContext } from '../models/types.js';
 import { runExtraction, ExtractionResult } from '../services/extract-service.js';
@@ -19,6 +19,7 @@ import { getCloudConfig, buildArmBaseUrl } from '../lib/cloud-config.js';
  * Interface for extract command options (from CLI flags).
  */
 interface ExtractOptions {
+  subscriptionId: string;
   resourceGroup: string;
   serviceName: string;
   output: string;
@@ -33,6 +34,11 @@ interface ExtractOptions {
 export function createExtractCommand(): Command {
   const extract = new Command('extract')
     .description('Extract APIM configuration to local artifact files')
+    .addOption(
+      new Option('--subscription-id <id>', 'Azure subscription ID')
+        .env('AZURE_SUBSCRIPTION_ID')
+        .makeOptionMandatory(true),
+    )
     .requiredOption('--resource-group <rg>', 'Azure resource group name')
     .requiredOption('--service-name <name>', 'APIM service instance name')
     .option('--output <dir>', 'Output directory path', './apim-artifacts')
@@ -42,7 +48,6 @@ export function createExtractCommand(): Command {
     .action(async (options: ExtractOptions, command: Command) => {
       const globalOpts = command.optsWithGlobals<{
         logLevel?: string;
-        subscriptionId?: string;
         cloud?: string;
         format?: string;
         apiVersion?: string;
@@ -61,18 +66,12 @@ async function executeExtract(
   options: ExtractOptions,
   globalOpts: {
     logLevel?: string;
-    subscriptionId?: string;
     cloud?: string;
     format?: string;
     apiVersion?: string;
   }
 ): Promise<void> {
-  const subscriptionId = globalOpts.subscriptionId ?? process.env.AZURE_SUBSCRIPTION_ID;
-
-  if (!subscriptionId) {
-    logger.error('Subscription ID required: use --subscription-id or set AZURE_SUBSCRIPTION_ID');
-    process.exit(2);
-  }
+  const { subscriptionId } = options;
 
   // Build service context
   const apiVersion = globalOpts.apiVersion ?? process.env.AZURE_API_VERSION ?? '2024-05-01';

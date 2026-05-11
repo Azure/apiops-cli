@@ -6,11 +6,10 @@
 
 ## Global Options
 
-These flags are available on **all** commands (`extract`, `publish`, `init`).
+These flags are available on **all** commands (`extract`, `publish`, `compare`, `init`).
 
 | Flag | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
-| `--subscription-id <id>` | string | no | From `az` CLI context | Azure subscription ID |
 | `--cloud <name>` | string | no | `AzureCloud` | Azure cloud environment (`AzureCloud`, `AzureChinaCloud`, `AzureUSGovernment`, `AzureGermanCloud`) |
 | `--api-version <version>` | string | no | `2024-05-01` | APIM REST API version |
 | `--format <mode>` | string | no | `text` | Output format: `text` (human-readable) or `json` (machine-readable) |
@@ -30,6 +29,7 @@ Extract APIM configuration to local artifact files.
 
 | Flag | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
+| `--subscription-id <id>` | string | yes | `AZURE_SUBSCRIPTION_ID` env var | Azure subscription ID |
 | `--resource-group <rg>` | string | yes | — | Azure resource group name |
 | `--service-name <name>` | string | yes | — | APIM service instance name |
 | `--output <dir>` | string | no | `./apim-artifacts` | Output directory path |
@@ -49,6 +49,7 @@ Publish local artifact files to an APIM instance.
 
 | Flag | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
+| `--subscription-id <id>` | string | yes | `AZURE_SUBSCRIPTION_ID` env var | Azure subscription ID |
 | `--resource-group <rg>` | string | yes | — | Azure resource group name |
 | `--service-name <name>` | string | yes | — | APIM service instance name |
 | `--source <dir>` | string | no | `./apim-artifacts` | Source artifact directory |
@@ -107,23 +108,21 @@ Compare two Azure API Management instances and report differences.
 
 | Flag | Type | Required | Default | Description |
 |------|------|----------|---------|-------------|
+| `--source-subscription-id <id>` | string | yes | — | Source Azure subscription ID |
 | `--source-resource-group <rg>` | string | yes | — | Source APIM resource group |
 | `--source-service-name <name>` | string | yes | — | Source APIM service instance name |
+| `--target-subscription-id <id>` | string | yes | — | Target Azure subscription ID |
 | `--target-resource-group <rg>` | string | yes | — | Target APIM resource group |
 | `--target-service-name <name>` | string | yes | — | Target APIM service instance name |
-| `--source-subscription-id <id>` | string | no | — | Source subscription ID (see subscription note below) |
-| `--target-subscription-id <id>` | string | no | — | Target subscription ID (see subscription note below) |
+| `--format <mode>` | string | no | `text` | Output format: `text`, `table`, or `json` |
 
-**Subscription ID options** (mutually exclusive):
+**Output formats**:
 
-| Scenario | Flags to use |
-|----------|-------------|
-| Both instances in the **same** subscription | `--subscription-id <id>` (global flag) or `AZURE_SUBSCRIPTION_ID` env var |
-| Instances in **different** subscriptions | `--source-subscription-id <id>` **and** `--target-subscription-id <id>` |
+- **`text`** (default): human-readable per-type summary with difference details.
+- **`table`**: ASCII table with columns — Resource (by resource ID), Status (`missing`, `extra`, `different`, `skipped`), Notes (skip reason or diff summary).
+- **`json`**: machine-readable JSON with the same row structure as `table`.
 
-Combining `--subscription-id` with `--source-subscription-id` or `--target-subscription-id` is not allowed and exits with code `2`. Specifying only one of `--source-subscription-id` / `--target-subscription-id` (without the other) is also not allowed.
-
-**stdout**: Comparison results with per-resource-type status lines and a summary  
+**stdout**: Comparison results  
 **stderr**: Structured log messages  
 **Exit codes**: `0` identical (no differences), `1` differences found, `2` fatal error  
 
@@ -144,8 +143,8 @@ Combining `--subscription-id` with `--source-subscription-id` or `--target-subsc
 
 | Variable | Description | Used By |
 |----------|-------------|---------|
-| `AZURE_SUBSCRIPTION_ID` | Azure subscription (fallback for `--subscription-id`) | extract, publish |
-| `AZURE_API_VERSION` | Override APIM REST API version (default: `2024-05-01`) | extract, publish |
+| `AZURE_SUBSCRIPTION_ID` | Azure subscription ID fallback for `--subscription-id` | extract, publish |
+| `AZURE_API_VERSION` | Override APIM REST API version (default: `2024-05-01`) | extract, publish, compare |
 | `COMMIT_ID` | Git SHA for incremental publish | publish |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTel exporter endpoint (used by OTel SDK) | extract, publish |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | Azure Monitor connection string | extract, publish |

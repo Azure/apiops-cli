@@ -109,6 +109,7 @@ describe('compareResourceMaps', () => {
     const tgt = makeMap([]);
     const { diffs } = compareResourceMaps(src, tgt);
     expect(diffs.some((d) => d.name === 'petstore')).toBe(true);
+    expect(diffs.some((d) => d.status === 'missing')).toBe(true);
     expect(diffs.some((d) => d.diffs.some((line) => line.includes('MISSING')))).toBe(true);
   });
 
@@ -117,6 +118,7 @@ describe('compareResourceMaps', () => {
     const tgt = makeMap([['petstore', {}]]);
     const { diffs } = compareResourceMaps(src, tgt);
     expect(diffs.some((d) => d.name === 'petstore')).toBe(true);
+    expect(diffs.some((d) => d.status === 'extra')).toBe(true);
     expect(diffs.some((d) => d.diffs.some((line) => line.includes('EXTRA')))).toBe(true);
   });
 
@@ -126,6 +128,7 @@ describe('compareResourceMaps', () => {
     const { diffs, compared } = compareResourceMaps(src, tgt);
     expect(compared).toBe(1);
     expect(diffs.some((d) => d.name === 'petstore')).toBe(true);
+    expect(diffs.some((d) => d.status === 'different')).toBe(true);
   });
 
   it('strips .properties.value when skipSecretValue=true for secret named values', () => {

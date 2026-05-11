@@ -16,6 +16,8 @@ export interface ResourceDiff {
   name: string;
   /** Dot-notation paths of the differing fields. */
   diffs: string[];
+  /** Categorized status of this difference. */
+  status: 'missing' | 'extra' | 'different';
 }
 
 /**
@@ -145,14 +147,14 @@ export function compareResourceMaps(
   // Missing in target
   for (const name of sourceMap.keys()) {
     if (!targetMap.has(name)) {
-      diffs.push({ name, diffs: [`  ❌ MISSING in target: ${name}`] });
+      diffs.push({ name, diffs: [`MISSING in target: ${name}`], status: 'missing' });
     }
   }
 
   // Extra in target
   for (const name of targetMap.keys()) {
     if (!sourceMap.has(name)) {
-      diffs.push({ name, diffs: [`  ❌ EXTRA in target:   ${name}`] });
+      diffs.push({ name, diffs: [`EXTRA in target: ${name}`], status: 'extra' });
     }
   }
 
@@ -180,7 +182,7 @@ export function compareResourceMaps(
 
     const fieldDiffs = diffNormalizedResources(srcNorm, tgtNorm);
     if (fieldDiffs.length > 0) {
-      diffs.push({ name, diffs: fieldDiffs });
+      diffs.push({ name, diffs: fieldDiffs, status: 'different' });
     }
   }
 
