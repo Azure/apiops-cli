@@ -13,15 +13,18 @@ export function generatePublishWorkflow(config: PublishWorkflowConfig): string {
 
   const envJobs = config.environments.map((env, idx) => {
     const autoDeployComment = idx === 0
-      ? `    # To enable automatic deployment on push to main, uncomment the condition below:
-    # if: github.event.inputs.ENVIRONMENT == '${env}' || github.event_name == 'push'`
-      : `    # To enable automatic deployment on push to main, uncomment the condition below:
+      ? `    # Deploys automatically on push to main (incremental mode) or when selected via workflow_dispatch`
+      : `    # To enable sequential deployment on push, uncomment the condition below and update needs:
     # if: github.event.inputs.ENVIRONMENT == '${env}' || github.event_name == 'push'
-    # And change needs to: needs: [get-commit, publish-${config.environments[idx - 1]}]`;
+    # needs: [get-commit, publish-${config.environments[idx - 1]}]`;
+
+    const jobCondition = idx === 0
+      ? `github.event.inputs.ENVIRONMENT == '${env}' || github.event_name == 'push'`
+      : `github.event.inputs.ENVIRONMENT == '${env}'`;
 
     return `  publish-${env}:
 ${autoDeployComment}
-    if: github.event.inputs.ENVIRONMENT == '${env}'
+    if: ${jobCondition}
     runs-on: ubuntu-latest
     environment: ${env}
     needs: get-commit
