@@ -25,6 +25,7 @@
       },
       "extensions": [
         "dbaeumer.vscode-eslint",
+        "bierner.markdown-mermaid",
         "ms-vscode.vscode-typescript-next",
         "vitest.explorer",
         "GitHub.vscode-pull-request-github",
