@@ -186,7 +186,7 @@ var wsdlSpec = '''
   </binding>
   <service name="CalculatorService">
     <port name="CalculatorSoapPort" binding="tns:CalculatorSoapBinding">
-      <soap:address location="https://src-soap-backend.example.com/calculator"/>
+      <soap:address location="https://httpbin.org/post"/>
     </port>
   </service>
 </definitions>
@@ -272,7 +272,7 @@ var resolverPolicyXml = '''
 <http-data-source>
   <http-request>
     <set-method>GET</set-method>
-    <set-url>https://src-graphql-backend.example.com/api/hero</set-url>
+    <set-url>https://httpbin.org/get</set-url>
   </http-request>
 </http-data-source>
 '''
@@ -506,7 +506,7 @@ resource backendHttp 'Microsoft.ApiManagement/service/backends@2024-05-01' = {
   name: 'src-backend-http'
   properties: {
     description: 'Simple HTTP backend'
-    url: 'https://src-backend.example.com/api'
+    url: 'https://httpbin.org'
     protocol: 'http'
     tls: {
       validateCertificateChain: true
@@ -544,7 +544,7 @@ resource backendCircuitBreaker 'Microsoft.ApiManagement/service/backends@2024-05
   name: 'src-backend-circuit-breaker'
   properties: {
     description: 'Backend with circuit breaker configuration'
-    url: 'https://src-cb-backend.example.com/api'
+    url: 'https://httpbin.org'
     protocol: 'http'
     circuitBreaker: {
       rules: [
@@ -750,7 +750,7 @@ resource apiRestOpenapi 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
     protocols: ['https']
     format: 'openapi'
     value: openApiSpec
-    serviceUrl: 'https://src-backend.example.com/api'
+    serviceUrl: 'https://httpbin.org'
     subscriptionRequired: false
     apiType: 'http'
   }
@@ -767,7 +767,7 @@ resource apiSoapPassthrough 'Microsoft.ApiManagement/service/apis@2024-05-01' = 
     protocols: ['https']
     format: 'wsdl'
     value: wsdlSpec
-    serviceUrl: 'https://src-soap-backend.example.com/calculator'
+    serviceUrl: 'https://httpbin.org/post'
     apiType: 'soap'
     wsdlSelector: {
       wsdlServiceName: 'CalculatorService'
@@ -786,7 +786,7 @@ resource apiGraphqlSynthetic 'Microsoft.ApiManagement/service/apis@2024-05-01' =
     description: 'Kitchen sink synthetic GraphQL API with inline schema'
     path: 'ks/graphql'
     protocols: ['https']
-    serviceUrl: 'https://src-graphql-backend.example.com/graphql'
+    serviceUrl: 'https://httpbin.org/post'
     type: 'graphql'
     apiType: 'graphql'
   }
@@ -813,7 +813,7 @@ resource apiGraphqlPassthrough 'Microsoft.ApiManagement/service/apis@2024-05-01'
     description: 'Kitchen sink pass-through GraphQL API'
     path: 'ks/graphql-pt'
     protocols: ['https']
-    serviceUrl: 'https://src-graphql-pt-backend.example.com/graphql'
+    serviceUrl: 'https://httpbin.org/post'
     type: 'graphql'
     apiType: 'graphql'
   }
@@ -840,7 +840,7 @@ resource apiWebsocket 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
     description: 'Kitchen sink WebSocket API'
     path: 'ks/ws'
     protocols: ['wss']
-    serviceUrl: 'wss://src-ws-backend.example.com/socket'
+    serviceUrl: 'wss://echo.websocket.events'
     type: 'websocket'
     apiType: 'websocket'
   }
@@ -857,7 +857,7 @@ resource apiVersionedV1 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
     protocols: ['https']
     format: 'openapi'
     value: openApiSpecV1
-    serviceUrl: 'https://src-versioned-backend.example.com/api'
+    serviceUrl: 'https://httpbin.org'
     apiVersion: 'v1'
     apiVersionSetId: versionSet.id
     subscriptionRequired: false
@@ -876,7 +876,7 @@ resource apiRevisioned 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
     protocols: ['https']
     format: 'openapi'
     value: openApiSpec
-    serviceUrl: 'https://src-revisioned-backend.example.com/api'
+    serviceUrl: 'https://httpbin.org'
     subscriptionRequired: false
     apiType: 'http'
     isCurrent: true
@@ -890,25 +890,42 @@ resource apiRevisionedRev2 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
   properties: {
     path: 'ks/revisioned'
     protocols: ['https']
-    serviceUrl: 'https://src-revisioned-backend-v2.example.com/api'
+    serviceUrl: 'https://httpbin.org'
     apiRevisionDescription: 'Second revision for BVT testing'
     sourceApiId: apiRevisioned.id
     apiType: 'http'
   }
 }
 
-// 8. REST API linked to backend (MCP-style HTTP backend)
-resource apiMcpStyle 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
+// 8. MCP API created from an existing REST API in the instance
+resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
   parent: apim
-  name: 'src-rest-mcp-style'
+  name: 'src-mcp-from-api'
   properties: {
-    displayName: 'KS MCP-Style REST API'
-    description: 'REST API configured with MCP-style backend pattern'
-    path: 'ks/mcp'
+    displayName: 'KS MCP from Existing API'
+    description: 'MCP server created by exposing an existing REST API in the instance as MCP tools'
+    path: 'ks/mcp-from-api'
     protocols: ['https']
-    serviceUrl: 'https://src-mcp-server.example.com/mcp/v1'
+    serviceUrl: 'https://httpbin.org'
     subscriptionRequired: false
-    apiType: 'http'
+    type: 'mcp'
+    apiType: 'mcp'
+  }
+}
+
+// 9. MCP API created from an existing (external) public MCP server
+resource apiMcpFromExternal 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
+  parent: apim
+  name: 'src-mcp-from-external'
+  properties: {
+    displayName: 'KS MCP from External Server'
+    description: 'MCP server repackaging a public external MCP server via APIM'
+    path: 'ks/mcp-external'
+    protocols: ['https']
+    serviceUrl: 'https://api.githubcopilot.com/mcp'
+    subscriptionRequired: false
+    type: 'mcp'
+    apiType: 'mcp'
   }
 }
 
@@ -1033,9 +1050,9 @@ resource apiRestOpPolicy 'Microsoft.ApiManagement/service/apis/operations/polici
   }
 }
 
-// --- Explicit API Operation (on MCP-style API for full coverage) ---
+// --- Explicit API Operation (on MCP from-API API for full coverage of ApiOperation resource type) ---
 resource apiMcpOperation 'Microsoft.ApiManagement/service/apis/operations@2024-05-01' = {
-  parent: apiMcpStyle
+  parent: apiMcpFromApi
   name: 'src-mcp-invoke'
   properties: {
     displayName: 'Invoke MCP Tool'
@@ -1048,6 +1065,35 @@ resource apiMcpOperation 'Microsoft.ApiManagement/service/apis/operations@2024-0
         description: 'Tool invocation result'
       }
     ]
+  }
+}
+
+// --- MCP Server (from existing API) ---
+resource mcpServerFromApi 'Microsoft.ApiManagement/service/apis/mcpServers@2024-05-01' = {
+  parent: apiMcpFromApi
+  name: 'default'
+  properties: {
+    mcpTools: [
+      {
+        name: 'httpGet'
+        description: 'Perform a GET request via the underlying REST API backend'
+      }
+      {
+        name: 'httpPost'
+        description: 'Perform a POST request via the underlying REST API backend'
+      }
+    ]
+  }
+}
+
+// --- MCP Server (from external MCP server) ---
+resource mcpServerFromExternal 'Microsoft.ApiManagement/service/apis/mcpServers@2024-05-01' = {
+  parent: apiMcpFromExternal
+  name: 'default'
+  properties: {
+    mcpProperties: {
+      serverUrl: 'https://api.githubcopilot.com/mcp'
+    }
   }
 }
 
@@ -1180,7 +1226,7 @@ resource wsBackend 'Microsoft.ApiManagement/service/workspaces/backends@2024-05-
   name: 'src-ws-backend-http'
   properties: {
     description: 'Workspace-scoped HTTP backend'
-    url: 'https://src-ws-backend.example.com/api'
+    url: 'https://httpbin.org'
     protocol: 'http'
   }
 }
@@ -1221,7 +1267,7 @@ resource wsApi 'Microsoft.ApiManagement/service/workspaces/apis@2024-05-01' = if
     displayName: 'Workspace REST API'
     path: 'ks/ws/rest'
     protocols: ['https']
-    serviceUrl: 'https://src-ws-api-backend.example.com/api'
+    serviceUrl: 'https://httpbin.org'
     apiType: 'http'
   }
 }
