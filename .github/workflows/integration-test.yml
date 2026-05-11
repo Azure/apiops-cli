@@ -40,7 +40,16 @@ on:
         description: 'Azure region'
         required: false
         type: string
-        default: 'eastus2'
+        default: 'centralus'
+      log_level:
+        description: 'PowerShell log level'
+        required: false
+        type: choice
+        options:
+          - Info
+          - Verbose
+          - Debug
+        default: Verbose
       skip_teardown:
         description: 'Skip teardown (for debugging)'
         required: false
@@ -58,7 +67,12 @@ on:
         description: 'Azure region'
         required: false
         type: string
-        default: 'eastus2'
+        default: 'centralus'
+      log_level:
+        description: 'PowerShell log level'
+        required: false
+        type: string
+        default: Verbose
       skip_teardown:
         description: 'Skip teardown (for debugging)'
         required: false
@@ -119,6 +133,7 @@ jobs:
             TargetResourceGroup = '${{ env.TARGET_RG }}'
             SkuName            = '${{ inputs.sku }}'
             Location           = '${{ inputs.location }}'
+            LogLevel           = '${{ inputs.log_level }}'
             PublisherEmail     = '${{ secrets.APIM_PUBLISHER_EMAIL }}'
             ExtractOutputDir   = './extracted-artifacts'
             HardDelete         = $true

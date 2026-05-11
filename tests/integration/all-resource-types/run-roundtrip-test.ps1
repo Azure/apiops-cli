@@ -48,6 +48,9 @@ param(
 
     [string]$Location = 'eastus2',
 
+    [ValidateSet('Info', 'Verbose', 'Debug')]
+    [string]$LogLevel = 'Verbose',
+
     [Parameter(Mandatory)]
     [string]$PublisherEmail,
 
@@ -59,6 +62,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$VerbosePreference = if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' }
+$DebugPreference = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' }
 
 # Default to hard-delete on teardown unless explicitly disabled.
 if (-not $PSBoundParameters.ContainsKey('HardDelete')) {
@@ -255,11 +260,21 @@ try {
 
     # --- Source deployment job ---
     $sourceJob = Start-Job -Name 'DeploySource' -ScriptBlock {
-                param($script, $rg, $sku, $loc, $email, $transcriptFile)
+                param($script, $rg, $sku, $loc, $email, $transcriptFile, $logLevel)
                 $ErrorActionPreference = 'Stop'
                 Start-Transcript -Path $transcriptFile -Force | Out-Null
                 try {
-                    $result = & $script -ResourceGroupName $rg -SkuName $sku -Location $loc -PublisherEmail $email
+                    $scriptArgs = @{
+                        ResourceGroupName = $rg
+                        SkuName           = $sku
+                        Location          = $loc
+                        PublisherEmail    = $email
+                    }
+                    switch ($logLevel) {
+                        'Verbose' { $scriptArgs.Verbose = $true }
+                        'Debug'   { $scriptArgs.Debug = $true }
+                    }
+                    $result = & $script @scriptArgs
                     if (-not $result -or -not $result.apimServiceName) {
                         throw "Source deployment returned no outputs"
                     }
@@ -267,7 +282,7 @@ try {
                 } finally {
                     Stop-Transcript | Out-Null
                 }
-    } -ArgumentList $deploySourceScript, $SourceResourceGroup, $SkuName, $Location, $PublisherEmail, $sourceLogFile
+    } -ArgumentList $deploySourceScript, $SourceResourceGroup, $SkuName, $Location, $PublisherEmail, $sourceLogFile, $LogLevel
     Write-Host "   ▶ Source deployment started"
 
     # --- Target deployment job ---
@@ -492,10 +507,16 @@ try {
     $manifestFile = Join-Path $PSScriptRoot 'expected-structure.json'
     $validateScript = Join-Path $PSScriptRoot 'Test-ExtractedArtifact.ps1'
 
-    & $validateScript `
-        -ExtractedDir $ExtractOutputDir `
-        -ManifestFile $manifestFile `
-        -SkuName $SkuName
+    $validateArgs = @{
+        ExtractedDir  = $ExtractOutputDir
+        ManifestFile  = $manifestFile
+        SkuName       = $SkuName
+    }
+    switch ($LogLevel) {
+        'Verbose' { $validateArgs.Verbose = $true }
+        'Debug'   { $validateArgs.Debug = $true }
+    }
+    & $validateScript @validateArgs
 
     $validateExitCode = $LASTEXITCODE
     $validateTimer.Stop()
@@ -604,13 +625,19 @@ loggers:
     Write-Phase "🔍" "PHASE 4 — Compare source and target APIM instances"
     $verifyTimer = [System.Diagnostics.Stopwatch]::StartNew()
 
-    & $compareScript `
-        -SourceSubscriptionId $sourceSubId `
-        -SourceResourceGroup $sourceRg `
-        -SourceApimName $sourceName `
-        -TargetSubscriptionId $targetSubId `
-        -TargetResourceGroup $targetRg `
-        -TargetApimName $targetName
+    $compareArgs = @{
+        SourceSubscriptionId = $sourceSubId
+        SourceResourceGroup  = $sourceRg
+        SourceApimName       = $sourceName
+        TargetSubscriptionId = $targetSubId
+        TargetResourceGroup  = $targetRg
+        TargetApimName       = $targetName
+    }
+    switch ($LogLevel) {
+        'Verbose' { $compareArgs.Verbose = $true }
+        'Debug'   { $compareArgs.Debug = $true }
+    }
+    & $compareScript @compareArgs
 
     $verifyExitCode = $LASTEXITCODE
     $verifyTimer.Stop()
