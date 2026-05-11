@@ -40,7 +40,12 @@ on:
         description: 'Azure region'
         required: false
         type: string
-        default: 'eastus2'
+        default: 'centralus'
+      log_level:
+        description: 'PowerShell log level (Info, Verbose, Debug)'
+        required: false
+        type: string
+        default: Verbose
       skip_teardown:
         description: 'Skip teardown (for debugging)'
         required: false
@@ -58,7 +63,12 @@ on:
         description: 'Azure region'
         required: false
         type: string
-        default: 'eastus2'
+        default: 'centralus'
+      log_level:
+        description: 'PowerShell log level (Info, Verbose, Debug)'
+        required: false
+        type: string
+        default: Verbose
       skip_teardown:
         description: 'Skip teardown (for debugging)'
         required: false
@@ -114,11 +124,18 @@ jobs:
         shell: pwsh
         run: |
           $skipTeardown = '${{ inputs.skip_teardown }}' -eq 'true'
+          $logLevel = '${{ inputs.log_level }}'
+          if ([string]::IsNullOrWhiteSpace($logLevel)) { $logLevel = 'Verbose' }
+          if ($logLevel -notin @('Info', 'Verbose', 'Debug')) {
+            throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
+          }
+
           $params = @{
             SourceResourceGroup = '${{ env.SOURCE_RG }}'
             TargetResourceGroup = '${{ env.TARGET_RG }}'
             SkuName            = '${{ inputs.sku }}'
             Location           = '${{ inputs.location }}'
+            LogLevel           = $logLevel
             PublisherEmail     = '${{ secrets.APIM_PUBLISHER_EMAIL }}'
             ExtractOutputDir   = './extracted-artifacts'
             HardDelete         = $true

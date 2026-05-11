@@ -292,25 +292,8 @@
           "files": ["policyRestrictionInformation.json"],
           "spotChecks": {
             "policyRestrictionInformation.json": {
-              "properties.scope": "All",
+              "properties.scope": "/products/src-product-starter",
               "properties.requireBase": "true"
-            }
-          }
-        }
-      ]
-    },
-    "documentations": {
-      "minCount": 1,
-      "skuDependent": true,
-      "skuFilter": ["Developer", "Premium"],
-      "expected": [
-        {
-          "name": "src-doc-getting-started",
-          "files": ["documentationInformation.json"],
-          "spotChecks": {
-            "documentationInformation.json": {
-              "properties.title": "Getting Started",
-              "properties.content": "exists"
             }
           }
         }

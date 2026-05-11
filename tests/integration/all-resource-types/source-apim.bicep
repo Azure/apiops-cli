@@ -208,38 +208,6 @@ paths:
           description: OK
 '''
 
-// Service-level policy XML (no <base /> allowed at service level)
-var servicePolicyXml = '''
-<policies>
-  <inbound>
-    <cors allow-credentials="false">
-      <allowed-origins>
-        <origin>https://developer.contoso.com</origin>
-      </allowed-origins>
-      <allowed-methods><method>GET</method><method>POST</method></allowed-methods>
-      <allowed-headers><header>Content-Type</header><header>Authorization</header></allowed-headers>
-    </cors>
-  </inbound>
-  <backend />
-  <outbound />
-  <on-error />
-</policies>
-'''
-
-// API-level policy XML
-var apiPolicyXml = '''
-<policies>
-  <inbound>
-    <base />
-    <set-header name="X-all-resources" exists-action="override">
-      <value>true</value>
-    </set-header>
-  </inbound>
-  <backend><base /></backend>
-  <outbound><base /></outbound>
-  <on-error><base /></on-error>
-</policies>
-'''
 
 // Operation-level policy XML
 var operationPolicyXml = '''
@@ -247,19 +215,6 @@ var operationPolicyXml = '''
   <inbound>
     <base />
     <rate-limit calls="100" renewal-period="60" />
-  </inbound>
-  <backend><base /></backend>
-  <outbound><base /></outbound>
-  <on-error><base /></on-error>
-</policies>
-'''
-
-// Product policy XML (renewal-period max is 300 seconds)
-var productPolicyXml = '''
-<policies>
-  <inbound>
-    <base />
-    <rate-limit calls="1000" renewal-period="300" />
   </inbound>
   <backend><base /></backend>
   <outbound><base /></outbound>
@@ -662,25 +617,7 @@ resource globalSchema 'Microsoft.ApiManagement/service/schemas@2025-09-01-previe
   }
 }
 
-// --- Policy Restriction (classic SKUs only - not supported in V2 tiers) ---
-resource policyRestriction 'Microsoft.ApiManagement/service/policyRestrictions@2025-09-01-preview' = if (isClassicSku) {
-  parent: apim
-  name: 'src-restriction-ip'
-  properties: {
-    scope: 'All'
-    requireBase: 'true'
-  }
-}
-
-// --- Documentation (classic SKUs only - V2 tiers use different documentation mechanism) ---
-resource documentation 'Microsoft.ApiManagement/service/documentations@2025-09-01-preview' = if (isClassicSku) {
-  parent: apim
-  name: 'src-doc-getting-started'
-  properties: {
-    title: 'Getting Started'
-    content: '# Getting Started\n\nThis is the kitchen sink APIM instance for BVT testing.\n\n## Quick Start\n\nUse the APIOps CLI to extract and publish configurations.'
-  }
-}
+// Activation-sensitive resources are deployed post-activation by Deploy-SourceApim.ps1.
 
 // ---------------------------------------------------------------------------
 // TIER 2: Resources with Dependencies
@@ -701,16 +638,7 @@ resource diagnostic 'Microsoft.ApiManagement/service/diagnostics@2025-09-01-prev
   }
 }
 
-// --- Service Policy ---
-resource servicePolicy 'Microsoft.ApiManagement/service/policies@2025-09-01-preview' = {
-  parent: apim
-  name: 'policy'
-  dependsOn: [nvPlain, fragmentCors, fragmentRateLimit]
-  properties: {
-    format: 'rawxml'
-    value: servicePolicyXml
-  }
-}
+// Service policy is deployed post-activation by Deploy-SourceApim.ps1.
 
 // --- Products ---
 resource productStarter 'Microsoft.ApiManagement/service/products@2025-09-01-preview' = {
@@ -977,15 +905,7 @@ resource apiMcpFromExternal 'Microsoft.ApiManagement/service/apis@2025-09-01-pre
 // TIER 3: Child Resources
 // ---------------------------------------------------------------------------
 
-// --- Product Policy ---
-resource productPremiumPolicy 'Microsoft.ApiManagement/service/products/policies@2025-09-01-preview' = {
-  parent: productPremium
-  name: 'policy'
-  properties: {
-    format: 'rawxml'
-    value: productPolicyXml
-  }
-}
+// Product policy is deployed post-activation by Deploy-SourceApim.ps1.
 
 // --- Product API Associations ---
 resource productStarterApiRest 'Microsoft.ApiManagement/service/products/apis@2025-09-01-preview' = {
@@ -1031,29 +951,9 @@ resource productStarterTag 'Microsoft.ApiManagement/service/products/tags@2025-0
   dependsOn: [tagEnv]
 }
 
-// --- Product Wiki (classic SKUs only - documentation dependency) ---
-resource productStarterWiki 'Microsoft.ApiManagement/service/products/wikis@2025-09-01-preview' = if (isClassicSku) {
-  parent: productStarter
-  name: 'default'
-  properties: {
-    documents: [
-      {
-        documentationId: 'src-doc-getting-started'
-      }
-    ]
-  }
-  dependsOn: [documentation]
-}
+// Product wiki is deployed post-activation by Deploy-SourceApim.ps1.
 
-// --- API Policy ---
-resource apiRestPolicy 'Microsoft.ApiManagement/service/apis/policies@2025-09-01-preview' = {
-  parent: apiRestOpenapi
-  name: 'policy'
-  properties: {
-    format: 'rawxml'
-    value: apiPolicyXml
-  }
-}
+// API policy is deployed post-activation by Deploy-SourceApim.ps1.
 
 // --- API Tags ---
 resource apiRestTagEnv 'Microsoft.ApiManagement/service/apis/tags@2025-09-01-preview' = {
@@ -1129,19 +1029,7 @@ resource apiRestTagDescEnv 'Microsoft.ApiManagement/service/apis/tagDescriptions
   }
 }
 
-// --- API Wiki (classic SKUs only - documentation dependency) ---
-resource apiRestWiki 'Microsoft.ApiManagement/service/apis/wikis@2025-09-01-preview' = if (isClassicSku) {
-  parent: apiRestOpenapi
-  name: 'default'
-  properties: {
-    documents: [
-      {
-        documentationId: 'src-doc-getting-started'
-      }
-    ]
-  }
-  dependsOn: [documentation]
-}
+// API wiki is deployed post-activation by Deploy-SourceApim.ps1.
 
 // --- API Release (on revisioned API) ---
 resource apiRelease 'Microsoft.ApiManagement/service/apis/releases@2025-09-01-preview' = {

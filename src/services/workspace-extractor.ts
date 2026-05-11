@@ -5,7 +5,6 @@
  * List workspaces, extract workspace-scoped resources under workspaces/{name}/
  * using same resource-extractor with workspace context prefix.
  */
-
 import { IApimClient } from '../clients/iapim-client.js';
 import { IArtifactStore } from '../clients/iartifact-store.js';
 import { ApimServiceContext } from '../models/types.js';
@@ -35,9 +34,6 @@ const WORKSPACE_SUPPORTED_TYPES: ResourceType[] = [
   ResourceType.Group,
 ];
 
-/**
- * Result of extracting a single workspace.
- */
 export interface WorkspaceExtractionResult {
   workspaceName: string;
   resourceCount: number;
@@ -46,12 +42,7 @@ export interface WorkspaceExtractionResult {
 
 /**
  * Extract resources from all workspaces.
- *
- * Note: Workspace listing is not supported through the current IApimClient
- * interface (ResourceType doesn't include Workspace). This function accepts
- * workspace names from the filter config. If workspaceNames is not specified
- * in the filter, workspace extraction is skipped.
- *
+ 
  * @param client - APIM REST client
  * @param store - Artifact file store
  * @param context - APIM service context
@@ -67,18 +58,40 @@ export async function extractWorkspaces(
   filter?: FilterConfig
 ): Promise<WorkspaceExtractionResult[]> {
   const results: WorkspaceExtractionResult[] = [];
+  let workspaceNames: string[];
+  if (filter?.workspaceNames && filter.workspaceNames.length > 0) {
+    workspaceNames = filter.workspaceNames;
+  } else {
+    const discovered: string[] = [];
+    for await (const item of client.listResources(context, ResourceType.Workspace)) {
+      const name = item['name'];
+      if (typeof name === 'string') {
+        discovered.push(name);
+      }
+    }
+    workspaceNames = discovered;
+  }
 
-  // Workspace names must be explicitly provided via filter config
-  // since the IApimClient interface doesn't support listing workspaces
-  const workspaceNames = filter?.workspaceNames;
-  if (!workspaceNames || workspaceNames.length === 0) {
-    logger.debug('No workspace names specified in filter — skipping workspace extraction');
+  if (workspaceNames.length === 0) {
+    logger.debug('No workspaces found — skipping workspace extraction');
     return results;
   }
 
   logger.info(`Extracting ${workspaceNames.length} workspace(s)...`);
 
   for (const wsName of workspaceNames) {
+    // Persist the workspace container itself so publish can recreate it
+    // before workspace-scoped children (named values, APIs, products, etc.).
+    const wsDescriptor = { type: ResourceType.Workspace, nameParts: [wsName] };
+    const wsJson = await client.getResource(context, wsDescriptor);
+    if (!wsJson) {
+      logger.error(
+        `Workspace container "${wsName}" was discovered but could not be read. Continuing with workspace child extraction.`
+      );
+    } else {
+      await store.writeResource(outputDir, wsDescriptor, wsJson);
+    }
+
     const wsResult = await extractWorkspace(
       client, store, context, wsName, outputDir, filter
     );
@@ -88,9 +101,6 @@ export async function extractWorkspaces(
   return results;
 }
 
-/**
- * Extract all resources from a single workspace.
- */
 async function extractWorkspace(
   client: IApimClient,
   store: IArtifactStore,
@@ -111,7 +121,6 @@ async function extractWorkspace(
     baseUrl: `${context.baseUrl}/workspaces/${encodeURIComponent(workspaceName)}`,
   };
 
-  // Extract each supported resource type within the workspace
   for (const type of WORKSPACE_SUPPORTED_TYPES) {
     try {
       const result = await extractResourceType(

@@ -35,6 +35,8 @@
   .\run-roundtrip-test.ps1 -PublisherEmail admin@contoso.com -HardDelete
 #>
 
+#requires -Version 7.0
+
 [CmdletBinding()]
 param(
     [Parameter()]
@@ -48,10 +50,13 @@ param(
 
     [string]$Location = 'eastus2',
 
+    [ValidateSet('Info', 'Verbose', 'Debug')]
+    [string]$LogLevel = 'Verbose',
+
     [Parameter(Mandatory)]
     [string]$PublisherEmail,
 
-    [string]$ExtractOutputDir = './extracted-artifacts',
+    [string]$ExtractOutputDir = "$PSScriptRoot/extracted-artifacts",
 
     [switch]$SkipTeardown,
 
@@ -59,6 +64,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$VerbosePreference = if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' }
+$DebugPreference = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' }
+$maskingModule = Join-Path $PSScriptRoot 'MaskingHelpers.psm1'
+Import-Module $maskingModule -Force
 
 # Default to hard-delete on teardown unless explicitly disabled.
 if (-not $PSBoundParameters.ContainsKey('HardDelete')) {
@@ -90,8 +99,8 @@ if (-not $TargetResourceGroup) {
     $TargetResourceGroup = "bvt-$UniqueId-tgt-rg"
 }
 
-Write-Host "   Source RG: $SourceResourceGroup"
-Write-Host "   Target RG: $TargetResourceGroup"
+Write-Host "   Source RG: $(Protect-ResourceGroupName -Value $SourceResourceGroup)"
+Write-Host "   Target RG: $(Protect-ResourceGroupName -Value $TargetResourceGroup)"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -117,6 +126,15 @@ function Write-GithubOutput([string]$key, [string]$value) {
     }
 }
 
+function Get-ApiopsLogLevel([string]$ScriptLogLevel) {
+    switch ($ScriptLogLevel) {
+        'Info' { return 'info' }
+        'Verbose' { return 'warn' }
+        'Debug' { return 'debug' }
+        default { return 'info' }
+    }
+}
+
 function Invoke-Teardown {
     if ($SkipTeardown) {
         Write-Host "⏭️  Teardown skipped (-SkipTeardown)"
@@ -134,16 +152,16 @@ function Invoke-Teardown {
         $targetApimName = az apim list --resource-group $TargetResourceGroup --query "[0].name" -o tsv 2>$null
         
         if ($sourceApimName) {
-            Write-Host "   Found source APIM: $sourceApimName"
+            Write-Host "   Found source APIM: $(Protect-ApimName -Value $sourceApimName)"
         }
         if ($targetApimName) {
-            Write-Host "   Found target APIM: $targetApimName"
+            Write-Host "   Found target APIM: $(Protect-ApimName -Value $targetApimName)"
         }
     }
     
-    Write-Host "   Deleting $SourceResourceGroup..."
+    Write-Host "   Deleting $(Protect-ResourceGroupName -Value $SourceResourceGroup)..."
     az group delete --name $SourceResourceGroup --yes --no-wait 2>$null
-    Write-Host "   Deleting $TargetResourceGroup..."
+    Write-Host "   Deleting $(Protect-ResourceGroupName -Value $TargetResourceGroup)..."
     az group delete --name $TargetResourceGroup --yes --no-wait 2>$null
     
     if ($HardDelete) {
@@ -170,22 +188,22 @@ function Invoke-Teardown {
         
         # Purge soft-deleted APIM instances
         if ($sourceApimName) {
-            Write-Host "   🗑️  Purging soft-deleted APIM: $sourceApimName..."
+            Write-Host "   🗑️  Purging soft-deleted APIM: $(Protect-ApimName -Value $sourceApimName)..."
             az apim deletedservice purge --service-name $sourceApimName --location $Location 2>$null
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "   ✅ $sourceApimName purged"
+                Write-Host "   ✅ $(Protect-ApimName -Value $sourceApimName) purged"
             } else {
-                Write-Host "   ⚠️  Could not purge $sourceApimName (may not exist in soft-delete)"
+                Write-Host "   ⚠️  Could not purge $(Protect-ApimName -Value $sourceApimName) (may not exist in soft-delete)"
             }
         }
         
         if ($targetApimName) {
-            Write-Host "   🗑️  Purging soft-deleted APIM: $targetApimName..."
+            Write-Host "   🗑️  Purging soft-deleted APIM: $(Protect-ApimName -Value $targetApimName)..."
             az apim deletedservice purge --service-name $targetApimName --location $Location 2>$null
             if ($LASTEXITCODE -eq 0) {
-                Write-Host "   ✅ $targetApimName purged"
+                Write-Host "   ✅ $(Protect-ApimName -Value $targetApimName) purged"
             } else {
-                Write-Host "   ⚠️  Could not purge $targetApimName (may not exist in soft-delete)"
+                Write-Host "   ⚠️  Could not purge $(Protect-ApimName -Value $targetApimName) (may not exist in soft-delete)"
             }
         }
         
@@ -208,7 +226,7 @@ if (-not $account) {
 }
 
 $subscriptionId = $account.id
-Write-Host "   Subscription: $($account.name) ($subscriptionId)"
+Write-Host "   Subscription: $($account.name) ($(Protect-SubscriptionId -Value $subscriptionId))"
 Write-PhaseEnd "🔐" "Azure CLI authenticated"
 
 # ---------------------------------------------------------------------------
@@ -216,10 +234,10 @@ Write-PhaseEnd "🔐" "Azure CLI authenticated"
 # ---------------------------------------------------------------------------
 
 $deploySourceScript      = Join-Path $PSScriptRoot 'Deploy-SourceApim.ps1'
-$targetBicepFile         = Join-Path $PSScriptRoot 'target-apim.bicep'
+$deployTargetScript      = Join-Path $PSScriptRoot 'Deploy-TargetApim.ps1'
 $compareScript           = Join-Path $PSScriptRoot 'Compare-ApimInstance.ps1'
 
-foreach ($requiredFile in @($deploySourceScript, $targetBicepFile, $compareScript)) {
+foreach ($requiredFile in @($maskingModule, $deploySourceScript, $deployTargetScript, $compareScript)) {
     if (-not (Test-Path $requiredFile)) {
         Write-Error "Required file not found: $requiredFile"
         exit 2
@@ -255,11 +273,18 @@ try {
 
     # --- Source deployment job ---
     $sourceJob = Start-Job -Name 'DeploySource' -ScriptBlock {
-                param($script, $rg, $sku, $loc, $email, $transcriptFile)
+                param($script, $rg, $sku, $loc, $email, $transcriptFile, $logLevel)
                 $ErrorActionPreference = 'Stop'
-                Start-Transcript -Path $transcriptFile -Force | Out-Null
+                Start-Transcript -Path $transcriptFile -Force -UseMinimalHeader | Out-Null
                 try {
-                    $result = & $script -ResourceGroupName $rg -SkuName $sku -Location $loc -PublisherEmail $email
+                    $scriptArgs = @{
+                        ResourceGroupName = $rg
+                        SkuName           = $sku
+                        Location          = $loc
+                        PublisherEmail    = $email
+                        LogLevel          = $logLevel
+                    }
+                    $result = & $script @scriptArgs
                     if (-not $result -or -not $result.apimServiceName) {
                         throw "Source deployment returned no outputs"
                     }
@@ -267,46 +292,31 @@ try {
                 } finally {
                     Stop-Transcript | Out-Null
                 }
-    } -ArgumentList $deploySourceScript, $SourceResourceGroup, $SkuName, $Location, $PublisherEmail, $sourceLogFile
+    } -ArgumentList $deploySourceScript, $SourceResourceGroup, $SkuName, $Location, $PublisherEmail, $sourceLogFile, $LogLevel
     Write-Host "   ▶ Source deployment started"
 
     # --- Target deployment job ---
     $targetJob = Start-Job -Name 'DeployTarget' -ScriptBlock {
-                param($rg, $sku, $loc, $email, $bicep, $transcriptFile)
+                param($script, $rg, $sku, $loc, $email, $transcriptFile, $logLevel)
                 $ErrorActionPreference = 'Stop'
-                Start-Transcript -Path $transcriptFile -Force | Out-Null
+                Start-Transcript -Path $transcriptFile -Force -UseMinimalHeader | Out-Null
                 try {
-                    Write-Host "Starting target APIM deployment..."
-                    Write-Host "Resource Group: $rg"
-                    Write-Host "SKU: $sku"
-                    Write-Host "Location: $loc"
-                    
-                    Write-Host "Creating resource group..."
-                    az group create --name $rg --location $loc --output none
-                    if ($LASTEXITCODE -ne 0) { 
-                        throw "Failed to create target resource group" 
+                    $scriptArgs = @{
+                        ResourceGroupName = $rg
+                        SkuName           = $sku
+                        Location          = $loc
+                        PublisherEmail    = $email
+                        LogLevel          = $logLevel
                     }
-                    
-                    Write-Host "Deploying target-apim.bicep (this takes 30-45 minutes)..."
-                    $raw = az deployment group create `
-                        --resource-group $rg `
-                        --name "target-apim-$(Get-Date -Format 'yyyyMMddHHmmss')" `
-                        --template-file $bicep `
-                        --parameters skuName=$sku location=$loc publisherEmail=$email `
-                        --output json
-                    if ($LASTEXITCODE -ne 0) { 
-                        throw "Target APIM deployment failed" 
-                    }
-                    $result = $raw | ConvertFrom-Json
-                    if (-not $result.properties.outputs) {
+                    $result = & $script @scriptArgs
+                    if (-not $result -or -not $result.apimServiceName -or -not $result.apimServiceName.value) {
                         throw "Target deployment returned no outputs"
                     }
-                    Write-Host "✅ Target APIM deployed successfully: $($result.properties.outputs.apimServiceName.value)"
-                    return $result.properties.outputs
+                    return $result
                 } finally {
                     Stop-Transcript | Out-Null
                 }
-    } -ArgumentList $TargetResourceGroup, $SkuName, $Location, $PublisherEmail, $targetBicepFile, $targetLogFile
+    } -ArgumentList $deployTargetScript, $TargetResourceGroup, $SkuName, $Location, $PublisherEmail, $targetLogFile, $LogLevel
     Write-Host "   ▶ Target deployment started"
 
     # --- Wait for jobs with real-time log streaming ---
@@ -382,7 +392,7 @@ try {
         $exitCode = 2
     } else {
         $sourceOutputs = Receive-Job $sourceJob
-        Write-Host "   ✅ Source deployed: $($sourceOutputs.apimServiceName)"
+        Write-Host "   ✅ Source deployed: $(Protect-ApimName -Value $sourceOutputs.apimServiceName)"
     }
     Remove-Job $sourceJob
 
@@ -399,7 +409,7 @@ try {
         $exitCode = 2
     } else {
         $targetOutputs = Receive-Job $targetJob
-        Write-Host "   ✅ Target deployed: $($targetOutputs.apimServiceName.value)"
+        Write-Host "   ✅ Target deployed: $(Protect-ApimName -Value $targetOutputs.apimServiceName.value)"
     }
     Remove-Job $targetJob
 
@@ -422,7 +432,7 @@ try {
         # Query APIM instance from resource group
         $apimName = az apim list --resource-group $SourceResourceGroup --query "[0].name" -o tsv 2>$null
         if (-not $apimName) {
-            Write-Host "❌ No APIM instance found in resource group $SourceResourceGroup"
+            Write-Host "❌ No APIM instance found in resource group $(Protect-ResourceGroupName -Value $SourceResourceGroup)"
             exit 2
         }
         $apimName
@@ -435,10 +445,31 @@ try {
         # Query APIM instance from resource group
         $apimName = az apim list --resource-group $TargetResourceGroup --query "[0].name" -o tsv 2>$null
         if (-not $apimName) {
-            Write-Host "❌ No APIM instance found in resource group $TargetResourceGroup"
+            Write-Host "❌ No APIM instance found in resource group $(Protect-ResourceGroupName -Value $TargetResourceGroup)"
             exit 2
         }
         $apimName
+    }
+
+    # Ensure post-activation deployment completed before extract/structure validation.
+    if ($SkuName -in @('Developer', 'Premium')) {
+        $postActivationState = az deployment group list `
+            --resource-group $sourceRg `
+            --query "sort_by([?starts_with(name, 'source-apim-post-activation-')], &properties.timestamp)[-1].properties.provisioningState" `
+            -o tsv 2>$null
+        if (-not $postActivationState) {
+            Write-Host "❌ Could not find source-apim-post-activation deployment in $(Protect-ResourceGroupName -Value $sourceRg)"
+            $exitCode = 2
+            Invoke-Teardown
+            exit $exitCode
+        }
+        if ($postActivationState -ne 'Succeeded') {
+            Write-Host "❌ source-apim-post-activation deployment state is '$postActivationState' (expected 'Succeeded')"
+            $exitCode = 2
+            Invoke-Teardown
+            exit $exitCode
+        }
+        Write-Host "   ✅ source-apim-post-activation deployment confirmed"
     }
 
     # -----------------------------------------------------------------------
@@ -453,17 +484,31 @@ try {
         Write-Host "   Cleaned previous extract output"
     }
 
-    Write-Host "   Source: $sourceName (sub: $sourceSubId, rg: $sourceRg)"
+    Write-Host "   Source: $(Protect-ApimName -Value $sourceName) (sub: $(Protect-SubscriptionId -Value $sourceSubId), rg: $(Protect-ResourceGroupName -Value $sourceRg))"
     Write-Host "   Output: $ExtractOutputDir"
 
-    npx apiops extract `
-        --subscription-id $sourceSubId `
-        --resource-group $sourceRg `
-        --service-name $sourceName `
-        --output $ExtractOutputDir
+    $apiopsLogLevel = Get-ApiopsLogLevel -ScriptLogLevel $LogLevel
 
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Extract failed (exit code $LASTEXITCODE)"
+    # For SKUs that support workspaces (Premium / PremiumV2), pass a filter file
+    # with the workspace name so the extractor includes workspace-scoped resources.
+    # Without this, workspace extraction is silently skipped.
+    $extractArgs = @(
+        'extract',
+        '--subscription-id', $sourceSubId,
+        '--resource-group',  $sourceRg,
+        '--service-name',    $sourceName,
+        '--output',          $ExtractOutputDir,
+        '--log-level',       $apiopsLogLevel
+    )
+
+    $extractExitCode = Invoke-MaskedApiopsCommand -Replacements @{
+        $sourceSubId = Protect-SubscriptionId -Value $sourceSubId
+        $sourceRg    = Protect-ResourceGroupName -Value $sourceRg
+        $sourceName  = Protect-ApimName -Value $sourceName
+    } -Arguments $extractArgs
+
+    if ($extractExitCode -ne 0) {
+        Write-Host "❌ Extract failed (exit code $extractExitCode)"
         $exitCode = 2
         Invoke-Teardown
         exit $exitCode
@@ -492,10 +537,16 @@ try {
     $manifestFile = Join-Path $PSScriptRoot 'expected-structure.json'
     $validateScript = Join-Path $PSScriptRoot 'Test-ExtractedArtifact.ps1'
 
-    & $validateScript `
-        -ExtractedDir $ExtractOutputDir `
-        -ManifestFile $manifestFile `
-        -SkuName $SkuName
+    $validateArgs = @{
+        ExtractedDir  = $ExtractOutputDir
+        ManifestFile  = $manifestFile
+        SkuName       = $SkuName
+    }
+    switch ($LogLevel) {
+        'Verbose' { $validateArgs.Verbose = $true }
+        'Debug'   { $validateArgs.Debug = $true }
+    }
+    & $validateScript @validateArgs
 
     $validateExitCode = $LASTEXITCODE
     $validateTimer.Stop()
@@ -548,7 +599,7 @@ try {
     # Target Event Hub entity name (hardcoded in target-apim.bicep)
     $targetEhName = 'tgt-eh-logs'
 
-    $overrideFile = Join-Path $ExtractOutputDir '.overrides.yaml'
+    $overrideFile = [System.IO.Path]::GetFullPath((Join-Path $ExtractOutputDir '.overrides.yaml'))
     $overrideYaml = @"
 namedValues:
   src-nv-keyvault:
@@ -576,18 +627,25 @@ loggers:
     Write-Phase "📤" "PHASE 3 — Publish to target APIM"
     $publishTimer = [System.Diagnostics.Stopwatch]::StartNew()
 
-    Write-Host "   Target: $targetName (sub: $targetSubId, rg: $targetRg)"
+    Write-Host "   Target: $(Protect-ApimName -Value $targetName) (sub: $(Protect-SubscriptionId -Value $targetSubId), rg: $(Protect-ResourceGroupName -Value $targetRg))"
     Write-Host "   Input:  $ExtractOutputDir"
 
-    npx apiops publish `
-        --subscription-id $targetSubId `
-        --resource-group $targetRg `
-        --service-name $targetName `
-        --source $ExtractOutputDir `
-        --overrides $overrideFile
+    $publishExitCode = Invoke-MaskedApiopsCommand -Replacements @{
+        $targetSubId = Protect-SubscriptionId -Value $targetSubId
+        $targetRg    = Protect-ResourceGroupName -Value $targetRg
+        $targetName  = Protect-ApimName -Value $targetName
+    } -Arguments @(
+        'publish',
+        '--subscription-id', $targetSubId,
+        '--resource-group',  $targetRg,
+        '--service-name',    $targetName,
+        '--source',          $ExtractOutputDir,
+        '--overrides',       $overrideFile,
+        '--log-level',       $apiopsLogLevel
+    )
 
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Publish failed (exit code $LASTEXITCODE)"
+    if ($publishExitCode -ne 0) {
+        Write-Host "❌ Publish failed (exit code $publishExitCode)"
         $exitCode = 2
         Invoke-Teardown
         exit $exitCode
@@ -604,13 +662,19 @@ loggers:
     Write-Phase "🔍" "PHASE 4 — Compare source and target APIM instances"
     $verifyTimer = [System.Diagnostics.Stopwatch]::StartNew()
 
-    & $compareScript `
-        -SourceSubscriptionId $sourceSubId `
-        -SourceResourceGroup $sourceRg `
-        -SourceApimName $sourceName `
-        -TargetSubscriptionId $targetSubId `
-        -TargetResourceGroup $targetRg `
-        -TargetApimName $targetName
+    $compareArgs = @{
+        SourceSubscriptionId = $sourceSubId
+        SourceResourceGroup  = $sourceRg
+        SourceApimName       = $sourceName
+        TargetSubscriptionId = $targetSubId
+        TargetResourceGroup  = $targetRg
+        TargetApimName       = $targetName
+    }
+    switch ($LogLevel) {
+        'Verbose' { $compareArgs.Verbose = $true }
+        'Debug'   { $compareArgs.Debug = $true }
+    }
+    & $compareScript @compareArgs
 
     $verifyExitCode = $LASTEXITCODE
     $verifyTimer.Stop()

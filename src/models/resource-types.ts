@@ -41,6 +41,8 @@ export enum ResourceType {
   GraphQLResolverPolicy = 'GraphQLResolverPolicy',
   /** MCP (Model Context Protocol) server configuration per API. Singleton per API. */
   McpServer = 'McpServer',
+  /** Premium/PremiumV2 workspace container. */
+  Workspace = 'Workspace',
 }
 
 /**
@@ -276,6 +278,12 @@ export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> 
     armPathSuffix: 'apis/{0}/mcpServers/default',
     artifactDirectory: 'apis/{0}',
     infoFile: 'mcpServerInformation.json',
+    supportsGet: true,
+  },
+  [ResourceType.Workspace]: {
+    armPathSuffix: 'workspaces/{0}',
+    artifactDirectory: 'workspaces/{0}',
+    infoFile: 'workspaceInformation.json',
     supportsGet: true,
   },
 };

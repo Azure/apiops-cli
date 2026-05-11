@@ -46,16 +46,34 @@ param(
     [ValidateSet('Developer', 'Premium', 'StandardV2', 'PremiumV2')]
     [string]$SkuName = 'StandardV2',
 
-    [switch]$Destroy
+    [switch]$Destroy,
+
+    [ValidateSet('Info', 'Verbose', 'Debug')]
+    [string]$LogLevel = 'Info'
 )
 
 $ErrorActionPreference = 'Stop'
+$VerbosePreference = if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' }
+$DebugPreference   = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' }
+Import-Module (Join-Path $PSScriptRoot 'MaskingHelpers.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'DeploymentHelpers.psm1') -Force
+
+# Map this script's LogLevel (Info/Verbose/Debug) to the apiops CLI log level
+# values used in the printed example command.
+function Get-ApiopsLogLevelLocal([string]$ScriptLogLevel) {
+    switch ($ScriptLogLevel) {
+        'Verbose' { return 'warn' }
+        'Debug'   { return 'debug' }
+        default   { return 'info' }
+    }
+}
+$apiopsLogLevel = Get-ApiopsLogLevelLocal -ScriptLogLevel $LogLevel
 
 # ---------------------------------------------------------------------------
 # Destroy path
 # ---------------------------------------------------------------------------
 if ($Destroy) {
-    Write-Host "🗑️  Deleting resource group '$ResourceGroupName'..." -ForegroundColor Yellow
+    Write-Host "🗑️  Deleting resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)'..." -ForegroundColor Yellow
     az group delete --name $ResourceGroupName --yes --no-wait
     Write-Host "✅ Deletion initiated (async). Resource group will be removed shortly." -ForegroundColor Green
     exit 0
@@ -65,9 +83,13 @@ if ($Destroy) {
 # Deploy path
 # ---------------------------------------------------------------------------
 $bicepFile = Join-Path $PSScriptRoot 'source-apim.bicep'
+$postActivationBicepFile = Join-Path $PSScriptRoot 'source-apim-post-activation.bicep'
 
 if (-not (Test-Path $bicepFile)) {
     Write-Error "Bicep file not found at: $bicepFile"
+}
+if (-not (Test-Path $postActivationBicepFile)) {
+    Write-Error "Bicep file not found at: $postActivationBicepFile"
 }
 
 # Verify az CLI is authenticated
@@ -78,7 +100,7 @@ if (-not $account) {
 }
 
 $subscriptionId = $account.id
-Write-Host "   Subscription: $($account.name) ($subscriptionId)" -ForegroundColor Gray
+Write-Host "   Subscription: $($account.name) ($(Protect-SubscriptionId -Value $subscriptionId))" -ForegroundColor Gray
 
 # Register required resource providers
 Write-Host "📋 Registering required resource providers..." -ForegroundColor Cyan
@@ -87,7 +109,8 @@ $requiredProviders = @(
     'Microsoft.Insights',
     'Microsoft.OperationalInsights',
     'Microsoft.EventHub',
-    'Microsoft.KeyVault'
+    'Microsoft.KeyVault',
+    'Microsoft.AlertsManagement'
 )
 foreach ($provider in $requiredProviders) {
     $state = az provider show --namespace $provider --query "registrationState" --output tsv 2>$null
@@ -124,7 +147,7 @@ if (-not $allRegistered) {
 Write-Host "   ✅ Resource providers ready" -ForegroundColor Green
 
 # Create resource group if needed
-Write-Host "📦 Ensuring resource group '$ResourceGroupName' exists in '$Location'..." -ForegroundColor Cyan
+Write-Host "📦 Ensuring resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)' exists in '$Location'..." -ForegroundColor Cyan
 az group create --name $ResourceGroupName --location $Location --output none
 
 # Deploy Bicep template
@@ -136,19 +159,66 @@ Write-Host ""
 
 $deploymentName = "source-apim-$(Get-Date -Format 'yyyyMMddHHmmss')"
 
-$result = az deployment group create `
-    --resource-group $ResourceGroupName `
-    --name $deploymentName `
-    --template-file $bicepFile `
-    --parameters skuName=$SkuName location=$Location publisherEmail=$PublisherEmail `
-    --output json | ConvertFrom-Json
+$azVerbosity = @()
+switch ($LogLevel) {
+    'Verbose' { $azVerbosity = @('--verbose') }
+    'Debug'   { $azVerbosity = @('--debug') }
+}
+
+$azReplacements = @{
+    $subscriptionId    = Protect-SubscriptionId -Value $subscriptionId
+    $ResourceGroupName = Protect-ResourceGroupName   -Value $ResourceGroupName
+}
+
+$azArgs = @(
+    'deployment', 'group', 'create',
+    '--resource-group', $ResourceGroupName,
+    '--name',           $deploymentName,
+    '--template-file',  $bicepFile,
+    '--parameters',     "skuName=$SkuName", "location=$Location", "publisherEmail=$PublisherEmail",
+    '--output',         'json'
+) + $azVerbosity
+
+$raw = Invoke-MaskedAzCommand -Replacements $azReplacements -Arguments $azArgs
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "Deployment failed. Check the Azure portal for details."
+    Write-DeploymentFailureDetails `
+        -ResourceGroupName $ResourceGroupName `
+        -DeploymentName    $deploymentName `
+        -Replacements      $azReplacements
+    throw "Source APIM deployment failed (deployment '$deploymentName' in resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)'). See failed-operation details above."
 }
+
+$result = $raw | ConvertFrom-Json
 
 # Extract outputs
 $outputs = $result.properties.outputs
+
+# Deploy activation-sensitive APIM children after activation.
+$apimServiceName = $outputs.apimServiceName.value
+Wait-ApimActivation -ResourceGroupName $ResourceGroupName -ApimName $apimServiceName | Out-Null
+
+$postDeploymentName = "source-apim-post-activation-$(Get-Date -Format 'yyyyMMddHHmmss')"
+$postReplacements = $azReplacements.Clone()
+$postReplacements[$apimServiceName] = Protect-ApimName -Value $apimServiceName
+$postArgs = @(
+    'deployment', 'group', 'create',
+    '--resource-group', $ResourceGroupName,
+    '--name',           $postDeploymentName,
+    '--template-file',  $postActivationBicepFile,
+    '--parameters',     "apimName=$apimServiceName", "skuName=$SkuName",
+    '--output',         'json'
+) + $azVerbosity
+
+Write-Host "Applying post-activation APIM resources..." -ForegroundColor Cyan
+$postRaw = Invoke-MaskedAzCommand -Replacements $postReplacements -Arguments $postArgs
+if ($LASTEXITCODE -ne 0) {
+    Write-DeploymentFailureDetails `
+        -ResourceGroupName $ResourceGroupName `
+        -DeploymentName    $postDeploymentName `
+        -Replacements      $postReplacements
+    throw "Source post-activation deployment failed (deployment '$postDeploymentName' in resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)'). See failed-operation details above."
+}
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green
@@ -158,10 +228,11 @@ Write-Host ""
 Write-Host "APIOps CLI extract command:" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  npx apiops extract \"
-Write-Host "    --subscription-id $($outputs.subscriptionId.value) \"
-Write-Host "    --resource-group  $($outputs.resourceGroupName.value) \"
-Write-Host "    --service-name    $($outputs.apimServiceName.value) \"
-Write-Host "    --output-dir      ./extracted"
+Write-Host "    --subscription-id $(Protect-SubscriptionId -Value $outputs.subscriptionId.value) \"
+Write-Host "    --resource-group  $(Protect-ResourceGroupName -Value $outputs.resourceGroupName.value) \"
+Write-Host "    --service-name    $(Protect-ApimName -Value $outputs.apimServiceName.value) \"
+Write-Host "    --output-dir      ./extracted \"
+Write-Host "    --log-level       $apiopsLogLevel"
 Write-Host ""
 Write-Host "Gateway URL:        $($outputs.gatewayUrl.value)" -ForegroundColor Gray
 Write-Host "Workspace deployed: $($outputs.workspaceDeployed.value)" -ForegroundColor Gray
@@ -178,6 +249,7 @@ $outputObj = @{
     workspaceDeployed = $outputs.workspaceDeployed.value
     gatewayDeployed = $outputs.gatewayDeployed.value
     skuName         = $outputs.skuName.value
+    logLevel        = $LogLevel
 }
 
 # Write to GitHub Actions output if running in CI

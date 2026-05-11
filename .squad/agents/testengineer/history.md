@@ -159,3 +159,16 @@
 - History updated with dual-mode package consumption patterns
 
 <!-- Append new learnings here after each session -->
+
+### 2026-05-19: MaskingHelpers — capture child stderr directly
+
+Rewrote [tests/integration/all-resource-types/MaskingHelpers.psm1](tests/integration/all-resource-types/MaskingHelpers.psm1) around `System.Diagnostics.Process` with `RedirectStandardOutput/Error = $true` so the child's raw bytes bypass PowerShell's ErrorRecord promotion and never reach the parent transcript. Per-stream `Start-ThreadJob` readers drain into `ConcurrentQueue[string]`s; main runspace polls every 100 ms and emits through `Protect-LogLine`.
+
+Breaking signature: helpers now take `-Arguments [string[]]` instead of `-Command [scriptblock]`. All four call sites updated.
+
+Gotchas for future PowerShell work:
+
+- `Register-ObjectEvent` Action handlers do not drain reliably while the main runspace is in `Start-Sleep`. Use `Start-ThreadJob` (PS 7+) to bypass the engine event pump.
+- `$x = if ($cond) { [List[T]]::new() }` assigns `$null` — PowerShell enumerates the empty list. Use `$x = $null; if ($cond) { $x = ... }`.
+- `ProcessStartInfo.StandardOutputEncoding/StandardErrorEncoding` default to OEM on Windows; force UTF-8 or `az --debug` output mangles.
+

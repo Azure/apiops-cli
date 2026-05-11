@@ -56,7 +56,7 @@ The kitchen sink APIM instance includes **every resource type and API protocol v
 ### Deploy
 
 ```powershell
-# Deploy with defaults (StandardV2 SKU, eastus2, auto-generated resource names)
+# Deploy with defaults (StandardV2 SKU, centralus, auto-generated resource names)
 .\deploy-source.ps1 -ResourceGroupName rg-apiops-bvt -PublisherEmail admin@contoso.com
 
 # Deploy with Developer SKU (classic — supports self-hosted gateways, no workspaces)
@@ -101,7 +101,8 @@ The round-trip test validates the full extract→publish cycle:
 
 The workflow at `.github/workflows/integration-test.yml` provides a manual trigger (`workflow_dispatch`) with:
 - **SKU selection** (StandardV2, Developer, Premium, PremiumV2)
-- **Location** (default: eastus2)
+- **Location** (default: centralus)
+- **Log level** (Info, Verbose, Debug; default: Verbose)
 - **Skip teardown** toggle for debugging
 
 Requires an `integration-test` environment with secrets:
