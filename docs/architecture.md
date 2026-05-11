@@ -1,0 +1,163 @@
+# Architecture
+
+## Overview
+
+`apiops` implements a **configuration-as-code** workflow for Azure API Management (APIM). Configuration is extracted from a running APIM instance into version-controlled artifact files. Those files become the source of truth for publishing to one or more environments, driven by a CI/CD pipeline.
+
+---
+
+## Configuration-as-Code Workflow
+
+The diagram below shows how `apiops` fits into a typical team workflow:
+
+```mermaid
+flowchart LR
+    dev(["👤 Developer"])
+
+    subgraph repo["Git Repository"]
+        artifacts["📁 APIM Artifacts\n(JSON + XML)"]
+        ci["⚙️ CI/CD Workflows\n(GitHub Actions /\nAzure DevOps)"]
+    end
+
+    subgraph azure["Azure"]
+        apim_src["🔵 Source APIM\n(e.g. Dev)"]
+        apim_stg["🟡 APIM\n(Staging)"]
+        apim_prd["🔴 APIM\n(Production)"]
+    end
+
+    dev -- "apiops extract" --> artifacts
+    dev -- "apiops init" --> ci
+    apim_src -. "reads config" .-> artifacts
+    ci -- "apiops publish" --> apim_stg
+    ci -- "apiops publish\n(with overrides)" --> apim_prd
+```
+
+| Step | Command | Description |
+|------|---------|-------------|
+| 1 | `apiops init` | Scaffolds the Git repository with CI/CD workflow files and an identity setup guide |
+| 2 | `apiops extract` | Reads the running APIM configuration and writes it to local artifact files |
+| 3 | `apiops publish` | Reads artifact files and creates/updates/deletes resources in the target APIM |
+
+---
+
+## Component Architecture
+
+The diagram below shows the internal structure of the `apiops` CLI:
+
+```mermaid
+flowchart TB
+    subgraph entrypoint["CLI Entry Point"]
+        extract_cmd["extract"]
+        publish_cmd["publish"]
+        init_cmd["init"]
+    end
+
+    subgraph auth["Authentication (@azure/identity)"]
+        dac["DefaultAzureCredential\nOIDC · Service Principal\nManaged Identity · Azure CLI"]
+    end
+
+    subgraph services["Services"]
+        direction TB
+        extract_svc["Extract Service\n(parallel by dependency tier)"]
+        filter_svc["Filter + Transitive Resolver"]
+
+        publish_svc["Publish Service\n(dependency-ordered PUT / DELETE)"]
+        override_svc["Override Merger\n(per-environment config)"]
+        git_svc["Git Diff Service\n(incremental publish)"]
+        dry_svc["Dry-run Reporter"]
+
+        init_svc["Init Service\n(CI/CD scaffolding)"]
+    end
+
+    subgraph clients["Clients"]
+        apim_client["APIM REST Client\n(Azure Management API)"]
+        store["Artifact Store\n(Local Filesystem)"]
+    end
+
+    subgraph external["External Systems"]
+        azure_apim[("Azure APIM")]
+        local_files[("Artifact Files\nJSON · XML · YAML")]
+        git_repo[("Git Repository")]
+        cicd_files[("CI/CD Workflow Files")]
+    end
+
+    extract_cmd --> extract_svc
+    publish_cmd --> publish_svc
+    init_cmd --> init_svc
+
+    extract_svc --> filter_svc
+    extract_svc --> apim_client
+    extract_svc --> store
+
+    publish_svc --> override_svc
+    publish_svc --> git_svc
+    publish_svc --> dry_svc
+    publish_svc --> apim_client
+    publish_svc --> store
+
+    apim_client --> auth
+    auth --> azure_apim
+    store <--> local_files
+    git_svc --> git_repo
+    init_svc --> cicd_files
+```
+
+### Extract flow
+
+`apiops extract` fetches every resource type from the APIM Management API and writes each resource to a corresponding artifact file on disk. Extraction is parallelized across independent resource types and can be narrowed with a filter file; transitive dependencies (e.g. backends referenced by a policy) are automatically included.
+
+### Publish flow
+
+`apiops publish` reads artifact files from disk and applies them to the target APIM instance in topological dependency order (backends before APIs, APIs before products, etc.). Three optional modes reduce blast radius:
+
+- **`--dry-run`** — prints the plan without making any changes
+- **`--overrides <path>`** — merges per-environment values (backend URLs, named-value secrets) before publishing
+- **`--commit-id <sha>`** — incremental mode; only resources whose artifact files changed in that Git commit are published
+
+### Init flow
+
+`apiops init` scaffolds the repository with ready-to-use GitHub Actions or Azure DevOps workflow files and generates an `identity-setup.prompt.md` guide for configuring OIDC federated credentials — no client secrets required.
+
+---
+
+## Authentication
+
+`apiops` uses [`DefaultAzureCredential`](https://learn.microsoft.com/azure/developer/javascript/sdk/authentication/overview) from the `@azure/identity` SDK. Credentials are tried in this order:
+
+| Credential | Typical use |
+|---|---|
+| Workload Identity (OIDC) | GitHub Actions / Azure Pipelines |
+| Service Principal (env vars or flags) | Legacy CI/CD, scripts |
+| Managed Identity | Azure-hosted runners, VMs, App Service |
+| Azure CLI / Azure Developer CLI | Local development |
+
+No secrets are required when running in GitHub Actions workflows generated by `apiops init` — authentication is handled entirely via OIDC federated credentials.
+
+---
+
+## Artifact File Layout
+
+```
+apim-artifacts/
+├── apis/
+│   └── orders-api/
+│       ├── apiInformation.json
+│       ├── policy.xml
+│       └── operations/
+│           └── get-order/
+│               └── policy.xml
+├── backends/
+│   └── orders-backend/
+│       └── backendInformation.json
+├── named values/
+│   └── orders-url/
+│       └── namedValueInformation.json
+├── products/
+│   └── starter/
+│       ├── productInformation.json
+│       ├── policy.xml
+│       └── apis.json
+└── policy.xml          ← global service policy
+```
+
+Resources are stored as plain JSON (exactly as returned by the APIM Management API) so that any future APIM properties are automatically preserved during extract-publish round-trips without requiring tool updates.
