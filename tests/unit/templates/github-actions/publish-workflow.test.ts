@@ -92,7 +92,7 @@ describe('github-actions/publish-workflow', () => {
       expect(workflow).toContain('environment: prod');
     });
 
-    it('should include chained needs hints in comments for sequential deployment', () => {
+    it('should include chained needs hints in comments for sequential opt-in deployment', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'staging', 'prod'],
@@ -102,11 +102,13 @@ describe('github-actions/publish-workflow', () => {
       expect(workflow).toContain('needs: [get-commit, publish-staging]');
     });
 
-    it('should have all environment jobs depend on get-commit', () => {
+    it('should use get-commit as the base needs dependency for all environments', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
+      // Both environments depend on get-commit as their base needs
+      expect(workflow).toContain('publish-dev:\n    # Automatically deploys');
       expect(workflow).toContain('needs: get-commit');
     });
 
