@@ -52,7 +52,7 @@ export function generatePublishPipeline(config: PublishPipelineConfig): string {
                       --resource-group $(APIM_RESOURCE_GROUP_${env.toUpperCase()}) \\
                       --service-name $(APIM_SERVICE_NAME_${env.toUpperCase()}) \\
                       --source ${config.artifactDir} \\
-                      --override configuration.${env}.yaml \\
+                      --overrides configuration.${env}.yaml \\
                       --commit-id $(Build.SourceVersion) \\
                       --subscription-id $(AZURE_SUBSCRIPTION_ID)
 
@@ -68,7 +68,7 @@ export function generatePublishPipeline(config: PublishPipelineConfig): string {
                       --resource-group $(APIM_RESOURCE_GROUP_${env.toUpperCase()}) \\
                       --service-name $(APIM_SERVICE_NAME_${env.toUpperCase()}) \\
                       --source ${config.artifactDir} \\
-                      --override configuration.${env}.yaml \\
+                      --overrides configuration.${env}.yaml \\
                       --subscription-id $(AZURE_SUBSCRIPTION_ID)
 `;
   }).join('\n');
