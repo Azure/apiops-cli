@@ -271,8 +271,12 @@ var productPolicyXml = '''
 var resolverPolicyXml = '''
 <http-data-source>
   <http-request>
-    <set-method>GET</set-method>
-    <set-url>https://httpbin.org/get</set-url>
+    <set-method>POST</set-method>
+    <set-url>https://countries.trevorblades.com/graphql</set-url>
+    <set-header name="Content-Type" exists-action="override">
+      <value>application/json</value>
+    </set-header>
+    <set-body>{"query":"{ countries { name code } }"}</set-body>
   </http-request>
 </http-data-source>
 '''
@@ -786,7 +790,7 @@ resource apiGraphqlSynthetic 'Microsoft.ApiManagement/service/apis@2024-05-01' =
     description: 'Kitchen sink synthetic GraphQL API with inline schema'
     path: 'ks/graphql'
     protocols: ['https']
-    serviceUrl: 'https://httpbin.org/post'
+    serviceUrl: 'https://countries.trevorblades.com/graphql'
     type: 'graphql'
     apiType: 'graphql'
   }
@@ -813,7 +817,7 @@ resource apiGraphqlPassthrough 'Microsoft.ApiManagement/service/apis@2024-05-01'
     description: 'Kitchen sink pass-through GraphQL API'
     path: 'ks/graphql-pt'
     protocols: ['https']
-    serviceUrl: 'https://httpbin.org/post'
+    serviceUrl: 'https://countries.trevorblades.com/graphql'
     type: 'graphql'
     apiType: 'graphql'
   }
