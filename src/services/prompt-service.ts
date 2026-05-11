@@ -82,10 +82,17 @@ class PromptServiceImpl implements PromptService {
       return [];
     }
 
-    return answer
+    const parsed = answer
       .split(',')
       .map((env) => env.trim())
-      .filter((env) => environments.includes(env));
+      .filter((env) => env.length > 0);
+
+    const invalid = parsed.filter((env) => !environments.includes(env));
+    if (invalid.length > 0) {
+      logger.warn(`Ignoring unrecognised environments (not in environment list): ${invalid.join(', ')}`);
+    }
+
+    return parsed.filter((env) => environments.includes(env));
   }
 
   /**
