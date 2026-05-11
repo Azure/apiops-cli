@@ -57,10 +57,6 @@ flowchart TB
         init_cmd["init"]
     end
 
-    subgraph auth["Authentication (@azure/identity)"]
-        dac["DefaultAzureCredential<br/>OIDC · Service Principal<br/>Managed Identity · Azure CLI"]
-    end
-
     subgraph services["Services"]
         direction TB
         extract_svc["Extract Service<br/>(parallel by dependency tier)"]
@@ -76,14 +72,17 @@ flowchart TB
 
     subgraph clients["Clients"]
         apim_client["APIM REST Client<br/>(Azure Management API)"]
-        store["Artifact Store<br/>(Local Filesystem)"]
+        store["Artifact Store"]
+    end
+
+    subgraph auth["Authentication"]
+        auth_pkg["@azure/identity"]
     end
 
     subgraph external["External Systems"]
-        azure_apim[("Azure APIM")]
-        local_files[("Artifact Files<br/>JSON · XML · YAML")]
+        azure_apim[("<img src='./10042-icon-service-API-Management-Services.svg' width='20' height='20' /><br/>Azure API Management")]
+        local_files[("Artifact Files<br/>(Local Filesystem)")]
         git_repo[("Git Repository")]
-        cicd_files[("CI/CD Workflow Files")]
     end
 
     extract_cmd --> extract_svc
@@ -100,11 +99,11 @@ flowchart TB
     publish_svc --> apim_client
     publish_svc --> store
 
-    apim_client --> auth
-    auth --> azure_apim
+    apim_client --> auth_pkg
+    auth_pkg --> azure_apim
     store <--> local_files
     git_svc --> git_repo
-    init_svc --> cicd_files
+    init_svc --> git_repo
 ```
 
 ### Extract flow
