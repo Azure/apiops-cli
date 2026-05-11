@@ -650,6 +650,7 @@ try {
         @{ Label = 'Releases';        Suffix = 'releases'        }
         @{ Label = 'Wikis';           Suffix = 'wikis'           }
         @{ Label = 'Tag Descriptions'; Suffix = 'tagDescriptions' }
+        @{ Label = 'MCP Servers';     Suffix = 'mcpServers'      }
     )
 
     foreach ($apiName in $apiNames) {

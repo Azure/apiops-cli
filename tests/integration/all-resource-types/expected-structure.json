@@ -127,7 +127,7 @@
           "files": ["backendInformation.json"],
           "spotChecks": {
             "backendInformation.json": {
-              "properties.url": "https://src-backend.example.com/api",
+              "properties.url": "https://httpbin.org",
               "properties.protocol": "http",
               "properties.tls.validateCertificateChain": true
             }
@@ -361,7 +361,7 @@
       ]
     },
     "apis": {
-      "minCount": 8,
+      "minCount": 9,
       "expected": [
         {
           "name": "src-rest-openapi",
@@ -569,16 +569,43 @@
           "notes": "Revision 2 of src-rest-revisioned"
         },
         {
-          "name": "src-rest-mcp-style",
-          "files": ["apiInformation.json"],
+          "name": "src-mcp-from-api",
+          "files": ["apiInformation.json", "mcpServerInformation.json"],
           "spotChecks": {
             "apiInformation.json": {
-              "properties.displayName": "KS MCP-Style REST API",
-              "properties.path": "ks/mcp",
+              "properties.displayName": "KS MCP from Existing API",
+              "properties.path": "ks/mcp-from-api",
+              "properties.type": "mcp",
               "properties.subscriptionRequired": false
+            },
+            "mcpServerInformation.json": {
+              "properties.mcpTools": "exists"
             }
           },
-          "notes": "REST API with explicitly defined operation (no operation-level policies, so no operations directory)"
+          "children": {
+            "operations": {
+              "minCount": 1,
+              "notes": "Explicit operation for ApiOperation BVT coverage"
+            }
+          },
+          "notes": "MCP API exposing REST backend operations as MCP tools; has explicit operation and mcpServerInformation.json"
+        },
+        {
+          "name": "src-mcp-from-external",
+          "files": ["apiInformation.json", "mcpServerInformation.json"],
+          "spotChecks": {
+            "apiInformation.json": {
+              "properties.displayName": "KS MCP from External Server",
+              "properties.path": "ks/mcp-external",
+              "properties.type": "mcp",
+              "properties.subscriptionRequired": false
+            },
+            "mcpServerInformation.json": {
+              "properties.mcpProperties": "exists",
+              "properties.mcpProperties.serverUrl": "https://api.githubcopilot.com/mcp"
+            }
+          },
+          "notes": "MCP API repackaging a public external MCP server; has mcpServerInformation.json with mcpProperties.serverUrl"
         }
       ]
     },
