@@ -57,6 +57,14 @@ describe('extract-command', () => {
       expect(specOpt).toBeDefined();
     });
 
+    it('should have required --subscription-id option', () => {
+      const cmd = createExtractCommand();
+      const opts = cmd.options;
+      const subOpt = opts.find((o) => o.long === '--subscription-id');
+      expect(subOpt).toBeDefined();
+      expect(subOpt?.mandatory).toBe(true);
+    });
+
     it('should have a description', () => {
       const cmd = createExtractCommand();
       expect(cmd.description()).toBeTruthy();

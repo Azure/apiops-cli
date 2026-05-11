@@ -5,7 +5,7 @@
  * Includes --format json: machine-readable JSON output mode (T038).
  */
 
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { PublishConfig } from '../models/config.js';
 import { ApimServiceContext } from '../models/types.js';
 import { runPublish, PublishResult } from '../services/publish-service.js';
@@ -19,6 +19,7 @@ import { getCloudConfig, buildArmBaseUrl } from '../lib/cloud-config.js';
  * Interface for publish command options (from CLI flags).
  */
 interface PublishOptions {
+  subscriptionId: string;
   resourceGroup: string;
   serviceName: string;
   source: string;
@@ -34,6 +35,11 @@ interface PublishOptions {
 export function createPublishCommand(): Command {
   const publish = new Command('publish')
     .description('Publish local APIM artifacts to Azure APIM service')
+    .addOption(
+      new Option('--subscription-id <id>', 'Azure subscription ID')
+        .env('AZURE_SUBSCRIPTION_ID')
+        .makeOptionMandatory(true),
+    )
     .requiredOption('--resource-group <rg>', 'Azure resource group name')
     .requiredOption('--service-name <name>', 'APIM service instance name')
     .option('--source <dir>', 'Source directory with artifacts', './apim-artifacts')
@@ -51,7 +57,6 @@ export function createPublishCommand(): Command {
     .action(async (options: PublishOptions, command: Command) => {
       const globalOpts = command.optsWithGlobals<{
         logLevel?: string;
-        subscriptionId?: string;
         cloud?: string;
         format?: string;
         apiVersion?: string;
@@ -70,21 +75,12 @@ async function executePublish(
   options: PublishOptions,
   globalOpts: {
     logLevel?: string;
-    subscriptionId?: string;
     cloud?: string;
     format?: string;
     apiVersion?: string;
   }
 ): Promise<void> {
-  const subscriptionId =
-    globalOpts.subscriptionId ?? process.env.AZURE_SUBSCRIPTION_ID;
-
-  if (!subscriptionId) {
-    logger.error(
-      'Subscription ID required: use --subscription-id or set AZURE_SUBSCRIPTION_ID'
-    );
-    process.exit(2);
-  }
+  const { subscriptionId } = options;
 
   // Build service context
   // Default to a recent preview API version so newer resource types (e.g.
