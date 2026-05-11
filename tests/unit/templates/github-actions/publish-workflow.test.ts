@@ -92,16 +92,17 @@ describe('github-actions/publish-workflow', () => {
       expect(workflow).toContain('environment: prod');
     });
 
-    it('should chain jobs with needs dependencies', () => {
+    it('should include chained needs hints in comments for sequential deployment', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'staging', 'prod'],
       });
+      // Chaining hints appear as comments for opt-in sequential deployment
       expect(workflow).toContain('needs: [get-commit, publish-dev]');
       expect(workflow).toContain('needs: [get-commit, publish-staging]');
     });
 
-    it('should have first environment depend on get-commit only', () => {
+    it('should have all environment jobs depend on get-commit', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
@@ -202,6 +203,45 @@ describe('github-actions/publish-workflow', () => {
       });
       expect(workflow).toContain('npm install');
       expect(workflow).toContain('npx apiops publish');
+    });
+
+    it('should enable first environment to run automatically on push to main', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+      });
+      // First environment's if-condition must include the push event trigger
+      expect(workflow).toContain("ENVIRONMENT == 'dev' || github.event_name == 'push'");
+    });
+
+    it('should not auto-trigger subsequent environments on push to main', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'staging', 'prod'],
+      });
+      // staging and prod must NOT include the push trigger in their active if-conditions
+      // (they may appear in comments but not as live conditions)
+      const lines = workflow.split('\n');
+
+      for (const env of ['staging', 'prod']) {
+        const jobStart = lines.findIndex((l) => l.includes(`publish-${env}:`));
+        // Find the actual `if:` line (not a comment) within the next 10 lines
+        const jobLines = lines.slice(jobStart, jobStart + 10);
+        const ifLine = jobLines.find((l) => l.trimStart().startsWith('if:') && !l.trimStart().startsWith('#'));
+        expect(ifLine).toBeDefined();
+        expect(ifLine).not.toContain('event_name');
+      }
+    });
+
+    it('should pass commit_id on push trigger via incremental step condition', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+      });
+      // The incremental step condition is true when COMMIT_ID_CHOICE is empty (push trigger),
+      // so --commit-id will be passed automatically on push.
+      expect(workflow).toContain("COMMIT_ID_CHOICE != 'publish-all-artifacts-in-repo'");
+      expect(workflow).toContain('--commit-id ${{ needs.get-commit.outputs.commit_id }}');
     });
   });
 });
