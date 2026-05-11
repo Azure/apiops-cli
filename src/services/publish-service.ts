@@ -234,6 +234,13 @@ async function executePuts(
     logger.debug(`Publishing tier ${tier}: ${descriptors.length} resources`);
 
     if (tier === 1) {
+      const { workspaces, nonWorkspaceTier1 } = splitWorkspaces(descriptors);
+
+      if (workspaces.length > 0) {
+        logger.debug(`Publishing ${workspaces.length} workspace container(s) first (wave 0 of tier 1)`);
+        await publishAndOutput(client, store, context, config, workspaces, results);
+      }
+
       // Within Tier 1 we publish in three ordered waves to satisfy implicit
       // runtime dependencies:
       //
@@ -250,7 +257,7 @@ async function executePuts(
       //   Pool backends reference individual Backend resources and must be
       //   published after the backends they aggregate (see pool backend
       //   ordering comments in splitPoolBackends).
-      const { namedValues, otherTier1 } = splitNamedValues(descriptors);
+      const { namedValues, otherTier1 } = splitNamedValues(nonWorkspaceTier1);
 
       if (namedValues.length > 0) {
         logger.debug(`Publishing ${namedValues.length} named value(s) first (wave 1 of tier 1)`);
@@ -275,6 +282,19 @@ async function executePuts(
           poolBackends,
           results
         );
+      }
+    } else if (tier === 2) {
+      const { mcpApis, regularTier2 } = await splitMcpApis(
+        store,
+        config.sourceDir,
+        descriptors
+      );
+
+      await publishAndOutput(client, store, context, config, regularTier2, results);
+
+      if (mcpApis.length > 0) {
+        logger.debug(`Publishing ${mcpApis.length} MCP API resource(s) after regular tier 2 resources`);
+        await publishAndOutput(client, store, context, config, mcpApis, results);
       }
     } else {
       // For tiers 3/4, exclude child resources whose parent is being published
@@ -308,6 +328,23 @@ async function executePuts(
   }
 
   return results;
+}
+
+function splitWorkspaces(
+  descriptors: ResourceDescriptor[]
+): { workspaces: ResourceDescriptor[]; nonWorkspaceTier1: ResourceDescriptor[] } {
+  const workspaces: ResourceDescriptor[] = [];
+  const nonWorkspaceTier1: ResourceDescriptor[] = [];
+
+  for (const descriptor of descriptors) {
+    if (descriptor.type === ResourceType.Workspace) {
+      workspaces.push(descriptor);
+    } else {
+      nonWorkspaceTier1.push(descriptor);
+    }
+  }
+
+  return { workspaces, nonWorkspaceTier1 };
 }
 
 /**
@@ -395,6 +432,31 @@ async function splitPoolBackends(
   }
 
   return { poolBackends, regularTier1 };
+}
+
+async function splitMcpApis(
+  store: IArtifactStore,
+  sourceDir: string,
+  descriptors: ResourceDescriptor[]
+): Promise<{ mcpApis: ResourceDescriptor[]; regularTier2: ResourceDescriptor[] }> {
+  const mcpApis: ResourceDescriptor[] = [];
+  const regularTier2: ResourceDescriptor[] = [];
+
+  for (const descriptor of descriptors) {
+    if (descriptor.type === ResourceType.Api) {
+      const json = await store.readResource(sourceDir, descriptor);
+      const props = json?.properties as Record<string, unknown> | undefined;
+      const mcpTools = props?.mcpTools;
+      if (Array.isArray(mcpTools) && mcpTools.length > 0) {
+        mcpApis.push(descriptor);
+        continue;
+      }
+    }
+
+    regularTier2.push(descriptor);
+  }
+
+  return { mcpApis, regularTier2 };
 }
 
 /**

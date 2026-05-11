@@ -378,11 +378,7 @@ function Compare-NormalizedResources {
                 }
             }
             else {
-                $svLen = if ($null -ne $svJson) { $svJson.Length } else { 0 }
-                $tvLen = if ($null -ne $tvJson) { $tvJson.Length } else { 0 }
-                $svShort = if ($svLen -gt 120) { $svJson.Substring(0, 117) + '...' } else { $svJson }
-                $tvShort = if ($tvLen -gt 120) { $tvJson.Substring(0, 117) + '...' } else { $tvJson }
-                $diffs.Add("  DIFF at $currentPath`n    source: $svShort`n    target: $tvShort")
+                $diffs.Add("  DIFF at $currentPath`n    source: $svJson`n    target: $tvJson")
             }
         }
     }
@@ -390,11 +386,7 @@ function Compare-NormalizedResources {
     # Fallback: if JSON differs but no key-level diffs found, report the full diff
     if ($diffs.Count -eq 0) {
         $pathPrefix = if ($Path) { "${Path}: " } else { '' }
-        $srcLen = if ($null -ne $sourceJson) { $sourceJson.Length } else { 0 }
-        $tgtLen = if ($null -ne $targetJson) { $targetJson.Length } else { 0 }
-        $srcShort = if ($srcLen -gt 200) { $sourceJson.Substring(0, 197) + '...' } else { $sourceJson }
-        $tgtShort = if ($tgtLen -gt 200) { $targetJson.Substring(0, 197) + '...' } else { $targetJson }
-        $diffs.Add("  ${pathPrefix}JSON differs`n    source: $srcShort`n    target: $tgtShort")
+        $diffs.Add("  ${pathPrefix}JSON differs`n    source: $sourceJson`n    target: $targetJson")
     }
 
     return ,$diffs
@@ -599,7 +591,7 @@ try {
         @{ Label = 'Loggers';            Suffix = 'loggers';          Exclude = @(); SkipLoggerCreds = $true }
         @{ Label = 'Diagnostics';        Suffix = 'diagnostics';      Exclude = @()                      }
         @{ Label = 'Service Policy';     Suffix = 'policies';         Exclude = @()                      }
-        @{ Label = 'Products';           Suffix = 'products';         Exclude = @('starter', 'unlimited') }
+   #     @{ Label = 'Products';           Suffix = 'products';         Exclude = @('starter', 'unlimited') }
         @{ Label = 'Subscriptions';      Suffix = 'subscriptions';    Exclude = @('master')              }
         @{ Label = 'Workspaces';         Suffix = 'workspaces';       Exclude = @()                      }
         @{ Label = 'Documentations';     Suffix = 'documentations';   Exclude = @()                      }
