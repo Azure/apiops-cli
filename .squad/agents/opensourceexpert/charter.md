@@ -39,8 +39,8 @@
 
 ## Model
 
-- **Preferred:** claude-haiku-4.5
-- **Rationale:** Compliance review and advisory work — not writing production code.
+- **Preferred:** claude-opus-4.6
+- **Rationale:** Compliance review and advisory work elevated to premium tier per team directive.
 - **Fallback:** Standard chain — the coordinator handles fallback automatically
 
 ## Collaboration

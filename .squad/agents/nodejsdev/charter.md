@@ -41,7 +41,7 @@
 
 ## Model
 
-- **Preferred:** claude-sonnet-4.5
+- **Preferred:** claude-opus-4.6
 - **Rationale:** CLI wiring, packaging, and scaffolding require careful implementation.
 - **Fallback:** Standard chain — the coordinator handles fallback automatically
 

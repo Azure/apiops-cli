@@ -38,7 +38,7 @@
 
 ## Model
 
-- **Preferred:** claude-sonnet-4.5
+- **Preferred:** claude-opus-4.6
 - **Rationale:** Writing test code requires the same quality as production code.
 - **Fallback:** Standard chain — the coordinator handles fallback automatically
 
