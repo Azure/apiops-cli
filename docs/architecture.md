@@ -10,38 +10,56 @@
 
 The diagram below shows how `apiops` fits into a typical team workflow:
 
+_Icon attribution: Azure Architecture Icons (https://learn.microsoft.com/en-us/azure/architecture/icons/) and Font Awesome Free (https://fontawesome.com/)._ 
+
 ```mermaid
 flowchart LR
     classDef cmd font-family:monospace
 
-    dev(["👤 Developer"])
+    dev(["Dev"])
+    init_op(["apiops init"]):::cmd
+    extract_op(["apiops extract"]):::cmd
+    publish_op(["apiops publish"]):::cmd
+    pr["<img src='https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/solid/code-pull-request.svg' width='16' height='16' /><br/>Pull Request"]
+    merge_op["<img src='https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/solid/code-merge.svg' width='16' height='16' /><br/>Merge"]
 
-    subgraph repo["Git Repository"]
-        init_op(["apiops init"]):::cmd
-        artifacts["📁 apim-artifacts<br/>(JSON + XML)"]
-        ci["⚙️ CI/CD Workflows<br/>(GitHub Actions /<br/>Azure DevOps)"]
+    subgraph repo["<img src='https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/brands/github.svg' width='14' height='14' /> GitHub / <img src='./10261-icon-service-Azure-DevOps.svg' width='14' height='14' /> Azure DevOps"]
+        artifacts["<img src='https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/regular/folder.svg' width='16' height='16' /><br/>apim-artifacts"]
+        subgraph ci["<img src='https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/solid/gear.svg' width='16' height='16' /><br/>CI/CD Workflows"]
+            direction TB
+            extract_pipeline["extract"]
+            publish_pipeline["publish"]
+            extract_pipeline --- publish_pipeline
+        end
     end
 
     subgraph azure["Azure"]
-        apim_src["<img src='./10042-icon-service-API-Management-Services.svg' width='24' height='24' /><br/>API Management resource"]
-        apim_dst["<img src='./10042-icon-service-API-Management-Services.svg' width='24' height='24' /><br/>API Management resource"]
+        direction LR
+        apim_src["<img src='./10042-icon-service-API-Management-Services.svg' width='18' height='18' /><br/>API Management<br/>source"]
+        apim_dst["<img src='./10042-icon-service-API-Management-Services.svg' width='18' height='18' /><br/>API Management<br/>target"]
     end
 
-    dev --> init_op
-    init_op --> ci
-    ci --> extract_op
-    apim_src -.-> extract_op
-    extract_op(["apiops extract"]):::cmd --> artifacts
-    ci --> publish_op
-    artifacts -.-> publish_op
-    publish_op(["apiops publish"]):::cmd --> apim_dst
+    dev -- "Step 1" --> init_op --> ci
+    dev -- "Step 2" --> extract_pipeline --> extract_op
+    apim_src --> extract_op --> artifacts
+    ci -- "Step 3" --> pr
+    pr -- "Step 4" --> merge_op
+    merge_op -- "Step 5" --> publish_pipeline --> publish_op
+    artifacts --> publish_op --> apim_dst
 ```
 
 | Step | Command | Description |
 |------|---------|-------------|
 | 1 | `apiops init` | Scaffolds the Git repository with CI/CD workflow files and an identity setup guide |
 | 2 | `apiops extract` | Reads the running APIM configuration and writes it to local artifact files |
-| 3 | `apiops publish` | Reads artifact files and creates/updates/deletes resources in the target APIM |
+| 3 | Pull Request | Developer submits extracted artifact changes for review |
+| 4 | Merge | Approved changes are merged |
+| 5 | `apiops publish` | On merge, the publish workflow runs and applies artifact files to the target API Management instance |
+
+### Icon Usage
+
+> [!NOTE]
+> Chart uses [Azure Architecture Icons ](https://learn.microsoft.com/en-us/azure/architecture/icons/) and GitHub icons from [Font Awesome](https://fontawesome.com/).
 
 ---
 
@@ -81,8 +99,8 @@ flowchart TB
 
     subgraph external["External Systems"]
         azure_apim[("<img src='./10042-icon-service-API-Management-Services.svg' width='20' height='20' /><br/>Azure API Management")]
-        local_files[("Artifact Files<br/>(Local Filesystem)")]
-        git_repo[("Git Repository")]
+        local_files[("<img src='https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/regular/folder.svg' width='20' height='20' /><br/>Artifact Files<br/>(Local Filesystem)")]
+        git_repo[("<img src='https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/brands/github.svg' width='20' height='20' /> GitHub / <img src='./10261-icon-service-Azure-DevOps.svg' width='20' height='20' /> Azure DevOps")]
     end
 
     extract_cmd --> extract_svc
@@ -106,34 +124,14 @@ flowchart TB
     init_svc --> git_repo
 ```
 
-### Extract flow
-
-`apiops extract` fetches every resource type from the APIM Management API and writes each resource to a corresponding artifact file on disk. Extraction is parallelized across independent resource types and can be narrowed with a filter file; transitive dependencies (e.g. backends referenced by a policy) are automatically included. Resources are stored as plain JSON (exactly as returned by the APIM Management API) so that any future APIM properties are automatically preserved during extract-publish round-trips without requiring tool updates.
-
-### Publish flow
-
-`apiops publish` reads artifact files from disk and applies them to the target APIM instance in topological dependency order (backends before APIs, APIs before products, etc.). Three optional modes reduce blast radius:
-
-- **`--dry-run`** — prints the plan without making any changes
-- **`--overrides <path>`** — merges per-environment values (backend URLs, named-value secrets) before publishing
-- **`--commit-id <sha>`** — incremental mode; only resources whose artifact files changed in that Git commit are published
-
-### Init flow
-
-`apiops init` scaffolds the repository with ready-to-use GitHub Actions or Azure DevOps workflow files and generates an `identity-setup.prompt.md` guide for configuring OIDC federated credentials — no client secrets required.
-
----
-
 ## Authentication
 
-`apiops` uses [`DefaultAzureCredential`](https://learn.microsoft.com/azure/developer/javascript/sdk/authentication/overview) from the `@azure/identity` SDK. Credentials are tried in this order:
+`apiops` uses [`DefaultAzureCredential`](https://learn.microsoft.com/javascript/api/%40azure/identity/defaultazurecredential?view=azure-node-latest) from the `@azure/identity` SDK.
 
-| Credential | Typical use |
-|---|---|
-| Workload Identity (OIDC) | GitHub Actions / Azure Pipelines |
-| Service Principal (env vars or flags) | Legacy CI/CD, scripts |
-| Managed Identity | Azure-hosted runners, VMs, App Service |
-| Azure CLI / Azure Developer CLI | Local development |
+For the up-to-date credential chain and authentication behavior, see Microsoft docs:
+
+- [Credential chains in the Azure Identity library for JavaScript](https://learn.microsoft.com/azure/developer/javascript/sdk/authentication/credential-chains)
+- [Authenticate JavaScript apps to Azure services during local development](https://learn.microsoft.com/azure/developer/javascript/sdk/authentication/local-development-environment-service-principal)
 
 No secrets are required when running in GitHub Actions workflows generated by `apiops init` — authentication is handled entirely via OIDC federated credentials.
 
