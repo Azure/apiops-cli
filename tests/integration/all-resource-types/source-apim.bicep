@@ -272,7 +272,7 @@ var resolverPolicyXml = '''
 <http-data-source>
   <http-request>
     <set-method>POST</set-method>
-    <set-url>https://countries.trevorblades.com/graphql</set-url>
+    <set-url>https://src-graphql-backend.example.com/api/hero</set-url>
     <set-header name="Content-Type" exists-action="override">
       <value>application/json</value>
     </set-header>
@@ -790,7 +790,7 @@ resource apiGraphqlSynthetic 'Microsoft.ApiManagement/service/apis@2024-05-01' =
     description: 'Kitchen sink synthetic GraphQL API with inline schema'
     path: 'ks/graphql'
     protocols: ['https']
-    serviceUrl: 'https://countries.trevorblades.com/graphql'
+    serviceUrl: 'https://src-graphql-backend.example.com/graphql'
     type: 'graphql'
     apiType: 'graphql'
   }
@@ -817,7 +817,7 @@ resource apiGraphqlPassthrough 'Microsoft.ApiManagement/service/apis@2024-05-01'
     description: 'Kitchen sink pass-through GraphQL API'
     path: 'ks/graphql-pt'
     protocols: ['https']
-    serviceUrl: 'https://countries.trevorblades.com/graphql'
+    serviceUrl: 'https://src-graphql-pt-backend.example.com/graphql'
     type: 'graphql'
     apiType: 'graphql'
   }
