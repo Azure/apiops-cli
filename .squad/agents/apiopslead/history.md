@@ -6,7 +6,7 @@
 - **Spec:** `specs/001-apiops-cli/spec.md`
 - **Constitution:** `.squad/identity/constitution.md` (v2.1.0) — supreme governance document
 - **User:** Elizabeth Maher
-- **Stack:** TypeScript 5.x, Node.js 22 LTS, Commander, `@azure/identity`, Vitest, ESLint
+- **Stack:** TypeScript 6.x, Node.js 22 LTS, Commander, `@azure/identity`, Vitest, ESLint
 - **Key constraint:** No `@azure/arm-apimanagement` SDK for resource payloads — raw REST only
 
 ## Learnings

@@ -45,7 +45,7 @@ These are the concrete patterns and file paths I work with in this project.
 | `src/services/publish-service.ts` | Publish orchestration with dependency ordering |
 
 #### HttpError Pattern
-- `HttpError` extends `Error` with `status: number` and `code: string` fields
+ - `HttpError` extends `Error` with `status: number` and optional `code?: string` fields
 - Callers branch on `error.status` (e.g., 404 → optional resource, 409 → conflict), never on `error.message`
 - `allowedNonOkStatuses` parameter lets callers declare expected non-2xx codes without triggering error handling
 
