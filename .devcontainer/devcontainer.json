@@ -4,8 +4,9 @@
   "features": {
     "ghcr.io/devcontainers/features/github-cli:1": {},
     "ghcr.io/devcontainers/features/azure-cli:1": {
-      "installBicep": false
-    }
+      "installBicep": true
+    },
+    "ghcr.io/devcontainers/features/powershell:1": {}
   },
   "postCreateCommand": "npm ci",
   "remoteEnv": {
@@ -31,7 +32,9 @@
         "GitHub.vscode-github-actions",
         "ms-azuretools.vscode-azureresourcegroups",
         "ms-azure-devops.azure-pipelines",
-        "vitest.dev"
+        "vitest.dev",
+        "ms-vscode.powershell",
+        "ms-azuretools.vscode-bicep"
       ]
     }
   },
