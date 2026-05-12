@@ -10,22 +10,20 @@
 
 The diagram below shows how `apiops` fits into a typical team workflow:
 
-_Icon attribution: Azure Architecture Icons (https://learn.microsoft.com/en-us/azure/architecture/icons/) and Font Awesome Free (https://fontawesome.com/)._ 
-
 ```mermaid
 flowchart LR
     classDef cmd font-family:monospace
 
-    dev(["Dev"])
+    dev(["fa:fa-user Dev"])
     init_op(["apiops init"]):::cmd
     extract_op(["apiops extract"]):::cmd
     publish_op(["apiops publish"]):::cmd
-    pr["<img src='https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/solid/code-pull-request.svg' width='16' height='16' /><br/>Pull Request"]
-    merge_op["<img src='https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/solid/code-merge.svg' width='16' height='16' /><br/>Merge"]
+    pr["fa:fa-code-pull-request Pull Request"]
+    merge_op["fa:fa-code-merge Merge"]
 
-    subgraph repo["<img src='https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/brands/github.svg' width='14' height='14' /> GitHub / <img src='./10261-icon-service-Azure-DevOps.svg' width='14' height='14' /> Azure DevOps"]
-        artifacts["<img src='https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/regular/folder.svg' width='16' height='16' /><br/>apim-artifacts"]
-        subgraph ci["<img src='https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/solid/gear.svg' width='16' height='16' /><br/>CI/CD Workflows"]
+    subgraph repo["fa:fa-github GitHub / Azure DevOps"]
+        artifacts["fa:fa-folder apim-artifacts"]
+        subgraph ci["fa:fa-gears CI/CD Workflows"]
             direction TB
             extract_pipeline["extract"]
             publish_pipeline["publish"]
@@ -35,8 +33,8 @@ flowchart LR
 
     subgraph azure["Azure"]
         direction LR
-        apim_src["<img src='./10042-icon-service-API-Management-Services.svg' width='18' height='18' /><br/>API Management<br/>source"]
-        apim_dst["<img src='./10042-icon-service-API-Management-Services.svg' width='18' height='18' /><br/>API Management<br/>target"]
+        apim_src["API Management<br/>source"]
+        apim_dst["API Management<br/>target"]
     end
 
     dev -- "Step 1" --> init_op --> ci
@@ -55,11 +53,6 @@ flowchart LR
 | 3 | Pull Request | Developer submits extracted artifact changes for review |
 | 4 | Merge | Approved changes are merged |
 | 5 | `apiops publish` | On merge, the publish workflow runs and applies artifact files to the target API Management instance |
-
-### Icon Usage
-
-> [!NOTE]
-> Chart uses [Azure Architecture Icons ](https://learn.microsoft.com/en-us/azure/architecture/icons/) and GitHub icons from [Font Awesome](https://fontawesome.com/).
 
 ---
 
@@ -98,9 +91,9 @@ flowchart TB
     end
 
     subgraph external["External Systems"]
-        azure_apim[("<img src='./10042-icon-service-API-Management-Services.svg' width='20' height='20' /><br/>Azure API Management")]
-        local_files[("<img src='https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/regular/folder.svg' width='20' height='20' /><br/>Artifact Files<br/>(Local Filesystem)")]
-        git_repo[("<img src='https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/brands/github.svg' width='20' height='20' /> GitHub / <img src='./10261-icon-service-Azure-DevOps.svg' width='20' height='20' /> Azure DevOps")]
+        azure_apim[("Azure API Management")]
+        local_files[("fa:fa-folder Artifact Files\n(Local Filesystem)")]
+        git_repo[("fa:fa-github GitHub / Azure DevOps")]
     end
 
     extract_cmd --> extract_svc
