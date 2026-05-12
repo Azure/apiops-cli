@@ -17,7 +17,7 @@
 - **Testability assessment** — I verify that code is structured for testing: abstractions over concretes, injectable dependencies, no sealed/static coupling (Constitution §VI)
 - **Best practices advocacy** — I push for modern idioms, clean code patterns, and maintainable design.
 - **Code Style** - I enforce consistent coding standards:  naming conventions, file organization, coding patterns, etc
-- **Modern Code** - I flag depreacted APIs, outdated patterns, antipatterns, and review for correctness and best practices
+- **Modern Code** - I flag deprecated APIs, outdated patterns, antipatterns, and review for correctness and best practices
 
 ## How I Work
 
@@ -64,7 +64,7 @@ These are patterns specific to this codebase. I check every one on every review.
 - Zero `any` types — check function parameters, return types, catch blocks, type assertions — **🟡 Required**
 - `Record<string, unknown>` for all APIM resource payloads, never custom interfaces — **🔴 Blocker** (§VII)
 - Exhaustive `switch` statements use `default: { const _exhaustive: never = value; throw ... }` pattern — **🟡 Required**
-- No `enum` keyword for new code — use `as const` objects or union types (aligns with tree-shaking and ESM)
+- Prefer `as const` objects or union types for new standalone code; allow `enum` when extending or matching existing enum-based patterns in the codebase (better consistency, while still favoring tree-shaking-friendly defaults)
 - `unknown` in catch blocks, never `any`: `catch (error: unknown)` — **🟡 Required**
 
 #### Singleton + Export Pattern
@@ -72,7 +72,7 @@ These are patterns specific to this codebase. I check every one on every review.
 
 #### Error Handling
 - Custom errors extend `HttpError` with `status: number` and `code: string` fields
-- Callers branch on `error.status` or `error.code`, never on `error.message` string matching
+- Callers branch on `error.status` and may branch on `error.code` when present; never branch on `error.message` string matching
 - `aggregateExitCode()` used to combine partial results: `EXIT_SUCCESS=0`, `EXIT_PARTIAL=1`, `EXIT_FATAL=2`
 - No bare `throw "string"` — always `throw new Error(...)` or a typed error subclass
 

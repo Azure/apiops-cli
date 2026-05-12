@@ -42,9 +42,9 @@ These are patterns specific to this codebase. I enforce every one.
 - New shared instances (loggers, clients, config loaders) must follow this pattern
 
 #### Error Handling Types
-- `HttpError` (in `src/clients/apim-client.ts`) extends `Error` with `status: number` and `code: string`
-- Callers branch on `error.status` or `error.code`, never on `error.message` string matching
-- Exit codes: `EXIT_SUCCESS=0`, `EXIT_PARTIAL=1`, `EXIT_FATAL=2` + `aggregateExitCode()` at `src/lib/exit-codes.ts`
+ - `HttpError` (in `src/clients/apim-client.ts`) extends `Error` with `status: number` and optional `code?: string`
+ - Callers branch on `error.status` or, when present, `error.code`, never on `error.message` string matching
+ - Exit codes: `EXIT_SUCCESS=0`, `EXIT_PARTIAL=1`, `EXIT_FATAL=2` + `aggregateExitCode()` at `src/lib/exit-codes.ts`
 
 #### Interface-First Design (§VI)
 - `IApimClient` (`src/clients/iapim-client.ts`) — methods: `listResources`, `getResource`, `putResource`, `deleteResource`, `listApiRevisions`, `getApiSpecification`, `validatePreFlight`

@@ -63,7 +63,7 @@ These are the testing conventions for this project. I enforce every one.
 - Use unique directory names per test to prevent cross-test interference
 
 #### Error Testing
-- `HttpError` assertions: verify `status` (number) and `code` (string) fields
+- `HttpError` assertions: verify `status` (number) and, when present or explicitly expected by the scenario, `code` (string)
 - Test retry logic: mock 429 responses with `Retry-After` headers
 - Test `noRetryOn5xx`: verify deterministic failures skip retry loop
 - Test `allowedNonOkStatuses`: verify caller-handled error codes pass through
