@@ -57,7 +57,7 @@ flowchart LR
 ### Icon Usage
 
 > [!NOTE]
-> Diagrams use icons from [Font Awesome Free](https://fontawesome.com/) via Mermaid's built-in `fa:` syntax.
+> Chart uses <a href="https://learn.microsoft.com/en-us/azure/architecture/icons/">Azure Architecture Icons </a> and [Font Awesome Free](https://fontawesome.com/) via Mermaid's built-in `fa:` syntax.
 
 ---
 
