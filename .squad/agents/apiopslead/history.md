@@ -4,7 +4,7 @@
 
 - **Project:** apiops-cli — TypeScript CLI for Azure API Management (`apiops extract`, `apiops publish`, `apiops init`)
 - **Spec:** `specs/001-apiops-cli/spec.md`
-- **Constitution:** `.specify/memory/constitution.md` (v2.1.0) — supreme governance document
+- **Constitution:** `.squad/identity/constitution.md` (v2.1.0) — supreme governance document
 - **User:** Elizabeth Maher
 - **Stack:** TypeScript 5.x, Node.js 22 LTS, Commander, `@azure/identity`, Vitest, ESLint
 - **Key constraint:** No `@azure/arm-apimanagement` SDK for resource payloads — raw REST only
@@ -104,5 +104,23 @@
 - Tagged commit with `Closes` for all 14 Phase 2 issues
 
 **Key insight:** Phase 2 is the foundational layer that blocks ALL user stories. Having all 14 infrastructure components verified and tagged for auto-close ensures clean milestone tracking.
+
+### 2026-05-01: CodeReviewer Charter Enhancement
+
+**What:** Rewrote the CodeReviewer charter (`.squad/agents/codereviewer/charter.md`) sections 3-8 to make reviews significantly more thorough and project-specific.
+
+**Changes made:**
+1. **How I Work** — Expanded from 7 generic steps to 13 concrete, ordered steps. Added holistic diff reading, team decisions check, TypeScript strictness verification, error handling review, missing test detection, and naming consistency checks.
+2. **What I Flag** — Expanded from 6 categories to 11, adding: secret/credential leak specifics, TypeScript strictness, error handling, immutability violations, architecture patterns, naming/style.
+3. **Tech-Specific Checks** — NEW section with 8 subsections: TypeScript & ESM, Singleton + Export Pattern, Error Handling, Secret Safety, APIM Client Patterns, Immutability, Test Patterns, Workspace Scoping. Each item has severity level annotations.
+4. **Severity Levels** — Added concrete examples to each level, added escalation rule (3+ blockers → architectural discussion).
+5. **Boundaries** — Added "What I never wave through" clause, strengthened rejection output requirements, added "uncertainty is not an excuse to skip" principle.
+6. **Collaboration** — Added post-review protocol: severity-ordered findings, file/line references, concrete fix suggestions, assessment summary.
+7. **Voice** — Added three paragraphs reinforcing thoroughness over brevity, guilty-until-proven-correct mindset, and checking for what's *missing* not just what's *wrong*.
+8. **Constitution path** — Fixed all references from `.specify/memory/constitution.md` to `.squad/identity/constitution.md`.
+
+**Why:** CodeReviewer was missing codebase-specific checks that external reviewers (Copilot) were catching. The charter now encodes this project's actual patterns (ESM `.js` extensions, `Record<string, unknown>` payloads, `HttpError` status branching, `SENSITIVE_KEY_PATTERNS`, singleton+class export, etc.) so the reviewer can't miss them.
+
+**Key insight:** A generic "enforce TypeScript strict mode" instruction is useless if the reviewer doesn't know the specific patterns to look for. Project-specific checklists with severity annotations turn a reviewer from "looks fine to me" into a systematic quality gate.
 
 <!-- Append new learnings here after each session -->
