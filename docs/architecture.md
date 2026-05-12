@@ -2,7 +2,7 @@
 
 ## Overview
 
-`apiops` implements a **configuration-as-code** workflow for Azure API Management (APIM). Configuration is extracted from a running APIM instance into version-controlled artifact files. Those files become the source of truth for publishing to one or more environments, driven by a CI/CD pipeline.
+`apiops` implements a **configuration-as-code** workflow for Azure API Management. Configuration is extracted from a running APIM instance into version-controlled artifact files. Those files become the source of truth for publishing to one or more environments, driven by a CI/CD pipeline.
 
 ---
 
@@ -54,10 +54,8 @@ flowchart LR
 | 4 | Merge | Approved changes are merged |
 | 5 | `apiops publish` | On merge, the publish workflow runs and applies artifact files to the target API Management instance |
 
-### Icon Usage
-
 > [!NOTE]
-> Chart uses <a href="https://learn.microsoft.com/en-us/azure/architecture/icons/">Azure Architecture Icons </a> and [Font Awesome Free](https://fontawesome.com/) via Mermaid's built-in `fa:` syntax.
+> Chart uses <a href="https://learn.microsoft.com/en-us/azure/architecture/icons/">Azure Architecture Icons </a> and GitHub icons from [Font Awesome](https://fontawesome.com/).
 
 ---
 
