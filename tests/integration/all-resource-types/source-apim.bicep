@@ -186,7 +186,7 @@ var wsdlSpec = '''
   </binding>
   <service name="CalculatorService">
     <port name="CalculatorSoapPort" binding="tns:CalculatorSoapBinding">
-      <soap:address location="https://httpbin.org/post"/>
+      <soap:address location="https://src-soap-backend.example.com/calculator"/>
     </port>
   </service>
 </definitions>
@@ -510,7 +510,7 @@ resource backendHttp 'Microsoft.ApiManagement/service/backends@2024-05-01' = {
   name: 'src-backend-http'
   properties: {
     description: 'Simple HTTP backend'
-    url: 'https://httpbin.org'
+    url: 'https://src-backend.example.com/api'
     protocol: 'http'
     tls: {
       validateCertificateChain: true
@@ -548,7 +548,7 @@ resource backendCircuitBreaker 'Microsoft.ApiManagement/service/backends@2024-05
   name: 'src-backend-circuit-breaker'
   properties: {
     description: 'Backend with circuit breaker configuration'
-    url: 'https://httpbin.org'
+    url: 'https://src-cb-backend.example.com/api'
     protocol: 'http'
     circuitBreaker: {
       rules: [
@@ -754,7 +754,7 @@ resource apiRestOpenapi 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
     protocols: ['https']
     format: 'openapi'
     value: openApiSpec
-    serviceUrl: 'https://httpbin.org'
+    serviceUrl: 'https://src-backend.example.com/api'
     subscriptionRequired: false
     apiType: 'http'
   }
@@ -771,7 +771,7 @@ resource apiSoapPassthrough 'Microsoft.ApiManagement/service/apis@2024-05-01' = 
     protocols: ['https']
     format: 'wsdl'
     value: wsdlSpec
-    serviceUrl: 'https://httpbin.org/post'
+    serviceUrl: 'https://src-soap-backend.example.com/calculator'
     apiType: 'soap'
     wsdlSelector: {
       wsdlServiceName: 'CalculatorService'
@@ -861,7 +861,7 @@ resource apiVersionedV1 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
     protocols: ['https']
     format: 'openapi'
     value: openApiSpecV1
-    serviceUrl: 'https://httpbin.org'
+    serviceUrl: 'https://src-versioned-backend.example.com/api'
     apiVersion: 'v1'
     apiVersionSetId: versionSet.id
     subscriptionRequired: false
@@ -880,7 +880,7 @@ resource apiRevisioned 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
     protocols: ['https']
     format: 'openapi'
     value: openApiSpec
-    serviceUrl: 'https://httpbin.org'
+    serviceUrl: 'https://src-revisioned-backend.example.com/api'
     subscriptionRequired: false
     apiType: 'http'
     isCurrent: true
@@ -894,7 +894,7 @@ resource apiRevisionedRev2 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
   properties: {
     path: 'ks/revisioned'
     protocols: ['https']
-    serviceUrl: 'https://httpbin.org'
+    serviceUrl: 'https://src-revisioned-backend-v2.example.com/api'
     apiRevisionDescription: 'Second revision for BVT testing'
     sourceApiId: apiRevisioned.id
     apiType: 'http'
@@ -910,7 +910,7 @@ resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
     description: 'MCP server created by exposing an existing REST API in the instance as MCP tools'
     path: 'ks/mcp-from-api'
     protocols: ['https']
-    serviceUrl: 'https://httpbin.org'
+    serviceUrl: 'https://src-mcp-from-api-backend.example.com/api'
     subscriptionRequired: false
     type: 'mcp'
     apiType: 'mcp'
@@ -1230,7 +1230,7 @@ resource wsBackend 'Microsoft.ApiManagement/service/workspaces/backends@2024-05-
   name: 'src-ws-backend-http'
   properties: {
     description: 'Workspace-scoped HTTP backend'
-    url: 'https://httpbin.org'
+    url: 'https://src-ws-backend.example.com/api'
     protocol: 'http'
   }
 }
@@ -1271,7 +1271,7 @@ resource wsApi 'Microsoft.ApiManagement/service/workspaces/apis@2024-05-01' = if
     displayName: 'Workspace REST API'
     path: 'ks/ws/rest'
     protocols: ['https']
-    serviceUrl: 'https://httpbin.org'
+    serviceUrl: 'https://src-ws-api-backend.example.com/api'
     apiType: 'http'
   }
 }

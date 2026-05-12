@@ -127,7 +127,7 @@
           "files": ["backendInformation.json"],
           "spotChecks": {
             "backendInformation.json": {
-              "properties.url": "https://httpbin.org",
+              "properties.url": "https://src-backend.example.com/api",
               "properties.protocol": "http",
               "properties.tls.validateCertificateChain": true
             }
