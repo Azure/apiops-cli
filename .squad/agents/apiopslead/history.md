@@ -123,4 +123,36 @@
 
 **Key insight:** A generic "enforce TypeScript strict mode" instruction is useless if the reviewer doesn't know the specific patterns to look for. Project-specific checklists with severity annotations turn a reviewer from "looks fine to me" into a systematic quality gate.
 
+### 2026-05-01: Charter Enhancement Priority Analysis
+
+**What:** Analyzed all 8 non-CodeReviewer charters to identify inaccuracies, generic content, and missing codebase-specific patterns. Produced a prioritized recommendation table for charter improvements modeled on the CodeReviewer enhancement.
+
+**Key findings:**
+1. **TypeScriptDev** has an outright inaccuracy: claims `noUncheckedIndexedAccess` in tsconfig.json — it's not there. Also lists target as "ESNext" when actual target is ES2022.
+2. **TestEngineer** is the most generic — could apply to any Vitest project. Missing all project-specific mocking patterns, test structure conventions, and coverage thresholds.
+3. **NodeJsDev** lacks reference to actual exit code constants (`EXIT_SUCCESS/PARTIAL/FATAL`) and the real `init-service.ts` implementation patterns.
+4. **ApimExpert** and **AzdoExpert/GitHubExpert** are moderately generic but less impactful since they're advisory roles that consult docs.
+5. **OpenSourceExpert** and **ApicExpert** are lowest priority — advisory/forward-looking roles where generic guidance is acceptable.
+
+**Key insight:** Charters for code-producing agents (TypeScriptDev, TestEngineer, NodeJsDev) benefit most from codebase-specific enhancement because inaccuracies or gaps directly affect code quality. Advisory agents (OpenSourceExpert, ApicExpert) can remain more generic without harm.
+
 <!-- Append new learnings here after each session -->
+
+### 2026-05-01: Enhanced 7 Agent Charters with Codebase-Specific Patterns
+
+**What:** Applied the CodeReviewer charter enhancement pattern to all 7 remaining charters, making each codebase-aware with actual file paths, patterns, and team decisions.
+
+**Charters enhanced:**
+1. **TypeScriptDev** — Fixed inaccurate tsconfig claims (`noUncheckedIndexedAccess` removed, `ESNext` → `ES2022`), added correct strict flags, added "Tech-Specific Patterns" section with ESM, singleton+class export, error handling, interface-first design, opaque payloads, and key file paths table
+2. **TestEngineer** — Added "Codebase-Specific Testing Patterns" section with Vitest conventions, `IApimClient`/`IArtifactStore` mock interfaces, exit code testing, CLI subprocess tests, filesystem cleanup, error testing patterns, and review checklist
+3. **NodeJsDev** — Added "Codebase-Specific Patterns" section with exit code constants, ESM requirements, CLI entry point structure, dual-mode package consumption, generated template directories, and log-level decision
+4. **ApimExpert** — Added "Codebase Patterns" section with key source files table, `HttpError` pattern, retry/failure patterns, token caching, SOAP/WADL extraction, synthetic GraphQL detection, ARM URI construction, and 4 key decisions
+5. **AzdoExpert** — Added "Project-Specific Patterns" section with template source references, `apiops init` integration, and variable group conventions
+6. **GitHubExpert** — Added "Project-Specific Patterns" section with workflow file table, OIDC federation pattern, generated template references, and repo configuration
+7. **ApiOpsLead** — Added "What I Check" section with structural integrity, constitution alignment checklist, key decisions, and key file paths table; constitution path was already correct
+
+**Also fixed across all charters:**
+- Constitution path references updated to `.squad/identity/constitution.md` where stale
+- Collaboration sections updated to reference both constitution and decisions.md
+
+**Key insight:** The most impactful enhancements are on code-producing agents (TypeScriptDev, TestEngineer, NodeJsDev) where inaccurate or missing patterns directly cause code quality issues. The TypeScriptDev charter had two outright inaccuracies that would have led agents to write code targeting wrong settings.
