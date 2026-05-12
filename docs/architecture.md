@@ -54,6 +54,11 @@ flowchart LR
 | 4 | Merge | Approved changes are merged |
 | 5 | `apiops publish` | On merge, the publish workflow runs and applies artifact files to the target API Management instance |
 
+### Icon Usage
+
+> [!NOTE]
+> Diagrams use icons from [Font Awesome Free](https://fontawesome.com/) via Mermaid's built-in `fa:` syntax.
+
 ---
 
 ## Component Architecture
