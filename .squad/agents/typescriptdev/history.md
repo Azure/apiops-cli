@@ -4,7 +4,7 @@
 
 - **Project:** apiops-cli — TypeScript CLI for Azure API Management (`apiops extract`, `apiops publish`, `apiops init`)
 - **Spec:** `specs/001-apiops-cli/spec.md`
-- **Constitution:** `.specify/memory/constitution.md` (v2.1.0)
+- **Constitution:** `.squad/identity/constitution.md` (v2.1.0)
 - **User:** Elizabeth Maher
 - **Stack:** TypeScript 5.x strict mode, Node.js 22 LTS, ESLint with @typescript-eslint
 - **Key principle (Constitution §VI):** Core operations MUST depend on abstractions, not concrete HTTP/file-system implementations.

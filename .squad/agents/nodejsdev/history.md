@@ -4,7 +4,7 @@
 
 - **Project:** apiops-cli — TypeScript CLI for Azure API Management (`apiops extract`, `apiops publish`, `apiops init`)
 - **Spec:** `specs/001-apiops-cli/spec.md`
-- **Constitution:** `.specify/memory/constitution.md` (v2.1.0)
+- **Constitution:** `.squad/identity/constitution.md` (v2.1.0)
 - **User:** Elizabeth Maher
 - **Stack:** Node.js 22 LTS, Commander CLI framework, ESM, npm
 - **CLI commands:** `apiops extract [options]`, `apiops publish [options]`, `apiops init [options]`

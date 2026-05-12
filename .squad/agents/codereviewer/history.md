@@ -4,7 +4,7 @@
 
 - **Project:** apiops-cli — A CLI tool for Azure API Management operations (extract, publish, init)
 - **Tech Stack:** TypeScript 5.x, Node.js 22+, Commander (CLI), Vitest (testing), ESLint (linting), ESM modules
-- **Constitution:** `.specify/memory/constitution.md` (v2.1.0) — 8 principles governing all development
+- **Constitution:** `.squad/identity/constitution.md` (v2.1.0) — 8 principles governing all development
 - **Speckit Flow:** spec → plan → tasks → implement
 - **Build:** `npm run build` (tsc), `npm run lint` (eslint), `npm test` (vitest)
 
