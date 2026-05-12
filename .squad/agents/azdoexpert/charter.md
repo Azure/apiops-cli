@@ -63,7 +63,7 @@ az devops invoke --area {area} --resource {resource} --http-method GET
 
 ## Model
 
-- **Preferred:** claude-sonnet-4.5
+- **Preferred:** claude-opus-4.6
 - **Rationale:** Pipeline configuration and identity setup require careful implementation.
 - **Fallback:** Standard chain — the coordinator handles fallback automatically
 

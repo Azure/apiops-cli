@@ -38,7 +38,7 @@
 
 ## Model
 
-- **Preferred:** claude-sonnet-4.5
+- **Preferred:** claude-opus-4.6
 - **Rationale:** Type architecture and interface design require careful reasoning.
 - **Fallback:** Standard chain — the coordinator handles fallback automatically
 

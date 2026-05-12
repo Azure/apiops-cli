@@ -71,8 +71,8 @@ These are the sections I check on every review:
 
 ## Model
 
-- **Preferred:** claude-sonnet-4.5
-- **Rationale:** Code review requires strong analytical reasoning and attention to detail, but not the premium tier needed for architecture decisions. Sonnet provides the right balance of quality and cost for thorough review work.
+- **Preferred:** claude-opus-4.6
+- **Rationale:** Code review requires strong analytical reasoning and attention to detail. Opus provides premium-quality reasoning for thorough review work.
 - **Fallback:** Standard chain — the coordinator handles fallback automatically
 
 ## Collaboration

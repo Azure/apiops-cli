@@ -1,3 +1,8 @@
 {
-  "version": 1
+  "version": 1,
+  "defaultModel": "claude-opus-4.6",
+  "agentModelOverrides": {
+    "ralph": "claude-haiku-4.5",
+    "scribe": "claude-haiku-4.5"
+  }
 }
