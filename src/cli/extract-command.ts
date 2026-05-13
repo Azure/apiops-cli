@@ -75,7 +75,10 @@ async function executeExtract(
   }
 
   // Build service context
-  const apiVersion = globalOpts.apiVersion ?? process.env.AZURE_API_VERSION ?? '2024-05-01';
+  // Default to a recent preview API version so newer resource types (e.g.
+  // MCP-typed APIs) are returned by ARM list endpoints. Older versions
+  // (e.g. 2024-05-01) silently omit MCP APIs from /apis.
+  const apiVersion = globalOpts.apiVersion ?? process.env.AZURE_API_VERSION ?? '2025-09-01-preview';
   const cloudName = globalOpts.cloud ?? 'public';
   const cloudConfig = getCloudConfig(cloudName);
   const baseUrl = buildArmBaseUrl(cloudName, subscriptionId, options.resourceGroup, options.serviceName);

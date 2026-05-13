@@ -789,22 +789,14 @@ describe('api-extractor', () => {
       expect(getApiSpecification).not.toHaveBeenCalled();
     });
 
-    it('should extract MCP server configuration when present', async () => {
-      const mcpJson = {
-        name: 'default',
-        properties: {
-          mcpProperties: { serverUrl: 'https://apim.azure-api.net/my-api/mcp' },
-          mcpTools: [{ name: 'invokeTool', description: 'Tool for testing' }],
-        },
-      };
+    it('should not call ARM for MCP child resource (data is embedded on the API)', async () => {
+      // ARM does not serve apis/{id}/mcpServers/default for MCP APIs; all
+      // configuration lives on the API resource itself. The extractor must
+      // therefore never query the (non-existent) child endpoint.
+      const getResource = vi.fn().mockResolvedValue(undefined);
       const client = createMockClient({
         getApiSpecification: vi.fn().mockResolvedValue(undefined),
-        getResource: vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
-          if (desc.type === ResourceType.McpServer) {
-            return mcpJson;
-          }
-          return undefined;
-        }),
+        getResource,
       });
       const store = createMockStore();
       const apiDescriptor: ResourceDescriptor = {
@@ -823,11 +815,15 @@ describe('api-extractor', () => {
         '/output'
       );
 
-      expect(result.mcpServer).toBe(true);
-      expect(store.writeResource).toHaveBeenCalledWith(
+      expect(result.mcpServer).toBe(false);
+      expect(getResource).not.toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({ type: ResourceType.McpServer })
+      );
+      expect(store.writeResource).not.toHaveBeenCalledWith(
         '/output',
-        expect.objectContaining({ type: ResourceType.McpServer, nameParts: ['my-api'] }),
-        mcpJson
+        expect.objectContaining({ type: ResourceType.McpServer }),
+        expect.anything()
       );
     });
 
