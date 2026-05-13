@@ -23,7 +23,6 @@ interface PublishOptions {
   serviceName: string;
   source: string;
   overrides?: string;
-  commitId?: string;
   dryRun: boolean;
   deleteUnmatched: boolean;
 }
@@ -38,10 +37,6 @@ export function createPublishCommand(): Command {
     .requiredOption('--service-name <name>', 'APIM service instance name')
     .option('--source <dir>', 'Source directory with artifacts', './apim-artifacts')
     .option('--overrides <path>', 'Override configuration YAML file')
-    .option(
-      '--commit-id <sha>',
-      'Git commit SHA for incremental publish (overrides COMMIT_ID env var)'
-    )
     .option('--dry-run', 'Preview changes without applying them', false)
     .option(
       '--delete-unmatched',
@@ -116,17 +111,10 @@ async function executePublish(
     }
   }
 
-  // Resolve commit ID for incremental publish
-  const commitId = options.commitId ?? process.env.COMMIT_ID;
+  // Get commit ID from environment (for incremental publish)
+  const commitId = process.env.COMMIT_ID;
   if (commitId) {
     logger.debug(`Using incremental publish with commit ID: ${commitId}`);
-  }
-
-  if (hasMutuallyExclusivePublishOptions(options.deleteUnmatched, commitId)) {
-    logger.error(
-      'Options --commit-id (or COMMIT_ID) and --delete-unmatched are mutually exclusive.'
-    );
-    process.exit(2);
   }
 
   // Build publish config
@@ -155,16 +143,6 @@ async function executePublish(
   }
 
   process.exit(result.exitCode);
-}
-
-/**
- * Returns true when publish options combine mutually exclusive modes.
- */
-export function hasMutuallyExclusivePublishOptions(
-  deleteUnmatched: boolean,
-  commitId?: string
-): boolean {
-  return deleteUnmatched && Boolean(commitId);
 }
 
 /**
