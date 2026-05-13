@@ -601,7 +601,7 @@
           "spotChecks": {
             "apiInformation.json": {
               "properties.displayName": "KS MCP from External Server",
-              "properties.path": "",
+              "properties.path": "ks/mcp-external",
               "properties.type": "mcp",
               "properties.subscriptionRequired": false,
               "properties.backendId": "src-backend-mcp-external"
@@ -612,7 +612,7 @@
               "properties.backendId": "src-backend-mcp-external"
             }
           },
-          "notes": "MCP API repackaging an external MCP server: empty path on the API, backendId points to the backend that holds the upstream URL (https://api.githubcopilot.com/mcp), and mcpProperties.endpoints.mcp.uriTemplate addresses the MCP endpoint exposed by that backend"
+          "notes": "MCP API repackaging an external MCP server: backendId points to the backend that holds the upstream URL (https://api.githubcopilot.com/mcp), and mcpProperties.endpoints.mcp.uriTemplate addresses the MCP endpoint exposed by that backend"
         }
       ]
     },
