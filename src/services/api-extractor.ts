@@ -79,25 +79,6 @@ function buildEmbeddedMcpServerResource(apiJson: Record<string, unknown>): Recor
 
 }
 
-function hasMeaningfulMcpContent(mcpJson: Record<string, unknown>): boolean {
-  const properties = mcpJson.properties as Record<string, unknown> | undefined;
-  if (!properties) {
-    return false;
-  }
-
-  // Check if mcpTools has actual content (non-empty array), excluding null
-  const mcpTools = properties.mcpTools as unknown[] | undefined | null;
-  if (Array.isArray(mcpTools) && mcpTools.length > 0) {
-    return true;
-  }
-
-  // Check if mcpProperties exists and is not null or undefined
-  if (properties.mcpProperties != null) {
-    return true;
-  }
-
-  return false;
-}
 /**
  * Extract all API-specific resources for a single API.
  * This includes revisions, specifications, operations, policies, etc.
@@ -568,13 +549,18 @@ async function extractGraphQLResolvers(
 
 /**
  * Extract MCP (Model Context Protocol) server configuration for an API.
- * The MCP server is a singleton resource per API exposed at apis/{id}/mcpServers/default.
- * Silently skips if the API does not have MCP enabled or the resource does not exist.
+ *
+ * MCP configuration is embedded directly on the API resource
+ * (`properties.mcpTools`, `properties.mcpProperties`, `properties.backendId`).
+ * There is no separate child resource served by ARM — the
+ * `apis/{id}/mcpServers/default` endpoint returns 404 even on working MCP APIs,
+ * and `apis/{id}/mcpServers` returns 500 (no such collection). All MCP data
+ * therefore comes from the API JSON itself.
  */
 async function extractApiMcpServer(
-  client: IApimClient,
+  _client: IApimClient,
   store: IArtifactStore,
-  context: ApimServiceContext,
+  _context: ApimServiceContext,
   apiDescriptor: ResourceDescriptor,
   apiJson: Record<string, unknown>,
   outputDir: string
@@ -586,30 +572,17 @@ async function extractApiMcpServer(
     return false;
   }
 
+  if (!hasEmbeddedMcpConfiguration(apiJson)) {
+    return false;
+  }
+
   const mcpDescriptor: ResourceDescriptor = {
     type: ResourceType.McpServer,
     nameParts: [...apiDescriptor.nameParts],
     workspace: apiDescriptor.workspace,
   };
 
-  if (hasEmbeddedMcpConfiguration(apiJson)) {
-    await store.writeResource(outputDir, mcpDescriptor, buildEmbeddedMcpServerResource(apiJson));
-    logger.info(`Extracted ${buildResourceLabel(mcpDescriptor)} from API metadata`);
-    return true;
-  }
-
-  try {
-    const mcpJson = await client.getResource(context, mcpDescriptor);
-    if (!mcpJson || !hasMeaningfulMcpContent(mcpJson)) {
-      return false;
-    }
-
-    await store.writeResource(outputDir, mcpDescriptor, mcpJson);
-    logger.info(`Extracted ${buildResourceLabel(mcpDescriptor)}`);
-    return true;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.debug(`No MCP server configuration ${buildResourceLabel(mcpDescriptor)}: ${errorMessage}`);
-    return false;
-  }
+  await store.writeResource(outputDir, mcpDescriptor, buildEmbeddedMcpServerResource(apiJson));
+  logger.info(`Extracted ${buildResourceLabel(mcpDescriptor)} from API metadata`);
+  return true;
 }

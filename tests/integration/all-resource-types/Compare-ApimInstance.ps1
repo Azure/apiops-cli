@@ -28,7 +28,9 @@ $ErrorActionPreference = 'Stop'
 
 # ── Constants ───────────────────────────────────────────────────────────────
 
-$ApiVersion = '2024-05-01'
+# Use the newest APIM ARM API version so resource types introduced in newer
+# previews (e.g. apis/{api}/mcpServers under 2025-09-01-preview) are queryable.
+$ApiVersion = '2025-09-01-preview'
 
 $SourceBase = "https://management.azure.com/subscriptions/$SourceSubscriptionId/resourceGroups/$SourceResourceGroup/providers/Microsoft.ApiManagement/service/$SourceApimName"
 $TargetBase = "https://management.azure.com/subscriptions/$TargetSubscriptionId/resourceGroups/$TargetResourceGroup/providers/Microsoft.ApiManagement/service/$TargetApimName"
@@ -65,6 +67,9 @@ function Get-ArmResourceList {
     <#
     .SYNOPSIS
         GETs a paginated ARM list, following nextLink, and returns all items.
+        A 404 / "Not Found" response is treated as an empty list — optional or
+        singleton child resources (e.g. apis/{api}/mcpServers) legitimately do
+        not exist on every parent.
     #>
     [CmdletBinding()]
     param(
@@ -82,6 +87,11 @@ function Get-ArmResourceList {
         try {
             $raw = az rest --method GET --url $fullUrl 2>&1
             if ($LASTEXITCODE -ne 0) {
+                $rawText = "$raw"
+                if ($rawText -match '(?i)\bNot Found\b' -or $rawText -match '"code"\s*:\s*"ResourceNotFound"' -or $rawText -match '"code"\s*:\s*"NotFound"') {
+                    Write-Verbose "GET $fullUrl returned Not Found — treating as empty"
+                    return $items
+                }
                 throw "az rest failed (exit $LASTEXITCODE): $raw"
             }
             $response = $raw | ConvertFrom-Json
