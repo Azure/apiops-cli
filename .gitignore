@@ -38,6 +38,9 @@ Desktop.ini
 # Local testing output (use --output .local-extract for local runs)
 .local-extract*/
 
+# Integration test log output
+tests/integration/all-resource-types/logs/
+
 # Environment variables
 .env
 .env.local

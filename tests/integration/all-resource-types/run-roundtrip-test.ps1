@@ -237,6 +237,10 @@ if (-not (Test-Path $logsDir)) {
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $sourceLogFile = Join-Path $logsDir "source-deploy-$UniqueId-$timestamp.log"
 $targetLogFile = Join-Path $logsDir "target-deploy-$UniqueId-$timestamp.log"
+$testLogFile   = Join-Path $logsDir "run-$UniqueId-$timestamp.log"
+
+Start-Transcript -Path $testLogFile -Force | Out-Null
+Write-Host "   Test log: $testLogFile"
 
 # ---------------------------------------------------------------------------
 # Storage for deployment outputs
@@ -656,5 +660,7 @@ if ($exitCode -eq 0) {
 }
 Write-Host "============================================================"
 Write-Host ""
+
+Stop-Transcript | Out-Null
 
 exit $exitCode
