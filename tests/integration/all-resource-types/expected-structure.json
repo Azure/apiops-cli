@@ -120,7 +120,7 @@
       ]
     },
     "backends": {
-      "minCount": 5,
+      "minCount": 6,
       "expected": [
         {
           "name": "src-backend-http",
@@ -172,6 +172,17 @@
               "properties.pool.services": "exists"
             }
           }
+        },
+        {
+          "name": "src-backend-mcp-external",
+          "files": ["backendInformation.json"],
+          "spotChecks": {
+            "backendInformation.json": {
+              "properties.url": "https://api.githubcopilot.com/mcp",
+              "properties.protocol": "http"
+            }
+          },
+          "notes": "Upstream URL for the MCP-from-external API; the API resource references this backend via backendId"
         }
       ]
     },
@@ -582,13 +593,7 @@
               "properties.mcpTools": "exists"
             }
           },
-          "children": {
-            "operations": {
-              "minCount": 1,
-              "notes": "Explicit operation for ApiOperation BVT coverage"
-            }
-          },
-          "notes": "MCP API exposing REST backend operations as MCP tools; has explicit operation and mcpServerInformation.json"
+          "notes": "MCP API exposing operations of an existing REST API as MCP tools via mcpTools (each tool's operationId references the backing REST API; this MCP API has no operations of its own)"
         },
         {
           "name": "src-mcp-from-external",
@@ -596,16 +601,18 @@
           "spotChecks": {
             "apiInformation.json": {
               "properties.displayName": "KS MCP from External Server",
-              "properties.path": "ks/mcp-external",
+              "properties.path": "",
               "properties.type": "mcp",
-              "properties.subscriptionRequired": false
+              "properties.subscriptionRequired": false,
+              "properties.backendId": "src-backend-mcp-external"
             },
             "mcpServerInformation.json": {
               "properties.mcpProperties": "exists",
-              "properties.mcpProperties.serverUrl": "https://api.githubcopilot.com/mcp"
+              "properties.mcpProperties.endpoints.mcp.uriTemplate": "/mcp",
+              "properties.backendId": "src-backend-mcp-external"
             }
           },
-          "notes": "MCP API repackaging a public external MCP server; has mcpServerInformation.json with mcpProperties.serverUrl"
+          "notes": "MCP API repackaging an external MCP server: empty path on the API, backendId points to the backend that holds the upstream URL (https://api.githubcopilot.com/mcp), and mcpProperties.endpoints.mcp.uriTemplate addresses the MCP endpoint exposed by that backend"
         }
       ]
     },

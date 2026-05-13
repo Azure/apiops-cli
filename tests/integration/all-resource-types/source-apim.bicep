@@ -930,6 +930,18 @@ resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview'
   })
 }
 
+// Explicit operation on the MCP-from-API surface for ApiOperation BVT coverage
+resource apiMcpFromApiPing 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-preview' = {
+  parent: apiMcpFromApi
+  name: 'mcpPing'
+  properties: {
+    displayName: 'MCP Ping'
+    method: 'GET'
+    urlTemplate: '/ping'
+    description: 'Lightweight health probe for MCP-from-API'
+  }
+}
+
 // Backend for external MCP server (backendId pattern requires a backend resource)
 resource backendMcpExternal 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = {
   parent: apim
@@ -942,7 +954,7 @@ resource backendMcpExternal 'Microsoft.ApiManagement/service/backends@2025-09-01
 }
 
 // 9. MCP API created from an existing (external) public MCP server
-// External MCP uses backendId + mcpProperties (path must be empty)
+// External MCP uses backendId + mcpProperties; APIM accepts a non-empty path here.
 // any() used because backendId and mcpProperties.endpoints are valid at runtime but absent from Bicep type definitions (BCP037/BCP036)
 resource apiMcpFromExternal 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
@@ -950,7 +962,7 @@ resource apiMcpFromExternal 'Microsoft.ApiManagement/service/apis@2025-09-01-pre
   properties: any({
     displayName: 'KS MCP from External Server'
     description: 'MCP server repackaging a public external MCP server via APIM'
-    path: ''
+    path: 'ks/mcp-external'
     protocols: ['https']
     subscriptionRequired: false
     type: 'mcp'
