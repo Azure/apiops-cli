@@ -2,6 +2,54 @@
 
 ## Active Decisions
 
+### 2026-05-12T19:25:50Z: Documentation Structure and Scope Decisions
+**By:** DocWriter (with scope input from ApiOpsLead)  
+**Status:** Proposed  
+**What:** Comprehensive documentation plan for apiops-cli `/docs` folder with structured layout and 3-phase authoring strategy.
+
+**Architectural Decisions:**
+1. **Directory structure:** Organize docs into logical segments — commands/ (one file per CLI command), guides/ (task-oriented how-to), ci-cd/ (platform-specific integration), reference/ (technical deep dives), architecture/ (system design), troubleshooting/ (problem-solution).
+2. **Landing page strategy:** `/docs/README.md` serves as GitHub-native navigation hub with Mermaid extract→publish→version control flow diagram. GitHub displays README.md by default when browsing /docs.
+3. **One command = one doc file** in commands/ directory (extract.md, publish.md, init.md). Mirrors CLI structure for clarity.
+4. **Audience assumption:** Readers know HTTP, REST, JSON, YAML, git, CI/CD. Focus on apiops-specific patterns, not over-explaining basics.
+5. **Cross-references use relative links** — Works when browsing GitHub or cloning locally. No hardcoded URLs.
+6. **Troubleshooting docs are searchable** — Error messages and solutions in structured format for GitHub search discoverability.
+7. **Writing style:** Examples-first approach — show working code, then explain. Active voice, imperative mood, scannable structure.
+8. **Mermaid diagrams over static images** — Version-controlled, editable, GitHub-native rendering. Planned: extract/publish flow, resource dependency graph, authentication flow, init command decision tree.
+
+**Scope Decisions (from ApiOpsLead advisory):**
+- **D1: User-Facing Only** — Keep `/docs` purely user-facing. Do NOT document internal architecture. Users care about "how do I extract" not "how does the dependency graph work".
+- **D2: Both GitHub Actions AND Azure DevOps** — Document both platforms with equal weight. Spec explicitly targets both; apiops init generates templates for both.
+- **D3: Artifact Directory Flexibility** — Do NOT document `./apim-artifacts` as "the" directory. Emphasize users choose path via --output/--source. Default behavior mentioned only as fallback.
+- **D4: Authentication Guidance — Multiple Methods** — Document all auth methods (Azure CLI, federated credentials/OIDC, service principal, managed identity) with clear context-specific guidance (local dev vs. CI/CD vs. production).
+
+**Ready to Document NOW (Green Light):**
+- `apiops extract` command (code exists, core feature entry point)
+- `apiops publish` command (tasks complete, completes round-trip)
+- `apiops init` command (tasks complete, high adoption value)
+- CI/CD integration (both GitHub Actions and Azure DevOps)
+
+**Defer Documentation (Red Light):**
+- `--otel` OpenTelemetry flag (Phase 8, not implemented)
+- `--spec-format` option (Phase 8, not implemented)
+- Internal architecture (not user-facing)
+
+**Authoring Priority (highest value first):**
+1. Getting Started Guide (init → extract → publish → CI/CD) — removes adoption barrier, SC-009 target
+2. Extract reference — core feature, users extract before anything else
+3. Publish reference — completes extract-publish workflow
+4. CI/CD integration guide — critical for production adoption
+5. Configuration reference (filter.yaml, overrides.{env}.yaml)
+6. Troubleshooting guide — reduces support burden
+
+**Output:** `/docs/plan.md` (22-page structure and strategy document)
+
+**Key Insight:** Documentation scope must align with implementation status. Document what's complete and stable; defer what's spec'd but not coded. Phase 8 features like `--otel` and `--spec-format` are spec'd but not implemented — documenting them now would create user confusion.
+
+**Awaiting Team Review:** ApiOpsLead, ApimExpert, OpenSourceExpert, GitHubExpert approval needed before Phase 1 authoring begins.
+
+---
+
 ### 2026-04-29T14:30:00Z: apiops init Dual-Mode Package Consumption
 **By:** NodeJsDev  
 **Status:** Implemented  
