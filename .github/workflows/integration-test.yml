@@ -135,6 +135,14 @@ jobs:
           path: ./extracted-artifacts/
           if-no-files-found: ignore
 
+      - name: Upload Test Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-${{ inputs.sku }}
+          path: ./tests/integration/all-resource-types/logs/
+          if-no-files-found: ignore
+
       - name: Emergency Teardown
         if: failure() && inputs.skip_teardown != true
         shell: pwsh
