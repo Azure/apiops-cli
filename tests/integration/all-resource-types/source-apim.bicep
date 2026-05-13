@@ -390,7 +390,7 @@ resource kvSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
 // APIM Service
 // ---------------------------------------------------------------------------
 
-resource apim 'Microsoft.ApiManagement/service@2024-05-01' = {
+resource apim 'Microsoft.ApiManagement/service@2025-09-01-preview' = {
   name: apimName
   location: location
   sku: {
@@ -428,7 +428,7 @@ resource kvAccessPolicy 'Microsoft.KeyVault/vaults/accessPolicies@2023-07-01' = 
 // ---------------------------------------------------------------------------
 
 // --- Named Values ---
-resource nvPlain 'Microsoft.ApiManagement/service/namedValues@2024-05-01' = {
+resource nvPlain 'Microsoft.ApiManagement/service/namedValues@2025-09-01-preview' = {
   parent: apim
   name: 'src-nv-plain'
   properties: {
@@ -438,7 +438,7 @@ resource nvPlain 'Microsoft.ApiManagement/service/namedValues@2024-05-01' = {
   }
 }
 
-resource nvSecret 'Microsoft.ApiManagement/service/namedValues@2024-05-01' = {
+resource nvSecret 'Microsoft.ApiManagement/service/namedValues@2025-09-01-preview' = {
   parent: apim
   name: 'src-nv-secret'
   properties: {
@@ -449,7 +449,7 @@ resource nvSecret 'Microsoft.ApiManagement/service/namedValues@2024-05-01' = {
   }
 }
 
-resource nvKeyVault 'Microsoft.ApiManagement/service/namedValues@2024-05-01' = {
+resource nvKeyVault 'Microsoft.ApiManagement/service/namedValues@2025-09-01-preview' = {
   parent: apim
   name: 'src-nv-keyvault'
   dependsOn: [kvAccessPolicy]
@@ -464,7 +464,7 @@ resource nvKeyVault 'Microsoft.ApiManagement/service/namedValues@2024-05-01' = {
 }
 
 // --- Tags ---
-resource tagEnv 'Microsoft.ApiManagement/service/tags@2024-05-01' = {
+resource tagEnv 'Microsoft.ApiManagement/service/tags@2025-09-01-preview' = {
   parent: apim
   name: 'src-tag-env'
   properties: {
@@ -472,7 +472,7 @@ resource tagEnv 'Microsoft.ApiManagement/service/tags@2024-05-01' = {
   }
 }
 
-resource tagTeam 'Microsoft.ApiManagement/service/tags@2024-05-01' = {
+resource tagTeam 'Microsoft.ApiManagement/service/tags@2025-09-01-preview' = {
   parent: apim
   name: 'src-tag-team'
   properties: {
@@ -481,7 +481,7 @@ resource tagTeam 'Microsoft.ApiManagement/service/tags@2024-05-01' = {
 }
 
 // --- Gateway (self-hosted — classic SKUs only) ---
-resource gateway 'Microsoft.ApiManagement/service/gateways@2024-05-01' = if (supportsSelfHostedGateway) {
+resource gateway 'Microsoft.ApiManagement/service/gateways@2025-09-01-preview' = if (supportsSelfHostedGateway) {
   parent: apim
   name: 'src-gateway-onprem'
   properties: {
@@ -495,7 +495,7 @@ resource gateway 'Microsoft.ApiManagement/service/gateways@2024-05-01' = if (sup
 }
 
 // --- Version Set ---
-resource versionSet 'Microsoft.ApiManagement/service/apiVersionSets@2024-05-01' = {
+resource versionSet 'Microsoft.ApiManagement/service/apiVersionSets@2025-09-01-preview' = {
   parent: apim
   name: 'src-versionset-urlpath'
   properties: {
@@ -505,7 +505,7 @@ resource versionSet 'Microsoft.ApiManagement/service/apiVersionSets@2024-05-01' 
 }
 
 // --- Backends ---
-resource backendHttp 'Microsoft.ApiManagement/service/backends@2024-05-01' = {
+resource backendHttp 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = {
   parent: apim
   name: 'src-backend-http'
   properties: {
@@ -519,7 +519,7 @@ resource backendHttp 'Microsoft.ApiManagement/service/backends@2024-05-01' = {
   }
 }
 
-resource backendFunction 'Microsoft.ApiManagement/service/backends@2024-05-01' = {
+resource backendFunction 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = {
   parent: apim
   name: 'src-backend-function'
   properties: {
@@ -530,7 +530,7 @@ resource backendFunction 'Microsoft.ApiManagement/service/backends@2024-05-01' =
   }
 }
 
-resource backendLogicApp 'Microsoft.ApiManagement/service/backends@2024-05-01' = {
+resource backendLogicApp 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = {
   parent: apim
   name: 'src-backend-logicapp'
   properties: {
@@ -543,7 +543,7 @@ resource backendLogicApp 'Microsoft.ApiManagement/service/backends@2024-05-01' =
 
 // NOTE: Service Fabric backend omitted - requires actual certificate uploaded to APIM
 
-resource backendCircuitBreaker 'Microsoft.ApiManagement/service/backends@2024-05-01' = {
+resource backendCircuitBreaker 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = {
   parent: apim
   name: 'src-backend-circuit-breaker'
   properties: {
@@ -569,7 +569,7 @@ resource backendCircuitBreaker 'Microsoft.ApiManagement/service/backends@2024-05
   }
 }
 
-resource backendPool 'Microsoft.ApiManagement/service/backends@2024-05-01' = {
+resource backendPool 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = {
   parent: apim
   name: 'src-backend-pool'
   properties: {
@@ -585,7 +585,7 @@ resource backendPool 'Microsoft.ApiManagement/service/backends@2024-05-01' = {
 }
 
 // --- Loggers ---
-resource loggerAppInsights 'Microsoft.ApiManagement/service/loggers@2024-05-01' = {
+resource loggerAppInsights 'Microsoft.ApiManagement/service/loggers@2025-09-01-preview' = {
   parent: apim
   name: 'src-logger-appinsights'
   properties: {
@@ -598,7 +598,7 @@ resource loggerAppInsights 'Microsoft.ApiManagement/service/loggers@2024-05-01' 
   }
 }
 
-resource loggerEventHub 'Microsoft.ApiManagement/service/loggers@2024-05-01' = {
+resource loggerEventHub 'Microsoft.ApiManagement/service/loggers@2025-09-01-preview' = {
   parent: apim
   name: 'src-logger-eventhub'
   properties: {
@@ -612,7 +612,7 @@ resource loggerEventHub 'Microsoft.ApiManagement/service/loggers@2024-05-01' = {
 }
 
 // --- Group ---
-resource groupInternal 'Microsoft.ApiManagement/service/groups@2024-05-01' = {
+resource groupInternal 'Microsoft.ApiManagement/service/groups@2025-09-01-preview' = {
   parent: apim
   name: 'src-group-internal'
   properties: {
@@ -623,7 +623,7 @@ resource groupInternal 'Microsoft.ApiManagement/service/groups@2024-05-01' = {
 }
 
 // --- Policy Fragments ---
-resource fragmentCors 'Microsoft.ApiManagement/service/policyFragments@2024-05-01' = {
+resource fragmentCors 'Microsoft.ApiManagement/service/policyFragments@2025-09-01-preview' = {
   parent: apim
   name: 'src-fragment-cors'
   properties: {
@@ -633,7 +633,7 @@ resource fragmentCors 'Microsoft.ApiManagement/service/policyFragments@2024-05-0
   }
 }
 
-resource fragmentRateLimit 'Microsoft.ApiManagement/service/policyFragments@2024-05-01' = {
+resource fragmentRateLimit 'Microsoft.ApiManagement/service/policyFragments@2025-09-01-preview' = {
   parent: apim
   name: 'src-fragment-ratelimit'
   properties: {
@@ -644,7 +644,7 @@ resource fragmentRateLimit 'Microsoft.ApiManagement/service/policyFragments@2024
 }
 
 // --- Global Schema ---
-resource globalSchema 'Microsoft.ApiManagement/service/schemas@2024-05-01' = {
+resource globalSchema 'Microsoft.ApiManagement/service/schemas@2025-09-01-preview' = {
   parent: apim
   name: 'src-schema-json'
   properties: {
@@ -663,7 +663,7 @@ resource globalSchema 'Microsoft.ApiManagement/service/schemas@2024-05-01' = {
 }
 
 // --- Policy Restriction (classic SKUs only - not supported in V2 tiers) ---
-resource policyRestriction 'Microsoft.ApiManagement/service/policyRestrictions@2024-05-01' = if (isClassicSku) {
+resource policyRestriction 'Microsoft.ApiManagement/service/policyRestrictions@2025-09-01-preview' = if (isClassicSku) {
   parent: apim
   name: 'src-restriction-ip'
   properties: {
@@ -673,7 +673,7 @@ resource policyRestriction 'Microsoft.ApiManagement/service/policyRestrictions@2
 }
 
 // --- Documentation (classic SKUs only - V2 tiers use different documentation mechanism) ---
-resource documentation 'Microsoft.ApiManagement/service/documentations@2024-05-01' = if (isClassicSku) {
+resource documentation 'Microsoft.ApiManagement/service/documentations@2025-09-01-preview' = if (isClassicSku) {
   parent: apim
   name: 'src-doc-getting-started'
   properties: {
@@ -687,7 +687,7 @@ resource documentation 'Microsoft.ApiManagement/service/documentations@2024-05-0
 // ---------------------------------------------------------------------------
 
 // --- Diagnostic ---
-resource diagnostic 'Microsoft.ApiManagement/service/diagnostics@2024-05-01' = {
+resource diagnostic 'Microsoft.ApiManagement/service/diagnostics@2025-09-01-preview' = {
   parent: apim
   name: 'applicationinsights'
   properties: {
@@ -702,7 +702,7 @@ resource diagnostic 'Microsoft.ApiManagement/service/diagnostics@2024-05-01' = {
 }
 
 // --- Service Policy ---
-resource servicePolicy 'Microsoft.ApiManagement/service/policies@2024-05-01' = {
+resource servicePolicy 'Microsoft.ApiManagement/service/policies@2025-09-01-preview' = {
   parent: apim
   name: 'policy'
   dependsOn: [nvPlain, fragmentCors, fragmentRateLimit]
@@ -713,7 +713,7 @@ resource servicePolicy 'Microsoft.ApiManagement/service/policies@2024-05-01' = {
 }
 
 // --- Products ---
-resource productStarter 'Microsoft.ApiManagement/service/products@2024-05-01' = {
+resource productStarter 'Microsoft.ApiManagement/service/products@2025-09-01-preview' = {
   parent: apim
   name: 'src-product-starter'
   properties: {
@@ -726,7 +726,7 @@ resource productStarter 'Microsoft.ApiManagement/service/products@2024-05-01' = 
   }
 }
 
-resource productPremium 'Microsoft.ApiManagement/service/products@2024-05-01' = {
+resource productPremium 'Microsoft.ApiManagement/service/products@2025-09-01-preview' = {
   parent: apim
   name: 'src-product-premium'
   properties: {
@@ -744,7 +744,7 @@ resource productPremium 'Microsoft.ApiManagement/service/products@2024-05-01' = 
 // ---------------------------------------------------------------------------
 
 // 1. REST API with OpenAPI spec
-resource apiRestOpenapi 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
+resource apiRestOpenapi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-rest-openapi'
   properties: {
@@ -761,7 +761,7 @@ resource apiRestOpenapi 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
 }
 
 // 2. SOAP pass-through API
-resource apiSoapPassthrough 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
+resource apiSoapPassthrough 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-soap-passthrough'
   properties: {
@@ -782,7 +782,7 @@ resource apiSoapPassthrough 'Microsoft.ApiManagement/service/apis@2024-05-01' = 
 }
 
 // 3. GraphQL Synthetic API (inline schema)
-resource apiGraphqlSynthetic 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
+resource apiGraphqlSynthetic 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-graphql-synthetic'
   properties: {
@@ -797,7 +797,7 @@ resource apiGraphqlSynthetic 'Microsoft.ApiManagement/service/apis@2024-05-01' =
 }
 
 // GraphQL schema for synthetic API (must be created separately)
-resource graphqlSyntheticSchema 'Microsoft.ApiManagement/service/apis/schemas@2024-05-01' = {
+resource graphqlSyntheticSchema 'Microsoft.ApiManagement/service/apis/schemas@2025-09-01-preview' = {
   parent: apiGraphqlSynthetic
   name: 'graphql'
   properties: {
@@ -809,7 +809,7 @@ resource graphqlSyntheticSchema 'Microsoft.ApiManagement/service/apis/schemas@20
 }
 
 // 4. GraphQL Pass-through API
-resource apiGraphqlPassthrough 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
+resource apiGraphqlPassthrough 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-graphql-passthrough'
   properties: {
@@ -824,7 +824,7 @@ resource apiGraphqlPassthrough 'Microsoft.ApiManagement/service/apis@2024-05-01'
 }
 
 // GraphQL schema for passthrough API
-resource graphqlPassthroughSchema 'Microsoft.ApiManagement/service/apis/schemas@2024-05-01' = {
+resource graphqlPassthroughSchema 'Microsoft.ApiManagement/service/apis/schemas@2025-09-01-preview' = {
   parent: apiGraphqlPassthrough
   name: 'graphql'
   properties: {
@@ -836,7 +836,7 @@ resource graphqlPassthroughSchema 'Microsoft.ApiManagement/service/apis/schemas@
 }
 
 // 5. WebSocket API
-resource apiWebsocket 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
+resource apiWebsocket 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-websocket'
   properties: {
@@ -851,7 +851,7 @@ resource apiWebsocket 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
 }
 
 // 6. Versioned REST API (v1 via version set)
-resource apiVersionedV1 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
+resource apiVersionedV1 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-rest-versioned-v1'
   properties: {
@@ -870,7 +870,7 @@ resource apiVersionedV1 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
 }
 
 // 7. Revisioned REST API (with multiple revisions)
-resource apiRevisioned 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
+resource apiRevisioned 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-rest-revisioned'
   properties: {
@@ -888,7 +888,7 @@ resource apiRevisioned 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
 }
 
 // Create revision 2 of the revisioned API
-resource apiRevisionedRev2 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
+resource apiRevisionedRev2 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-rest-revisioned;rev=2'
   properties: {
@@ -902,7 +902,7 @@ resource apiRevisionedRev2 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
 }
 
 // 8. MCP API created from an existing REST API in the instance
-resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
+resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-mcp-from-api'
   properties: {
@@ -918,7 +918,7 @@ resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
 }
 
 // 9. MCP API created from an existing (external) public MCP server
-resource apiMcpFromExternal 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
+resource apiMcpFromExternal 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-mcp-from-external'
   properties: {
@@ -938,7 +938,7 @@ resource apiMcpFromExternal 'Microsoft.ApiManagement/service/apis@2024-05-01' = 
 // ---------------------------------------------------------------------------
 
 // --- Product Policy ---
-resource productPremiumPolicy 'Microsoft.ApiManagement/service/products/policies@2024-05-01' = {
+resource productPremiumPolicy 'Microsoft.ApiManagement/service/products/policies@2025-09-01-preview' = {
   parent: productPremium
   name: 'policy'
   properties: {
@@ -948,51 +948,51 @@ resource productPremiumPolicy 'Microsoft.ApiManagement/service/products/policies
 }
 
 // --- Product API Associations ---
-resource productStarterApiRest 'Microsoft.ApiManagement/service/products/apis@2024-05-01' = {
+resource productStarterApiRest 'Microsoft.ApiManagement/service/products/apis@2025-09-01-preview' = {
   parent: productStarter
   name: 'src-rest-openapi'
   dependsOn: [apiRestOpenapi]
 }
 
-resource productStarterApiSoap 'Microsoft.ApiManagement/service/products/apis@2024-05-01' = {
+resource productStarterApiSoap 'Microsoft.ApiManagement/service/products/apis@2025-09-01-preview' = {
   parent: productStarter
   name: 'src-soap-passthrough'
   dependsOn: [apiSoapPassthrough]
 }
 
-resource productPremiumApiRest 'Microsoft.ApiManagement/service/products/apis@2024-05-01' = {
+resource productPremiumApiRest 'Microsoft.ApiManagement/service/products/apis@2025-09-01-preview' = {
   parent: productPremium
   name: 'src-rest-openapi'
   dependsOn: [apiRestOpenapi]
 }
 
-resource productPremiumApiGraphql 'Microsoft.ApiManagement/service/products/apis@2024-05-01' = {
+resource productPremiumApiGraphql 'Microsoft.ApiManagement/service/products/apis@2025-09-01-preview' = {
   parent: productPremium
   name: 'src-graphql-synthetic'
   dependsOn: [apiGraphqlSynthetic]
 }
 
 // --- Product Group Associations ---
-resource productStarterGroupDev 'Microsoft.ApiManagement/service/products/groups@2024-05-01' = {
+resource productStarterGroupDev 'Microsoft.ApiManagement/service/products/groups@2025-09-01-preview' = {
   parent: productStarter
   name: 'developers'
 }
 
-resource productPremiumGroupInternal 'Microsoft.ApiManagement/service/products/groups@2024-05-01' = {
+resource productPremiumGroupInternal 'Microsoft.ApiManagement/service/products/groups@2025-09-01-preview' = {
   parent: productPremium
   name: 'src-group-internal'
   dependsOn: [groupInternal]
 }
 
 // --- Product Tags ---
-resource productStarterTag 'Microsoft.ApiManagement/service/products/tags@2024-05-01' = {
+resource productStarterTag 'Microsoft.ApiManagement/service/products/tags@2025-09-01-preview' = {
   parent: productStarter
   name: 'src-tag-env'
   dependsOn: [tagEnv]
 }
 
 // --- Product Wiki (classic SKUs only - documentation dependency) ---
-resource productStarterWiki 'Microsoft.ApiManagement/service/products/wikis@2024-05-01' = if (isClassicSku) {
+resource productStarterWiki 'Microsoft.ApiManagement/service/products/wikis@2025-09-01-preview' = if (isClassicSku) {
   parent: productStarter
   name: 'default'
   properties: {
@@ -1006,7 +1006,7 @@ resource productStarterWiki 'Microsoft.ApiManagement/service/products/wikis@2024
 }
 
 // --- API Policy ---
-resource apiRestPolicy 'Microsoft.ApiManagement/service/apis/policies@2024-05-01' = {
+resource apiRestPolicy 'Microsoft.ApiManagement/service/apis/policies@2025-09-01-preview' = {
   parent: apiRestOpenapi
   name: 'policy'
   properties: {
@@ -1016,20 +1016,20 @@ resource apiRestPolicy 'Microsoft.ApiManagement/service/apis/policies@2024-05-01
 }
 
 // --- API Tags ---
-resource apiRestTagEnv 'Microsoft.ApiManagement/service/apis/tags@2024-05-01' = {
+resource apiRestTagEnv 'Microsoft.ApiManagement/service/apis/tags@2025-09-01-preview' = {
   parent: apiRestOpenapi
   name: 'src-tag-env'
   dependsOn: [tagEnv]
 }
 
-resource apiRestTagTeam 'Microsoft.ApiManagement/service/apis/tags@2024-05-01' = {
+resource apiRestTagTeam 'Microsoft.ApiManagement/service/apis/tags@2025-09-01-preview' = {
   parent: apiRestOpenapi
   name: 'src-tag-team'
   dependsOn: [tagTeam]
 }
 
 // --- API Diagnostic ---
-resource apiRestDiagnostic 'Microsoft.ApiManagement/service/apis/diagnostics@2024-05-01' = {
+resource apiRestDiagnostic 'Microsoft.ApiManagement/service/apis/diagnostics@2025-09-01-preview' = {
   parent: apiRestOpenapi
   name: 'applicationinsights'
   properties: {
@@ -1045,7 +1045,7 @@ resource apiRestDiagnostic 'Microsoft.ApiManagement/service/apis/diagnostics@202
 // --- API Operation Policy (on healthCheck operation) ---
 // Note: Operations are created automatically from the OpenAPI spec import.
 // We apply a policy to the GET /healthz operation (operationId: healthCheck).
-resource apiRestOpPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2024-05-01' = {
+resource apiRestOpPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2025-09-01-preview' = {
   name: '${apim.name}/src-rest-openapi/healthCheck/policy'
   dependsOn: [apiRestOpenapi]
   properties: {
@@ -1055,7 +1055,7 @@ resource apiRestOpPolicy 'Microsoft.ApiManagement/service/apis/operations/polici
 }
 
 // --- Explicit API Operation (on MCP from-API API for full coverage of ApiOperation resource type) ---
-resource apiMcpOperation 'Microsoft.ApiManagement/service/apis/operations@2024-05-01' = {
+resource apiMcpOperation 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-preview' = {
   parent: apiMcpFromApi
   name: 'src-mcp-invoke'
   properties: {
@@ -1073,7 +1073,7 @@ resource apiMcpOperation 'Microsoft.ApiManagement/service/apis/operations@2024-0
 }
 
 // --- MCP Server (from existing API) ---
-resource mcpServerFromApi 'Microsoft.ApiManagement/service/apis/mcpServers@2024-05-01' = {
+resource mcpServerFromApi 'Microsoft.ApiManagement/service/apis/mcpServers@2025-09-01-preview' = {
   parent: apiMcpFromApi
   name: 'default'
   properties: {
@@ -1091,7 +1091,7 @@ resource mcpServerFromApi 'Microsoft.ApiManagement/service/apis/mcpServers@2024-
 }
 
 // --- MCP Server (from external MCP server) ---
-resource mcpServerFromExternal 'Microsoft.ApiManagement/service/apis/mcpServers@2024-05-01' = {
+resource mcpServerFromExternal 'Microsoft.ApiManagement/service/apis/mcpServers@2025-09-01-preview' = {
   parent: apiMcpFromExternal
   name: 'default'
   properties: {
@@ -1102,7 +1102,7 @@ resource mcpServerFromExternal 'Microsoft.ApiManagement/service/apis/mcpServers@
 }
 
 // --- Explicit API Schema (on REST API for full coverage) ---
-resource apiRestSchema 'Microsoft.ApiManagement/service/apis/schemas@2024-05-01' = {
+resource apiRestSchema 'Microsoft.ApiManagement/service/apis/schemas@2025-09-01-preview' = {
   parent: apiRestOpenapi
   name: 'src-rest-schema-item'
   properties: {
@@ -1125,7 +1125,7 @@ resource apiRestSchema 'Microsoft.ApiManagement/service/apis/schemas@2024-05-01'
 }
 
 // --- API Tag Description ---
-resource apiRestTagDescEnv 'Microsoft.ApiManagement/service/apis/tagDescriptions@2024-05-01' = {
+resource apiRestTagDescEnv 'Microsoft.ApiManagement/service/apis/tagDescriptions@2025-09-01-preview' = {
   parent: apiRestOpenapi
   name: 'src-tag-env'
   dependsOn: [tagEnv, apiRestTagEnv]
@@ -1137,7 +1137,7 @@ resource apiRestTagDescEnv 'Microsoft.ApiManagement/service/apis/tagDescriptions
 }
 
 // --- API Wiki (classic SKUs only - documentation dependency) ---
-resource apiRestWiki 'Microsoft.ApiManagement/service/apis/wikis@2024-05-01' = if (isClassicSku) {
+resource apiRestWiki 'Microsoft.ApiManagement/service/apis/wikis@2025-09-01-preview' = if (isClassicSku) {
   parent: apiRestOpenapi
   name: 'default'
   properties: {
@@ -1151,7 +1151,7 @@ resource apiRestWiki 'Microsoft.ApiManagement/service/apis/wikis@2024-05-01' = i
 }
 
 // --- API Release (on revisioned API) ---
-resource apiRelease 'Microsoft.ApiManagement/service/apis/releases@2024-05-01' = {
+resource apiRelease 'Microsoft.ApiManagement/service/apis/releases@2025-09-01-preview' = {
   parent: apiRevisioned
   name: 'src-release-1'
   properties: {
@@ -1161,7 +1161,7 @@ resource apiRelease 'Microsoft.ApiManagement/service/apis/releases@2024-05-01' =
 }
 
 // --- GraphQL Resolver ---
-resource graphqlResolver 'Microsoft.ApiManagement/service/apis/resolvers@2024-05-01' = {
+resource graphqlResolver 'Microsoft.ApiManagement/service/apis/resolvers@2025-09-01-preview' = {
   parent: apiGraphqlSynthetic
   name: 'src-resolver-hero'
   properties: {
@@ -1172,7 +1172,7 @@ resource graphqlResolver 'Microsoft.ApiManagement/service/apis/resolvers@2024-05
 }
 
 // --- GraphQL Resolver Policy ---
-resource graphqlResolverPolicy 'Microsoft.ApiManagement/service/apis/resolvers/policies@2024-05-01' = {
+resource graphqlResolverPolicy 'Microsoft.ApiManagement/service/apis/resolvers/policies@2025-09-01-preview' = {
   parent: graphqlResolver
   name: 'policy'
   properties: {
@@ -1182,7 +1182,7 @@ resource graphqlResolverPolicy 'Microsoft.ApiManagement/service/apis/resolvers/p
 }
 
 // --- Gateway API Association (classic SKUs only) ---
-resource gatewayApiRest 'Microsoft.ApiManagement/service/gateways/apis@2024-05-01' = if (supportsSelfHostedGateway) {
+resource gatewayApiRest 'Microsoft.ApiManagement/service/gateways/apis@2025-09-01-preview' = if (supportsSelfHostedGateway) {
   parent: gateway
   name: 'src-rest-openapi'
   dependsOn: [apiRestOpenapi]
@@ -1192,7 +1192,7 @@ resource gatewayApiRest 'Microsoft.ApiManagement/service/gateways/apis@2024-05-0
 }
 
 // --- Subscriptions ---
-resource subAllApis 'Microsoft.ApiManagement/service/subscriptions@2024-05-01' = {
+resource subAllApis 'Microsoft.ApiManagement/service/subscriptions@2025-09-01-preview' = {
   parent: apim
   name: 'src-sub-all-apis'
   properties: {
@@ -1202,7 +1202,7 @@ resource subAllApis 'Microsoft.ApiManagement/service/subscriptions@2024-05-01' =
   }
 }
 
-resource subProduct 'Microsoft.ApiManagement/service/subscriptions@2024-05-01' = {
+resource subProduct 'Microsoft.ApiManagement/service/subscriptions@2025-09-01-preview' = {
   parent: apim
   name: 'src-sub-product'
   properties: {
@@ -1216,7 +1216,7 @@ resource subProduct 'Microsoft.ApiManagement/service/subscriptions@2024-05-01' =
 // WORKSPACE (conditional — Developer v2 only)
 // ---------------------------------------------------------------------------
 
-resource workspace 'Microsoft.ApiManagement/service/workspaces@2024-05-01' = if (supportsWorkspaces) {
+resource workspace 'Microsoft.ApiManagement/service/workspaces@2025-09-01-preview' = if (supportsWorkspaces) {
   parent: apim
   name: 'src-workspace'
   properties: {
@@ -1225,7 +1225,7 @@ resource workspace 'Microsoft.ApiManagement/service/workspaces@2024-05-01' = if 
   }
 }
 
-resource wsBackend 'Microsoft.ApiManagement/service/workspaces/backends@2024-05-01' = if (supportsWorkspaces) {
+resource wsBackend 'Microsoft.ApiManagement/service/workspaces/backends@2025-09-01-preview' = if (supportsWorkspaces) {
   parent: workspace
   name: 'src-ws-backend-http'
   properties: {
@@ -1235,7 +1235,7 @@ resource wsBackend 'Microsoft.ApiManagement/service/workspaces/backends@2024-05-
   }
 }
 
-resource wsNamedValue 'Microsoft.ApiManagement/service/workspaces/namedValues@2024-05-01' = if (supportsWorkspaces) {
+resource wsNamedValue 'Microsoft.ApiManagement/service/workspaces/namedValues@2025-09-01-preview' = if (supportsWorkspaces) {
   parent: workspace
   name: 'src-ws-nv-plain'
   properties: {
@@ -1245,7 +1245,7 @@ resource wsNamedValue 'Microsoft.ApiManagement/service/workspaces/namedValues@20
   }
 }
 
-resource wsTag 'Microsoft.ApiManagement/service/workspaces/tags@2024-05-01' = if (supportsWorkspaces) {
+resource wsTag 'Microsoft.ApiManagement/service/workspaces/tags@2025-09-01-preview' = if (supportsWorkspaces) {
   parent: workspace
   name: 'src-ws-tag'
   properties: {
@@ -1253,7 +1253,7 @@ resource wsTag 'Microsoft.ApiManagement/service/workspaces/tags@2024-05-01' = if
   }
 }
 
-resource wsProduct 'Microsoft.ApiManagement/service/workspaces/products@2024-05-01' = if (supportsWorkspaces) {
+resource wsProduct 'Microsoft.ApiManagement/service/workspaces/products@2025-09-01-preview' = if (supportsWorkspaces) {
   parent: workspace
   name: 'src-ws-product'
   properties: {
@@ -1264,7 +1264,7 @@ resource wsProduct 'Microsoft.ApiManagement/service/workspaces/products@2024-05-
   }
 }
 
-resource wsApi 'Microsoft.ApiManagement/service/workspaces/apis@2024-05-01' = if (supportsWorkspaces) {
+resource wsApi 'Microsoft.ApiManagement/service/workspaces/apis@2025-09-01-preview' = if (supportsWorkspaces) {
   parent: workspace
   name: 'src-ws-api-rest'
   properties: {
