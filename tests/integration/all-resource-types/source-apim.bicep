@@ -902,35 +902,67 @@ resource apiRevisionedRev2 'Microsoft.ApiManagement/service/apis@2025-09-01-prev
 }
 
 // 8. MCP API created from an existing REST API in the instance
+// mcpTools live directly on the API resource (not a child mcpServers resource)
+// any() used because mcpTools is valid at runtime but absent from Bicep type definitions (BCP037)
 resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-mcp-from-api'
-  properties: {
+  dependsOn: [apiRestOpenapi]
+  properties: any({
     displayName: 'KS MCP from Existing API'
     description: 'MCP server created by exposing an existing REST API in the instance as MCP tools'
     path: 'ks/mcp-from-api'
     protocols: ['https']
-    serviceUrl: 'https://src-mcp-from-api-backend.example.com/api'
     subscriptionRequired: false
     type: 'mcp'
-    apiType: 'mcp'
+    mcpTools: [
+      {
+        name: 'healthCheck'
+        description: 'Health check endpoint'
+        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-openapi', 'healthCheck')
+      }
+      {
+        name: 'listItems'
+        description: 'List all items'
+        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-openapi', 'listItems')
+      }
+    ]
+  })
+}
+
+// Backend for external MCP server (backendId pattern requires a backend resource)
+resource backendMcpExternal 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = {
+  parent: apim
+  name: 'src-backend-mcp-external'
+  properties: {
+    description: 'External MCP server backend (GitHub Copilot)'
+    url: 'https://api.githubcopilot.com/mcp'
+    protocol: 'http'
   }
 }
 
 // 9. MCP API created from an existing (external) public MCP server
+// External MCP uses backendId + mcpProperties (path must be empty)
+// any() used because backendId and mcpProperties.endpoints are valid at runtime but absent from Bicep type definitions (BCP037/BCP036)
 resource apiMcpFromExternal 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-mcp-from-external'
-  properties: {
+  properties: any({
     displayName: 'KS MCP from External Server'
     description: 'MCP server repackaging a public external MCP server via APIM'
-    path: 'ks/mcp-external'
+    path: ''
     protocols: ['https']
-    serviceUrl: 'https://api.githubcopilot.com/mcp'
     subscriptionRequired: false
     type: 'mcp'
-    apiType: 'mcp'
-  }
+    backendId: backendMcpExternal.name
+    mcpProperties: {
+      endpoints: {
+        mcp: {
+          uriTemplate: '/mcp'
+        }
+      }
+    }
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -1051,53 +1083,6 @@ resource apiRestOpPolicy 'Microsoft.ApiManagement/service/apis/operations/polici
   properties: {
     format: 'rawxml'
     value: operationPolicyXml
-  }
-}
-
-// --- Explicit API Operation (on MCP from-API API for full coverage of ApiOperation resource type) ---
-resource apiMcpOperation 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-preview' = {
-  parent: apiMcpFromApi
-  name: 'src-mcp-invoke'
-  properties: {
-    displayName: 'Invoke MCP Tool'
-    method: 'POST'
-    urlTemplate: '/tools/invoke'
-    description: 'Explicit operation for BVT coverage of ApiOperation resource type'
-    responses: [
-      {
-        statusCode: 200
-        description: 'Tool invocation result'
-      }
-    ]
-  }
-}
-
-// --- MCP Server (from existing API) ---
-resource mcpServerFromApi 'Microsoft.ApiManagement/service/apis/mcpServers@2025-09-01-preview' = {
-  parent: apiMcpFromApi
-  name: 'default'
-  properties: {
-    mcpTools: [
-      {
-        name: 'httpGet'
-        description: 'Perform a GET request via the underlying REST API backend'
-      }
-      {
-        name: 'httpPost'
-        description: 'Perform a POST request via the underlying REST API backend'
-      }
-    ]
-  }
-}
-
-// --- MCP Server (from external MCP server) ---
-resource mcpServerFromExternal 'Microsoft.ApiManagement/service/apis/mcpServers@2025-09-01-preview' = {
-  parent: apiMcpFromExternal
-  name: 'default'
-  properties: {
-    mcpProperties: {
-      serverUrl: 'https://api.githubcopilot.com/mcp'
-    }
   }
 }
 
