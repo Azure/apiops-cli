@@ -930,17 +930,13 @@ resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview'
   })
 }
 
-// Explicit operation on the MCP-from-API surface for ApiOperation BVT coverage
-resource apiMcpFromApiPing 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-preview' = {
-  parent: apiMcpFromApi
-  name: 'mcpPing'
-  properties: {
-    displayName: 'MCP Ping'
-    method: 'GET'
-    urlTemplate: '/ping'
-    description: 'Lightweight health probe for MCP-from-API'
-  }
-}
+// NOTE: MCP-typed APIs cannot host their own ApiOperation child resources.
+// APIM rejects PUT apis/{mcpApi}/operations/* with
+// "Operation entity cannot be defined for MCP API type".
+// MCP tools are surfaced via the parent API's properties.mcpTools array
+// (each entry's operationId references operations on a different,
+// non-MCP API \u2014 e.g. src-rest-openapi above). ApiOperation BVT coverage
+// is therefore provided by the REST APIs in this template, not by the MCP APIs.
 
 // Backend for external MCP server (backendId pattern requires a backend resource)
 resource backendMcpExternal 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = {
