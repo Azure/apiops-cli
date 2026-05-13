@@ -35,8 +35,7 @@ export async function generateDryRunReport(
   client: IApimClient,
   context: ApimServiceContext,
   config: PublishConfig,
-  targetDescriptors: ResourceDescriptor[],
-  incrementalDeletedDescriptors: ResourceDescriptor[] = []
+  targetDescriptors: ResourceDescriptor[]
 ): Promise<DryRunReport> {
   const actions: DryRunAction[] = [];
   let creates = 0;
@@ -93,47 +92,8 @@ export async function generateDryRunReport(
     }
   }
 
-  // In incremental mode, use precomputed deleted descriptors from git diff.
-  // Otherwise, if delete-unmatched is enabled, calculate full unmatched deletes.
-  if (incrementalDeletedDescriptors.length > 0) {
-    for (const descriptor of incrementalDeletedDescriptors) {
-      try {
-        const existing = await client.getResource(context, descriptor);
-
-        if (existing) {
-          const action: DryRunAction = {
-            operation: 'DELETE',
-            type: descriptor.type,
-            name: formatResourceName(descriptor),
-            descriptor,
-          };
-          actions.push(action);
-          deletes++;
-          logger.info(`[DRY RUN] DELETE ${buildResourceLabel(descriptor)}`);
-        } else {
-          const action: DryRunAction = {
-            operation: 'SKIP',
-            type: descriptor.type,
-            name: formatResourceName(descriptor),
-            descriptor,
-          };
-          actions.push(action);
-          skips++;
-          logger.info(`[DRY RUN] SKIP ${buildResourceLabel(descriptor)} (already absent)`);
-        }
-      } catch {
-        const action: DryRunAction = {
-          operation: 'SKIP',
-          type: descriptor.type,
-          name: formatResourceName(descriptor),
-          descriptor,
-        };
-        actions.push(action);
-        skips++;
-        logger.info(`[DRY RUN] SKIP ${buildResourceLabel(descriptor)} (error)`);
-      }
-    }
-  } else if (config.deleteUnmatched) {
+  // If delete-unmatched is enabled, calculate deletes
+  if (config.deleteUnmatched) {
     const deleteActions = await computeDeleteActionsForDryRun(
       client,
       store,

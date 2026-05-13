@@ -3,10 +3,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import {
-  createPublishCommand,
-  hasMutuallyExclusivePublishOptions,
-} from '../../../src/cli/publish-command.js';
+import { createPublishCommand } from '../../../src/cli/publish-command.js';
 
 describe('publish-command', () => {
   describe('createPublishCommand', () => {
@@ -44,13 +41,6 @@ describe('publish-command', () => {
       const opts = cmd.options;
       const overridesOpt = opts.find((o) => o.long === '--overrides');
       expect(overridesOpt).toBeDefined();
-    });
-
-    it('should have --commit-id option', () => {
-      const cmd = createPublishCommand();
-      const opts = cmd.options;
-      const commitIdOpt = opts.find((o) => o.long === '--commit-id');
-      expect(commitIdOpt).toBeDefined();
     });
 
     it('should have --dry-run flag with default false', () => {
@@ -120,20 +110,6 @@ describe('publish-command', () => {
       // The actual reading happens in executePublish
       const cmd = createPublishCommand();
       expect(cmd).toBeDefined();
-    });
-  });
-
-  describe('mutually exclusive publish modes', () => {
-    it('should treat commit-id and delete-unmatched as conflicting', () => {
-      expect(hasMutuallyExclusivePublishOptions(true, 'abc123')).toBe(true);
-    });
-
-    it('should allow delete-unmatched in full publish mode', () => {
-      expect(hasMutuallyExclusivePublishOptions(true, undefined)).toBe(false);
-    });
-
-    it('should allow commit-id incremental mode without delete-unmatched', () => {
-      expect(hasMutuallyExclusivePublishOptions(false, 'abc123')).toBe(false);
     });
   });
 });
