@@ -35,7 +35,7 @@
 | **Enabled** | ✅ yes |
 
 **Agenda:**
-1. Read constitution (`.specify/memory/constitution.md`) and team decisions (`.squad/decisions.md`)
+1. Read constitution (`.squad/identity/constitution.md`) and team decisions (`.squad/decisions.md`)
 2. Review all modified/created source files for constitution compliance (§I-§VIII)
 3. Check TypeScript strict mode compliance — no `any`, proper null handling
 4. Verify testability — abstractions over concretes, injectable dependencies (§VI)
