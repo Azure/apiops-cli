@@ -2,6 +2,42 @@
 
 ## Active Decisions
 
+### 2026-05-14T05:20:00Z: APIM v1 → v2 SKU Migration via apiops-cli
+**By:** ApimExpert + ApiOpsLead (joint research and decision)  
+**Status:** Proposed for team governance review  
+**What:** Comprehensive technical analysis of APIM v1→v2 migration feasibility, with phase-gated implementation approach.
+
+**Decision:** Phase 1 MVP uses existing `extract` + `publish` commands with migration guide. No new command needed yet.
+
+**Key Findings:**
+- **Coverage:** Existing extract→publish supports ~80–85% of migration. All 34 resource types supported; REST API paths identical for classic and v2 instances.
+- **Gaps:** (1) Subscription keys redacted on extract (need `listSecrets` flow for preservation), (2) Self-hosted gateways unsupported on v2, (3) Service Fabric backends unsupported on v2, (4) Buffered payload limit 500MiB→2MiB, (5) No multi-region, static IP, or backup/restore on v2.
+- **Architecture readiness:** `ApimServiceContext` parameterized — source and target are already just two different context instances. No code refactoring needed.
+- **Infrastructure out of scope:** VNet, DNS, managed identity, RBAC, TLS certificates handled via Bicep/Terraform, not apiops-cli.
+
+**Rationale:**
+1. Constitution §V (YAGNI): Build what's needed when it's needed.
+2. Overpromise avoided: A dedicated `apiops migrate` command would imply the tool handles networking/DNS/identity, which are outside APIM configuration scope.
+3. Existing architecture validates well — demonstrates robustness of parameterized design.
+
+**Phase Breakdown:**
+- **Phase 1 (MVP):** Migration guide doc + override template examples (no code changes). Covers ~85% of typical migration via existing commands.
+- **Phase 2 (if demand):** Add `apiops copy` for direct source→target streaming, optional subscription key preservation via `listSecrets` API, pre-flight v2 compatibility validation.
+- **Phase 3+:** Enhanced migration-specific features based on user feedback.
+
+**Artifacts:**
+- `specs/sku-upgrade.md` — Full 94-line proposal with phased roadmap
+- `.squad/decisions/inbox/apimexpert-sku-upgrade-research.md` — Comprehensive 306-line technical analysis (all 34 resource types, feature gaps, networking model differences, identity considerations)
+- `.squad/decisions/inbox/apiopslead-sku-upgrade-proposal.md` — Decision summary (merged into this entry)
+
+**Next Steps:**
+1. Team governance review
+2. If approved: author migration guide in `/docs/guides/sku-migration.md`
+3. Create override template showing v2-specific adjustments (backend URLs, logger resource IDs, Key Vault refs)
+4. Gather Phase 2 demand signals from users
+
+---
+
 ### 2026-05-12T19:25:50Z: Documentation Structure and Scope Decisions
 **By:** DocWriter (with scope input from ApiOpsLead)  
 **Status:** Proposed  
