@@ -660,7 +660,12 @@ try {
         @{ Label = 'Releases';        Suffix = 'releases'        }
         @{ Label = 'Wikis';           Suffix = 'wikis'           }
         @{ Label = 'Tag Descriptions'; Suffix = 'tagDescriptions' }
-        @{ Label = 'MCP Servers';     Suffix = 'mcpServers'      }
+        # NOTE: 'mcpServers' is intentionally omitted. ARM does not expose a
+        # list collection at apis/{api}/mcpServers (returns HTTP 500), and the
+        # singleton apis/{api}/mcpServers/default returns 404 even on working
+        # MCP APIs. MCP server configuration (mcpProperties, mcpTools,
+        # backendId) lives on the parent API resource and is verified by the
+        # top-level "Comparing APIs" deep comparison above.
     )
 
     foreach ($apiName in $apiNames) {
