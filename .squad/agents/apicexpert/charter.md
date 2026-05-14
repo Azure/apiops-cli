@@ -37,7 +37,7 @@
 
 ## Model
 
-- **Preferred:** claude-sonnet-4.5
+- **Preferred:** claude-opus-4.6
 - **Rationale:** Writing REST client code requires quality and accuracy.
 - **Fallback:** Standard chain — the coordinator handles fallback automatically
 

@@ -3,8 +3,8 @@
 ## Project Context
 
 - **Project:** apiops-cli — A CLI tool for Azure API Management operations (extract, publish, init)
-- **Tech Stack:** TypeScript 5.x, Node.js 22+, Commander (CLI), Vitest (testing), ESLint (linting), ESM modules
-- **Constitution:** `.specify/memory/constitution.md` (v2.1.0) — 8 principles governing all development
+- **Tech Stack:** TypeScript 6.x, Node.js 22+, Commander (CLI), Vitest (testing), ESLint (linting), ESM modules
+- **Constitution:** `.squad/identity/constitution.md` (v2.1.0) — 8 principles governing all development
 - **Speckit Flow:** spec → plan → tasks → implement
 - **Build:** `npm run build` (tsc), `npm run lint` (eslint), `npm test` (vitest)
 
@@ -131,3 +131,41 @@
 6. **Conventional Commits compliance** — Proper `feat:` type, detailed body with example, Co-authored-by trailers present.
 
 **Pattern to remember:** For logging enhancements, verify the logged data contains no secrets (§VIII), test all code paths (§VI), and keep implementation simple (§V). Resource identifiers are safe to log; resource payloads may contain secrets.
+
+### 2026-05-12: CodeReviewer Charter Enhancement
+
+**Context:** ApiOpsLead completed comprehensive enhancement to CodeReviewer charter with tech-specific checks and thoroughness improvements.
+
+**Charter Enhancements:**
+
+1. **New "Tech-Specific Checks" section** (lines 58–111) with 8 subsections:
+   - TypeScript & ESM standards (import extensions, `Record<string, unknown>`, exhaustive switches, `unknown` in catch blocks)
+   - Singleton + export pattern (enables both convenience use and test mocking)
+   - Error handling (custom `HttpError`, `aggregateExitCode()`, no bare throws)
+   - Secret safety exhaustive (logger calls, SENSITIVE_KEY_PATTERNS, Bearer token redaction, SAS URL stripping, KeyVault preservation)
+   - APIM client patterns (retry logic, Retry-After header, `noRetryOn5xx`, `allowedNonOkStatuses`, token caching)
+   - Immutability (clone inputs, no shared mutable state)
+   - Test patterns (Vitest, no live Azure, subprocess-based CLI tests, test file mirrors)
+   - Workspace scoping (ResourceDescriptor, ARM URI builders, pipeline propagation)
+
+2. **Enhanced review protocol (lines 24–40)**
+   - Holistic understanding before line-by-line critique
+   - Explicit testability patterns (injection via constructor/parameter)
+   - YAGNI verification with written justification
+   - Reordered critical checks (testability, YAGNI, secrets first)
+
+3. **Updated "What I Flag" table (lines 42–56)**
+   - Expanded examples with tech-specific patterns
+   - New categories for architecture, naming/style, CI/CD hygiene
+
+4. **Model preference (lines 146–151)**
+   - claude-opus-4.6 as preferred for premium reasoning
+
+5. **Voice reinforced (lines 170–179)**
+   - Assumption of guilt until proven correct
+   - Focus on missing code (untested branches, unhandled errors, secret leaks)
+   - Brevity is not a virtue; thoroughness is the entire point
+
+**Verdict:** ✅ Charter now serves as authoritative reference for code review standards across all project phases. Tech-specific checks operationalize historical review findings (2026-04-06 through 2026-04-14) into explicit, repeatable criteria.
+
+**Pattern to remember:** The charter evolves as patterns emerge from actual reviews. When CodeReviewer flags something in a review that isn't yet in the charter, ApiOpsLead may enhance the charter to make the pattern explicit for future reviews.
