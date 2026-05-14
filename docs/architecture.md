@@ -8,54 +8,56 @@
 
 ## Configuration-as-Code Workflow
 
-The diagram below shows how `apiops` fits into a typical team workflow:
+The sequence diagram below shows how `apiops` fits into a typical team workflow, including all commands and affected resources:
 
 ```mermaid
-flowchart LR
-    classDef cmd font-family:monospace
+sequenceDiagram
+    participant dev as Developer
+    participant git as Repository<br/>(GitHub/<br/>Azure DevOps)
+    participant ci as CI/CD Pipeline
+    participant apim_src as Source<br/>API Management
+    participant apim_dst as Target<br/>API Management
 
-    dev(["fa:fa-user Dev"])
-    init_op(["apiops init"]):::cmd
-    extract_op(["apiops extract"]):::cmd
-    publish_op(["apiops publish"]):::cmd
-    pr["fa:fa-code-pull-request Pull Request"]
-    merge_op["fa:fa-code-merge Merge"]
-
-    subgraph repo["fa:fa-github GitHub / Azure DevOps"]
-        artifacts["fa:fa-folder apim-artifacts"]
-        subgraph ci["fa:fa-gears CI/CD Workflows"]
-            direction TB
-            extract_pipeline["extract"]
-            publish_pipeline["publish"]
-            extract_pipeline --- publish_pipeline
-        end
+    rect rgb(200, 220, 255)
+        note over dev: Step 1: Initialize
+        dev->>git: Command: apiops init
+        git->>git: Create CI/CD workflow files<br/>(extract & publish pipelines)
     end
 
-    subgraph azure["Azure"]
-        direction LR
-        apim_src["API Management<br/>source"]
-        apim_dst["API Management<br/>target"]
+    rect rgb(200, 255, 220)
+        note over dev: Step 2: Extract Configuration
+        dev->>ci: Run extract pipeline
+        note over ci: Command: apiops extract
+        ci->>apim_src: Read configuration
+        apim_src-->>ci: Current APIM config
+        ci->>git: Write to apim-artifacts/
+        git->>dev: Show extracted changes
     end
 
-    dev -- "Step 1" --> init_op --> ci
-    dev -- "Step 2" --> extract_pipeline --> extract_op
-    apim_src --> extract_op --> artifacts
-    ci -- "Step 3" --> pr
-    pr -- "Step 4" --> merge_op
-    merge_op -- "Step 5" --> publish_pipeline --> publish_op
-    artifacts --> publish_op --> apim_dst
+    rect rgb(255, 240, 200)
+        note over dev: Step 3-4: Review & Merge
+        dev->>git: Create Pull Request
+        note over git: Code review & approval
+        dev->>git: Merge to main branch
+    end
+
+    rect rgb(255, 220, 220)
+        note over ci: Step 5: Publish Configuration
+        git->>ci: Trigger publish pipeline
+        note over ci: Command: apiops publish
+        ci->>git: Read apim-artifacts/
+        git-->>ci: Artifact files
+        ci->>apim_dst: Apply configuration to target
+        apim_dst-->>ci: Updated successfully
+    end
 ```
 
-| Step | Command | Description |
-|------|---------|-------------|
-| 1 | `apiops init` | Scaffolds the Git repository with CI/CD workflow files and an identity setup guide |
-| 2 | `apiops extract` | Reads the running APIM configuration and writes it to local artifact files |
-| 3 | Pull Request | Developer submits extracted artifact changes for review |
-| 4 | Merge | Approved changes are merged |
-| 5 | `apiops publish` | On merge, the publish workflow runs and applies artifact files to the target API Management instance |
-
-> [!NOTE]
-> Chart uses <a href="https://learn.microsoft.com/en-us/azure/architecture/icons/">Azure Architecture Icons </a> and GitHub icons from [Font Awesome](https://fontawesome.com/).
+| Step | Command | Affected Resources | Description |
+|------|---------|-------------------|-------------|
+| 1 | `apiops init` | Repository | Scaffolds the Git repository with CI/CD workflow files and an identity setup guide |
+| 2 | `apiops extract` | Source APIM, apim-artifacts/ | Reads the running APIM configuration and writes it to local artifact files |
+| 3-4 | — | Repository (PR & Merge) | Developer submits extracted artifact changes for review and approves merge |
+| 5 | `apiops publish` | apim-artifacts/, Target APIM | On merge, the publish workflow runs and applies artifact files to the target API Management instance |
 
 ---
 
@@ -73,10 +75,10 @@ flowchart TB
 
     subgraph services["Services"]
         direction TB
-        extract_svc["Extract Service<br/>(parallel by dependency tier)"]
+        extract_svc["Extract Service<br/>(parallel by <br/>dependency tier)"]
         filter_svc["Filter + Transitive Resolver"]
 
-        publish_svc["Publish Service<br/>(dependency-ordered PUT / DELETE)"]
+        publish_svc["Publish Service<br/>(dependency-ordered <br/>PUT / DELETE)"]
         override_svc["Override Merger<br/>(per-environment config)"]
         git_svc["Git Diff Service<br/>(incremental publish)"]
         dry_svc["Dry-run Reporter"]
@@ -85,7 +87,7 @@ flowchart TB
     end
 
     subgraph clients["Clients"]
-        apim_client["APIM REST Client<br/>(Azure Management API)"]
+        apim_client["API Management REST Client"]
         store["Artifact Store"]
     end
 
@@ -94,8 +96,8 @@ flowchart TB
     end
 
     subgraph external["External Systems"]
-        azure_apim[("Azure API Management")]
-        local_files[("fa:fa-folder Artifact Files\n(Local Filesystem)")]
+        azure_apim[("API Management")]
+        local_files[("fa:fa-folder Artifact Files<br/>(Local Filesystem)")]
         git_repo[("fa:fa-github GitHub / Azure DevOps")]
     end
 
