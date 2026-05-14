@@ -86,9 +86,28 @@
 
 **Key insight:** Documentation scope must be tightly coupled to implementation status. Document what's complete and stable, defer what's planned but not implemented. Phase 8 (Polish) features like `--otel` and `--spec-format` are spec'd but not coded — documenting them now would be inaccurate and create user confusion.
 
-<!-- Append new learnings here after each session -->
+### 2026-05-14: APIM v1 → v2 SKU Migration Decision Finalized
 
-### 2026-05-13: Documentation Scope Advisory and Decision Merge
+**Outcome:** Joint research with ApimExpert concluded; migration architecture decision merged into `.squad/decisions.md`.
+
+**Decision:** Phase 1 MVP uses existing `extract` + `publish` with migration guide (no new command). Phase 2 adds `apiops copy` if demand warrants.
+
+**Evidence that existing architecture supports migration:**
+- `ApimServiceContext` parameterization means source (v1) and target (v2) are just two different context instances
+- All 34 resource types already supported
+- No code refactoring needed for Phase 1
+- Architecture validation: Design held up well to this migration scenario use case
+
+**Coverage breakdown:**
+- ✅ ~80–85% covered today (APIs, products, policies, backends, named values, workspaces)
+- ⚠️ Gaps requiring Phase 2 work: subscription key preservation, self-hosted gateway validation, Service Fabric detection, gRPC detection, pre-flight v2 compatibility check
+- ❌ Out of scope: VNet, DNS, identity/RBAC, TLS certs (Bicep/Terraform territory)
+
+**Next steps:** Team governance review; if approved, write migration guide for `/docs/guides/sku-migration.md` and create override template examples.
+
+**Key insight:** YAGNI + parameterization design = migration-ready without extra code. This validates the existing architecture's flexibility.
+
+<!-- Append new learnings here after each session -->### 2026-05-13: Documentation Scope Advisory and Decision Merge
 
 **What:** Provided scope guidance to DocWriter for planning user-facing documentation. Analyzed feature completion status, documented scope decisions, and merged both ApiOpsLead and DocWriter outputs into unified decisions.md entry.
 
@@ -150,3 +169,23 @@
 - Collaboration sections updated to reference both constitution and decisions.md
 
 **Key insight:** The most impactful enhancements are on code-producing agents (TypeScriptDev, TestEngineer, NodeJsDev) where inaccurate or missing patterns directly cause code quality issues. The TypeScriptDev charter had two outright inaccuracies that would have led agents to write code targeting wrong settings.
+
+### 2026-06-02: APIM v1 → v2 SKU Migration Proposal
+
+**What:** Wrote `specs/sku-upgrade.md` — a comprehensive proposal for enabling APIM v1-to-v2 SKU migration via apiops-cli. Requested by Peter Hauge.
+
+**Decision:** Phase 1 MVP uses existing `extract` + `publish` commands with migration documentation — no new command needed. The `ApimServiceContext` is already parameterized, so source (v1) and target (v2) are just two different context instances. Phase 2 would add `apiops copy` for direct source→target streaming if demand warrants.
+
+**Key findings:**
+1. All 34 `ResourceType` enum values are supported for round-trip extract/publish — covers APIs, products, policies, backends, named values, gateways, workspaces, GraphQL resolvers, etc.
+2. Subscription keys are the biggest gap — APIM management API does not expose key values on GET. Users must regenerate keys on v2.
+3. Developer portal content, VNet/networking, managed identity, RBAC, DNS, and TLS certificates are all manual steps outside apiops-cli's scope.
+4. `--overrides` is critical for migration — users need to adjust backend URLs, logger resource IDs, and Key Vault references for the v2 environment.
+5. `--dry-run` provides pre-migration validation. An `apiops validate` command could enhance this in Phase 2.
+6. Constitution §V (YAGNI) argues against a premature `apiops migrate` command that would overpromise on scope.
+
+**Outputs:**
+- `specs/sku-upgrade.md` — full 9-section proposal with architecture analysis, risk assessment, and phased implementation plan
+- `.squad/decisions/inbox/apiopslead-sku-upgrade-proposal.md` — decision summary for team review
+
+**Key insight:** The existing extract/publish architecture is already migration-ready by design. `ApimServiceContext` parameterization means no code changes are needed — just documentation and optionally richer pre-flight validation. The real migration pain is in the Azure infrastructure layer (networking, identity, DNS), not the APIM configuration layer that apiops-cli manages.
