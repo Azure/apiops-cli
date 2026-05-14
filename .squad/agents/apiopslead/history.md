@@ -9,34 +9,42 @@
 - **Stack:** TypeScript 6.x, Node.js 22 LTS, Commander, `@azure/identity`, Vitest, ESLint
 - **Key constraint:** No `@azure/arm-apimanagement` SDK for resource payloads — raw REST only
 
-### Foundational Work Completed (2025-2026-04)
-
-**Phase 1 Setup (2025-04-09, Issues #7, #8):**
-- Initialized Node.js ESM project with TypeScript 5.x strict mode, Vitest, ESLint configuration
-- Package.json configured with `type: "module"`, `engines.node: ">=22.0.0"`, bin entry for CLI
-- Full directory structure created (src/, tests/ hierarchy with 8 .gitkeep files)
-- Key decisions: Package name `apiops` (simpler invocation), ESM for modern Node.js alignment, strict TypeScript for early error detection
-
-**Commit Message Convention (2025-04-09):**
-- Formalized convention in CONTRIBUTING.md, PR template, and copilot-instructions.md
-- Requirement: `Closes #N` or `Fixes #N` in commits to auto-close issues
-- Multi-line commits use `git commit -F <tmpfile>` not `-m` flag (literal \n breaks auto-close)
-
-**Phase 2 Verification (2026-04-09, Issues #12-#25, T006-T019):**
-- Verified all 14 foundational infrastructure components fully implemented and tested
-- Components: ResourceType enum, core interfaces, config structures, APIM client, artifact store, dependency graph, logging, Azure REST client, filesystem store, parallel runner, CLI entry point
-- All 467 integration tests passing; build and lint clean
-- Tagged with `Closes` for milestone auto-closure
-
-**Charter Enhancement (2026-05-01):**
-- Enhanced CodeReviewer charter with 13 concrete ordered steps, 11+ flag categories, 8 tech-specific check subsections, severity annotations
-- Applied enhancement pattern to 7 remaining charters (TypeScriptDev, TestEngineer, NodeJsDev, ApimExpert, AzdoExpert, GitHubExpert, ApiOpsLead)
-- Corrected inaccuracies (e.g., TypeScriptDev tsconfig claims) and encoded codebase-specific patterns
-- Key insight: Project-specific checklists with severity annotations transform reviews from "looks fine" to systematic quality gates
+**Foundation Established (2025-04-09 through 2026-04-09):** Project initialized with ESM, strict TypeScript, Vitest, ESLint. Commit message convention formalized (`Closes #N` for auto-close). All 14 foundational infrastructure components implemented and tested (467 integration tests passing). Full agent charter enhancement program completed (CodeReviewer + 7 others) with codebase-specific patterns and severity annotations.
 
 ## Learnings
 
-### 2026-05-01: CodeReviewer Charter Enhancement
+### 2026-05-14: APIM v1 → v2 SKU Migration Decision Finalized
+
+**Outcome:** Joint research with ApimExpert concluded; migration architecture decision merged into `.squad/decisions.md`.
+
+**Decision:** Phase 1 MVP uses existing `extract` + `publish` with migration guide (no new command). Phase 2 adds `apiops copy` if demand warrants.
+
+**Evidence that existing architecture supports migration:**
+- `ApimServiceContext` parameterization means source (v1) and target (v2) are just two different context instances
+- All 34 resource types already supported
+- No code refactoring needed for Phase 1
+- Architecture validation: Design held up well to this migration scenario use case
+
+**Coverage breakdown:**
+- ✅ ~80–85% covered today (APIs, products, policies, backends, named values, workspaces)
+- ⚠️ Gaps requiring Phase 2 work: subscription key preservation, self-hosted gateway validation, Service Fabric detection, gRPC detection, pre-flight v2 compatibility check
+- ❌ Out of scope: VNet, DNS, identity/RBAC, TLS certs (Bicep/Terraform territory)
+
+**Next steps:** Team governance review; if approved, write migration guide for `/docs/guides/sku-migration.md` and create override template examples.
+
+**Key insight:** YAGNI + parameterization design = migration-ready without extra code. This validates the existing architecture's flexibility.
+
+### 2026-05-13: Documentation Scope and Decision Merge
+
+**Scope decisions for `/docs` and merged multiple doc planning entries into decisions.md:**
+- **D1: User-Facing Only** — no internal architecture
+- **D2: Both Platform Pipelines** — GitHub Actions and Azure DevOps equally
+- **D3: Artifact Path Flexibility** — users choose path via --output/--source
+- **D4: Multiple Auth Methods** — context-specific guidance
+
+**Key insight:** Documentation scope must be tightly coupled to implementation status.
+
+### 2026-05-01: CodeReviewer Charter Enhancement and 7-Agent Pattern Application
 
 **What:** Rewrote the CodeReviewer charter (`.squad/agents/codereviewer/charter.md`) sections 3-8 to make reviews significantly more thorough and project-specific.
 
