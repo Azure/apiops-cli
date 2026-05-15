@@ -135,7 +135,7 @@ resource kvSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
 // APIM Service (blank — no child resources)
 // ---------------------------------------------------------------------------
 
-resource apim 'Microsoft.ApiManagement/service@2024-05-01' = {
+resource apim 'Microsoft.ApiManagement/service@2025-09-01-preview' = {
   name: apimName
   location: location
   sku: {
