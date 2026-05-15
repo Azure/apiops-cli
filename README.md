@@ -6,6 +6,7 @@
 |---|---|
 | **Source code** | [github.com/Azure/apiops-cli](https://github.com/Azure/apiops-cli) |
 | **Issues** | [GitHub Issues](https://github.com/Azure/apiops-cli/issues) |
+| **Architecture** | [docs/architecture.md](./docs/architecture.md) |
 
 ## Getting started
 
