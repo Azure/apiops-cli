@@ -17,6 +17,7 @@ How to decide who handles what.
 | Azure DevOps, `az devops`, pipelines, service connections | AzdoExpert | Azure Pipelines YAML, variable groups, service connections, workload identity, `az pipelines` |
 | GitHub Actions, `gh` CLI, repository settings | GitHubExpert | GitHub workflows, reusable actions, OIDC federation, branch protection, `gh` commands |
 | Documentation, user guides, diagrams, /docs content | DocWriter | Markdown docs, Mermaid charts, API developer guides, README |
+| Security, threat modeling, supply-chain defense | SecurityExpert | Workflow hardening, dependency pinning, secret scanning, fork PR threat modeling, hostile contributor defense, cross-team security review |
 | Architecture review, scope decisions | ApiOpsLead | High-level design review, spec alignment, scope gatekeeping |
 | Issue triage | ApiOpsLead | Read GitHub issues, assign `squad:{member}` labels |
 | Session logging | Scribe | Automatic — never needs routing |
@@ -38,6 +39,7 @@ How to decide who handles what.
 | `squad:azdoexpert` | Pick up issue — Azure DevOps pipelines or CLI | AzdoExpert |
 | `squad:githubexpert` | Pick up issue — GitHub Actions or CLI | GitHubExpert |
 | `squad:docwriter` | Pick up issue — documentation or diagrams | DocWriter |
+| `squad:securityexpert` | Pick up issue — security, supply-chain, threat modeling | SecurityExpert |
 
 ### How Issue Assignment Works
 
