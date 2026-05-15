@@ -22,6 +22,7 @@
 | CodeReviewer | 🔍 Code Reviewer & Standards Enforcer | [charter](.squad/agents/codereviewer/charter.md) | ✅ Active |
 | AzdoExpert | 🔶 Azure DevOps Expert | [charter](.squad/agents/azdoexpert/charter.md) | ✅ Active |
 | GitHubExpert | ⚫ GitHub Expert | [charter](.squad/agents/githubexpert/charter.md) | ✅ Active |
+| SecurityExpert | 🔒 Security Expert | [charter](.squad/agents/securityexpert/charter.md) | ✅ Active |
 | Ralph | 🔄 Work Monitor | — | ✅ Active |
 
 ## Issue Source
@@ -43,6 +44,7 @@
 | OpenSourceExpert | `squad:opensourceexpert` | ⚪ #6B7280 |
 | AzdoExpert | `squad:azdoexpert` | 🔶 #F97316 |
 | GitHubExpert | `squad:githubexpert` | ⚫ #24292F |
+| SecurityExpert | `squad:securityexpert` | 🔒 #DC2626 |
 
 ## Milestones
 
