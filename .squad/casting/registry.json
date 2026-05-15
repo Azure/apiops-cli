@@ -85,6 +85,11 @@
       "role": "Technical Writer",
       "universe": "custom",
       "created_at": "2026-05-13T02:12:00Z",
+    "SecurityExpert": {
+      "persistent_name": "SecurityExpert",
+      "role": "Security Expert",
+      "universe": "custom",
+      "created_at": "2026-05-15T20:31:00Z",
       "legacy_named": false,
       "status": "active"
     }
