@@ -1,0 +1,1336 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.43.8.12551",
+      "templateHash": "2503074933062083704"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for all resources."
+      }
+    },
+    "apimName": {
+      "type": "string",
+      "defaultValue": "[format('bvt-{0}-src-apim', uniqueString(resourceGroup().id))]",
+      "metadata": {
+        "description": "Unique name for the APIM instance."
+      }
+    },
+    "publisherEmail": {
+      "type": "string",
+      "metadata": {
+        "description": "Publisher email shown in the developer portal."
+      }
+    },
+    "publisherName": {
+      "type": "string",
+      "defaultValue": "APIOps BVT",
+      "metadata": {
+        "description": "Publisher name shown in the developer portal."
+      }
+    },
+    "skuName": {
+      "type": "string",
+      "defaultValue": "StandardV2",
+      "allowedValues": [
+        "Developer",
+        "Premium",
+        "StandardV2",
+        "PremiumV2"
+      ],
+      "metadata": {
+        "description": "APIM SKU name. Use StandardV2/PremiumV2 for v2 tiers, or Developer/Premium for classic."
+      }
+    },
+    "appInsightsName": {
+      "type": "string",
+      "defaultValue": "[format('bvt-{0}-src-ai', uniqueString(resourceGroup().id))]",
+      "metadata": {
+        "description": "Application Insights name for logger/diagnostic testing."
+      }
+    },
+    "eventHubNamespaceName": {
+      "type": "string",
+      "defaultValue": "[format('bvt-{0}-src-eh', uniqueString(resourceGroup().id))]",
+      "metadata": {
+        "description": "Event Hub namespace name for Event Hub logger testing."
+      }
+    },
+    "keyVaultName": {
+      "type": "string",
+      "defaultValue": "[format('bvt-{0}-src-kv', uniqueString(resourceGroup().id))]",
+      "metadata": {
+        "description": "Key Vault name for NamedValue KeyVault reference testing."
+      }
+    },
+    "logAnalyticsName": {
+      "type": "string",
+      "defaultValue": "[format('bvt-{0}-src-law', uniqueString(resourceGroup().id))]",
+      "metadata": {
+        "description": "Log Analytics workspace name for Application Insights."
+      }
+    }
+  },
+  "variables": {
+    "isClassicSku": "[or(equals(parameters('skuName'), 'Developer'), equals(parameters('skuName'), 'Premium'))]",
+    "apimSkuCapacity": "[if(variables('isClassicSku'), 1, 1)]",
+    "supportsSelfHostedGateway": "[variables('isClassicSku')]",
+    "supportsWorkspaces": "[or(equals(parameters('skuName'), 'Premium'), equals(parameters('skuName'), 'PremiumV2'))]",
+    "openApiSpec": "openapi: \"3.0.1\"\ninfo:\n  title: Kitchen Sink REST API\n  version: \"1.0\"\npaths:\n  /healthz:\n    get:\n      operationId: healthCheck\n      summary: Health check endpoint\n      responses:\n        \"200\":\n          description: OK\n  /items:\n    get:\n      operationId: listItems\n      summary: List all items\n      responses:\n        \"200\":\n          description: OK\n    post:\n      operationId: createItem\n      summary: Create an item\n      requestBody:\n        content:\n          application/json:\n            schema:\n              type: object\n              properties:\n                name:\n                  type: string\n      responses:\n        \"201\":\n          description: Created\n  /items/{id}:\n    get:\n      operationId: getItem\n      summary: Get item by ID\n      parameters:\n        - name: id\n          in: path\n          required: true\n          schema:\n            type: string\n      responses:\n        \"200\":\n          description: OK\n",
+    "graphqlSchema": "type Query {\n  hero(episode: Episode): Character\n  reviews(episode: Episode!): [Review]\n}\n\ntype Mutation {\n  createReview(episode: Episode!, review: ReviewInput!): Review\n}\n\nenum Episode {\n  NEWHOPE\n  EMPIRE\n  JEDI\n}\n\ntype Character {\n  id: ID!\n  name: String!\n  appearsIn: [Episode]!\n}\n\ntype Review {\n  episode: Episode\n  stars: Int!\n  commentary: String\n}\n\ninput ReviewInput {\n  stars: Int!\n  commentary: String\n}\n",
+    "wsdlSpec": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<definitions xmlns=\"http://schemas.xmlsoap.org/wsdl/\"\n             xmlns:soap=\"http://schemas.xmlsoap.org/wsdl/soap/\"\n             xmlns:tns=\"http://tempuri.org/\"\n             xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\"\n             name=\"CalculatorService\"\n             targetNamespace=\"http://tempuri.org/\">\n  <types>\n    <xsd:schema targetNamespace=\"http://tempuri.org/\">\n      <xsd:element name=\"Add\">\n        <xsd:complexType>\n          <xsd:sequence>\n            <xsd:element name=\"a\" type=\"xsd:int\"/>\n            <xsd:element name=\"b\" type=\"xsd:int\"/>\n          </xsd:sequence>\n        </xsd:complexType>\n      </xsd:element>\n      <xsd:element name=\"AddResponse\">\n        <xsd:complexType>\n          <xsd:sequence>\n            <xsd:element name=\"result\" type=\"xsd:int\"/>\n          </xsd:sequence>\n        </xsd:complexType>\n      </xsd:element>\n    </xsd:schema>\n  </types>\n  <message name=\"AddSoapIn\">\n    <part name=\"parameters\" element=\"tns:Add\"/>\n  </message>\n  <message name=\"AddSoapOut\">\n    <part name=\"parameters\" element=\"tns:AddResponse\"/>\n  </message>\n  <portType name=\"CalculatorSoap\">\n    <operation name=\"Add\">\n      <input message=\"tns:AddSoapIn\"/>\n      <output message=\"tns:AddSoapOut\"/>\n    </operation>\n  </portType>\n  <binding name=\"CalculatorSoapBinding\" type=\"tns:CalculatorSoap\">\n    <soap:binding style=\"document\" transport=\"http://schemas.xmlsoap.org/soap/http\"/>\n    <operation name=\"Add\">\n      <soap:operation soapAction=\"http://tempuri.org/Add\"/>\n      <input><soap:body use=\"literal\"/></input>\n      <output><soap:body use=\"literal\"/></output>\n    </operation>\n  </binding>\n  <service name=\"CalculatorService\">\n    <port name=\"CalculatorSoapPort\" binding=\"tns:CalculatorSoapBinding\">\n      <soap:address location=\"https://src-soap-backend.example.com/calculator\"/>\n    </port>\n  </service>\n</definitions>\n",
+    "openApiSpecV1": "openapi: \"3.0.1\"\ninfo:\n  title: Kitchen Sink Versioned API\n  version: \"v1\"\npaths:\n  /status:\n    get:\n      operationId: getStatus-v1\n      summary: Get status (v1)\n      responses:\n        \"200\":\n          description: OK\n",
+    "servicePolicyXml": "<policies>\n  <inbound>\n    <cors allow-credentials=\"false\">\n      <allowed-origins>\n        <origin>https://developer.contoso.com</origin>\n      </allowed-origins>\n      <allowed-methods><method>GET</method><method>POST</method></allowed-methods>\n      <allowed-headers><header>Content-Type</header><header>Authorization</header></allowed-headers>\n    </cors>\n  </inbound>\n  <backend />\n  <outbound />\n  <on-error />\n</policies>\n",
+    "apiPolicyXml": "<policies>\n  <inbound>\n    <base />\n    <set-header name=\"X-all-resources\" exists-action=\"override\">\n      <value>true</value>\n    </set-header>\n  </inbound>\n  <backend><base /></backend>\n  <outbound><base /></outbound>\n  <on-error><base /></on-error>\n</policies>\n",
+    "operationPolicyXml": "<policies>\n  <inbound>\n    <base />\n    <rate-limit calls=\"100\" renewal-period=\"60\" />\n  </inbound>\n  <backend><base /></backend>\n  <outbound><base /></outbound>\n  <on-error><base /></on-error>\n</policies>\n",
+    "productPolicyXml": "<policies>\n  <inbound>\n    <base />\n    <rate-limit calls=\"1000\" renewal-period=\"300\" />\n  </inbound>\n  <backend><base /></backend>\n  <outbound><base /></outbound>\n  <on-error><base /></on-error>\n</policies>\n",
+    "resolverPolicyXml": "<http-data-source>\n  <http-request>\n    <set-method>POST</set-method>\n    <set-url>https://src-graphql-backend.example.com/api/hero</set-url>\n    <set-header name=\"Content-Type\" exists-action=\"override\">\n      <value>application/json</value>\n    </set-header>\n    <set-body>{\"query\":\"{ countries { name code } }\"}</set-body>\n  </http-request>\n</http-data-source>\n",
+    "corsFragmentXml": "<fragment>\n  <cors allow-credentials=\"false\">\n    <allowed-origins>\n      <origin>*</origin>\n    </allowed-origins>\n    <allowed-methods preflight-result-max-age=\"300\">\n      <method>*</method>\n    </allowed-methods>\n    <allowed-headers>\n      <header>*</header>\n    </allowed-headers>\n  </cors>\n</fragment>\n",
+    "rateLimitFragmentXml": "<fragment>\n  <rate-limit calls=\"50\" renewal-period=\"60\" />\n</fragment>\n"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2022-10-01",
+      "name": "[parameters('logAnalyticsName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        },
+        "retentionInDays": 30
+      }
+    },
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[parameters('appInsightsName')]",
+      "location": "[parameters('location')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web",
+        "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsName'))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('logAnalyticsName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.EventHub/namespaces",
+      "apiVersion": "2024-01-01",
+      "name": "[parameters('eventHubNamespaceName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Basic",
+        "tier": "Basic",
+        "capacity": 1
+      }
+    },
+    {
+      "type": "Microsoft.EventHub/namespaces/eventhubs",
+      "apiVersion": "2024-01-01",
+      "name": "[format('{0}/{1}', parameters('eventHubNamespaceName'), 'src-apim-logs')]",
+      "properties": {
+        "messageRetentionInDays": 1,
+        "partitionCount": 2
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.EventHub/namespaces', parameters('eventHubNamespaceName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.EventHub/namespaces/authorizationRules",
+      "apiVersion": "2024-01-01",
+      "name": "[format('{0}/{1}', parameters('eventHubNamespaceName'), 'src-apim-send')]",
+      "properties": {
+        "rights": [
+          "Send"
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.EventHub/namespaces', parameters('eventHubNamespaceName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2023-07-01",
+      "name": "[parameters('keyVaultName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "tenantId": "[subscription().tenantId]",
+        "enableRbacAuthorization": false,
+        "accessPolicies": [],
+        "enableSoftDelete": true,
+        "softDeleteRetentionInDays": 7
+      }
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults/secrets",
+      "apiVersion": "2023-07-01",
+      "name": "[format('{0}/{1}', parameters('keyVaultName'), 'src-secret-value')]",
+      "properties": {
+        "value": "all-resources-secret-value"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[parameters('apimName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "[parameters('skuName')]",
+        "capacity": "[variables('apimSkuCapacity')]"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "publisherEmail": "[parameters('publisherEmail')]",
+        "publisherName": "[parameters('publisherName')]"
+      }
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults/accessPolicies",
+      "apiVersion": "2023-07-01",
+      "name": "[format('{0}/{1}', parameters('keyVaultName'), 'add')]",
+      "properties": {
+        "accessPolicies": [
+          {
+            "tenantId": "[subscription().tenantId]",
+            "objectId": "[reference(resourceId('Microsoft.ApiManagement/service', parameters('apimName')), '2025-09-01-preview', 'full').identity.principalId]",
+            "permissions": {
+              "secrets": [
+                "get"
+              ]
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]",
+        "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/namedValues",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-nv-plain')]",
+      "properties": {
+        "displayName": "src-nv-plain",
+        "value": "plain-text-value",
+        "tags": [
+          "all-resources",
+          "plain"
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/namedValues",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-nv-secret')]",
+      "properties": {
+        "displayName": "src-nv-secret",
+        "value": "secret-value-redacted",
+        "secret": true,
+        "tags": [
+          "all-resources",
+          "secret"
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/namedValues",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-nv-keyvault')]",
+      "properties": {
+        "displayName": "src-nv-keyvault",
+        "keyVault": {
+          "secretIdentifier": "[format('{0}secrets/src-secret-value', reference(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), '2023-07-01').vaultUri)]"
+        },
+        "secret": true,
+        "tags": [
+          "all-resources",
+          "keyvault"
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]",
+        "[resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName'))]",
+        "[resourceId('Microsoft.KeyVault/vaults/accessPolicies', parameters('keyVaultName'), 'add')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/tags",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-tag-env')]",
+      "properties": {
+        "displayName": "src-tag-env"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/tags",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-tag-team')]",
+      "properties": {
+        "displayName": "src-tag-team"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "condition": "[variables('supportsSelfHostedGateway')]",
+      "type": "Microsoft.ApiManagement/service/gateways",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-gateway-onprem')]",
+      "properties": {
+        "description": "Kitchen sink self-hosted gateway for BVT",
+        "locationData": {
+          "name": "On-Premises DC",
+          "city": "Seattle",
+          "countryOrRegion": "US"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apiVersionSets",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-versionset-urlpath')]",
+      "properties": {
+        "displayName": "Kitchen Sink Versioned API",
+        "versioningScheme": "Segment"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/backends",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-backend-http')]",
+      "properties": {
+        "description": "Simple HTTP backend",
+        "url": "https://src-backend.example.com/api",
+        "protocol": "http",
+        "tls": {
+          "validateCertificateChain": true,
+          "validateCertificateName": true
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/backends",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-backend-function')]",
+      "properties": {
+        "description": "Azure Function backend stub",
+        "url": "https://src-func-app.azurewebsites.net/api",
+        "protocol": "http",
+        "resourceId": "[format('{0}subscriptions/{1}/resourceGroups/{2}/providers/Microsoft.Web/sites/src-func-app', environment().resourceManager, subscription().subscriptionId, resourceGroup().name)]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/backends",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-backend-logicapp')]",
+      "properties": {
+        "description": "Logic App backend stub",
+        "url": "https://src-logic-app.azurewebsites.net/api",
+        "protocol": "http",
+        "resourceId": "[format('{0}subscriptions/{1}/resourceGroups/{2}/providers/Microsoft.Logic/workflows/src-logic-app', environment().resourceManager, subscription().subscriptionId, resourceGroup().name)]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/backends",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-backend-circuit-breaker')]",
+      "properties": {
+        "description": "Backend with circuit breaker configuration",
+        "url": "https://src-cb-backend.example.com/api",
+        "protocol": "http",
+        "circuitBreaker": {
+          "rules": [
+            {
+              "name": "src-breaker-rule",
+              "failureCondition": {
+                "count": 5,
+                "interval": "PT1M",
+                "statusCodeRanges": [
+                  {
+                    "min": 500,
+                    "max": 599
+                  }
+                ]
+              },
+              "tripDuration": "PT30S",
+              "acceptRetryAfter": true
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/backends",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-backend-pool')]",
+      "properties": {
+        "description": "Backend pool referencing multiple backends",
+        "type": "Pool",
+        "pool": {
+          "services": [
+            {
+              "id": "[resourceId('Microsoft.ApiManagement/service/backends', parameters('apimName'), 'src-backend-http')]",
+              "priority": 1,
+              "weight": 80
+            },
+            {
+              "id": "[resourceId('Microsoft.ApiManagement/service/backends', parameters('apimName'), 'src-backend-circuit-breaker')]",
+              "priority": 1,
+              "weight": 20
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]",
+        "[resourceId('Microsoft.ApiManagement/service/backends', parameters('apimName'), 'src-backend-circuit-breaker')]",
+        "[resourceId('Microsoft.ApiManagement/service/backends', parameters('apimName'), 'src-backend-http')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/loggers",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-logger-appinsights')]",
+      "properties": {
+        "loggerType": "applicationInsights",
+        "description": "Application Insights logger for BVT",
+        "resourceId": "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]",
+        "credentials": {
+          "instrumentationKey": "[reference(resourceId('Microsoft.Insights/components', parameters('appInsightsName')), '2020-02-02').InstrumentationKey]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]",
+        "[resourceId('Microsoft.Insights/components', parameters('appInsightsName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/loggers",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-logger-eventhub')]",
+      "properties": {
+        "loggerType": "azureEventHub",
+        "description": "Event Hub logger for BVT",
+        "credentials": {
+          "name": "src-apim-logs",
+          "connectionString": "[listKeys(resourceId('Microsoft.EventHub/namespaces/authorizationRules', parameters('eventHubNamespaceName'), 'src-apim-send'), '2024-01-01').primaryConnectionString]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]",
+        "[resourceId('Microsoft.EventHub/namespaces/eventhubs', parameters('eventHubNamespaceName'), 'src-apim-logs')]",
+        "[resourceId('Microsoft.EventHub/namespaces/authorizationRules', parameters('eventHubNamespaceName'), 'src-apim-send')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/groups",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-group-internal')]",
+      "properties": {
+        "displayName": "Kitchen Sink Internal Group",
+        "description": "Custom group for BVT testing",
+        "type": "custom"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/policyFragments",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-fragment-cors')]",
+      "properties": {
+        "description": "CORS policy fragment",
+        "format": "rawxml",
+        "value": "[variables('corsFragmentXml')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/policyFragments",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-fragment-ratelimit')]",
+      "properties": {
+        "description": "Rate limit policy fragment",
+        "format": "rawxml",
+        "value": "[variables('rateLimitFragmentXml')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/schemas",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-schema-json')]",
+      "properties": {
+        "schemaType": "json",
+        "description": "Kitchen sink JSON schema",
+        "document": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "active",
+                "inactive"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "condition": "[variables('isClassicSku')]",
+      "type": "Microsoft.ApiManagement/service/policyRestrictions",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-restriction-ip')]",
+      "properties": {
+        "scope": "All",
+        "requireBase": "true"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "condition": "[variables('isClassicSku')]",
+      "type": "Microsoft.ApiManagement/service/documentations",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-doc-getting-started')]",
+      "properties": {
+        "title": "Getting Started",
+        "content": "# Getting Started\n\nThis is the kitchen sink APIM instance for BVT testing.\n\n## Quick Start\n\nUse the APIOps CLI to extract and publish configurations."
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/diagnostics",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'applicationinsights')]",
+      "properties": {
+        "loggerId": "[resourceId('Microsoft.ApiManagement/service/loggers', parameters('apimName'), 'src-logger-appinsights')]",
+        "alwaysLog": "allErrors",
+        "sampling": {
+          "samplingType": "fixed",
+          "percentage": 100
+        },
+        "logClientIp": true
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]",
+        "[resourceId('Microsoft.ApiManagement/service/loggers', parameters('apimName'), 'src-logger-appinsights')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/policies",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'policy')]",
+      "properties": {
+        "format": "rawxml",
+        "value": "[variables('servicePolicyXml')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]",
+        "[resourceId('Microsoft.ApiManagement/service/policyFragments', parameters('apimName'), 'src-fragment-cors')]",
+        "[resourceId('Microsoft.ApiManagement/service/policyFragments', parameters('apimName'), 'src-fragment-ratelimit')]",
+        "[resourceId('Microsoft.ApiManagement/service/namedValues', parameters('apimName'), 'src-nv-plain')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/products",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-product-starter')]",
+      "properties": {
+        "displayName": "Kitchen Sink Starter",
+        "description": "Starter product for BVT — limited access",
+        "subscriptionRequired": true,
+        "approvalRequired": false,
+        "state": "published",
+        "terms": "By subscribing you agree to the terms of use."
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/products",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-product-premium')]",
+      "properties": {
+        "displayName": "Kitchen Sink Premium",
+        "description": "Premium product for BVT — full access",
+        "subscriptionRequired": true,
+        "approvalRequired": true,
+        "subscriptionsLimit": 10,
+        "state": "published"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-rest-openapi')]",
+      "properties": {
+        "displayName": "KS REST OpenAPI",
+        "description": "Kitchen sink REST API imported from OpenAPI spec",
+        "path": "ks/rest",
+        "protocols": [
+          "https"
+        ],
+        "format": "openapi",
+        "value": "[variables('openApiSpec')]",
+        "serviceUrl": "https://src-backend.example.com/api",
+        "subscriptionRequired": false,
+        "apiType": "http"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-soap-passthrough')]",
+      "properties": {
+        "displayName": "KS SOAP Pass-Through",
+        "description": "Kitchen sink SOAP pass-through API from WSDL",
+        "path": "ks/soap",
+        "protocols": [
+          "https"
+        ],
+        "format": "wsdl",
+        "value": "[variables('wsdlSpec')]",
+        "serviceUrl": "https://src-soap-backend.example.com/calculator",
+        "apiType": "soap",
+        "wsdlSelector": {
+          "wsdlServiceName": "CalculatorService",
+          "wsdlEndpointName": "CalculatorSoapPort"
+        },
+        "type": "soap"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-graphql-synthetic')]",
+      "properties": {
+        "displayName": "KS GraphQL Synthetic",
+        "description": "Kitchen sink synthetic GraphQL API with inline schema",
+        "path": "ks/graphql",
+        "protocols": [
+          "https"
+        ],
+        "serviceUrl": "https://src-graphql-backend.example.com/graphql",
+        "type": "graphql",
+        "apiType": "graphql"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis/schemas",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-graphql-synthetic', 'graphql')]",
+      "properties": {
+        "contentType": "application/vnd.ms-azure-apim.graphql.schema",
+        "document": {
+          "value": "[variables('graphqlSchema')]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-graphql-synthetic')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-graphql-passthrough')]",
+      "properties": {
+        "displayName": "KS GraphQL Pass-Through",
+        "description": "Kitchen sink pass-through GraphQL API",
+        "path": "ks/graphql-pt",
+        "protocols": [
+          "https"
+        ],
+        "serviceUrl": "https://src-graphql-pt-backend.example.com/graphql",
+        "type": "graphql",
+        "apiType": "graphql"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis/schemas",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-graphql-passthrough', 'graphql')]",
+      "properties": {
+        "contentType": "application/vnd.ms-azure-apim.graphql.schema",
+        "document": {
+          "value": "[variables('graphqlSchema')]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-graphql-passthrough')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-websocket')]",
+      "properties": {
+        "displayName": "KS WebSocket",
+        "description": "Kitchen sink WebSocket API",
+        "path": "ks/ws",
+        "protocols": [
+          "wss"
+        ],
+        "serviceUrl": "wss://echo.websocket.events",
+        "type": "websocket",
+        "apiType": "websocket"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-rest-versioned-v1')]",
+      "properties": {
+        "displayName": "KS REST Versioned",
+        "description": "Kitchen sink versioned REST API (v1)",
+        "path": "ks/versioned",
+        "protocols": [
+          "https"
+        ],
+        "format": "openapi",
+        "value": "[variables('openApiSpecV1')]",
+        "serviceUrl": "https://src-versioned-backend.example.com/api",
+        "apiVersion": "v1",
+        "apiVersionSetId": "[resourceId('Microsoft.ApiManagement/service/apiVersionSets', parameters('apimName'), 'src-versionset-urlpath')]",
+        "subscriptionRequired": false,
+        "apiType": "http"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]",
+        "[resourceId('Microsoft.ApiManagement/service/apiVersionSets', parameters('apimName'), 'src-versionset-urlpath')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-rest-revisioned')]",
+      "properties": {
+        "displayName": "KS REST Revisioned",
+        "description": "Kitchen sink REST API with revisions",
+        "path": "ks/revisioned",
+        "protocols": [
+          "https"
+        ],
+        "format": "openapi",
+        "value": "[variables('openApiSpec')]",
+        "serviceUrl": "https://src-revisioned-backend.example.com/api",
+        "subscriptionRequired": false,
+        "apiType": "http",
+        "isCurrent": true
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-rest-revisioned;rev=2')]",
+      "properties": {
+        "path": "ks/revisioned",
+        "protocols": [
+          "https"
+        ],
+        "serviceUrl": "https://src-revisioned-backend-v2.example.com/api",
+        "apiRevisionDescription": "Second revision for BVT testing",
+        "sourceApiId": "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-rest-revisioned')]",
+        "apiType": "http"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]",
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-rest-revisioned')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-mcp-from-api')]",
+      "properties": {
+        "displayName": "KS MCP from Existing API",
+        "description": "MCP server created by exposing an existing REST API in the instance as MCP tools",
+        "path": "ks/mcp-from-api",
+        "protocols": [
+          "https"
+        ],
+        "subscriptionRequired": false,
+        "type": "mcp",
+        "mcpTools": [
+          {
+            "name": "healthCheck",
+            "description": "Health check endpoint",
+            "operationId": "[resourceId('Microsoft.ApiManagement/service/apis/operations', parameters('apimName'), 'src-rest-openapi', 'healthCheck')]"
+          },
+          {
+            "name": "listItems",
+            "description": "List all items",
+            "operationId": "[resourceId('Microsoft.ApiManagement/service/apis/operations', parameters('apimName'), 'src-rest-openapi', 'listItems')]"
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]",
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-rest-openapi')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/backends",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-backend-mcp-external')]",
+      "properties": {
+        "description": "External MCP server backend (GitHub Copilot)",
+        "url": "https://api.githubcopilot.com/mcp",
+        "protocol": "http"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-mcp-from-external')]",
+      "properties": {
+        "displayName": "KS MCP from External Server",
+        "description": "MCP server repackaging a public external MCP server via APIM",
+        "path": "",
+        "protocols": [
+          "https"
+        ],
+        "subscriptionRequired": false,
+        "type": "mcp",
+        "backendId": "src-backend-mcp-external",
+        "mcpProperties": {
+          "endpoints": {
+            "mcp": {
+              "uriTemplate": "/mcp"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]",
+        "[resourceId('Microsoft.ApiManagement/service/backends', parameters('apimName'), 'src-backend-mcp-external')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/products/policies",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-product-premium', 'policy')]",
+      "properties": {
+        "format": "rawxml",
+        "value": "[variables('productPolicyXml')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/products', parameters('apimName'), 'src-product-premium')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/products/apis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-product-starter', 'src-rest-openapi')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-rest-openapi')]",
+        "[resourceId('Microsoft.ApiManagement/service/products', parameters('apimName'), 'src-product-starter')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/products/apis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-product-starter', 'src-soap-passthrough')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-soap-passthrough')]",
+        "[resourceId('Microsoft.ApiManagement/service/products', parameters('apimName'), 'src-product-starter')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/products/apis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-product-premium', 'src-rest-openapi')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-rest-openapi')]",
+        "[resourceId('Microsoft.ApiManagement/service/products', parameters('apimName'), 'src-product-premium')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/products/apis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-product-premium', 'src-graphql-synthetic')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-graphql-synthetic')]",
+        "[resourceId('Microsoft.ApiManagement/service/products', parameters('apimName'), 'src-product-premium')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/products/groups",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-product-starter', 'developers')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/products', parameters('apimName'), 'src-product-starter')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/products/groups",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-product-premium', 'src-group-internal')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/groups', parameters('apimName'), 'src-group-internal')]",
+        "[resourceId('Microsoft.ApiManagement/service/products', parameters('apimName'), 'src-product-premium')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/products/tags",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-product-starter', 'src-tag-env')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/products', parameters('apimName'), 'src-product-starter')]",
+        "[resourceId('Microsoft.ApiManagement/service/tags', parameters('apimName'), 'src-tag-env')]"
+      ]
+    },
+    {
+      "condition": "[variables('isClassicSku')]",
+      "type": "Microsoft.ApiManagement/service/products/wikis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-product-starter', 'default')]",
+      "properties": {
+        "documents": [
+          {
+            "documentationId": "src-doc-getting-started"
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/documentations', parameters('apimName'), 'src-doc-getting-started')]",
+        "[resourceId('Microsoft.ApiManagement/service/products', parameters('apimName'), 'src-product-starter')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis/policies",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-rest-openapi', 'policy')]",
+      "properties": {
+        "format": "rawxml",
+        "value": "[variables('apiPolicyXml')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-rest-openapi')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis/tags",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-rest-openapi', 'src-tag-env')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-rest-openapi')]",
+        "[resourceId('Microsoft.ApiManagement/service/tags', parameters('apimName'), 'src-tag-env')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis/tags",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-rest-openapi', 'src-tag-team')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-rest-openapi')]",
+        "[resourceId('Microsoft.ApiManagement/service/tags', parameters('apimName'), 'src-tag-team')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis/diagnostics",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-rest-openapi', 'applicationinsights')]",
+      "properties": {
+        "loggerId": "[resourceId('Microsoft.ApiManagement/service/loggers', parameters('apimName'), 'src-logger-appinsights')]",
+        "alwaysLog": "allErrors",
+        "sampling": {
+          "samplingType": "fixed",
+          "percentage": 50
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-rest-openapi')]",
+        "[resourceId('Microsoft.ApiManagement/service/loggers', parameters('apimName'), 'src-logger-appinsights')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis/operations/policies",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/src-rest-openapi/healthCheck/policy', parameters('apimName'))]",
+      "properties": {
+        "format": "rawxml",
+        "value": "[variables('operationPolicyXml')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]",
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-rest-openapi')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis/schemas",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-rest-openapi', 'src-rest-schema-item')]",
+      "properties": {
+        "contentType": "application/vnd.oai.openapi.components+json",
+        "document": {
+          "components": {
+            "schemas": {
+              "Item": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "createdAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-rest-openapi')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis/tagDescriptions",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-rest-openapi', 'src-tag-env')]",
+      "properties": {
+        "description": "Environment tag — indicates deployment environment",
+        "externalDocsDescription": "Environment tagging guide",
+        "externalDocsUrl": "https://docs.contoso.com/tags/env"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-rest-openapi')]",
+        "[resourceId('Microsoft.ApiManagement/service/apis/tags', parameters('apimName'), 'src-rest-openapi', 'src-tag-env')]",
+        "[resourceId('Microsoft.ApiManagement/service/tags', parameters('apimName'), 'src-tag-env')]"
+      ]
+    },
+    {
+      "condition": "[variables('isClassicSku')]",
+      "type": "Microsoft.ApiManagement/service/apis/wikis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-rest-openapi', 'default')]",
+      "properties": {
+        "documents": [
+          {
+            "documentationId": "src-doc-getting-started"
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-rest-openapi')]",
+        "[resourceId('Microsoft.ApiManagement/service/documentations', parameters('apimName'), 'src-doc-getting-started')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis/releases",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-rest-revisioned', 'src-release-1')]",
+      "properties": {
+        "apiId": "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-rest-revisioned')]",
+        "notes": "Initial release for BVT testing"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-rest-revisioned')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis/resolvers",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-graphql-synthetic', 'src-resolver-hero')]",
+      "properties": {
+        "displayName": "Hero Resolver",
+        "description": "Resolves hero query via HTTP data source",
+        "path": "Query/hero"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-graphql-synthetic')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/apis/resolvers/policies",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}/{3}', parameters('apimName'), 'src-graphql-synthetic', 'src-resolver-hero', 'policy')]",
+      "properties": {
+        "format": "rawxml",
+        "value": "[variables('resolverPolicyXml')]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis/resolvers', parameters('apimName'), 'src-graphql-synthetic', 'src-resolver-hero')]"
+      ]
+    },
+    {
+      "condition": "[variables('supportsSelfHostedGateway')]",
+      "type": "Microsoft.ApiManagement/service/gateways/apis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-gateway-onprem', 'src-rest-openapi')]",
+      "properties": {
+        "provisioningState": "created"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/apis', parameters('apimName'), 'src-rest-openapi')]",
+        "[resourceId('Microsoft.ApiManagement/service/gateways', parameters('apimName'), 'src-gateway-onprem')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/subscriptions",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-sub-all-apis')]",
+      "properties": {
+        "displayName": "Kitchen Sink All APIs Subscription",
+        "scope": "/apis",
+        "state": "active"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/service/subscriptions",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-sub-product')]",
+      "properties": {
+        "displayName": "Kitchen Sink Product Subscription",
+        "scope": "[resourceId('Microsoft.ApiManagement/service/products', parameters('apimName'), 'src-product-starter')]",
+        "state": "active"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]",
+        "[resourceId('Microsoft.ApiManagement/service/products', parameters('apimName'), 'src-product-starter')]"
+      ]
+    },
+    {
+      "condition": "[variables('supportsWorkspaces')]",
+      "type": "Microsoft.ApiManagement/service/workspaces",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}', parameters('apimName'), 'src-workspace')]",
+      "properties": {
+        "displayName": "Kitchen Sink Workspace",
+        "description": "Workspace for BVT testing workspace-scoped extraction"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service', parameters('apimName'))]"
+      ]
+    },
+    {
+      "condition": "[variables('supportsWorkspaces')]",
+      "type": "Microsoft.ApiManagement/service/workspaces/backends",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-workspace', 'src-ws-backend-http')]",
+      "properties": {
+        "description": "Workspace-scoped HTTP backend",
+        "url": "https://src-ws-backend.example.com/api",
+        "protocol": "http"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/workspaces', parameters('apimName'), 'src-workspace')]"
+      ]
+    },
+    {
+      "condition": "[variables('supportsWorkspaces')]",
+      "type": "Microsoft.ApiManagement/service/workspaces/namedValues",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-workspace', 'src-ws-nv-plain')]",
+      "properties": {
+        "displayName": "src-ws-nv-plain",
+        "value": "workspace-scoped-value",
+        "tags": [
+          "workspace"
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/workspaces', parameters('apimName'), 'src-workspace')]"
+      ]
+    },
+    {
+      "condition": "[variables('supportsWorkspaces')]",
+      "type": "Microsoft.ApiManagement/service/workspaces/tags",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-workspace', 'src-ws-tag')]",
+      "properties": {
+        "displayName": "src-ws-tag"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/workspaces', parameters('apimName'), 'src-workspace')]"
+      ]
+    },
+    {
+      "condition": "[variables('supportsWorkspaces')]",
+      "type": "Microsoft.ApiManagement/service/workspaces/products",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-workspace', 'src-ws-product')]",
+      "properties": {
+        "displayName": "Workspace Product",
+        "description": "Product scoped to workspace",
+        "subscriptionRequired": false,
+        "state": "published"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/workspaces', parameters('apimName'), 'src-workspace')]"
+      ]
+    },
+    {
+      "condition": "[variables('supportsWorkspaces')]",
+      "type": "Microsoft.ApiManagement/service/workspaces/apis",
+      "apiVersion": "2025-09-01-preview",
+      "name": "[format('{0}/{1}/{2}', parameters('apimName'), 'src-workspace', 'src-ws-api-rest')]",
+      "properties": {
+        "displayName": "Workspace REST API",
+        "path": "ks/ws/rest",
+        "protocols": [
+          "https"
+        ],
+        "serviceUrl": "https://src-ws-api-backend.example.com/api",
+        "apiType": "http"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/workspaces', parameters('apimName'), 'src-workspace')]"
+      ]
+    }
+  ],
+  "outputs": {
+    "apimServiceName": {
+      "type": "string",
+      "metadata": {
+        "description": "APIM service name — use as --service-name for APIOps CLI"
+      },
+      "value": "[parameters('apimName')]"
+    },
+    "resourceGroupName": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource group name — use as --resource-group for APIOps CLI"
+      },
+      "value": "[resourceGroup().name]"
+    },
+    "subscriptionId": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure subscription ID — use as --subscription-id for APIOps CLI"
+      },
+      "value": "[subscription().subscriptionId]"
+    },
+    "gatewayUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "APIM gateway URL"
+      },
+      "value": "[reference(resourceId('Microsoft.ApiManagement/service', parameters('apimName')), '2025-09-01-preview').gatewayUrl]"
+    },
+    "workspaceDeployed": {
+      "type": "bool",
+      "metadata": {
+        "description": "Whether workspace resources were deployed"
+      },
+      "value": "[variables('supportsWorkspaces')]"
+    },
+    "gatewayDeployed": {
+      "type": "bool",
+      "metadata": {
+        "description": "Whether self-hosted gateway was deployed"
+      },
+      "value": "[variables('supportsSelfHostedGateway')]"
+    },
+    "skuName": {
+      "type": "string",
+      "metadata": {
+        "description": "APIM SKU used"
+      },
+      "value": "[parameters('skuName')]"
+    }
+  }
+}

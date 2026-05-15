@@ -16,7 +16,8 @@ The kitchen sink APIM instance includes **every resource type and API protocol v
 | `src-websocket` | WebSocket | None |
 | `src-rest-versioned-v1` | REST (versioned) | OpenAPI |
 | `src-rest-revisioned` | REST (revisioned) | OpenAPI |
-| `src-rest-mcp-style` | REST (MCP-style backend) | None |
+| `src-mcp-from-api` | MCP (from existing API) | None |
+| `src-mcp-from-external` | MCP (from external MCP server) | None |
 
 ### Backend Variations
 | Backend | Type |
