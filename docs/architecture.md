@@ -1,0 +1,138 @@
+# Architecture
+
+## Overview
+
+`apiops` implements a **configuration-as-code** workflow for Azure API Management. Configuration is extracted from a running APIM instance into version-controlled artifact files. Those files become the source of truth for publishing to one or more environments, driven by a CI/CD pipeline.
+
+---
+
+## Configuration-as-Code Workflow
+
+The sequence diagram below shows how `apiops` fits into a typical team workflow, including all commands and affected resources:
+
+```mermaid
+sequenceDiagram
+    participant dev as Developer
+    participant git as Repository<br/>(GitHub/<br/>Azure DevOps)
+    participant ci as CI/CD Pipeline
+    participant apim_src as Source<br/>API Management
+    participant apim_dst as Target<br/>API Management
+
+    rect rgb(200, 220, 255)
+        note over dev: Step 1: Initialize
+        dev->>git: Command: apiops init
+        git->>git: Create CI/CD workflow files<br/>(extract & publish pipelines)
+    end
+
+    rect rgb(200, 255, 220)
+        note over dev: Step 2: Extract Configuration
+        dev->>ci: Run extract pipeline
+        note over ci: Command: apiops extract
+        ci->>apim_src: Read configuration
+        apim_src-->>ci: Current APIM config
+        ci->>git: Write to apim-artifacts/
+        git->>dev: Show extracted changes
+    end
+
+    rect rgb(255, 240, 200)
+        note over dev: Step 3-4: Review & Merge
+        dev->>git: Create Pull Request
+        note over git: Code review & approval
+        dev->>git: Merge to main branch
+    end
+
+    rect rgb(255, 220, 220)
+        note over ci: Step 5: Publish Configuration
+        git->>ci: Trigger publish pipeline
+        note over ci: Command: apiops publish
+        ci->>git: Read apim-artifacts/
+        git-->>ci: Artifact files
+        ci->>apim_dst: Apply configuration to target
+        apim_dst-->>ci: Updated successfully
+    end
+```
+
+| Step | Command | Affected Resources | Description |
+|------|---------|-------------------|-------------|
+| 1 | `apiops init` | Repository | Scaffolds the Git repository with CI/CD workflow files and an identity setup guide |
+| 2 | `apiops extract` | Source APIM, apim-artifacts/ | Reads the running APIM configuration and writes it to local artifact files |
+| 3-4 | — | Repository (PR & Merge) | Developer submits extracted artifact changes for review and approves merge |
+| 5 | `apiops publish` | apim-artifacts/, Target APIM | On merge, the publish workflow runs and applies artifact files to the target API Management instance |
+
+---
+
+## Component Architecture
+
+The diagram below shows the internal structure of the `apiops` CLI:
+
+```mermaid
+flowchart TB
+    subgraph entrypoint["CLI Entry Point"]
+        extract_cmd["extract"]
+        publish_cmd["publish"]
+        init_cmd["init"]
+    end
+
+    subgraph services["Services"]
+        direction TB
+        extract_svc["Extract Service<br/>(parallel by <br/>dependency tier)"]
+        filter_svc["Filter + Transitive Resolver"]
+
+        publish_svc["Publish Service<br/>(dependency-ordered <br/>PUT / DELETE)"]
+        override_svc["Override Merger<br/>(per-environment config)"]
+        git_svc["Git Diff Service<br/>(incremental publish)"]
+        dry_svc["Dry-run Reporter"]
+
+        init_svc["Init Service<br/>(CI/CD scaffolding)"]
+    end
+
+    subgraph clients["Clients"]
+        apim_client["API Management REST Client"]
+        store["Artifact Store"]
+    end
+
+    subgraph auth["Authentication"]
+        auth_pkg["@azure/identity"]
+    end
+
+    subgraph external["External Systems"]
+        azure_apim[("API Management")]
+        local_files[("fa:fa-folder Artifact Files<br/>(Local Filesystem)")]
+        git_repo[("fa:fa-github GitHub / Azure DevOps")]
+    end
+
+    extract_cmd --> extract_svc
+    publish_cmd --> publish_svc
+    init_cmd --> init_svc
+
+    extract_svc --> filter_svc
+    extract_svc --> apim_client
+    extract_svc --> store
+
+    publish_svc --> override_svc
+    publish_svc --> git_svc
+    publish_svc --> dry_svc
+    publish_svc --> apim_client
+    publish_svc --> store
+
+    apim_client --> auth_pkg
+    auth_pkg --> azure_apim
+    store <--> local_files
+    git_svc --> git_repo
+    init_svc --> git_repo
+```
+
+## Authentication
+
+`apiops` uses [`DefaultAzureCredential`](https://learn.microsoft.com/javascript/api/%40azure/identity/defaultazurecredential?view=azure-node-latest) from the `@azure/identity` SDK.
+
+For the up-to-date credential chain and authentication behavior, see Microsoft docs:
+
+- [Credential chains in the Azure Identity library for JavaScript](https://learn.microsoft.com/azure/developer/javascript/sdk/authentication/credential-chains)
+- [Authenticate JavaScript apps to Azure services during local development](https://learn.microsoft.com/azure/developer/javascript/sdk/authentication/local-development-environment-service-principal)
+
+GitHub Actions workflows generated by `apiops init` use OIDC federated credentials for Azure authentication, which means you do not need to store an Azure client secret for `azure/login@v2`.
+
+However, the generated workflows still require GitHub Actions secret or environment values such as `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, and any APIM environment-specific secrets referenced by the workflow templates.
+
+---

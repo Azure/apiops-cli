@@ -15,6 +15,7 @@
     "vscode": {
       "settings": {
         "terminal.integrated.defaultProfile.linux": "bash",
+        "git.autofetch": true,
         "editor.formatOnSave": true,
         "editor.defaultFormatter": "dbaeumer.vscode-eslint",
         "eslint.format.enable": true,
@@ -24,6 +25,7 @@
       },
       "extensions": [
         "dbaeumer.vscode-eslint",
+        "bierner.markdown-mermaid",
         "ms-vscode.vscode-typescript-next",
         "vitest.explorer",
         "GitHub.vscode-pull-request-github",
