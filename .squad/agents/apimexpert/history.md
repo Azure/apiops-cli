@@ -72,5 +72,32 @@ the SDK surface, reference docs, or ad-hoc observation.
 - Use this when diagnosing: new api-version diffs, unexpected payload fields,
   export/import format semantics, resource-type discovery.
 
-<!-- Append new learnings here after each session -->
+### 2026-05-13: APIM v1 → v2 SKU Migration Research
+
+**Key findings for classic-to-v2 migration via apiops-cli:**
+
+1. **No in-place upgrade path exists.** Microsoft confirms "Upgrade to v2 tiers from classic tiers" is "currently unavailable." The only path is side-by-side: create new v2 instance, recreate configuration.
+
+2. **REST API surface is identical.** The same ARM resource paths (`api-version=2024-05-01`) work on both classic and v2 instances. All 34 resource types apiops-cli handles can be extracted from classic and published to v2 via the same endpoints.
+
+3. **apiops-cli covers ~80-85% of migration today.** The standard extract→publish flow transfers APIs, products, backends, policies, tags, groups, schemas, and all child resources cleanly. Gaps: subscription key preservation (needs `listSecrets` flow), named value secret transfer (currently redacted), and pre-flight v2 compatibility checks.
+
+4. **v2 feature gaps are significant blockers for some users:**
+   - Self-hosted gateways: NOT available on any v2 tier
+   - Multi-region deployment: NOT available on v2
+   - Service Fabric backends: NOT available on v2
+   - gRPC backends: NOT available on v2
+   - Static IP: NOT available on v2
+   - Backup/restore: NOT available on v2
+   - Gateway buffered payload limit drops from 500 MiB to 2 MiB
+
+5. **Subscription keys CAN be preserved** via `PUT /subscriptions/{sid}` with `properties.primaryKey`/`properties.secondaryKey`. Keys are write-only on GET but settable on PUT.
+
+6. **Managed identity is the biggest manual effort.** New instance = new system-assigned identity = must re-grant RBAC on every downstream resource (Key Vault, Storage, Event Hub, etc.). User-assigned identities can be shared.
+
+7. **Workspaces are NOT v2-exclusive.** Both Premium (classic) and PremiumV2 support workspaces.
+
+**Research output:** `.squad/decisions.md` entry (merged from inbox), full analysis in `specs/sku-upgrade.md`
+
+### 2026-05-13: APIM v1 → v2 SKU Migration Research
 
