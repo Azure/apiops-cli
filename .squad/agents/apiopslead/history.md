@@ -136,50 +136,6 @@
 
 **Key insight:** Charters for code-producing agents (TypeScriptDev, TestEngineer, NodeJsDev) benefit most from codebase-specific enhancement because inaccuracies or gaps directly affect code quality. Advisory agents (OpenSourceExpert, ApicExpert) can remain more generic without harm.
 
-### 2025-07-14 — Repository Maintenance Plan: Executive Synthesis, Foundational Principles, Contributor Experience, and Final Assembly
-
-**Contribution:** Wrote 4 sections and performed final assembly for `docs/repo-maintenance-plan.adoc`:
-
-1. **Executive Summary** — One-page orientation covering:
-   - Plan scope: repository governance for branch maintenance, issue triage, PR workflows, CI/CD, dependency management, security controls
-   - Audience: team leads, maintainers, CI/CD engineers, security reviewers
-   - Compliance framework: mandatory controls (2-maintainer approvals, CODEOWNERS enforcement, gh-aw guardrails) vs recommended practices
-   - Cross-references to all 16 topic areas
-
-2. **Foundational Principles** — Six core tenets:
-   - Determinism for gates, intelligence for advisors (YAML for pass/fail CI, gh-aw for triage)
-   - Two-tier labeling (Tier-1: informational auto-apply; Tier-2: gating, human-only)
-   - Human-in-the-loop always (no autonomous merge, no autonomous assignment of critical flags)
-   - Least-privilege pattern (safe-outputs constraints, no direct token access, read-only agents)
-   - Audit trail mandatory (all decisions logged, all automations traceable)
-   - Security-first dependency management (npm audit, pinned versions, SBOM transparency)
-
-3. **Contributor Experience** — Developer-focused sections:
-   - Onboarding sequence: clone → npm ci → npm run build → npm test → read CONTRIBUTING.md
-   - Local development commands: `npm run build`, `npm test`, `npm run lint`, `npm start`
-   - PR submission checklist (lint/test/type-check locally before push)
-   - Commit message convention with GitHub issue auto-close keywords
-   - Code style expectations (ESM, strict TypeScript, no secrets)
-
-4. **Appendices** — Supporting materials:
-   - Full threat model table (15 vectors with impact/mitigation/severity)
-   - Label taxonomy (47 labels across 6 namespaces: squad, type, priority, status, override, go)
-   - gh-aw guardrails checklist (7 mandatory controls)
-   - Architecture diagram showing dependency graph layers
-   - Decision log cross-referencing all 14 Phase 2 foundational issues
-
-**Final Assembly Process:**
-- Consolidated four agent contributions (GitHubExpert: 5 sections, NodeJsDev: 4 sections, SecurityExpert: 1 section, ApiOpsLead: 4 sections) into unified AsciiDoc document
-- Verified all cross-references and numbering consistency
-- Added table of contents, section anchors, and internal hyperlinks
-- Ensured threat model, attack vectors, and mitigations align across all sections
-- Validated all team decisions from decisions.md are referenced appropriately
-- Final output: 2460 lines, 94 KB, all 16 topics complete and executable
-
-**Key Insight:** The maintenance plan serves as the constitutional foundation for all future branch maintenance work. It translates high-level governance principles (from `.squad/identity/constitution.md`) into concrete, automated workflows and human-review gates. Every policy described in the plan is either automated (via GitHub Actions + safe-outputs constraints) or enforced by branch protection + CODEOWNERS, making compliance mechanical rather than aspirational.
-
-<!-- Append new learnings here after each session -->
-
 ### 2026-05-01: Enhanced 7 Agent Charters with Codebase-Specific Patterns
 
 **What:** Applied the CodeReviewer charter enhancement pattern to all 7 remaining charters, making each codebase-aware with actual file paths, patterns, and team decisions.
@@ -198,3 +154,4 @@
 - Collaboration sections updated to reference both constitution and decisions.md
 
 **Key insight:** The most impactful enhancements are on code-producing agents (TypeScriptDev, TestEngineer, NodeJsDev) where inaccurate or missing patterns directly cause code quality issues. The TypeScriptDev charter had two outright inaccuracies that would have led agents to write code targeting wrong settings.
+
