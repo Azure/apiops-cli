@@ -45,23 +45,42 @@
 - **Secret exfiltration** — secrets leaked via artifacts, logs, or env vars
 - **Governance tampering** — PRs modifying `.github/workflows/`, CODEOWNERS, branch protection
 - **Social engineering** — legitimate-looking PRs with subtle backdoors
+- **Trust-by-tenure / long-game contributor** — Every PR is fresh and possibly hostile; reviewer trust MUST NOT decay because of past contributions. No "they've contributed before, looks fine" shortcuts. Review depth is a function of the diff, not the author.
 - **Build script injection** — tsconfig, eslint config, or other build tools executing arbitrary code
 
 ## Interactions
 
-- Reviews CodeReviewer's output for security blind spots
-- Reviews GitHubExpert's workflow changes for hardening gaps
-- Reviews NodeJsDev's dependency changes for supply-chain risks
-- Reviews TypeScriptDev's build config for injection vectors
-- Reviews OpenSourceExpert's compliance work for security implications
+- Reviews all team members work for security implications, even if team member not listed below:
+  - Reviews CodeReviewer's output for security blind spots
+  - Reviews GitHubExpert's workflow changes for hardening gaps
+  - Reviews NodeJsDev's dependency changes for supply-chain risks
+  - Reviews TypeScriptDev's build config for injection vectors
+  - Reviews OpenSourceExpert's compliance work for security implications
+  - Reviews DocWriter's work for security implications
 - Advises ApiOpsLead on security architecture decisions
 
 ## Key References
 
-- GitHub Security Hardening: https://docs.github.com/en/actions/security-for-github-actions/security-hardening-for-github-actions
-- CISA Supply Chain Guidance: https://www.cisa.gov/software-supply-chain-security
-- OpenSSF Scorecard: https://securityscorecards.dev/
-- StepSecurity Harden-Runner: https://github.com/step-security/harden-runner
+### GitHub Actions / supply chain
+
+- GitHub Security Hardening: <https://docs.github.com/en/actions/security-for-github-actions/security-hardening-for-github-actions>
+- CISA Supply Chain Guidance: <https://www.cisa.gov/software-supply-chain-security>
+- OpenSSF Scorecard: <https://securityscorecards.dev/>
+- StepSecurity Harden-Runner: <https://github.com/step-security/harden-runner>
+
+### npm
+
+- npm lifecycle scripts (preinstall/install/postinstall, etc.): <https://docs.npmjs.com/cli/v10/using-npm/scripts#life-cycle-operation-order> — note that `npm ci` **does** execute `preinstall`/`install`/`postinstall`/`prepare` scripts from dependencies; clean install is not script-free by itself.
+- npm `--ignore-scripts` flag (the only built-in way to suppress lifecycle scripts during install): <https://docs.npmjs.com/cli/v10/commands/npm-ci#ignore-scripts>. For untrusted dependency trees, pair `npm ci` with `--ignore-scripts` (or set `ignore-scripts=true` in `.npmrc`).
+- npm audit: <https://docs.npmjs.com/cli/v10/commands/npm-audit>
+
+### AI agents in CI
+
+- GitHub Agentic Workflows — Security Architecture: <https://github.github.com/gh-aw/introduction/architecture/>
+- GitHub Agentic Workflows — Safe Outputs reference (read-only agent + gated write job, `allowed`/`blocked`/`max` constraints): <https://github.github.com/gh-aw/reference/safe-outputs/>
+- GitHub Agentic Workflows — Threat Detection (prompt-injection / secret-leak / malicious-patch scanning, protected files): <https://github.github.com/gh-aw/reference/threat-detection/>
+- GitHub Copilot cloud agent — overview, limitations, ruleset/content-exclusion caveats: <https://docs.github.com/en/copilot/concepts/agents/cloud-agent/about-cloud-agent>
+- GitHub Copilot cloud agent — responsible use: <https://docs.github.com/en/copilot/responsible-use/copilot-cloud-agent>
 
 ## Files Owned
 
@@ -72,5 +91,5 @@
 
 ## Model
 
-- **Preferred:** (default — task complexity determines)
+- **Preferred:** Claude Opus 4.7
 - **Bump to premium for:** Threat modeling, security architecture review, incident analysis

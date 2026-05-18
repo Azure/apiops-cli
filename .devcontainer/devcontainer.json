@@ -8,7 +8,7 @@
     },
     "ghcr.io/devcontainers/features/powershell:1": {}
   },
-  "postCreateCommand": "npm ci",
+  "postCreateCommand": "npm ci --ignore-scripts",
   "remoteEnv": {
     "PATH": "${containerEnv:PATH}:${containerWorkspaceFolder}/node_modules/.bin"
   },
