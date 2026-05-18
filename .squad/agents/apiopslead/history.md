@@ -197,3 +197,28 @@
 - `.squad/decisions/inbox/apiopslead-sku-upgrade-proposal.md` — decision summary for team review
 
 **Key insight:** The existing extract/publish architecture is already migration-ready by design. `ApimServiceContext` parameterization means no code changes are needed — just documentation and optionally richer pre-flight validation. The real migration pain is in the Azure infrastructure layer (networking, identity, DNS), not the APIM configuration layer that apiops-cli manages.
+
+### 2026-06-02: Multi-Environment Architecture Plan
+
+**What:** Produced architecture planning memo at `specs/multi-environment-plan.md` evaluating how to handle dev/qa/prod environments publishing to APIM.
+
+**Decision:** Recommended default is single artifact directory + trunk-based branching + override files per environment + multi-stage pipeline with approval gates. This is fully supported TODAY with existing `--overrides` and `apiops init --environments` capabilities.
+
+**Three decision axes evaluated:**
+1. Artifact naming: Single directory (recommended) vs. per-env directories (anti-pattern)
+2. Branch strategy: Trunk-based + pipeline stages (recommended) vs. environment branches (escape hatch only)
+3. Workspace usage: Separate instances per env (recommended) vs. single instance + workspaces (future, needs `--workspace` flag)
+
+**Anti-patterns explicitly identified:**
+- Per-env artifact directories with trunk-based branching
+- Environment branches with single APIM instance without workspaces
+- Committing secrets to override files
+- Extracting from prod and publishing to dev (reverse flow)
+
+**Minimum increments identified:**
+- Increment 0: Documentation only (can ship now — no code changes needed)
+- Increment 1: Override validation warnings during `--dry-run`
+- Increment 2: `--workspace` flag on publish (medium effort, needs spec)
+- Increment 3: Layered overrides (multiple `--overrides` files)
+
+**Key insight:** Same pattern as SKU migration — the existing architecture already supports the use case. The primary deliverable is documentation, not new features. Override files + `apiops init --environments` already generate the scaffolding; users just need a guide explaining the recommended topology and workflow.
