@@ -9,103 +9,42 @@
 - **Stack:** TypeScript 6.x, Node.js 22 LTS, Commander, `@azure/identity`, Vitest, ESLint
 - **Key constraint:** No `@azure/arm-apimanagement` SDK for resource payloads — raw REST only
 
+**Foundation Established (2025-04-09 through 2026-04-09):** Project initialized with ESM, strict TypeScript, Vitest, ESLint. Commit message convention formalized (`Closes #N` for auto-close). All 14 foundational infrastructure components implemented and tested (467 integration tests passing). Full agent charter enhancement program completed (CodeReviewer + 7 others) with codebase-specific patterns and severity annotations.
+
 ## Learnings
 
-### 2025-04-09: Phase 1 Setup — Project Initialization (Issues #7, #8)
+### 2026-05-14: APIM v1 → v2 SKU Migration Decision Finalized
 
-**Completed:** Issues #7 (T001) and #8 (T002) from Phase 1: Setup milestone
+**Outcome:** Joint research with ApimExpert concluded; migration architecture decision merged into `.squad/decisions.md`.
 
-**What was done:**
-1. Initialized Node.js project with `npm init -y` and configured `package.json`:
-   - Set name to `apiops` (not apiops-cli)
-   - Set version to `0.1.0` (pre-release)
-   - Set `type: "module"` for ESM support
-   - Set `engines.node: ">=22.0.0"` (LTS constraint)
-   - Set `private: true` (not ready for npm publish)
-   - Added build, test, and lint scripts (tsc, vitest, eslint)
-   - Added bin entry for CLI: `./dist/cli/index.js`
+**Decision:** Phase 1 MVP uses existing `extract` + `publish` with migration guide (no new command). Phase 2 adds `apiops copy` if demand warrants.
 
-2. Created `tsconfig.json` with TypeScript 5.x configuration:
-   - Target: ES2022, Module: NodeNext (ESM)
-   - Strict mode enabled with all recommended flags
-   - Output: ./dist, Source: ./src
-   - Declaration files enabled for library consumers
+**Evidence that existing architecture supports migration:**
+- `ApimServiceContext` parameterization means source (v1) and target (v2) are just two different context instances
+- All 34 resource types already supported
+- No code refactoring needed for Phase 1
+- Architecture validation: Design held up well to this migration scenario use case
 
-3. Created `.eslintrc.json` with TypeScript ESLint:
-   - Extended recommended + type-aware rules
-   - Configured for Node.js + ES2022
-   - Set unused vars to error (with _ prefix exception)
-   - Ignored dist, node_modules, config files
+**Coverage breakdown:**
+- ✅ ~80–85% covered today (APIs, products, policies, backends, named values, workspaces)
+- ⚠️ Gaps requiring Phase 2 work: subscription key preservation, self-hosted gateway validation, Service Fabric detection, gRPC detection, pre-flight v2 compatibility check
+- ❌ Out of scope: VNet, DNS, identity/RBAC, TLS certs (Bicep/Terraform territory)
 
-4. Created `vitest.config.ts`:
-   - Native ESM + TypeScript support
-   - Test pattern: `tests/**/*.test.ts`
-   - Coverage with v8 provider (text, json, html reporters)
+**Next steps:** Team governance review; if approved, write migration guide for `/docs/guides/sku-migration.md` and create override template examples.
 
-5. Created complete directory structure with .gitkeep files:
-   - src/cli/, src/models/, src/services/, src/clients/, src/lib/
-   - tests/unit/, tests/integration/, tests/contract/
+**Key insight:** YAGNI + parameterization design = migration-ready without extra code. This validates the existing architecture's flexibility.
 
-**Key decisions:**
-- **Package name:** `apiops` (not apiops-cli) — simpler CLI invocation
-- **Module system:** ESM (`type: "module"`) — modern Node.js standard, aligns with Vitest
-- **Strict TypeScript:** All strict checks enabled — catch errors early
-- **No dependencies installed yet:** NodeJsDev owns dependency installation (issues #9, #10)
-- **ESLint classic config:** Used .eslintrc.json (not flat config) for broader compatibility
+### 2026-05-13: Documentation Scope and Decision Merge
 
-**Files created:**
-- `/package.json` (846 bytes)
-- `/tsconfig.json` (663 bytes)
-- `/.eslintrc.json` (792 bytes)
-- `/vitest.config.ts` (393 bytes)
-- Directory structure: 8 .gitkeep files in src/ and tests/ hierarchy
+**Scope decisions for `/docs` and merged multiple doc planning entries into decisions.md:**
+- **D1: User-Facing Only** — no internal architecture
+- **D2: Both Platform Pipelines** — GitHub Actions and Azure DevOps equally
+- **D3: Artifact Path Flexibility** — users choose path via --output/--source
+- **D4: Multiple Auth Methods** — context-specific guidance
 
-**Validation:** All JSON files validated with Node.js JSON.parse — zero syntax errors.
+**Key insight:** Documentation scope must be tightly coupled to implementation status.
 
-### 2025-04-09: Formalized Commit Message Convention
-
-**What:** Codified the commit convention (include `Closes #N` or `Fixes #N` when resolving issues) into repository documentation.
-
-**Files created:**
-- `/CONTRIBUTING.md` — Comprehensive contributing guide with commit convention, dev setup, PR process, and code style
-- `/.github/pull_request_template.md` — PR template with issue linking checklist
-- `/.squad/decisions.md` — Decision recorded under Active Decisions
-
-**Files updated:**
-- `/.github/copilot-instructions.md` — Added commit convention note in manual additions section
-
-**Why:** Conventions that only lived in agent memory were invisible to human contributors and new AI agents. Formalizing in repository files ensures consistency and discoverability.
-
-**Key insight:** Repository documentation beats agent memory for long-term knowledge retention and team alignment. Conventions must be visible where contributors look for them (CONTRIBUTING.md, PR templates).
-
-### 2026-04-09: Phase 2 Review — All Foundational Issues Verified Complete
-
-**What:** Performed comprehensive review of all 14 Phase 2 issues (T006-T019, GitHub #12-#25) to confirm every requirement was fully implemented.
-
-**Issues verified (all COMPLETE):**
-- **#12 (T006):** ResourceType enum — 33 resource types with ARM paths, artifact dirs, info files ✅
-- **#13 (T007):** Core interfaces — ResourceDescriptor, ResourcePayload, ApimServiceContext, DependencyEdge, PublishAction ✅
-- **#14 (T008):** Config interfaces — ExtractConfig, FilterConfig, PublishConfig, OverrideConfig, InitConfig ✅
-- **#15 (T009):** IApimClient interface — 6 methods per contract ✅
-- **#16 (T010):** IArtifactStore interface — 8 methods per contract ✅
-- **#17 (T011):** Dependency graph — 4 tiers, topological sort, cycle detection ✅
-- **#18 (T012):** ARM URI mapping — buildArmUri/parseArmUri with workspace support ✅
-- **#19 (T013):** Artifact path mapping — all 33 resource type patterns ✅
-- **#20 (T014):** Structured logger — stderr, timestamps, log levels, verbose, secret sanitization ✅
-- **#21 (T015):** YAML config loader — filter/override/OTel parsing with runtime validation ✅
-- **#22 (T016):** Azure REST client — DefaultAzureCredential, pagination, 429 handling, retry, polling ✅
-- **#23 (T017):** Filesystem artifact store — read/write JSON/XML/spec/associations/wiki, UTF-8 ✅
-- **#24 (T018):** Parallel runner — bounded concurrency, Promise.allSettled, no external deps ✅
-- **#25 (T019):** Commander entry point — global options, preAction hook, error handling ✅
-
-**Also completed in this session:**
-- Merged latest from main (CONTRIBUTING.md, PR template with commit convention docs)
-- Verified build/lint/tests pass after merge
-- Tagged commit with `Closes` for all 14 Phase 2 issues
-
-**Key insight:** Phase 2 is the foundational layer that blocks ALL user stories. Having all 14 infrastructure components verified and tagged for auto-close ensures clean milestone tracking.
-
-### 2026-05-01: CodeReviewer Charter Enhancement
+### 2026-05-01: CodeReviewer Charter Enhancement and 7-Agent Pattern Application
 
 **What:** Rewrote the CodeReviewer charter (`.squad/agents/codereviewer/charter.md`) sections 3-8 to make reviews significantly more thorough and project-specific.
 
@@ -123,18 +62,100 @@
 
 **Key insight:** A generic "enforce TypeScript strict mode" instruction is useless if the reviewer doesn't know the specific patterns to look for. Project-specific checklists with severity annotations turn a reviewer from "looks fine to me" into a systematic quality gate.
 
-### 2026-05-01: Charter Enhancement Priority Analysis
+### 2026-05-01: Documentation Scope Advisory for DocWriter
 
-**What:** Analyzed all 8 non-CodeReviewer charters to identify inaccuracies, generic content, and missing codebase-specific patterns. Produced a prioritized recommendation table for charter improvements modeled on the CodeReviewer enhancement.
+**What:** Provided scope guidance to DocWriter for planning user-facing documentation in `/docs`. Analyzed current project state from `specs/spec.md` and `specs/tasks.md`, assessed feature completion status, and wrote advisory to `.squad/decisions/inbox/apiopslead-docs-scope.md`.
 
 **Key findings:**
-1. **TypeScriptDev** has an outright inaccuracy: claims `noUncheckedIndexedAccess` in tsconfig.json — it's not there. Also lists target as "ESNext" when actual target is ES2022.
-2. **TestEngineer** is the most generic — could apply to any Vitest project. Missing all project-specific mocking patterns, test structure conventions, and coverage thresholds.
-3. **NodeJsDev** lacks reference to actual exit code constants (`EXIT_SUCCESS/PARTIAL/FATAL`) and the real `init-service.ts` implementation patterns.
-4. **ApimExpert** and **AzdoExpert/GitHubExpert** are moderately generic but less impactful since they're advisory roles that consult docs.
-5. **OpenSourceExpert** and **ApicExpert** are lowest priority — advisory/forward-looking roles where generic guidance is acceptable.
+1. **Ready to document NOW:** `apiops extract` (code exists), `apiops publish` (tasks complete), `apiops init` (tasks complete), CI/CD integration (both GitHub Actions and Azure DevOps).
+2. **Defer to later:** `--otel` flag (Phase 8, not implemented), `--spec-format` option (Phase 8, not implemented), internal architecture (not user-facing).
+3. **Tasks.md inconsistency:** Phase 3 (Extract) tasks unchecked in tasks.md, but source files exist. Extraction likely complete but tasks.md is stale.
 
-**Key insight:** Charters for code-producing agents (TypeScriptDev, TestEngineer, NodeJsDev) benefit most from codebase-specific enhancement because inaccuracies or gaps directly affect code quality. Advisory agents (OpenSourceExpert, ApicExpert) can remain more generic without harm.
+**Decisions made:**
+- **D1:** User-facing only — no internal architecture in `/docs`
+- **D2:** Document BOTH GitHub Actions AND Azure DevOps pipelines with equal weight
+- **D3:** Emphasize artifact directory flexibility — users choose the path, not a hardcoded default
+- **D4:** Document all authentication methods (Azure CLI, federated credentials, service principal, managed identity) with context-specific guidance
+
+**Priority ordering:**
+1. Getting Started Guide (init → extract → publish → CI/CD) — highest user value
+2. Extract reference
+3. Publish reference
+4. CI/CD guide
+5. Configuration reference
+6. Troubleshooting
+
+**Key paths referenced:**
+- `specs/spec.md` — Feature specification with user stories and functional requirements
+- `specs/tasks.md` — Task breakdown with completion status
+- `src/cli/extract-command.ts`, `publish-command.ts`, `init-command.ts` — Verified implementation files
+- `src/services/extract-service.ts`, `publish-service.ts`, `init-service.ts` — Core service implementations
+- `.squad/decisions/inbox/apiopslead-docs-scope.md` — Output advisory for DocWriter
+
+**Key insight:** Documentation scope must be tightly coupled to implementation status. Document what's complete and stable, defer what's planned but not implemented. Phase 8 (Polish) features like `--otel` and `--spec-format` are spec'd but not coded — documenting them now would be inaccurate and create user confusion.
+
+### 2026-05-14: APIM v1 → v2 SKU Migration Decision Finalized
+
+**Outcome:** Joint research with ApimExpert concluded; migration architecture decision merged into `.squad/decisions.md`.
+
+**Decision:** Phase 1 MVP uses existing `extract` + `publish` with migration guide (no new command). Phase 2 adds `apiops copy` if demand warrants.
+
+**Evidence that existing architecture supports migration:**
+- `ApimServiceContext` parameterization means source (v1) and target (v2) are just two different context instances
+- All 34 resource types already supported
+- No code refactoring needed for Phase 1
+- Architecture validation: Design held up well to this migration scenario use case
+
+**Coverage breakdown:**
+- ✅ ~80–85% covered today (APIs, products, policies, backends, named values, workspaces)
+- ⚠️ Gaps requiring Phase 2 work: subscription key preservation, self-hosted gateway validation, Service Fabric detection, gRPC detection, pre-flight v2 compatibility check
+- ❌ Out of scope: VNet, DNS, identity/RBAC, TLS certs (Bicep/Terraform territory)
+
+**Next steps:** Team governance review; if approved, write migration guide for `/docs/guides/sku-migration.md` and create override template examples.
+
+**Key insight:** YAGNI + parameterization design = migration-ready without extra code. This validates the existing architecture's flexibility.
+
+<!-- Append new learnings here after each session -->### 2026-05-13: Documentation Scope Advisory and Decision Merge
+
+**What:** Provided scope guidance to DocWriter for planning user-facing documentation. Analyzed feature completion status, documented scope decisions, and merged both ApiOpsLead and DocWriter outputs into unified decisions.md entry.
+
+**Feature Readiness Assessment:**
+
+**GREEN LIGHT (ready to document now):**
+- `apiops extract` — Code exists, core feature, extraction is entry point for all workflows
+- `apiops publish` — All tasks marked complete, completes extract-publish round-trip
+- `apiops init` — All tasks marked complete, high adoption value for onboarding
+- CI/CD integration — Both GitHub Actions and Azure DevOps tasks complete
+
+**RED LIGHT (defer to later documentation):**
+- `--otel` OpenTelemetry flag — Phase 8, not implemented, spec defines but no code exists
+- `--spec-format` option — Phase 8, not implemented, spec defines but no code exists
+- Internal architecture — Not user-facing, belong in /specs and code comments not /docs
+
+**Stale Data Identified:**
+- Phase 3 (Extract) tasks unchecked in tasks.md, but source files exist (`extract-service.ts`, `resource-extractor.ts`, `api-extractor.ts`, `product-extractor.ts`, `extract-command.ts`, etc.)
+- Likely extraction is complete but tasks.md tracking is stale
+- Need verification before closing Phase 3 tasks
+
+**Documentation Scope Decisions:**
+- **D1: User-Facing Only** — `/docs` is for users, not internal architecture. Users need "how do I extract" not "how the dependency graph works".
+- **D2: Both Platform Pipelines** — Document GitHub Actions and Azure DevOps equally. Spec targets both; apiops init generates both templates; Azure customer base uses both.
+- **D3: Artifact Path Flexibility** — Emphasize users choose path via --output/--source. Do NOT promote `./apim-artifacts` as "the" directory. Spec FR-019 says path is user-specified.
+- **D4: Multiple Auth Methods** — Document Azure CLI (local dev), federated credentials/OIDC (GitHub CI/CD), service principal (generic), managed identity (Azure-hosted). Context-specific guidance critical.
+
+**Priority Ordering for Maximum User Value:**
+1. Getting Started (init → extract → publish → CI/CD) — Removes adoption barrier, addresses SC-009
+2. Extract reference — Core feature, users extract before anything else
+3. Publish reference — Completes round-trip workflow
+4. CI/CD guide — Critical for production adoption
+5. Configuration reference — Required for advanced users
+6. Troubleshooting — Reduces support burden
+
+**Key Insight:** Documentation scope must be tightly coupled to implementation status. Spec ambitions don't equal shipped features. Phase 8 features are on the roadmap but not implemented — documenting them creates technical debt and user confusion. Better to ship accurate Phase 1-6 docs and expand after Phase 7-8 ship.
+
+**Outputs:**
+- `.squad/decisions/inbox/apiopslead-docs-scope.md` — 259-line scope advisory
+- Merged into decisions.md as comprehensive decision entry dated 2026-05-12T19:25:50Z
 
 ### 2026-05-01: Enhanced 7 Agent Charters with Codebase-Specific Patterns
 
@@ -155,3 +176,22 @@
 
 **Key insight:** The most impactful enhancements are on code-producing agents (TypeScriptDev, TestEngineer, NodeJsDev) where inaccurate or missing patterns directly cause code quality issues. The TypeScriptDev charter had two outright inaccuracies that would have led agents to write code targeting wrong settings.
 
+### 2026-06-02: APIM v1 → v2 SKU Migration Proposal
+
+**What:** Wrote `specs/sku-upgrade.md` — a comprehensive proposal for enabling APIM v1-to-v2 SKU migration via apiops-cli. Requested by Peter Hauge.
+
+**Decision:** Phase 1 MVP uses existing `extract` + `publish` commands with migration documentation — no new command needed. The `ApimServiceContext` is already parameterized, so source (v1) and target (v2) are just two different context instances. Phase 2 would add `apiops copy` for direct source→target streaming if demand warrants.
+
+**Key findings:**
+1. All 34 `ResourceType` enum values are supported for round-trip extract/publish — covers APIs, products, policies, backends, named values, gateways, workspaces, GraphQL resolvers, etc.
+2. Subscription keys are the biggest gap — APIM management API does not expose key values on GET. Users must regenerate keys on v2.
+3. Developer portal content, VNet/networking, managed identity, RBAC, DNS, and TLS certificates are all manual steps outside apiops-cli's scope.
+4. `--overrides` is critical for migration — users need to adjust backend URLs, logger resource IDs, and Key Vault references for the v2 environment.
+5. `--dry-run` provides pre-migration validation. An `apiops validate` command could enhance this in Phase 2.
+6. Constitution §V (YAGNI) argues against a premature `apiops migrate` command that would overpromise on scope.
+
+**Outputs:**
+- `specs/sku-upgrade.md` — full 9-section proposal with architecture analysis, risk assessment, and phased implementation plan
+- `.squad/decisions/inbox/apiopslead-sku-upgrade-proposal.md` — decision summary for team review
+
+**Key insight:** The existing extract/publish architecture is already migration-ready by design. `ApimServiceContext` parameterization means no code changes are needed — just documentation and optionally richer pre-flight validation. The real migration pain is in the Azure infrastructure layer (networking, identity, DNS), not the APIM configuration layer that apiops-cli manages.
