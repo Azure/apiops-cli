@@ -115,3 +115,18 @@ Documentation authoring (2026-04-30 to 2026-05-17): 3-phase plan with 28 user-fa
 **Patterns:** Examples-first, Mermaid workflows, relative links, search-optimized errors, progressive disclosure
 
 **Gotchas:** Auth flags set env vars (credential precedence). Overrides: names consistent, properties differ. `--commit-id`/`--delete-unmatched` exclusive.
+
+### 2026-05-18: Multi-Environment Spec Planning — Orchestration Complete
+
+**Context:** Collaborated with ApiOpsLead and ApimExpert on multi-environment deployment architecture and workspace interaction memos. Scribe orchestrated team contributions into unified project record.
+
+**Team Decisions Merged:**
+1. **Architecture (ApiOpsLead):** Single artifact directory + trunk-based branching + override files per environment + multi-stage pipeline is fully supported today. Primary deliverable is documentation (`/docs/guides/multi-environment.md`), not new code.
+2. **Workspace Interaction (ApimExpert):** Environment identity in override file names and pipeline stages, NOT artifact paths. Workspaces are structural scoping (teams/products), not environments. No workspace name remapping.
+
+**Documentation Planning Impact:**
+- New guide topic: `/docs/guides/multi-environment.md` — recommended topology, anti-patterns, override structure
+- Guides audience through: single vs. per-env artifacts decision, trunk-based + override pattern, workspace isolation options
+- References: ApimExpert topology matrix, ApiOpsLead anti-patterns assessment
+
+**Key Insight:** Both decisions reinforce that multi-environment support is ALREADY BUILT via `--overrides` and `apiops init --environments`. Users just need workflow guidance and examples.

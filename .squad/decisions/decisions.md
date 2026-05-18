@@ -31,3 +31,43 @@ All architectural and implementation decisions for apiops-cli.
 3. Is Phase 1 expansion acceptable, or should scenarios guide move to Phase 2?
 
 ---
+
+### 2026-06-02: Multi-Environment Deployment Architecture
+**By:** ApiOpsLead  
+**Status:** Proposed  
+**What:** Recommended default for multi-environment (dev/qa/prod) deployment with apiops-cli is single artifact directory + trunk-based branching + override files per environment + multi-stage pipeline with approval gates. This is fully supported today with existing capabilities (`--overrides`, `apiops init --environments`). Primary deliverable is documentation (`/docs/guides/multi-environment.md`), not new code.
+
+**Anti-Patterns Rejected:**
+1. Per-environment artifact directories — causes drift
+2. Environment branches with single APIM instance — no isolation
+3. Committing secrets to override files — violates §VIII
+4. Extracting from prod, publishing to dev — reverse flow
+
+**Future Enhancements (Not Blockers):**
+- `--workspace` flag on publish (needs spec work)
+- Override validation warnings in `--dry-run`
+- Multiple `--overrides` file support for layered config
+
+**Artifact:** Full analysis in `specs/multi-environment-plan.md`
+
+---
+
+### 2026-05-14: Multi-Environment Promotion & Workspace Interaction
+**By:** ApimExpert  
+**Status:** Proposed  
+**What:** Environment identity stays in override file names and pipeline stages, NOT in artifact paths on disk. Workspaces represent structural scoping (teams/products/domains), not environments. Tool should NOT implement workspace name remapping. Future enhancements: workspace-scoped overrides in override YAML schema; workspace auto-discovery via GET .../workspaces.
+
+**Rationale:**
+- Single source of truth: duplicating artifacts per environment invites configuration drift
+- Constitution §VII (Forward Compatibility / Passthrough): Path rewriting mutates opaque data, creating new breakage class
+- APIM workspaces lack deployment-gate semantics — promotion is CI/CD concern, not APIM workspace concern
+- Existing override system handles all environment-specific divergence (URLs, secrets, logger resource IDs)
+
+**Artifacts:** `specs/multi-environment-workspaces.md` — technical memo with topology matrix, combination assessment, recommended user guidance
+
+**Next Steps:**
+- Team review of memo
+- If approved: incorporate guidance into user-facing docs (`/docs/guides/multi-environment.md`)
+- If workspace-scoped overrides desired: spec the `OverrideConfig` extension
+
+---

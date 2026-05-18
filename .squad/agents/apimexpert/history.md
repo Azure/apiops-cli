@@ -112,3 +112,24 @@ the SDK surface, reference docs, or ad-hoc observation.
 
 ### 2026-05-13: APIM v1 → v2 SKU Migration Research
 
+### 2026-05-18: Multi-Environment Spec Planning Finalized
+
+**What:** Finalized multi-environment promotion and workspace interaction decision. Collaborated with ApiOpsLead on architecture planning, with Scribe orchestrating team outputs into unified project record.
+
+**Decision Reinforced:**
+- Environment identity in override file names and pipeline stages, NOT in artifact paths on disk
+- Workspaces represent structural scoping (teams/products), not deployment environments
+- No workspace name remapping during publish (violates Constitution §VII passthrough principle)
+- Future enhancements: workspace-scoped overrides in override YAML schema, workspace auto-discovery via GET /workspaces
+
+**Key Principle Reaffirmed:**
+Single source of truth — duplicating artifacts per environment invites configuration drift. Existing override system already handles all environment-specific divergence (URLs, secrets, logger resource IDs). APIM workspaces lack deployment-gate semantics — promotion is a CI/CD concern, not an APIM workspace concern.
+
+**Team Synchronization:**
+- Decision merged into `.squad/decisions.md` (deduplicated from inbox)
+- Orchestration log created with timestamp
+- Cross-agent history updates completed
+- Documentation integration point: multi-environment guide will reference workspace topology matrix from `specs/multi-environment-workspaces.md`
+
+**Artifact Updated:** `specs/multi-environment-workspaces.md` — technical memo with topology matrix, combination assessment, and recommended user guidance remains authoritative reference
+

@@ -222,3 +222,32 @@
 - Increment 3: Layered overrides (multiple `--overrides` files)
 
 **Key insight:** Same pattern as SKU migration — the existing architecture already supports the use case. The primary deliverable is documentation, not new features. Override files + `apiops init --environments` already generate the scaffolding; users just need a guide explaining the recommended topology and workflow.
+
+### 2026-05-18: Multi-Environment Spec Planning Orchestration Complete
+
+**What:** Collaborated with ApimExpert and DocWriter on structured multi-environment decision process. Scribe orchestrated team outputs into unified project record with orchestration logs, session log, decision merge, and cross-agent history updates.
+
+**Decisions Formalized:**
+1. **Architecture Recommendation (Primary):** Single artifact directory + trunk-based branching + override files per environment + multi-stage pipeline with approval gates. Fully supported today via `--overrides` and `apiops init --environments`. Deliverable: documentation, not code.
+
+2. **Workspace Interaction (Supporting):** Environment identity in override file names/pipeline stages, NOT artifact paths. Workspaces = structural scoping, not environments. No workspace name remapping (violates §VII passthrough). Future enhancements: workspace-scoped overrides, auto-discovery.
+
+**Anti-Patterns Explicitly Documented:**
+- Per-environment artifact directories
+- Environment branches with single APIM instance
+- Committing secrets to override files
+- Extracting from prod, publishing to dev
+
+**Team Artifacts Created:**
+- Orchestration logs: DocWriter, ApiOpsLead, ApimExpert (ISO 8601 UTC)
+- Session log: `.squad/log/2026-05-18T19-50-07Z-multi-environment-plan.md`
+- Merged decisions into `.squad/decisions/decisions.md`
+- Cross-agent history updates
+
+**Integration Points for DocWriter:**
+- New guide topic `/docs/guides/multi-environment.md` — explain recommended topology
+- Override directory structure with per-env examples
+- Comparison table: single vs. per-env artifacts
+- Workspace isolation patterns for multi-team scenarios
+
+**Key Validation:** Architecture review confirms YAGNI principle — existing tool capabilities already support multi-environment workflows. No new features needed for Phase 1. Documentation and examples provide maximum user value.
