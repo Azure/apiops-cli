@@ -1,0 +1,327 @@
+// SPDX-License-Identifier: MIT
+// Repo Maintenance Plan — apiops-cli
+// Sections 5, 6, 7.1, 7.2 (Condensed)
+
+== Section 5: Pull Request Lifecycle
+
+=== 5.1 Internal PRs
+
+*Branch Naming:* `squad/{issue-number}-{slug}` (e.g., `squad/42-init-command`)
+
+*Required Checks Before Merge:*
+
+* Lint — `npm run lint` (ESLint with TypeScript parser)
+* Build — `npm run build` (TypeScript 5.x strict compilation)
+* Test — `npm test` (vitest, all suites green)
+* Coverage — Line coverage ≥ 80%, no decrease from base
+
+*Merge Strategy:* Squash merge to `main`. Squash commit message must summarize entire branch work, include `Closes #N` to auto-close issue.
+
+*Branch Cleanup:* Auto-delete source branch after merge.
+
+=== 5.2 External PRs (Hostile Review)
+
+*Fork Isolation:*
+
+* No secrets exposed (`secrets.*` context empty)
+* `GITHUB_TOKEN` has read-only access
+* No write access to base repository
+* Artifacts sandboxed
+
+*Human Review Required:* At least one human maintainer approval before merge. Bot approvals don't satisfy this requirement.
+
+*Contribution Guidelines Comment:* A workflow (`pull_request_target`) auto-comments on fork PRs with CLA requirements, test expectations, and local validation checklist. See https://github.github.com/gh-aw/events/pull_request_target/[gh-aw pull_request_target docs].
+
+*CLA:* Microsoft CLA bot (`microsoft/cla`) checks CLA status. PRs from unsigned contributors are blocked.
+
+=== 5.3 Code Review Requirements
+
+*CodeReviewer Agent:* Reviews all PRs modifying `src/` or `tests/` against project constitution (`.squad/identity/constitution.md`, §I–§VIII).
+
+*Review Checks:*
+
+* TypeScript strict compliance (§I)
+* Testability and coverage (§VI)
+* Forward compatibility / extensibility (§VII)
+* Secret safety (§VIII)
+* YAGNI — no speculative abstractions (§V)
+
+*Severity Levels:*
+
+[cols="1,2,3",options="header"]
+|===
+| Level | Meaning | Action Required
+
+| 🔴 Blocker
+| Critical defect, security vulnerability, constitution violation
+| Must resolve before merge. PR blocked.
+
+| 🟡 Required
+| Significant issue
+| Must resolve before merge. Author revises.
+
+| 🟢 Suggestion
+| Improvement opportunity
+| Author's discretion. May defer to follow-up.
+|===
+
+*Lockout Protocol:* If a PR is rejected (🔴 findings) twice by the same reviewer, reassign to a different team member. Original author cannot self-approve.
+
+=== 5.4 Test Requirements
+
+[cols="2,2,2",options="header"]
+|===
+| Change Type | Required Tests | Notes
+
+| Any change to `src/`
+| Unit tests
+| Coverage ≥ 80%, no decrease
+
+| New CLI command
+| Unit + integration test
+| Integration test exercises full lifecycle
+
+| Bug fix
+| Regression test
+| Test must fail without fix, pass with it
+
+| Refactor (no behavior change)
+| Existing tests pass
+| No new tests unless coverage drops
+
+| Documentation only
+| None
+| N/A
+
+| Dependency updates only
+| Existing tests pass
+| N/A
+|===
+
+== Section 6: CI/CD & Quality
+
+=== 6.1 CI Pipeline
+
+*Triggers:* Pull requests targeting `main`, pushes to `main` (post-merge verification).
+
+*Matrix:* 3 OS (ubuntu-latest, windows-latest, macos-latest) × Node 22.x. Fail-fast disabled.
+
+*Steps:*
+
+1. Checkout (`actions/checkout@SHA`)
+2. Setup Node.js 22.x (`actions/setup-node@SHA` with `cache: npm`)
+3. Install dependencies (`npm ci`)
+4. Lint (`npm run lint`)
+5. Build (`npm run build`)
+6. Test with coverage (`npx vitest run --coverage`)
+7. Upload coverage artifact (ubuntu-latest only, 7-day retention)
+
+*Caching:* `node_modules` cached via `package-lock.json` hash. Handled by `setup-node` action. Cache miss triggers full `npm ci`.
+
+=== 6.2 Code Coverage
+
+*Tooling:* vitest + `@vitest/coverage-v8`. Reporters: `text`, `lcov`, `json-summary`.
+
+*Thresholds:* 80% lines, 75% branches, 80% functions/statements. Build fails if not met (vitest `thresholds` config).
+
+*PR Comment:* A `workflow_run` workflow downloads coverage artifact, parses `coverage-summary.json`, and posts a table to the PR. Uses gh-aw safe output pattern with `actions/github-script@SHA`. See https://github.github.com/gh-aw/reference/safe-outputs/[safe outputs reference].
+
+*No Decrease Rule:* PR coverage must be ≥ base branch coverage (enforced by CodeReviewer agent and manual review).
+
+=== 6.3 Test Policy
+
+[cols="2,2,2",options="header"]
+|===
+| Change Type | Required Tests | Coverage Rule
+
+| `src/` changes
+| Unit tests
+| No decrease from base
+
+| New CLI command
+| Unit + integration
+| >80% for new files
+
+| Bug fix
+| Regression test
+| No decrease from base
+
+| Dependencies only
+| Existing tests pass
+| N/A
+
+| Docs only
+| None
+| N/A
+|===
+
+*Enforcement:* Test requirements documented in PR template. CodeReviewer flags missing tests. Coverage thresholds enforced by vitest (CI fails if unmet).
+
+=== 6.4 npm Publish / Deployment
+
+*Triggers:*
+
+1. Git tag push matching `v*` (e.g., `v0.2.0`)
+2. LabelOps `deploy` label on release issue (one-shot, label removed after trigger). See https://github.github.com/gh-aw/patterns/label-ops/[LabelOps pattern].
+
+*Pre-Publish Checks (enforced by workflow):*
+
+1. Version in `package.json` matches git tag
+2. `CHANGELOG.md` contains entry for release version
+3. All tests pass with coverage ≥ 80%
+4. Lint passes with zero errors
+5. TypeScript build succeeds
+
+*Publish Command:* `npm publish --access public --provenance`
+
+* `--provenance` enables SLSA Level 2 attestation (see §7.2)
+* Uses `NPM_TOKEN` secret with publish permissions
+* Package: `@peterhauge/apiops-cli` on https://registry.npmjs.org
+
+*Deployment Failure Handler:* A workflow on `deployment_status` creates an incident issue (labels: `incident`, `deployment-failure`) with investigation checklist. Auto-closes older incidents for same environment.
+
+== Section 7.1: npm Dependency Updates
+
+=== Dependabot Configuration
+
+*npm Ecosystem:*
+
+* Weekly schedule (Monday 09:00 America/Los_Angeles)
+* Target branch: `main`
+* Open PR limit: 10
+* Labels: `dependencies`
+* Commit prefix: `deps` with scope
+
+*Grouping Strategy:*
+
+* `typescript-tooling`: `typescript`, `@types/*`, `eslint*`, `@typescript-eslint/*`
+* `vitest`: `vitest`, `@vitest/*`
+* `azure`: `@azure/*`
+
+*GitHub Actions Ecosystem:*
+
+* Weekly schedule (Monday)
+* Labels: `dependencies`, `ci`
+* Commit prefix: `ci`
+
+=== Auto-Merge Policy
+
+[cols="1,2,2",options="header"]
+|===
+| Update Type | Action | Rationale
+
+| Patch (x.x.PATCH)
+| Auto-approve + auto-merge if CI passes
+| Low risk, bug fixes and security patches
+
+| Minor (x.MINOR.x)
+| Add `needs-review` label, require human review
+| May introduce new features or subtle behavior changes
+
+| Major (MAJOR.x.x)
+| Add `breaking-change` label + create evaluation issue
+| High risk, may require code changes
+|===
+
+*Auto-Merge Workflow:* Uses `dependabot/fetch-metadata@SHA` to parse update type. Patch updates auto-approved via `gh pr review --approve` and auto-merged via `gh pr merge --auto --squash`. Minor updates labeled `needs-review`. Major updates labeled `breaking-change` and trigger evaluation issue with migration checklist.
+
+== Section 7.2: Supply Chain Security
+
+=== npm Audit in CI
+
+Every CI run includes:
+
+[source,yaml]
+----
+- name: Security audit
+  run: npm audit --audit-level=high
+----
+
+* Runs after `npm ci` to check resolved dependency tree
+* Fails on high/critical vulnerabilities (blocks merge)
+* Moderate/low findings tracked but don't block
+* `npm audit fix` PRs created manually after evaluation
+
+=== Lockfile Integrity
+
+*Rules:*
+
+* Always use `npm ci` in CI — ensures reproducible installs, fails if lockfile out of sync
+* Never use `npm install` in CI — can mutate lockfile, causes non-deterministic builds
+* `package-lock.json` committed to source (not gitignored)
+* Lockfile changes require review — inspect for unexpected dependency additions
+* Lockfile is single source of truth for dependency resolution
+
+=== GitHub Action Pinning
+
+All actions pinned to **full commit SHA**, not tags or branches:
+
+[source,yaml]
+----
+# ✅ CORRECT — pinned to full SHA
+- uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+# ❌ WRONG — tag can be force-pushed
+- uses: actions/checkout@v4
+----
+
+* Comment after SHA records semantic version for human readability
+* Dependabot proposes SHA updates when new action versions released
+* Prevents supply chain attacks via compromised action tags
+
+=== No postinstall Scripts
+
+*.npmrc Configuration:*
+
+[source,ini]
+----
+# .npmrc
+ignore-scripts=true
+----
+
+* Prevents lifecycle scripts (`postinstall`, `preinstall`, `install`) from running during `npm ci`
+* Dependencies with install scripts are supply chain risk vectors
+* If specific package requires postinstall (e.g., native bindings), must be explicitly allowlisted and documented
+
+*CI Audit Hook:* Optional step detects packages with lifecycle scripts via `npm query ':attr(scripts, [postinstall])'` and logs warnings.
+
+=== SLSA Compliance
+
+*npm Provenance:* `npm publish --provenance` provides SLSA Level 2 build provenance:
+
+* Source tied to specific git commit via GitHub Actions OIDC
+* npm generates signed attestation linking package to CI workflow run
+* Consumers verify with `npm audit signatures`
+
+*SLSA Requirements:*
+
+[cols="2,1,2",options="header"]
+|===
+| Requirement | Status | Implementation
+
+| Source versioned
+| ✅
+| Git repository on GitHub
+
+| Build service
+| ✅
+| GitHub Actions (hosted runners)
+
+| Build as code
+| ✅
+| Workflow YAML in `.github/workflows/`
+
+| Provenance generated
+| ✅
+| `npm publish --provenance`
+
+| Provenance non-falsifiable
+| ✅
+| GitHub OIDC + npm sigstore
+
+| Isolated build
+| ✅
+| Ephemeral GitHub-hosted runners
+|===
+
+*OpenSSF Scorecard:* Repository participates in https://securityscorecards.dev/[OpenSSF Scorecard]. Runs weekly via workflow. Target score: ≥ 7/10. Results uploaded as SARIF to GitHub Security tab.

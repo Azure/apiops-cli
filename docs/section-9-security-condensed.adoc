@@ -1,0 +1,112 @@
+== Security
+
+=== Threat Model
+
+==== Actors
+
+[cols="1,2"]
+|===
+|Actor |Trust Level
+
+|Maintainer |Full (merge, publish, secrets, workflows)
+|Squad Agent |Trusted (PR creation only, no merge/secrets)
+|External Contributor |Untrusted (fork/PR, no write access, restricted CI)
+|Dependency Author |Untrusted (controls npm packages and Actions)
+|GitHub Actions Runner |Semi-trusted (executes code, secret access if granted)
+|===
+
+==== Attack Surface
+
+[cols="2,1,2"]
+|===
+|Vector |Risk |Mitigation
+
+|Pwn request (malicious PR) |🔴 |No `pull_request_target` with untrusted code. CODEOWNERS on `.github/workflows/**`.
+|Action tag hijack |🔴 |All Actions pinned to full SHA, not `@v4`. Dependabot monitors.
+|Workflow injection |🔴 |No `${{ github.event.pull_request.* }}` in shell commands.
+|Dependency confusion |🟡 |`package-lock.json` committed. `npm ci` enforced, never `npm install`.
+|Lockfile tampering |🟡 |`package-lock.json` requires CODEOWNERS review. CI fails if out of sync.
+|Secret exfiltration |🔴 |Secrets only in protected workflows. None in `pull_request` triggers.
+|===
+
+=== Hardening Rules
+
+==== Workflow Hardening
+
+[cols="2,3"]
+|===
+|Rule |Implementation
+
+|Isolate untrusted PRs |Use `pull_request` (not `pull_request_target`). No secrets exposed.
+|Pin Actions to SHA |All third-party Actions: `uses: actions/checkout@a12b3c4...` (SHA, not `@v4`).
+|No dynamic evaluation |Never use `${{ github.event.pull_request.* }}` in `run:` blocks.
+|Least-privilege permissions |Workflows declare minimal `permissions:` block. Escalate per-job.
+|Secret zero-trust |Secrets only in `environment:` protected workflows.
+|Concurrency limits |Use `concurrency:` groups to prevent parallel DoS.
+|===
+
+==== Dependency Hardening
+
+[cols="2,3"]
+|===
+|Rule |Implementation
+
+|Lockfile integrity |`package-lock.json` committed and reviewed. CI fails if out of sync.
+|Deterministic installs |Always `npm ci`. Never `npm install` in CI.
+|No postinstall hooks |Audit scripts for `postinstall`/`preinstall` execution during `npm ci`.
+|Dependency review |GitHub Dependency Review action enabled. Blocks PRs with known vulnerabilities.
+|Audit enforcement |`npm audit --audit-level=high` in CI. Blocks merge on violations.
+|===
+
+==== AI/Agent Safety
+
+[cols="2,3"]
+|===
+|Rule |Implementation
+
+|No automated merge |Agents create PRs only. Human approval required for merge.
+|Branch isolation |Agents write to feature branches only. Never push to `main`.
+|Human checkpoint |Code review enforced: review + human maintainer approval.
+|Secret blind spots |Agents MUST NOT access secrets. Constitution §VIII enforced.
+|===
+
+=== Protected Paths
+
+[cols="2,1"]
+|===
+|Path |Reason
+
+|`.github/workflows/**` |Injection defense
+|`package.json` |Dependency confusion
+|`package-lock.json` |Lockfile integrity
+|`.squad/identity/**` |Governance integrity
+|`.squad/ceremonies.md` |Process integrity
+|`tsconfig.json` |Compiler bypass defense
+|`eslint.config.js` |Linter bypass defense
+|===
+
+=== Safety Gates
+
+[cols="2,2,2"]
+|===
+|Gate |Prevents |Enforcement
+
+|CI pass (lint + test) |Broken code |Branch protection: required status check
+|CODEOWNERS review |Unauthorized changes |Branch protection: review from code owners
+|Human merge approval |Automated merge |Branch protection: 1+ approvals
+|npm audit clean |Known vulnerabilities |CI: `npm audit --audit-level=high` pass
+|Coverage threshold |Untested code |CI: Vitest ≥80%
+|CodeQL scan |Security issues |CodeQL workflow: blocks on high-severity findings
+|Lockfile sync |Version mismatches |CI: `npm ci` fails if lockfile out of sync
+|npm publish |Accidental/malicious publish |Human-only: maintainer with 2FA + token
+|===
+
+=== Incident Response
+
+**Compromised Dependency:** Run `npm audit` locally. Assess exploitability in CLI context. Patch via `npm update <package>` or remove dependency. If critical and in production, merge patch immediately and publish emergency release. Notify users via GitHub Security Advisory.
+
+**Secret Leaked in Commit:** Revoke leaked secret immediately. Assess exposure (history, logs, artifacts). Scrub history via `git rebase -i` (unreleased) or `git filter-repo` (on `main`). Audit access logs. Update constitution §VIII and add pre-commit secret detection.
+
+**Malicious PR Merged:** `git revert <sha>` immediately. Yank npm version if published. Check for runner/Azure compromise. Rotate GitHub Actions secrets and npm token. Identify bypass vector (compromised account, social engineering, injection). Implement additional gates (2+ approvals, MFA, workflow approval). Publish Security Advisory.
+
+*Security Contact:* Follow https://aka.ms/SECURITY.md. Report vulnerabilities privately, not via GitHub issues.
