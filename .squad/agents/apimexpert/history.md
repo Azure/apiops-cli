@@ -99,5 +99,16 @@ the SDK surface, reference docs, or ad-hoc observation.
 
 **Research output:** `.squad/decisions.md` entry (merged from inbox), full analysis in `specs/sku-upgrade.md`
 
+### 2026-05-14: Multi-Environment Promotion & Workspace Interaction
+
+**Key findings:**
+- Environment identity must stay outside artifact paths. Override files and pipeline stages handle env divergence.
+- Workspaces ≠ environments. Workspaces = structural scoping (teams/products). Environments = deployment lifecycle.
+- Sound: separate instances per env + optional workspaces for team isolation.
+- Unsafe: single instance with workspace-per-env (requires path rewriting, violates §VII).
+- Future enhancements: workspace-scoped overrides, workspace auto-discovery.
+
+**Output:** `specs/multi-environment-workspaces.md`, decision in `.squad/decisions/inbox/apimexpert-multi-env-spec.md`
+
 ### 2026-05-13: APIM v1 → v2 SKU Migration Research
 
