@@ -16,6 +16,22 @@ Documentation authoring (2026-04-30 to 2026-05-17): 3-phase plan with 28 user-fa
 
 <!-- Append new learnings below this line -->
 
+### 2026-06-11: Air-Gapped Walkthroughs — GitHub Actions and Azure DevOps
+
+**Context:** Authored two walkthrough documents for using apiops-cli in air-gapped (network-restricted) environments.
+
+**Files Created:**
+1. `docs/walkthrough/air-gapped-github-actions.md` — 8-step guide covering tarball preparation, `apiops init --cli-package`, lock file generation, npm cache transfer, self-hosted runner setup, workflow modifications for `npm ci --offline`, and upgrade procedures.
+2. `docs/walkthrough/air-gapped-azure-devops.md` — 9-step guide with same core pattern plus Azure Artifacts feed as alternative to manual cache transfer, `npmAuthenticate@0` task usage, agent pool configuration, and AzureCLI@2 service connection authentication.
+
+**Files Updated:**
+- `docs/README.md` — Added walkthrough section to Quick Links table and directory tree.
+
+**Learnings:**
+- Air-gapped setups rely on `--cli-package` flag for local tarball mode, which generates `package.json` with `"file:.apiops/{tarball}"` dependency. The lock file is critical — without it, `npm ci` fails.
+- Azure DevOps has a natural advantage for air-gapped setups via Azure Artifacts feeds with upstream sources (controlled sync windows). GitHub Actions environments must rely on pre-populated npm cache or vendored node_modules.
+- Authentication differs: GitHub Actions in air-gapped may lose OIDC (can't reach token.actions.githubusercontent.com), requiring fallback to service principal secrets. Azure DevOps service connections work regardless since the agent-to-DevOps connectivity handles token exchange.
+
 ### 2026-05-17: Phase 2 Docs — Azure DevOps, Filtering, Artifact Format, Config Reference, Glossary
 
 **Context:** Authored five Phase 2 documentation files completing CI/CD coverage, resource filtering guide, artifact format reference, configuration reference, and APIM glossary.
