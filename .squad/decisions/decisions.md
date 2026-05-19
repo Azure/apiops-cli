@@ -31,3 +31,39 @@ All architectural and implementation decisions for apiops-cli.
 3. Is Phase 1 expansion acceptable, or should scenarios guide move to Phase 2?
 
 ---
+
+### 2026-05-19: Copyright Header Enforcement
+**By:** OpenSourceExpert  
+**Status:** Recommendation  
+**What:** Added mandatory copyright header requirement to all contributor-facing documentation:
+- CONTRIBUTING.md: Added "Source file copyright headers" section with examples
+- .squad/identity/constitution.md: Added copyright header requirement under "Technology Constraints"
+- .github/copilot-instructions.md: Added copyright header section under "Code Style"
+
+All new `.ts` files in `src/` and `tests/` must include:
+```typescript
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+```
+
+**Why:** Microsoft open-source projects require copyright headers on all source files for legal clarity and license attribution. The project is preparing for public release and needs consistent licensing compliance across all contributors.
+
+**Automated Enforcement Recommendation:**
+- Install `eslint-plugin-header` for automatic enforcement during `npm run lint`
+- Provides auto-fix capability with `npm run lint -- --fix`
+- Catches missing headers pre-commit and in CI
+
+**Trade-offs:**
+- **Pros:** Pre-commit and CI enforcement, auto-fix reduces manual work, consistent across all contributors
+- **Cons:** Adds dev dependency, requires one-time migration of existing files without headers
+
+**Next Steps:**
+1. All new files MUST include the header manually
+2. (Optional) Install `eslint-plugin-header` for automated enforcement before public release
+3. Audit existing `.ts` files before public release
+
+**References:**
+- [eslint-plugin-header](https://www.npmjs.com/package/eslint-plugin-header)
+- [Microsoft Open Source Program](https://opensource.microsoft.com/program)
+
+---

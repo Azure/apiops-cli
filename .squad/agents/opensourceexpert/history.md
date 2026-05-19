@@ -14,3 +14,27 @@
 ## Learnings
 
 <!-- Append new learnings here after each session -->
+
+### 2025-01-XX: Copyright Header Documentation
+
+Added mandatory copyright header requirement to all contributor-facing documentation:
+- **CONTRIBUTING.md**: Added "Source file copyright headers" section with examples before "Pull request process"
+- **.squad/identity/constitution.md**: Added copyright header requirement under "Technology Constraints"
+- **.github/copilot-instructions.md**: Added copyright header section under "Code Style"
+
+The header format:
+```typescript
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+```
+
+**ESLint plugin recommendation:** The project uses ESLint flat config (`eslint.config.js`). The `eslint-plugin-header` plugin can automatically enforce copyright headers. However, per the task scope, I documented the recommendation in a decision file rather than installing it.
+
+### 2026-05-19: Copyright Header Documentation Decision
+
+Formalized copyright header enforcement decision in technical decisions register (decisions.md). Decision includes:
+- Documentation requirements added to three contributor-facing files
+- Rationale: Microsoft OSS compliance and public release preparation
+- Automated enforcement recommendation via eslint-plugin-header
+- Trade-off analysis: cons (dev dependency, one-time migration) vs pros (pre-commit/CI enforcement, auto-fix)
+- Next steps clearly delineated
