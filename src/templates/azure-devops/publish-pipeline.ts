@@ -12,9 +12,9 @@ export function generatePublishPipeline(config: PublishPipelineConfig): string {
   const envValues = config.environments.map((env) => `      - '${env}'`).join('\n');
 
   const stages = config.environments.map((env, idx) => {
-    const prevEnv = idx > 0 ? config.environments[idx - 1] : null;
-    const dependsOnProp = prevEnv ? `  dependsOn: Publish_${prevEnv}\n` : '';
-    const approvalComment = prevEnv
+    const previousEnvironment = idx > 0 ? config.environments[idx - 1] : null;
+    const dependsOnProp = previousEnvironment ? `  dependsOn: Publish_${previousEnvironment}\n` : '';
+    const approvalComment = previousEnvironment
       ? `  # To require human approval before this stage:
   #   Go to Pipelines > Environments > ${env} in Azure DevOps and add an approval check.
 `

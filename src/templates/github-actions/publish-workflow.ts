@@ -12,12 +12,12 @@ export function generatePublishWorkflow(config: PublishWorkflowConfig): string {
   const envChoices = config.environments.map((env) => `          - ${env}`).join('\n');
 
   const envJobs = config.environments.map((env, idx) => {
-    const prevEnv = idx > 0 ? config.environments[idx - 1] : null;
-    const needs = prevEnv ? `[get-commit, publish-${prevEnv}]` : 'get-commit';
+    const previousEnvironment = idx > 0 ? config.environments[idx - 1] : null;
+    const needs = previousEnvironment ? `[get-commit, publish-${previousEnvironment}]` : 'get-commit';
 
     const jobComment = idx === 0
       ? `    # Automatically deploys to ${env} on push to main (incremental mode) or when selected via workflow_dispatch`
-      : `    # Deploys to ${env} after ${prevEnv} succeeds (sequential promotion).
+      : `    # Deploys to ${env} after ${previousEnvironment} succeeds (sequential promotion).
     # To require human approval before deploying to ${env}:
     #   1. Go to Settings > Environments > ${env} in your GitHub repository
     #   2. Add "Required reviewers" under "Environment protection rules"`;
