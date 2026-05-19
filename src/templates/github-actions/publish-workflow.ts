@@ -12,22 +12,24 @@ export function generatePublishWorkflow(config: PublishWorkflowConfig): string {
   const envChoices = config.environments.map((env) => `          - ${env}`).join('\n');
 
   const envJobs = config.environments.map((env, idx) => {
-    const autoDeployComment = idx === 0
-      ? `    # Automatically deploys to ${env} on push to main (incremental mode) or when selected via workflow_dispatch`
-      : `    # To enable sequential deployment on push, uncomment the condition below and update needs:
-    # if: github.event.inputs.ENVIRONMENT == '${env}' || github.event_name == 'push'
-    # needs: [get-commit, publish-${config.environments[idx - 1]}]`;
+    const prevEnv = idx > 0 ? config.environments[idx - 1] : null;
+    const needs = prevEnv ? `[get-commit, publish-${prevEnv}]` : 'get-commit';
 
-    const jobCondition = idx === 0
-      ? `github.event.inputs.ENVIRONMENT == '${env}' || github.event_name == 'push'`
-      : `github.event.inputs.ENVIRONMENT == '${env}'`;
+    const jobComment = idx === 0
+      ? `    # Automatically deploys to ${env} on push to main (incremental mode) or when selected via workflow_dispatch`
+      : `    # Deploys to ${env} after ${prevEnv} succeeds (sequential promotion).
+    # To require human approval before deploying to ${env}:
+    #   1. Go to Settings > Environments > ${env} in your GitHub repository
+    #   2. Add "Required reviewers" under "Environment protection rules"`;
+
+    const jobCondition = `github.event.inputs.ENVIRONMENT == '${env}' || github.event_name == 'push'`;
 
     return `  publish-${env}:
-${autoDeployComment}
+${jobComment}
     if: ${jobCondition}
     runs-on: ubuntu-latest
     environment: ${env}
-    needs: get-commit
+    needs: ${needs}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

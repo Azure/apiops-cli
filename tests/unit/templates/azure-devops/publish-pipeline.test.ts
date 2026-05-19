@@ -209,5 +209,17 @@ describe('azure-devops/publish-pipeline', () => {
       expect(pipeline).toContain('npm ci');
       expect(pipeline).toContain('npx apiops publish');
     });
+
+    it('should include approval guidance comment for non-first stages', () => {
+      const pipeline = generatePublishPipeline({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'staging', 'prod'],
+      });
+      // Non-first stages should have a comment guiding users to configure approval checks
+      expect(pipeline).toContain('Pipelines > Environments > staging');
+      expect(pipeline).toContain('Pipelines > Environments > prod');
+      // First stage (dev) should not mention the dev environment in an approval context
+      expect(pipeline).not.toContain('Pipelines > Environments > dev');
+    });
   });
 });

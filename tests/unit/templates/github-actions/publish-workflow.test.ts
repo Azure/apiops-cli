@@ -92,23 +92,22 @@ describe('github-actions/publish-workflow', () => {
       expect(workflow).toContain('environment: prod');
     });
 
-    it('should include chained needs hints in comments for sequential opt-in deployment', () => {
+    it('should chain subsequent environment jobs on the previous environment', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'staging', 'prod'],
       });
-      // Chaining hints appear as comments for opt-in sequential deployment
+      // Subsequent environments depend on both get-commit and the previous env job
       expect(workflow).toContain('needs: [get-commit, publish-dev]');
       expect(workflow).toContain('needs: [get-commit, publish-staging]');
     });
 
-    it('should use get-commit as the base needs dependency for all environments', () => {
+    it('should have first environment depend on get-commit only', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
-      // Both environments depend on get-commit as their base needs
-      expect(workflow).toContain('publish-dev:\n    # Automatically deploys');
+      // First env uses simple `needs: get-commit`; subsequent envs use array form with chaining
       expect(workflow).toContain('needs: get-commit');
     });
 
@@ -216,23 +215,25 @@ describe('github-actions/publish-workflow', () => {
       expect(workflow).toContain("ENVIRONMENT == 'dev' || github.event_name == 'push'");
     });
 
-    it('should not auto-trigger subsequent environments on push to main', () => {
+    it('should enable all environments to run on push for sequential promotion', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'staging', 'prod'],
       });
-      // staging and prod must NOT include the push trigger in their active if-conditions
-      // (they may appear in comments but not as live conditions)
-      const lines = workflow.split('\n');
+      // All environments must run on push so the "Review deployments" approval flow works
+      expect(workflow).toContain("ENVIRONMENT == 'dev' || github.event_name == 'push'");
+      expect(workflow).toContain("ENVIRONMENT == 'staging' || github.event_name == 'push'");
+      expect(workflow).toContain("ENVIRONMENT == 'prod' || github.event_name == 'push'");
+    });
 
-      for (const env of ['staging', 'prod']) {
-        const jobStart = lines.findIndex((l) => l.includes(`publish-${env}:`));
-        // Find the actual `if:` line (not a comment) within the next 10 lines
-        const jobLines = lines.slice(jobStart, jobStart + 10);
-        const ifLine = jobLines.find((l) => l.trimStart().startsWith('if:') && !l.trimStart().startsWith('#'));
-        expect(ifLine).toBeDefined();
-        expect(ifLine).not.toContain('event_name');
-      }
+    it('should include approval guidance comment for non-first environments', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'staging'],
+      });
+      // Non-first environments should have a comment guiding users to set up required reviewers
+      expect(workflow).toContain('Required reviewers');
+      expect(workflow).toContain('Settings > Environments > staging');
     });
 
     it('should pass commit_id on push trigger via incremental step condition', () => {
