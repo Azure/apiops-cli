@@ -156,6 +156,3 @@ This enforces that `tarballRelPath` is only accessible when `mode === 'local'`, 
 - All 467 tests pass (init-command.test.ts validates both modes)
 - ESLint clean (no warnings or errors)
 - Backward compatible: Existing workflows with `--cli-package` continue to work
-
-<!-- Append new learnings here after each session -->
-
