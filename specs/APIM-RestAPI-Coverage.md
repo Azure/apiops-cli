@@ -62,7 +62,7 @@ Comprehensive mapping of all APIM REST API resource types against v1 APIOps cove
 | 34 | GraphQL Api Resolver | `/apis/{name}/resolvers/{resolver}` | ❌ | ✅ | ✅ | **NEW in v2.** GraphQL field resolvers. |
 | 35 | GraphQL Api Resolver Policy | `/apis/{name}/resolvers/{resolver}/policies/policy` | ❌ | ✅ | ✅ | **NEW in v2.** Policies on GraphQL resolvers. |
 | 36 | Api Revision | `/apis/{name}/revisions` | ✅ | ✅ | ✅ | List-only API; revisions extracted via API entity. |
-| 37 | Api Export | `/apis/{name}?export=true` | ➖ | ➖ | ➖ | Read-only export. Used internally for spec extraction. |
+| 37 | Api Export | `/apis/{name}?export=true` | ➖ | ➖ | ➖ | Read-only export. Used by apiops-cli for spec extraction. |
 | 38 | Api Product | `/apis/{name}/products` | ➖ | ➖ | ➖ | Read-only reverse lookup. Managed via Product Api (#17). |
 | 39 | Api Issue | `/apis/{name}/issues/{issue}` | ❌ | ❌ | ❌ | Instance-specific. User-reported issues on dev portal. |
 | 40 | Api Issue Attachment | `/apis/{name}/issues/{issue}/attachments/{att}` | ❌ | ❌ | ❌ | Instance-specific. Child of Api Issue. |
