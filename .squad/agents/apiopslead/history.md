@@ -157,8 +157,6 @@
 - `.squad/decisions/inbox/apiopslead-docs-scope.md` — 259-line scope advisory
 - Merged into decisions.md as comprehensive decision entry dated 2026-05-12T19:25:50Z
 
-
-
 ### 2026-05-01: Enhanced 7 Agent Charters with Codebase-Specific Patterns
 
 **What:** Applied the CodeReviewer charter enhancement pattern to all 7 remaining charters, making each codebase-aware with actual file paths, patterns, and team decisions.
