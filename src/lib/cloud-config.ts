@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T039: Sovereign cloud configuration
  * Maps the --cloud CLI flag to ARM base URLs and auth scopes for

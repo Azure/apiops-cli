@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T024: Filter service
  * Load FilterConfig, apply inclusive allowlist per resource type,

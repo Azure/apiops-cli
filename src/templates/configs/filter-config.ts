@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T047: Sample filter configuration template
  * Generates a sample configuration.extract.yaml file

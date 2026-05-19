@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T032: API publisher with revision handling
  * Create root API first, then revisions in numeric order with forced revision numbers.

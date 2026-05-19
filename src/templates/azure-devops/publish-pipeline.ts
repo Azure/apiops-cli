@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T046: Azure DevOps publish pipeline template
  * Multi-stage pipeline with commit ID choice, environment selection, and variable groups

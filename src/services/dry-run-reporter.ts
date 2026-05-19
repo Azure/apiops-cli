@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T034: Dry-run reporter
  * Compare artifact resources vs APIM state, output [DRY RUN] PUT/DELETE/SKIP lines.

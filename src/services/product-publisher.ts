@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * Product publisher with association handling
  * Publish product and its associations (ProductApi, ProductGroup, ProductTag)

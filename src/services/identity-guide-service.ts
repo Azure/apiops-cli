@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T048: Identity setup guide generator
  * Step-by-step instructions for service principal, RBAC, federated credentials,

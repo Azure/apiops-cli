@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T021: Resource type extractor
  * Generic extract logic: list resources via IApimClient, write each to IArtifactStore.

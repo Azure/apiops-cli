@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T027: Workspace-scoped extraction
  * List workspaces, extract workspace-scoped resources under workspaces/{name}/

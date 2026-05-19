@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * Generates a package.json for the target repo that references
  * either a local apiops CLI tarball or the public npm package.

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T047: Sample override configuration template per environment
  * Generates environment-specific configuration.{env}.yaml files

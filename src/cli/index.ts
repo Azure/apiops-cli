@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 /**
  * T019: Commander program entry point
  * Sets up global options and subcommand registration pattern

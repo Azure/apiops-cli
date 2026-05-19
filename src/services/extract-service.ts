@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T020: Extraction orchestrator
  * Coordinates resource type extraction across dependency tiers

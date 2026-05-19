@@ -21,6 +21,17 @@ npm test; npm run lint
 
 TypeScript 5.x (Node.js Active LTS, currently 22.x): Follow standard conventions
 
+### Copyright Headers
+
+**MANDATORY:** All source files MUST include the following copyright header at the very top of the file:
+
+```typescript
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+```
+
+This applies to all files in `src/` and `tests/` directories. The header must appear before any other code, imports, or comments.
+
 ## Recent Changes
 
 - 001-apiops-cli: Added TypeScript 5.x (Node.js Active LTS, currently 22.x) + Commander (CLI), `@azure/identity` (auth), `js-yaml` (YAML parsing), `simple-git` (git diff for incremental publish)

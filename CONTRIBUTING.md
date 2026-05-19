@@ -116,6 +116,29 @@ Dependencies and dev tools are listed in [`package.json`](./package.json). The p
 
 **`apiops: command not found`** — run `npm link` from the repository root after building (see [Manual setup](#manual-setup) above).
 
+## Source file copyright headers
+
+**All source files MUST include the following copyright header at the very top of the file:**
+
+```typescript
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+```
+
+This applies to all files in `src/` and `tests/` directories. The header must appear before any other code or comments.
+
+Example:
+```typescript
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+import { Command } from 'commander';
+
+export class ExtractCommand {
+  // ...
+}
+```
+
 ## Pull request process
 
 1. **Write tests** for new functionality or bug fixes.

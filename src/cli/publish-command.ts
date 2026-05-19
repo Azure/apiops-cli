@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T037 & T038: Publish command CLI registration
  * Commander subcommand with --resource-group, --service-name, --source,
