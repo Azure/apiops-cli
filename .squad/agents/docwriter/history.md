@@ -131,3 +131,21 @@ Documentation authoring (2026-04-30 to 2026-05-17): 3-phase plan with 28 user-fa
 **Patterns:** Examples-first, Mermaid workflows, relative links, search-optimized errors, progressive disclosure
 
 **Gotchas:** Auth flags set env vars (credential precedence). Overrides: names consistent, properties differ. `--commit-id`/`--delete-unmatched` exclusive.
+
+### 2026-06-11: Air-Gapped Azure DevOps — PR Feedback Revision
+
+**Context:** Revised `docs/walkthrough/air-gapped-azure-devops.md` based on PR review comments.
+
+**Changes:**
+- Made local npm registry (Azure Artifacts) the primary/default approach; tarball flow demoted to fallback section.
+- Removed redundant "npm 10+" prerequisite (implied by Node.js 22.x).
+- Removed "transfer mechanism" prerequisite row (not needed when local registry is primary).
+- Added official Microsoft docs links: self-hosted agents, Azure Artifacts npm feeds, Azure DevOps Server on-prem, sovereign cloud identity endpoints.
+- Replaced full embedded pipeline YAML with concise edit table referencing generated files (`pipelines/run-extractor.yaml`, `pipelines/run-publisher.yaml`).
+- Added "Sovereign Clouds and On-Premises" section with doc links.
+- Simplified architecture diagram to reflect local registry flow.
+
+**Learnings:**
+- PR reviewers strongly prefer docs that match the air-gapped reality: local registries over manual transfers. Azure Artifacts is a natural fit since it's bundled with Azure DevOps Server.
+- Large embedded YAML examples are fragile — they drift from generated templates. Better to describe minimal edits to the generated files.
+- Always link to official Microsoft docs for infrastructure setup (agents, feeds, sovereign clouds) rather than inlining instructions that will go stale.
