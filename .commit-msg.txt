@@ -1,9 +1,0 @@
-docs: merge decision on air-gapped walkthrough documentation pattern
-
-- Merged inbox/docwriter-airgapped-walkthroughs.md into decisions.md
-- Established walkthrough pattern for complex multi-step deployment scenarios
-- Covers GitHub Actions and Azure DevOps air-gapped deployments
-- Pattern: docs/walkthrough/ (scenario-based), docs/ci-cd/ (reference), docs/guides/ (feature-oriented)
-- Deleted merged inbox file
-
-Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
