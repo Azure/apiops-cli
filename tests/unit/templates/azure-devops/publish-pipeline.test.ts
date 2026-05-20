@@ -199,8 +199,8 @@ describe('azure-devops/publish-pipeline', () => {
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
-      expect(pipeline).toContain('--override configuration.dev.yaml');
-      expect(pipeline).toContain('--override configuration.prod.yaml');
+      expect(pipeline).toContain('--overrides configuration.dev.yaml');
+      expect(pipeline).toContain('--overrides configuration.prod.yaml');
     });
 
     it('should use npm ci to install dependencies (uses tgz from package.json)', () => {
