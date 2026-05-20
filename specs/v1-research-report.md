@@ -279,8 +279,8 @@ namedValues:
 backends:
   - name: helloworldfromfuncapp
     properties:
-      url: "https://example-funcapp.azurewebsites.net/api"
-      resourceId: "https://management.azure.com/subscriptions/.../Microsoft.Web/sites/example-funcapp"
+      url: "https://prod-funcapp.azurewebsites.net/api"
+      resourceId: "https://management.azure.com/subscriptions/.../Microsoft.Web/sites/prod-funcapp"
       credentials:
         header:
           x-functions-key: ["{{prod-key-namedvalue}}"]
