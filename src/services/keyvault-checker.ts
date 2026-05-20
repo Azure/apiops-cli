@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * Key Vault access pre-flight check for KeyVault-backed NamedValues.
  *

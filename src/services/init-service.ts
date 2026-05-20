@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T042 & T051: Init orchestrator service
  * Coordinates interactive prompts or flag-based config, generates scaffold files,

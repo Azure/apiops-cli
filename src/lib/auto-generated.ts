@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * Utilities for detecting auto-generated APIM resource IDs.
  *

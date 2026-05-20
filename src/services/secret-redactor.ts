@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T026: Secret redaction service
  * Detect properties.secret === true on named values,

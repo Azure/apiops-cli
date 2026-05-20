@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * GitHub Copilot prompt template for automating identity setup.
  * Generates a .prompt.md file that guides Copilot through:

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T031: Generic resource publisher
  * Read resource from IArtifactStore, apply overrides, PUT via IApimClient.

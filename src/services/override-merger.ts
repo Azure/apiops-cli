@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T033: Override merger service
  * Apply environment-specific overrides from OverrideConfig to resource JSON payloads.

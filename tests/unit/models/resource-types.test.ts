@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 import { describe, it, expect } from 'vitest';
 import { ResourceType, RESOURCE_TYPE_METADATA } from '../../../src/models/resource-types.js';
 

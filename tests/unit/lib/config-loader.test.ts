@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { loadFilterConfig, loadOverrideConfig, loadOTelConfig } from '../../../src/lib/config-loader.js';
 import * as fs from 'node:fs/promises';

@@ -383,7 +383,7 @@ prompt: |
   4. CROSS-AGENT: Append team updates to affected agents' history.md.
   5. DECISIONS ARCHIVE: If decisions.md >20KB, archive entries >30 days to decisions-archive.md.
   6. GIT COMMIT: git add .squad/ && commit (-F temp file). Skip if nothing staged.
-  7. HISTORY SUMMARIZATION: If any history.md >12KB, summarize old entries to ## Core Context.
+  7. HISTORY SUMMARIZATION: If any history.md >24KB, summarize old entries to ## Core Context.
 
   Never speak to user. ⚠️ End with plain text summary after all tool calls.
 ```

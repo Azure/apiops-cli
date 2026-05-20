@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T036: Git diff service
  * Compute changed resource artifacts between commits using simple-git.

@@ -2,6 +2,14 @@
 
 Auto-generated from all feature plans. Last updated: 2026-04-06
 
+**Never present unverified assumptions as facts.** This is the #1 rule for all AI interactions in this repo.
+
+1. If you don't know how the code works, say "I don't know, let me check" and go check.
+2. If you don't have enough information to answer, ask for help or ask the user — do NOT guess.
+3. Taking time to verify is ALWAYS preferred over a fast but wrong answer.
+4. Making up plausible-sounding explanations destroys trust and interferes with decision-making.
+5. You have explicit permission to take your time. Speed is never an excuse for fabrication.
+
 ## Active Technologies
 
 - TypeScript 5.x (Node.js Active LTS, currently 22.x) + Commander (CLI), `@azure/identity` (auth), `js-yaml` (YAML parsing), `simple-git` (git diff for incremental publish) (001-apiops-cli)
@@ -20,6 +28,17 @@ npm test; npm run lint
 ## Code Style
 
 TypeScript 5.x (Node.js Active LTS, currently 22.x): Follow standard conventions
+
+### Copyright Headers
+
+**MANDATORY:** All source files MUST include the following copyright header at the very top of the file:
+
+```typescript
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+```
+
+This applies to all files in `src/` and `tests/` directories. The header must appear before any other code, imports, or comments.
 
 ## Recent Changes
 

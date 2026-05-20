@@ -5,7 +5,6 @@
 - **Project:** apiops-cli — TypeScript CLI for Azure API Management (`apiops extract`, `apiops publish`, `apiops init`)
 - **Spec:** `specs/001-apiops-cli/spec.md`
 - **Constitution:** `.squad/identity/constitution.md` (v2.1.0) — supreme governance document
-- **User:** Elizabeth Maher
 - **Stack:** TypeScript 6.x, Node.js 22 LTS, Commander, `@azure/identity`, Vitest, ESLint
 - **Key constraint:** No `@azure/arm-apimanagement` SDK for resource payloads — raw REST only
 
@@ -178,7 +177,7 @@
 
 ### 2026-06-02: APIM v1 → v2 SKU Migration Proposal
 
-**What:** Wrote `specs/sku-upgrade.md` — a comprehensive proposal for enabling APIM v1-to-v2 SKU migration via apiops-cli. Requested by Peter Hauge.
+**What:** Wrote `specs/sku-upgrade.md` — a comprehensive proposal for enabling APIM v1-to-v2 SKU migration via apiops-cli. Requested by project maintainer.
 
 **Decision:** Phase 1 MVP uses existing `extract` + `publish` commands with migration documentation — no new command needed. The `ApimServiceContext` is already parameterized, so source (v1) and target (v2) are just two different context instances. Phase 2 would add `apiops copy` for direct source→target streaming if demand warrants.
 

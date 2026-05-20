@@ -5,7 +5,6 @@
 - **Project:** apiops-cli — TypeScript CLI for Azure API Management (`apiops extract`, `apiops publish`, `apiops init`)
 - **Spec:** `specs/001-apiops-cli/spec.md` — acceptance criteria are the primary source for test cases
 - **Constitution:** `.squad/identity/constitution.md` (v2.1.0)
-- **User:** Elizabeth Maher
 - **Stack:** Vitest (native ESM + TypeScript), Node.js 22 LTS
 - **Key rule (Constitution §VI):** All business logic MUST be testable in isolation without requiring live Azure resources.
 - **Test strategy:** Unit tests (no network, no disk I/O) are mandatory. Integration tests (real Azure) are complementary.

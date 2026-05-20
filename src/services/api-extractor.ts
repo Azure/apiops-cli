@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T022: API-specific extraction logic
  * API revisions, API specifications, operations & operation policies,

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T013: Resource descriptor ↔ artifact file path mapping
  * Map descriptor to directory/file paths per data-model.md artifact conventions

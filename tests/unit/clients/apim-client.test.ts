@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * Unit tests for ApimClient.listResources — graceful handling of
  * HTTP errors when a resource type is not available on the service tier.
