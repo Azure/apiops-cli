@@ -226,14 +226,14 @@ describe('github-actions/publish-workflow', () => {
       expect(workflow).toContain("ENVIRONMENT == 'prod' || github.event_name == 'push'");
     });
 
-    it('should include approval guidance comment for non-first environments', () => {
+    it('should include generic approval guidance for non-first environments without GitHub settings steps', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'staging'],
       });
-      // Non-first environments should have a comment guiding users to set up required reviewers
-      expect(workflow).toContain('Required reviewers');
-      expect(workflow).toContain('Settings > Environments > staging');
+      expect(workflow).toContain('Configure environment protection rules to require approval before deploying to staging.');
+      expect(workflow).not.toContain('Settings > Environments > staging');
+      expect(workflow).not.toContain('Required reviewers');
     });
 
     it('should pass commit_id on push trigger via incremental step condition', () => {

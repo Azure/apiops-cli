@@ -48,6 +48,43 @@ gh secret set APIM_RESOURCE_GROUP_${env.toUpperCase()} --body "\${APIM_RG_${env.
 gh secret set APIM_SERVICE_NAME_${env.toUpperCase()} --body "\${APIM_NAME_${env.toUpperCase()}}" --env ${env}`
   ).join('\n\n');
 
+  const ghEnvironmentSetupCmds = config.environments.map((env) =>
+    `# ${env} environment: create + baseline protection via GitHub API
+cat > env-${env}-config.json <<'JSON'
+{
+  "wait_timer": 0,
+  "prevent_self_review": true,
+  "deployment_branch_policy": {
+    "protected_branches": false,
+    "custom_branch_policies": true
+  }
+}
+JSON
+
+gh api --method PUT "repos/\${GITHUB_ORG}/\${GITHUB_REPO}/environments/${env}" --input env-${env}-config.json
+
+# Restrict deployments to main branch
+gh api --method POST "repos/\${GITHUB_ORG}/\${GITHUB_REPO}/environments/${env}/deployment-branch-policies" -f name='main' -f type='branch'
+
+# Optional: require deployment approval reviewers (replace IDs with your approver IDs)
+# Resolve a user ID: gh api "users/<github-login>" --jq .id
+cat > env-${env}-reviewers.json <<'JSON'
+{
+  "wait_timer": 0,
+  "prevent_self_review": true,
+  "reviewers": [
+    { "type": "User", "id": 12345678 }
+  ],
+  "deployment_branch_policy": {
+    "protected_branches": false,
+    "custom_branch_policies": true
+  }
+}
+JSON
+
+gh api --method PUT "repos/\${GITHUB_ORG}/\${GITHUB_REPO}/environments/${env}" --input env-${env}-reviewers.json`
+  ).join('\n\n');
+
   return `# Setup GitHub Actions Identity for APIOps
 
 > **How to use:** Open this file in VS Code with GitHub Copilot and ask
@@ -238,14 +275,58 @@ ${envFedCreds}
 
 ---
 
-## Step 5 — Create GitHub Environments
+## Step 5 — Configure GitHub Environments with CLI (Create + Protection + Approvals)
 
+> Copilot: run these command-line commands (do not use manual UI-only setup) to create environments and configure protection rules.
+
+**On macOS/Linux (Bash):**
 \`\`\`bash
+${ghEnvironmentSetupCmds}
+\`\`\`
+
+**On Windows (PowerShell):**
+\`\`\`powershell
 ${config.environments.map((env) =>
-    `# Create the ${env} environment (requires GitHub CLI)
-gh api --method PUT "repos/\${GITHUB_ORG}/\${GITHUB_REPO}/environments/${env}"`
+    `# ${env} environment: create + baseline protection via GitHub API
+@'
+{
+  "wait_timer": 0,
+  "prevent_self_review": true,
+  "deployment_branch_policy": {
+    "protected_branches": false,
+    "custom_branch_policies": true
+  }
+}
+'@ | Set-Content -Path env-${env}-config.json
+
+gh api --method PUT "repos/\${GITHUB_ORG}/\${GITHUB_REPO}/environments/${env}" --input env-${env}-config.json
+
+# Restrict deployments to main branch
+gh api --method POST "repos/\${GITHUB_ORG}/\${GITHUB_REPO}/environments/${env}/deployment-branch-policies" -f name='main' -f type='branch'
+
+# Optional: require deployment approval reviewers (replace IDs with your approver IDs)
+# Resolve a user ID: gh api "users/<github-login>" --jq .id
+@'
+{
+  "wait_timer": 0,
+  "prevent_self_review": true,
+  "reviewers": [
+    { "type": "User", "id": 12345678 }
+  ],
+  "deployment_branch_policy": {
+    "protected_branches": false,
+    "custom_branch_policies": true
+  }
+}
+'@ | Set-Content -Path env-${env}-reviewers.json
+
+gh api --method PUT "repos/\${GITHUB_ORG}/\${GITHUB_REPO}/environments/${env}" --input env-${env}-reviewers.json`
   ).join('\n\n')}
 \`\`\`
+
+> Rerun note: environment PUT calls are idempotent, but branch-policy creation can return "already exists" on reruns after the first successful create; treat that as expected when main is already configured.
+
+> If reviewer configuration is restricted by repository plan/policy, keep environment creation and branch-policy commands in CLI and apply required reviewers using the same API payload once policy allows it.
 
 ---
 

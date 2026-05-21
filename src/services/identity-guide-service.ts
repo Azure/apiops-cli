@@ -382,7 +382,9 @@ done
 rm -f env-body.json
 \`\`\`
 
-**Note:** Environment approvals and checks must be configured via the Azure DevOps UI (Project Settings > Environments).
+**To require human approval before deploying to an environment:**
+1. Go to **Pipelines > Environments > <environment-name>** in Azure DevOps.
+2. Open **Approvals and checks** and add an **Approvals** check with the required approvers.
 
 ---
 

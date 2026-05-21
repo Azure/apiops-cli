@@ -18,9 +18,7 @@ export function generatePublishWorkflow(config: PublishWorkflowConfig): string {
     const jobComment = idx === 0
       ? `    # Automatically deploys to ${env} on push to main (incremental mode) or when selected via workflow_dispatch`
       : `    # Deploys to ${env} after ${previousEnvironment} succeeds (sequential promotion).
-    # To require human approval before deploying to ${env}:
-    #   1. Go to Settings > Environments > ${env} in your GitHub repository
-    #   2. Add "Required reviewers" under "Environment protection rules"`;
+    # Configure environment protection rules to require approval before deploying to ${env}.`;
 
     const jobCondition = `github.event.inputs.ENVIRONMENT == '${env}' || github.event_name == 'push'`;
 

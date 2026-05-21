@@ -66,6 +66,15 @@ describe('copilot/identity-setup-prompt', () => {
       expect(prompt).toContain('gh api --method PUT');
       expect(prompt).toContain('environments/dev');
       expect(prompt).toContain('environments/prod');
+      expect(prompt).toContain('Configure GitHub Environments with CLI');
+      expect(prompt).toContain('do not use manual UI-only setup');
+      expect(prompt).toContain('deployment-branch-policies');
+      expect(prompt).toContain('prevent_self_review');
+      expect(prompt).toContain('"reviewers"');
+      expect(prompt).toContain('gh api "users/<github-login>" --jq .id');
+      expect(prompt).toContain("gh api --method POST \"repos/${GITHUB_ORG}/${GITHUB_REPO}/environments/dev/deployment-branch-policies\"");
+      expect(prompt).toContain("gh api --method POST \"repos/${GITHUB_ORG}/${GITHUB_REPO}/environments/prod/deployment-branch-policies\"");
+      expect(prompt).toContain("-f name='main' -f type='branch'");
     });
 
     it('should include gh secret set commands for repository secrets', () => {
