@@ -128,5 +128,17 @@ describe('identity-guide-service', () => {
       expect(guide).toContain('my-rg');
     });
 
+    it('should include Azure DevOps approvals and checks guidance for human approval', () => {
+      const guide = identityGuideService.generateAzureDevOpsGuide(
+        'sub-12345',
+        'my-rg',
+        ['dev', 'prod']
+      );
+      expect(guide).toContain('Pipelines > Environments > <environment-name>');
+      expect(guide).toContain('Approvals and checks');
+      expect(guide).toContain('Approvals');
+      expect(guide).toContain('required approvers');
+    });
+
   });
 });
