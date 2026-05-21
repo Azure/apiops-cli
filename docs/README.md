@@ -80,12 +80,8 @@ docs/
 │   ├── overview.md                    — System design overview
 │   └── design-principles.md           — Architecture principles
 ├── walkthrough/
-│   ├── air-gapped-github-actions.md                    — Air-gapped GitHub Actions (chooser)
-│   ├── air-gapped-github-actions-local-registry.md     — GitHub Actions via internal npm registry (GHES Packages)
-│   ├── air-gapped-github-actions-offline-tarball.md    — GitHub Actions via offline tarball + npm cache
-│   ├── air-gapped-azure-devops.md                      — Air-gapped Azure DevOps (chooser)
-│   ├── air-gapped-azure-devops-local-registry.md       — Azure DevOps via Azure Artifacts feed
-│   └── air-gapped-azure-devops-offline-tarball.md      — Azure DevOps via offline tarball + npm cache
+│   ├── air-gapped-github-actions.md                    — Using `apiops` in air-gapped CI/CD (GitHub Actions)
+│   ├── air-gapped-azure-devops.md                      — Using `apiops` in air-gapped CI/CD (Azure DevOps)
 └── troubleshooting/
     ├── common-errors.md               — Error messages and solutions
     ├── debugging-guide.md             — Debugging with --log-level
