@@ -9,7 +9,7 @@
 | [Getting Started](getting-started.md) | Install and run your first extract → publish cycle in 10 minutes |
 | [Command Reference](commands/) | Detailed docs for [extract](commands/extract.md), [publish](commands/publish.md), [init](commands/init.md) |
 | [CI/CD Integration](ci-cd/) | Set up [GitHub Actions](ci-cd/github-actions.md) or [Azure DevOps](ci-cd/azure-devops.md) pipelines |
-| [Walkthroughs](walkthrough/) | Step-by-step guides: [Air-gapped GitHub Actions](walkthrough/air-gapped-github-actions.md), [Air-gapped Azure DevOps](walkthrough/air-gapped-azure-devops.md) |
+| [Walkthroughs](walkthrough/) | Step-by-step guides: [Air-gapped GitHub Actions](walkthrough/air-gapped-github-actions.md) (local registry or offline tarball), [Air-gapped Azure DevOps](walkthrough/air-gapped-azure-devops.md) (local registry or offline tarball) |
 
 ## How It Works
 
@@ -80,8 +80,12 @@ docs/
 │   ├── overview.md                    — System design overview
 │   └── design-principles.md           — Architecture principles
 ├── walkthrough/
-│   ├── air-gapped-github-actions.md   — Air-gapped setup with GitHub Actions
-│   └── air-gapped-azure-devops.md     — Air-gapped setup with Azure DevOps
+│   ├── air-gapped-github-actions.md                    — Air-gapped GitHub Actions (chooser)
+│   ├── air-gapped-github-actions-local-registry.md     — GitHub Actions via internal npm registry (GHES Packages)
+│   ├── air-gapped-github-actions-offline-tarball.md    — GitHub Actions via offline tarball + npm cache
+│   ├── air-gapped-azure-devops.md                      — Air-gapped Azure DevOps (chooser)
+│   ├── air-gapped-azure-devops-local-registry.md       — Azure DevOps via Azure Artifacts feed
+│   └── air-gapped-azure-devops-offline-tarball.md      — Azure DevOps via offline tarball + npm cache
 └── troubleshooting/
     ├── common-errors.md               — Error messages and solutions
     ├── debugging-guide.md             — Debugging with --log-level
