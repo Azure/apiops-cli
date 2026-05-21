@@ -2,24 +2,6 @@
 
 ## Active Decisions
 
-### 2026-06-11T22:34:04Z: Air-Gapped Walkthrough Documentation Pattern
-**By:** DocWriter  
-**Status:** Proposed  
-**What:** Created a new `docs/walkthrough/` directory for scenario-based step-by-step guides that are more detailed than the standard CI/CD integration docs. First entries cover air-gapped deployments for both GitHub Actions and Azure DevOps.
-
-**Decision:** Establish walkthrough pattern for complex multi-step deployment scenarios that don't fit cleanly into standard integration guides.
-
-**Pattern:**
-- **`docs/walkthrough/`** = scenario-based, multi-step guides for specific deployment patterns
-- **`docs/ci-cd/`** = platform integration reference (standard setup)
-- **`docs/guides/`** = feature-oriented how-to guides
-
-**Scope:** Future walkthrough candidates include multi-region APIM, sovereign cloud deployments, monorepo with multiple APIM instances. Any scenario requiring 5+ steps beyond the standard setup qualifies.
-
-**Next Steps:** Team review; if approved, publish guides and update docs/README index.
-
----
-
 ### 2026-05-14T05:20:00Z: APIM v1 → v2 SKU Migration via apiops-cli
 **By:** ApimExpert + ApiOpsLead (joint research and decision)  
 **Status:** Proposed for team governance review  

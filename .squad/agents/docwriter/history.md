@@ -16,22 +16,6 @@ Documentation authoring (2026-04-30 to 2026-05-17): 3-phase plan with 28 user-fa
 
 <!-- Append new learnings below this line -->
 
-### 2026-06-11: Air-Gapped Walkthroughs — GitHub Actions and Azure DevOps
-
-**Context:** Authored two walkthrough documents for using apiops-cli in air-gapped (network-restricted) environments.
-
-**Files Created:**
-1. `docs/walkthrough/air-gapped-github-actions.md` — 8-step guide covering tarball preparation, `apiops init --cli-package`, lock file generation, npm cache transfer, self-hosted runner setup, workflow modifications for `npm ci --offline`, and upgrade procedures.
-2. `docs/walkthrough/air-gapped-azure-devops.md` — 9-step guide with same core pattern plus Azure Artifacts feed as alternative to manual cache transfer, `npmAuthenticate@0` task usage, agent pool configuration, and AzureCLI@2 service connection authentication.
-
-**Files Updated:**
-- `docs/README.md` — Added walkthrough section to Quick Links table and directory tree.
-
-**Learnings:**
-- Air-gapped setups rely on `--cli-package` flag for local tarball mode, which generates `package.json` with `"file:.apiops/{tarball}"` dependency. The lock file is critical — without it, `npm ci` fails.
-- Azure DevOps has a natural advantage for air-gapped setups via Azure Artifacts feeds with upstream sources (controlled sync windows). GitHub Actions environments must rely on pre-populated npm cache or vendored node_modules.
-- Authentication differs: GitHub Actions in air-gapped may lose OIDC (can't reach token.actions.githubusercontent.com), requiring fallback to service principal secrets. Azure DevOps service connections work regardless since the agent-to-DevOps connectivity handles token exchange.
-
 ### 2026-05-17: Phase 2 Docs — Azure DevOps, Filtering, Artifact Format, Config Reference, Glossary
 
 **Context:** Authored five Phase 2 documentation files completing CI/CD coverage, resource filtering guide, artifact format reference, configuration reference, and APIM glossary.
@@ -131,21 +115,3 @@ Documentation authoring (2026-04-30 to 2026-05-17): 3-phase plan with 28 user-fa
 **Patterns:** Examples-first, Mermaid workflows, relative links, search-optimized errors, progressive disclosure
 
 **Gotchas:** Auth flags set env vars (credential precedence). Overrides: names consistent, properties differ. `--commit-id`/`--delete-unmatched` exclusive.
-
-### 2026-06-11: Air-Gapped Azure DevOps — PR Feedback Revision
-
-**Context:** Revised `docs/walkthrough/air-gapped-azure-devops.md` based on PR review comments.
-
-**Changes:**
-- Made local npm registry (Azure Artifacts) the primary/default approach; tarball flow demoted to fallback section.
-- Removed redundant "npm 10+" prerequisite (implied by Node.js 22.x).
-- Removed "transfer mechanism" prerequisite row (not needed when local registry is primary).
-- Added official Microsoft docs links: self-hosted agents, Azure Artifacts npm feeds, Azure DevOps Server on-prem, sovereign cloud identity endpoints.
-- Replaced full embedded pipeline YAML with concise edit table referencing generated files (`pipelines/run-extractor.yaml`, `pipelines/run-publisher.yaml`).
-- Added "Sovereign Clouds and On-Premises" section with doc links.
-- Simplified architecture diagram to reflect local registry flow.
-
-**Learnings:**
-- PR reviewers strongly prefer docs that match the air-gapped reality: local registries over manual transfers. Azure Artifacts is a natural fit since it's bundled with Azure DevOps Server.
-- Large embedded YAML examples are fragile — they drift from generated templates. Better to describe minimal edits to the generated files.
-- Always link to official Microsoft docs for infrastructure setup (agents, feeds, sovereign clouds) rather than inlining instructions that will go stale.
