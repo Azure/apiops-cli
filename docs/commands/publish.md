@@ -162,8 +162,6 @@ In CI/CD pipelines, this is typically set automatically:
 - run: npx apiops publish --commit-id ${{ github.event.before }}
 ```
 
-When both are provided, `--commit-id` takes precedence over `COMMIT_ID`.
-
 > **Tip:** Incremental publish cannot be combined with `--delete-unmatched` because delete-unmatched requires a full comparison between source and APIM.
 
 ## Dry run
