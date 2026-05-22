@@ -82,6 +82,18 @@ describe('RESOURCE_TYPE_METADATA', () => {
     }
   });
 
+  it('non-association resource types have supportsGet=true', () => {
+    const nonAssociationTypes = [
+      ResourceType.Product,
+      ResourceType.Api,
+      ResourceType.Tag,
+      ResourceType.ServicePolicy,
+    ];
+    for (const type of nonAssociationTypes) {
+      expect(RESOURCE_TYPE_METADATA[type].supportsGet, `${type} should have supportsGet=true`).toBe(true);
+    }
+  });
+
   it('workspaceSupported is optional and boolean when present', () => {
     for (const [type, meta] of Object.entries(RESOURCE_TYPE_METADATA)) {
       if (meta.workspaceSupported !== undefined) {

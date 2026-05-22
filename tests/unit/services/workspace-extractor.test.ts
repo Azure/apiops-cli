@@ -42,53 +42,28 @@ function createMockStore() {
   };
 }
 
-describe('workspace type selection', () => {
-  it('should derive workspace types from RESOURCE_TYPE_METADATA workspaceSupported flag', () => {
-    const derivedTypes = Object.values(ResourceType).filter(
-      (type) => RESOURCE_TYPE_METADATA[type].workspaceSupported === true
-    );
-    expect(derivedTypes).toContain(ResourceType.NamedValue);
-    expect(derivedTypes).toContain(ResourceType.Tag);
-    expect(derivedTypes).toContain(ResourceType.Backend);
-    expect(derivedTypes).toContain(ResourceType.Logger);
-    expect(derivedTypes).toContain(ResourceType.Group);
-    expect(derivedTypes).toContain(ResourceType.Diagnostic);
-    expect(derivedTypes).toContain(ResourceType.PolicyFragment);
-    expect(derivedTypes).toContain(ResourceType.Product);
-    expect(derivedTypes).toContain(ResourceType.Api);
-    expect(derivedTypes).toContain(ResourceType.Subscription);
-    expect(derivedTypes).toContain(ResourceType.GlobalSchema);
-    expect(derivedTypes).toContain(ResourceType.Documentation);
-    expect(derivedTypes).toHaveLength(12);
-  });
-
-  it('should not include non-workspace types', () => {
-    const derivedTypes = Object.values(ResourceType).filter(
-      (type) => RESOURCE_TYPE_METADATA[type].workspaceSupported === true
-    );
-    expect(derivedTypes).not.toContain(ResourceType.ServicePolicy);
-    expect(derivedTypes).not.toContain(ResourceType.ProductApi);
-    expect(derivedTypes).not.toContain(ResourceType.GatewayApi);
-    expect(derivedTypes).not.toContain(ResourceType.ApiPolicy);
-  });
-
-  it('should return types in enum declaration order', () => {
-    const derivedTypes = Object.values(ResourceType).filter(
-      (type) => RESOURCE_TYPE_METADATA[type].workspaceSupported === true
-    );
-    // Enum order: NamedValue, Tag, ..., Backend, Logger, Group, Diagnostic, PolicyFragment, ..., Product, Api, ..., Subscription, GlobalSchema, ..., Documentation
-    const namedValueIdx = derivedTypes.indexOf(ResourceType.NamedValue);
-    const tagIdx = derivedTypes.indexOf(ResourceType.Tag);
-    const apiIdx = derivedTypes.indexOf(ResourceType.Api);
-    const subscriptionIdx = derivedTypes.indexOf(ResourceType.Subscription);
-    expect(namedValueIdx).toBeLessThan(tagIdx);
-    expect(tagIdx).toBeLessThan(apiIdx);
-    expect(apiIdx).toBeLessThan(subscriptionIdx);
-  });
-});
-
 describe('workspace-extractor', () => {
   describe('extractWorkspaces', () => {
+    it('should iterate only workspaceSupported types in enum order', async () => {
+      const client = createMockClient();
+      const seenTypes: ResourceType[] = [];
+      // eslint-disable-next-line require-yield
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType) {
+        seenTypes.push(type);
+      };
+      const store = createMockStore();
+      const filter: FilterConfig = { workspaceNames: ['ws-1'] };
+
+      await extractWorkspaces(
+        client, store, testContext, '/output', filter
+      );
+
+      const expectedTypes = Object.values(ResourceType).filter(
+        (type) => RESOURCE_TYPE_METADATA[type].workspaceSupported === true
+      );
+      expect(seenTypes).toEqual(expectedTypes);
+    });
+
     it('should skip extraction when no workspace names in filter', async () => {
       const client = createMockClient();
       const store = createMockStore();
