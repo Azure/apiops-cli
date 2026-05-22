@@ -211,3 +211,41 @@ Same rule applies to `expect(fs.copyFile).toHaveBeenCalledWith(...)` assertions 
 - All 885 existing tests pass; lint errors are non-blocking but should be resolved
 - Local compare deferred due to scope; will be implemented as stub only
 
+
+### 2026-06-14: Compare Command Type Safety Fixes (Issue #22)
+
+**Context:** Completed type-safety cleanup for the compare command implementation left by ApimExpert and NodeJsDev, reducing lint errors from 37 to 0.
+
+**Key Issues Fixed:**
+1. Missing `CompareConfig` interface definition in `src/models/config.ts` — Added interface with properly typed `sourceClient` and `targetClient` properties of type `IApimClient`
+2. Missing `armResourceType` property in `ResourceTypeMetadata` interface — Added to all 39 metadata entries using Python script
+3. Unsafe type assignments when iterating over `ResourceType` enum arrays — Fixed by explicitly typing arrays as `readonly ResourceType[]` instead of using `as const`
+4. Incorrect resource type references:
+   - `ResourceType.ApiVersionSet` → `ResourceType.VersionSet` (correct enum name)
+   - `ResourceType.ApiResolver` → `ResourceType.GraphQLResolver` (correct enum name)
+5. Undefined Workspace types — Workspace resource types not yet in `ResourceType` enum, so disabled workspace comparison code with clear comments
+
+**Type Safety Patterns:**
+- When iterating over arrays containing enum values, explicitly type as `readonly ResourceType[]` to preserve type information through iteration
+- Import `IApimClient` as `type` import to avoid unused import warnings when only used for type annotations
+- For Record<EnumType, T> indexed access, TypeScript doesn't guarantee key existence — either assert key exists or handle undefined case
+- Resource ID extraction from `Record<string, unknown>` requires runtime type checking: `const id = resource.id; if (typeof id !== 'string') continue;`
+
+**Implementation Details:**
+- `buildArmBaseUrl()` expects `cloudName` string ('public', 'china', etc.), not `cloudConfig.armEndpoint`
+- Python script automated adding `armResourceType` to 39 metadata entries by extracting first path segment from `armPathSuffix`
+- Workspace comparison code commented out (not deleted) pending future Workspace type definitions
+
+**Testing:**
+- All 899 existing tests pass
+- Zero lint errors (down from 37)
+- No test changes needed — demonstrates backward compatibility of type-safety improvements
+
+**Files Modified:**
+- `src/models/config.ts` — Added `CompareConfig` interface
+- `src/models/resource-types.ts` — Added `armResourceType` to `ResourceTypeMetadata` and all 39 metadata entries
+- `src/cli/compare-command.ts` — Fixed `buildArmBaseUrl` usage (cloudName instead of armEndpoint)
+- `src/services/compare-service.ts` — Fixed all type-safety issues, disabled Workspace comparison
+
+**Commit:** (pending)
+

@@ -6,7 +6,7 @@
  * Coordinates resource enumeration, normalization, and comparison
  */
 
-import { IApimClient } from '../clients/iapim-client.js';
+import type { IApimClient } from '../clients/iapim-client.js';
 import { logger } from '../lib/logger.js';
 import {
   normalizeResource,
@@ -21,12 +21,7 @@ import {
 } from '../lib/compare-differ.js';
 import { RESOURCE_TYPE_METADATA, ResourceType } from '../models/resource-types.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
-
-export interface CompareConfig {
-  source: ApimServiceContext;
-  target: ApimServiceContext;
-  format: 'text' | 'json' | 'table';
-}
+import { CompareConfig } from '../models/config.js';
 
 export interface CompareResult {
   totalTypes: number;
@@ -71,21 +66,21 @@ export async function compareApimInstances(
   let totalTypes = 0;
   let totalResources = 0;
 
-  // Create clients
-  const sourceClient = config.sourceClient;
-  const targetClient = config.targetClient;
+  // Get clients from config
+  const sourceClient: IApimClient = config.sourceClient;
+  const targetClient: IApimClient = config.targetClient;
 
   // Top-level resource types
-  const topLevelTypes: Array<{
-    type: ResourceType;
-    exclude?: Set<string>;
-    skipSecretValues?: boolean;
-    skipLoggerCreds?: boolean;
+  const topLevelTypes: ReadonlyArray<{
+    readonly type: ResourceType;
+    readonly exclude?: Set<string>;
+    readonly skipSecretValues?: boolean;
+    readonly skipLoggerCreds?: boolean;
   }> = [
     { type: ResourceType.NamedValue, skipSecretValues: true },
     { type: ResourceType.Tag },
     { type: ResourceType.Gateway },
-    { type: ResourceType.ApiVersionSet },
+    { type: ResourceType.VersionSet },
     { type: ResourceType.Backend },
     { type: ResourceType.Group, exclude: EXCLUDE_GROUPS },
     { type: ResourceType.PolicyFragment },
@@ -95,7 +90,8 @@ export async function compareApimInstances(
     { type: ResourceType.ServicePolicy },
     { type: ResourceType.Product, exclude: EXCLUDE_PRODUCTS },
     { type: ResourceType.Subscription, exclude: EXCLUDE_SUBSCRIPTIONS },
-    { type: ResourceType.Workspace },
+    // Note: Workspace types not yet defined in ResourceType enum
+    // { type: ResourceType.Workspace },
     { type: ResourceType.Documentation },
     { type: ResourceType.PolicyRestriction },
   ];
@@ -139,18 +135,22 @@ export async function compareApimInstances(
     config.source,
   );
   const apiNames = sourceApis
-    .map((api) => extractResourceName(api.id as string))
-    .filter((name) => !EXCLUDE_APIS.has(name));
+    .map((api) => {
+      const id = api.id;
+      if (typeof id !== 'string') return '';
+      return extractResourceName(id);
+    })
+    .filter((name) => name && !EXCLUDE_APIS.has(name));
 
   // Compare API children
   for (const apiName of apiNames) {
-    const apiChildTypes = [
+    const apiChildTypes: readonly ResourceType[] = [
       ResourceType.ApiOperation,
       ResourceType.ApiPolicy,
       ResourceType.ApiSchema,
       ResourceType.ApiTag,
       ResourceType.ApiDiagnostic,
-      ResourceType.ApiResolver,
+      ResourceType.GraphQLResolver,
       ResourceType.ApiRelease,
       ResourceType.ApiWiki,
       ResourceType.ApiTagDescription,
@@ -179,7 +179,9 @@ export async function compareApimInstances(
       { type: ResourceType.Api, nameParts: [apiName] },
     );
     for (const op of operations) {
-      const opName = extractResourceName(op.id as string);
+      const opId = op.id;
+      if (typeof opId !== 'string') continue;
+      const opName = extractResourceName(opId);
       const opPolicyDiffs = await compareApiOperationPolicy(
         apiName,
         opName,
@@ -197,12 +199,14 @@ export async function compareApimInstances(
     // API Resolver Policies
     const resolvers = await safeListResources(
       sourceClient,
-      ResourceType.ApiResolver,
+      ResourceType.GraphQLResolver,
       config.source,
       { type: ResourceType.Api, nameParts: [apiName] },
     );
     for (const resolver of resolvers) {
-      const resolverName = extractResourceName(resolver.id as string);
+      const resolverId = resolver.id;
+      if (typeof resolverId !== 'string') continue;
+      const resolverName = extractResourceName(resolverId);
       const resolverPolicyDiffs = await compareApiResolverPolicy(
         apiName,
         resolverName,
@@ -225,11 +229,15 @@ export async function compareApimInstances(
     config.source,
   );
   const productNames = sourceProducts
-    .map((p) => extractResourceName(p.id as string))
-    .filter((name) => !EXCLUDE_PRODUCTS.has(name));
+    .map((p) => {
+      const id = p.id;
+      if (typeof id !== 'string') return '';
+      return extractResourceName(id);
+    })
+    .filter((name) => name && !EXCLUDE_PRODUCTS.has(name));
 
   for (const productName of productNames) {
-    const productChildTypes = [
+    const productChildTypes: readonly ResourceType[] = [
       ResourceType.ProductPolicy,
       ResourceType.ProductApi,
       ResourceType.ProductGroup,
@@ -260,7 +268,9 @@ export async function compareApimInstances(
     config.source,
   );
   for (const gateway of sourceGateways) {
-    const gatewayName = extractResourceName(gateway.id as string);
+    const gatewayId = gateway.id;
+    if (typeof gatewayId !== 'string') continue;
+    const gatewayName = extractResourceName(gatewayId);
     const gatewayApiDiffs = await compareGatewayApis(
       gatewayName,
       sourceClient,
@@ -274,6 +284,8 @@ export async function compareApimInstances(
     totalResources += gatewayApiDiffs.length;
   }
 
+  // Note: Workspace comparison disabled - Workspace types not yet defined in ResourceType enum
+  /*
   // Compare Workspaces and their children
   const sourceWorkspaces = await safeListResources(
     sourceClient,
@@ -281,8 +293,10 @@ export async function compareApimInstances(
     config.source,
   );
   for (const workspace of sourceWorkspaces) {
-    const wsName = extractResourceName(workspace.id as string);
-    const wsChildTypes = [
+    const wsId = workspace.id;
+    if (typeof wsId !== 'string') continue;
+    const wsName = extractResourceName(wsId);
+    const wsChildTypes: readonly ResourceType[] = [
       ResourceType.WorkspaceApi,
       ResourceType.WorkspaceProduct,
       ResourceType.WorkspaceBackend,
@@ -313,6 +327,7 @@ export async function compareApimInstances(
       totalResources += childDiffs.length;
     }
   }
+  */
 
   const totalDifferences = differences.filter(
     (d) => d.diffType !== 'property-diff' || (d.diffs && d.diffs.length > 0),
@@ -341,7 +356,7 @@ async function compareResourceType(
   skipLoggerCreds = false,
 ): Promise<ComparisonDifference[]> {
   const metadata = RESOURCE_TYPE_METADATA[resourceType];
-  const typeLabel = metadata.armResourceType;
+  const typeLabel: string = metadata.armResourceType;
 
   logger.debug(`Comparing ${typeLabel}...`);
 
@@ -380,7 +395,7 @@ async function compareApiChildType(
   targetContext: ApimServiceContext,
 ): Promise<ComparisonDifference[]> {
   const metadata = RESOURCE_TYPE_METADATA[resourceType];
-  const typeLabel = `${apiName}/${metadata.armResourceType}`;
+  const typeLabel: string = `${apiName}/${metadata.armResourceType}`;
 
   const apiDescriptor: ResourceDescriptor = {
     type: ResourceType.Api,
@@ -501,7 +516,7 @@ async function compareProductChildType(
   targetContext: ApimServiceContext,
 ): Promise<ComparisonDifference[]> {
   const metadata = RESOURCE_TYPE_METADATA[resourceType];
-  const typeLabel = `${productName}/${metadata.armResourceType}`;
+  const typeLabel: string = `${productName}/${metadata.armResourceType}`;
 
   const productDescriptor: ResourceDescriptor = {
     type: ResourceType.Product,
@@ -569,8 +584,9 @@ async function compareGatewayApis(
 }
 
 /**
- * Compares Workspace child resources
+ * Compares Workspace child resources (DISABLED - Workspace types not yet in ResourceType enum)
  */
+/*
 async function compareWorkspaceChildType(
   workspaceName: string,
   resourceType: ResourceType,
@@ -581,7 +597,7 @@ async function compareWorkspaceChildType(
   targetContext: ApimServiceContext,
 ): Promise<ComparisonDifference[]> {
   const metadata = RESOURCE_TYPE_METADATA[resourceType];
-  const typeLabel = `${workspaceName}/${metadata.armResourceType}`;
+  const typeLabel: string = `${workspaceName}/${metadata.armResourceType}`;
 
   const workspaceDescriptor: ResourceDescriptor = {
     type: ResourceType.Workspace,
@@ -732,7 +748,9 @@ function buildResourceMap(
   }> = [];
 
   for (const resource of resources) {
-    const name = extractResourceName(resource.id as string);
+    const id = resource.id;
+    if (typeof id !== 'string') continue;
+    const name = extractResourceName(id);
     if (excludeNames?.has(name)) continue;
 
     // Auto-generated IDs: key by normalized content

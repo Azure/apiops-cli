@@ -7,7 +7,7 @@
 
 import { ApimServiceContext } from './types.js';
 import { LogLevel } from '../lib/logger.js';
-import { IApimClient } from '../clients/iapim-client.js';
+import type { IApimClient } from '../clients/iapim-client.js';
 
 export interface ExtractConfig {
   service: ApimServiceContext;
@@ -93,4 +93,13 @@ export interface InitConfig {
   outputDir: string;
   cliPackage?: string;
   force: boolean;
+}
+
+export interface CompareConfig {
+  source: ApimServiceContext;
+  target: ApimServiceContext;
+  sourceClient: IApimClient;
+  targetClient: IApimClient;
+  format: 'text' | 'json' | 'table';
+  logLevel?: LogLevel;
 }

@@ -99,14 +99,15 @@ async function runCompare(
     );
   }
 
-  const cloudConfig = getCloudConfig(globalOpts.cloud ?? 'public');
+  const cloudName = globalOpts.cloud ?? 'public';
+  const cloudConfig = getCloudConfig(cloudName);
   const format = (globalOpts.format ?? 'text') as 'text' | 'json' | 'table';
   const apiVersion = '2024-05-01';
 
   // Create source context
   const sourceClient = new ApimClient(cloudConfig);
-  const sourceBaseUrl = buildArmBaseUrl(
-    cloudConfig.armEndpoint,
+  const sourceBaseUrl: string = buildArmBaseUrl(
+    cloudName,
     sourceSubscriptionId,
     options.sourceResourceGroup,
     options.sourceServiceName,
@@ -121,8 +122,8 @@ async function runCompare(
 
   // Create target context
   const targetClient = new ApimClient(cloudConfig);
-  const targetBaseUrl = buildArmBaseUrl(
-    cloudConfig.armEndpoint,
+  const targetBaseUrl: string = buildArmBaseUrl(
+    cloudName,
     targetSubscriptionId,
     options.targetResourceGroup,
     options.targetServiceName,
@@ -141,7 +142,7 @@ async function runCompare(
     sourceClient,
     targetClient,
     format,
-    logLevel: globalOpts.logLevel as 'debug' | 'info' | 'warn' | 'error',
+    logLevel: globalOpts.logLevel as 'debug' | 'info' | 'warn' | 'error' | undefined,
   };
 
   logger.info('Starting comparison...');
