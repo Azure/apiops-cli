@@ -151,3 +151,28 @@ the SDK surface, reference docs, or ad-hoc observation.
 - All non-blocking; require explicit type guards or type assertions to resolve
 
 **Missing:** Local compare mode (source artifacts + overrides → target cloud) not implemented due to time constraints.
+
+### 2026-05-22: apiops compare Command — Cloud-to-Cloud Implementation Complete
+
+**What:** Completed full implementation of `apiops compare` command for cloud-to-cloud APIM resource comparison (issue #22).
+
+**Key modules built:**
+1. **src/lib/compare-normalizer.ts** — Strips instance-specific values (subscription IDs, resource groups, service names, timestamps, auto-generated IDs, ARM paths, Key Vault URIs, etc.)
+2. **src/lib/compare-differ.ts** — Deep recursive comparison of normalized resources, returns structured diff objects with path, type, and values
+3. **src/services/compare-service.ts** — Orchestrates all 34+ APIM resource types with hierarchical comparison (parent-child-grandchild)
+4. **src/cli/compare-command.ts** — CLI interface accepting `--source-resource-group`, `--source-service-name`, `--source-subscription-id`, `--target-*` equivalents; supports text/JSON/table output
+
+**Special features:**
+- Auto-generated ID matching via content-based stable keys (normalized resource content hashing)
+- Deterministic exclusions: administrator groups, starter/unlimited products, master subscription, echo API
+- Skip logic for secret values and logger credentials (follows PowerShell Compare-ApimInstance.ps1 pattern)
+- Exit code: 0 if identical, 1 if differences found
+
+**Lint status:**
+- 37 lint errors (@typescript-eslint/no-unsafe-*) due to Commander's untyped options and IApimClient interface
+- Non-blocking; will be resolved via explicit type assertions in separate TypescriptDev-compare-finish task
+
+**Handoff:** TypescriptDev-compare-finish spawned to fix lint, add unit/integration tests, implement local compare mode.
+
+**Testing:** All 885 existing tests continue to pass.
+

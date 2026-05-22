@@ -2,6 +2,60 @@
 
 ## Active Decisions
 
+### 2026-05-22T08:08:23Z: apiops compare Command — Cloud-to-Cloud Comparison
+**By:** ApimExpert  
+**Status:** Completed (lint errors pending)  
+**What:** Implemented `apiops compare` command for cloud-to-cloud APIM resource comparison, following the PowerShell Compare-ApimInstance.ps1 pattern.
+
+**Implementation:**
+- **Normalization module** (`src/lib/compare-normalizer.ts`) — strips instance-specific values (subscription IDs, resource groups, service names, timestamps, auto-generated IDs)
+- **Diff engine** (`src/lib/compare-differ.ts`) — deep recursive comparison with structured output
+- **Compare service** (`src/services/compare-service.ts`) — orchestrates all 34+ resource types with hierarchical comparison
+- **CLI command** (`src/cli/compare-command.ts`) — accepts `--source-*` and `--target-*` flags, supports text/JSON/table output, exit codes 0 (identical) / 1 (differences)
+
+**Key Features:**
+- Handles auto-generated IDs via content-based stable keys
+- Skips secret values and logger credentials per PowerShell logic
+- Built-in exclusions (administrators group, starter/unlimited products, master subscription, echo-api)
+- All 34+ resource types covered (APIs, products, backends, workspaces, gateways, policies, etc.)
+
+**Known Issues:**
+- 37 lint errors (Commander's untyped options + IApimClient) — non-blocking, fixed via type assertions
+- Local compare mode deferred (requires artifact loader + override merger)
+
+**Handoff:** TypescriptDev-compare-finish spawned to fix lint errors and add unit tests.
+
+---
+
+### 2026-05-22T08:08:23Z: Move --subscription-id from Global to Command-Specific Scope
+**By:** NodeJsDev  
+**Status:** Completed  
+**What:** Refactored `--subscription-id` from global options to command-specific options for `extract`, `publish`, and `init` commands.
+
+**Changes:**
+1. Removed `--subscription-id` from global options (`src/cli/index.ts`)
+2. Added `--subscription-id` as required option to `extract-command.ts`
+3. Added `--subscription-id` as required option to `publish-command.ts`
+4. Added `--subscription-id` as optional option to `init-command.ts`
+5. Updated test expectations in `tests/unit/cli/index.test.ts`
+
+**Rationale:**
+- **Precision:** Not all commands need subscription ID (e.g., `apiops --help`)
+- **Clarity:** Makes it explicit which commands require Azure context
+- **CLI alignment:** Avoids overlapping edits with compare command work
+
+**Impact:**
+- **Breaking change:** Users must now use `apiops extract --subscription-id <id>` instead of `apiops --subscription-id <id> extract`
+- **Environment variable:** `AZURE_SUBSCRIPTION_ID` still works as fallback
+- **Help output:** Global help no longer shows `--subscription-id`
+
+**Validation:**
+- ✅ All 885 tests pass
+- ✅ Lint passes
+- ✅ Build passes
+
+---
+
 ### 2026-05-14T05:20:00Z: APIM v1 → v2 SKU Migration via apiops-cli
 **By:** ApimExpert + ApiOpsLead (joint research and decision)  
 **Status:** Proposed for team governance review  

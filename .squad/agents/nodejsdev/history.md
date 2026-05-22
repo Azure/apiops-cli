@@ -181,3 +181,16 @@ This enforces that `tarballRelPath` is only accessible when `mode === 'local'`, 
 - All 885 tests pass
 - ESLint clean
 - Help output verified: global help excludes `--subscription-id`, extract/publish/init help includes it
+
+### 2026-05-22: Team Update — apiops compare Spawned; Coordinated CLI Scope Work
+
+**Team coordination:**
+- ApimExpert completed cloud-to-cloud compare (34+ resource types, normalization, diff engine)
+- NodeJsDev completed --subscription-id scope refactor (moved from global to command-specific)
+- TestEngineer actively running compare testing suite
+- TypescriptDev-compare-finish spawned to complete compare (fix lint + add tests + local compare stub)
+
+**Coordination benefit:** Staggered CLI edits avoid merge conflicts. NodeJsDev moved subscription-id scope before compare implementation, ensuring clean separation of concerns.
+
+**Status:** All subscriptionId references already parameterized in extract-service, publish-service, init-command. Compare command adds its own independent subscriptionId parameter set.
+

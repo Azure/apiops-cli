@@ -194,7 +194,7 @@
    - `should show --subscription-id in init subcommand help` — confirms `--subscription-id` appears in `apiops init --help` output
    - **Key finding:** `--subscription-id` is NOT a global option in index.ts; it's command-specific (extract and publish have `requiredOption`, init has `option`). Test initially assumed it was global; corrected to test subcommand help outputs only.
 
-**Result:** 893 tests passing (8 new tests added). All modified files pass lint. Pre-existing lint failures in compare-command.ts and compare-service.ts are out of scope (not touched by this work).
+**Result:** 899 tests passing (14 new tests added: 6 in dry-run-reporter.test.ts, 6 in publish-service.test.ts, 3 in index.test.ts, minus 1 removed duplicate). All modified files pass lint. Pre-existing lint failures in compare-command.ts and compare-service.ts are out of scope (not touched by this work).
 
 **Testing Approach:**
 - Used existing test patterns: vi.mock for dependencies, descriptor-based mocking, mock call inspection
@@ -217,4 +217,19 @@
 **Orchestration artifacts:**
 - History updated with testing patterns for auto-generated ID handling, override integration, dry-run comparison, and CLI help output verification
 
-<!-- Append new learnings here after each session -->
+### 2026-05-22: Team Update — apiops compare Spawned; Active Testing Phase
+
+**Team context:**
+- ApimExpert completed cloud-to-cloud compare implementation (all 34+ resource types covered)
+- NodeJsDev completed --subscription-id scope refactor (moved from global to command-specific)
+- TestEngineer now running comprehensive compare testing (current active task)
+- TypescriptDev-compare-finish spawned for lint fixes + unit tests + local compare stub
+
+**Test coverage expected:**
+- Unit tests for normalization module (instance value stripping)
+- Unit tests for differ module (deep comparison logic)
+- Integration tests comparing two real APIM instances
+- Edge cases: auto-generated ID matching, circular dependencies, large resource counts
+
+**Status:** Awaiting test results before TypescriptDev takes over finishing work.
+

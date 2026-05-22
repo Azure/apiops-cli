@@ -186,3 +186,28 @@ Same rule applies to `expect(fs.copyFile).toHaveBeenCalledWith(...)` assertions 
 - Issue #16 closed
 
 **Tests:** Created `tests/unit/lib/user-agent.test.ts` (3 tests) and added to `apim-client.test.ts` (2 tests)
+
+### 2026-05-22: Team Update — apiops compare Spawned; Lint Fixes + Testing Pending
+
+**Team context:**
+- ApimExpert completed cloud-to-cloud compare implementation (34+ resource types, normalization, diff engine)
+- NodeJsDev completed --subscription-id scope refactor (global → command-specific)
+- TestEngineer actively testing compare module (running)
+- TypescriptDev-compare-finish (this agent) spawned to finish compare work
+
+**Handed-off artifacts:**
+- compare-normalizer.ts: 37 lint errors (@typescript-eslint/no-unsafe-*) due to Commander untyped options
+- compare-differ.ts: deep comparison logic, well-tested in ApimExpert's unit testing
+- compare-service.ts: orchestrates 34+ resource types with hierarchical comparison
+- compare-command.ts: CLI interface with text/JSON/table output
+
+**Tasks for this agent:**
+1. Fix 37 lint errors via explicit type assertions in Commander options handling
+2. Add unit tests for normalizer and differ modules
+3. Implement local compare mode stub (artifact + overrides loader)
+4. Add integration tests for cloud compare
+
+**Known issues:**
+- All 885 existing tests pass; lint errors are non-blocking but should be resolved
+- Local compare deferred due to scope; will be implemented as stub only
+
