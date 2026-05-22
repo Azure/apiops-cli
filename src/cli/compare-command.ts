@@ -6,16 +6,19 @@
  */
 
 import { Command } from 'commander';
-import { logger } from '../lib/logger.js';
+import { logger, LogLevel } from '../lib/logger.js';
 import { ApimClient } from '../clients/apim-client.js';
+import { ArtifactStore } from '../clients/artifact-store.js';
 import { ApimServiceContext } from '../models/types.js';
 import { CompareConfig } from '../models/config.js';
 import {
   compareApimInstances,
+  compareLocalArtifacts,
   CompareResult,
   ComparisonDifference,
 } from '../services/compare-service.js';
 import { getCloudConfig, buildArmBaseUrl } from '../lib/cloud-config.js';
+import { loadOverrideConfig } from '../lib/config-loader.js';
 
 interface CompareCommandOptions {
   sourceResourceGroup: string;
@@ -30,10 +33,23 @@ interface CompareCommandOptions {
   logLevel?: string;
 }
 
+interface LocalCompareCommandOptions {
+  source: string;
+  target: string;
+  overrides?: string;
+  format?: string;
+  logLevel?: string;
+}
+
 export function createCompareCommand(): Command {
   const command = new Command('compare');
 
   command
+    .description('Compare two Azure API Management instances or local artifact directories');
+
+  // Cloud-to-cloud comparison (default action)
+  const cloudCommand = new Command('cloud');
+  cloudCommand
     .description('Compare two Azure API Management instances')
     .requiredOption(
       '--source-resource-group <name>',
@@ -61,7 +77,7 @@ export function createCompareCommand(): Command {
     )
     .action(async (options: CompareCommandOptions) => {
       try {
-        await runCompare(options, command.optsWithGlobals());
+        await runCompare(options, cloudCommand.optsWithGlobals());
       } catch (error) {
         logger.error(
           `Compare failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -70,7 +86,49 @@ export function createCompareCommand(): Command {
       }
     });
 
+  command.addCommand(cloudCommand);
+
+  // Add local subcommand
+  const localCommand = new Command('local');
+  localCommand
+    .description('Compare local artifact directories (source + overrides vs target)')
+    .requiredOption('--source <directory>', 'Source artifact directory path')
+    .requiredOption('--target <directory>', 'Target artifact directory path')
+    .option('--overrides <path>', 'Path to override YAML file to apply to source')
+    .action(async (options: LocalCompareCommandOptions) => {
+      try {
+        await runLocalCompare(options, localCommand.optsWithGlobals());
+      } catch (error) {
+        logger.error(
+          `Local compare failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        process.exit(1);
+      }
+    });
+
+  command.addCommand(localCommand);
+
   return command;
+}
+
+/**
+ * Parse log level string to LogLevel enum
+ */
+function parseLogLevel(level?: string): LogLevel | undefined {
+  if (!level) return undefined;
+  const upperLevel = level.toUpperCase();
+  switch (upperLevel) {
+    case 'DEBUG':
+      return LogLevel.DEBUG;
+    case 'INFO':
+      return LogLevel.INFO;
+    case 'WARN':
+      return LogLevel.WARN;
+    case 'ERROR':
+      return LogLevel.ERROR;
+    default:
+      return LogLevel.INFO;
+  }
 }
 
 async function runCompare(
@@ -105,7 +163,7 @@ async function runCompare(
   const apiVersion = '2024-05-01';
 
   // Create source context
-  const sourceClient = new ApimClient(cloudConfig);
+  const sourceClient = new ApimClient(cloudConfig.authScope);
   const sourceBaseUrl: string = buildArmBaseUrl(
     cloudName,
     sourceSubscriptionId,
@@ -121,7 +179,7 @@ async function runCompare(
   };
 
   // Create target context
-  const targetClient = new ApimClient(cloudConfig);
+  const targetClient = new ApimClient(cloudConfig.authScope);
   const targetBaseUrl: string = buildArmBaseUrl(
     cloudName,
     targetSubscriptionId,
@@ -142,7 +200,7 @@ async function runCompare(
     sourceClient,
     targetClient,
     format,
-    logLevel: globalOpts.logLevel as 'debug' | 'info' | 'warn' | 'error' | undefined,
+    logLevel: parseLogLevel(globalOpts.logLevel),
   };
 
   logger.info('Starting comparison...');
@@ -238,6 +296,50 @@ function outputTable(result: CompareResult): void {
 
   console.log('═══════════════════════════════════════════════════');
   console.log('');
+}
+
+async function runLocalCompare(
+  options: LocalCompareCommandOptions,
+  globalOpts: {
+    format?: string;
+    logLevel?: string;
+  },
+): Promise<void> {
+  const format = (globalOpts.format ?? 'text') as 'text' | 'json' | 'table';
+
+  // Load overrides if provided
+  const overrides = options.overrides
+    ? await loadOverrideConfig(options.overrides)
+    : undefined;
+
+  logger.info('Starting local artifact comparison...');
+  logger.info(`  Source: ${options.source}${overrides ? ' (with overrides)' : ''}`);
+  logger.info(`  Target: ${options.target}`);
+
+  const artifactStore = new ArtifactStore();
+
+  const result = await compareLocalArtifacts(
+    artifactStore,
+    options.source,
+    options.target,
+    overrides,
+    format,
+    parseLogLevel(globalOpts.logLevel),
+  );
+
+  // Output results
+  if (format === 'json') {
+    outputJson(result);
+  } else if (format === 'table') {
+    outputTable(result);
+  } else {
+    outputText(result);
+  }
+
+  // Exit code: 0 = identical, 1 = differences found
+  if (result.totalDifferences > 0) {
+    process.exit(1);
+  }
 }
 
 function outputText(result: CompareResult): void {

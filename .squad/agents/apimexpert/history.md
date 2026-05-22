@@ -176,3 +176,33 @@ the SDK surface, reference docs, or ad-hoc observation.
 
 **Testing:** All 885 existing tests continue to pass.
 
+### 2026-05-22: `apiops compare local` — Local Artifact Comparison Implementation
+
+**What:** Implemented local compare mode for `apiops compare` command (completes issue #22).
+
+**Key modules added:**
+1. **src/services/local-artifact-loader.ts** — Loads APIM resources from local artifact directories, applies overrides via override-merger
+2. **src/cli/compare-command.ts** — Updated to support both `compare cloud` and `compare local` subcommands
+3. **src/services/compare-service.ts** — Added `compareLocalArtifacts` function that reuses existing normalizer/differ infrastructure
+
+**Features:**
+- `apiops compare local --source <dir> --target <dir> --overrides <yaml>` compares local artifact directories
+- Source artifacts + overrides are treated as expected state, compared against target on disk
+- Uses same path/status output contract as cloud compare (same/source-only/target-only/different/skipped)
+- Handles auto-generated ID matching just like cloud compare
+- Reuses existing normalization and diff engine — no duplicate code paths
+
+**Architecture:**
+- Cloud compare: uses `IApimClient` to fetch resources from live APIM instances
+- Local compare: uses `IArtifactStore.listResources()` to load from disk, applies overrides, then compares
+- Both modes converge on the same `compareResourceLists()` function
+
+**Testing:**
+- All 899 existing tests pass
+- Manual integration testing confirms:
+  - Identical artifacts → PASS (exit code 0)
+  - Different artifacts → FAIL with diff details (exit code 1)
+  - Overrides correctly applied to source before comparison
+  - Instance-specific values (subscription IDs, RG names) normalized correctly
+
+**Status:** Fully complete and production-ready.

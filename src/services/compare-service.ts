@@ -7,6 +7,7 @@
  */
 
 import type { IApimClient } from '../clients/iapim-client.js';
+import type { IArtifactStore } from '../clients/iartifact-store.js';
 import { logger } from '../lib/logger.js';
 import {
   normalizeResource,
@@ -21,7 +22,9 @@ import {
 } from '../lib/compare-differ.js';
 import { RESOURCE_TYPE_METADATA, ResourceType } from '../models/resource-types.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
-import { CompareConfig } from '../models/config.js';
+import { CompareConfig, OverrideConfig } from '../models/config.js';
+import { LogLevel } from '../lib/logger.js';
+import { loadLocalArtifacts } from './local-artifact-loader.js';
 
 export interface CompareResult {
   totalTypes: number;
@@ -802,4 +805,85 @@ async function safeListResources(
 function extractResourceName(resourceId: string): string {
   const parts = resourceId.split('/');
   return parts[parts.length - 1] || '';
+}
+
+/**
+ * Compares local artifact directories
+ */
+export async function compareLocalArtifacts(
+  artifactStore: IArtifactStore,
+  sourceDir: string,
+  targetDir: string,
+  overrides?: OverrideConfig,
+  _format: 'text' | 'json' | 'table' = 'text',
+  _logLevel?: LogLevel,
+): Promise<CompareResult> {
+  logger.info(`Comparing local artifacts: ${sourceDir} → ${targetDir}`);
+
+  // Load artifacts from both directories
+  const sourceArtifacts = await loadLocalArtifacts(
+    artifactStore,
+    sourceDir,
+    overrides,
+  );
+  const targetArtifacts = await loadLocalArtifacts(
+    artifactStore,
+    targetDir,
+    undefined, // No overrides for target
+  );
+
+  // Create a normalized context with placeholder values
+  // For local compare, we use placeholders since there are no actual subscriptions/RGs
+  const normalizeContext: NormalizeContext = {
+    sourceServiceName: 'source',
+    targetServiceName: 'target',
+    sourceSubscriptionId: '00000000-0000-0000-0000-000000000000',
+    targetSubscriptionId: '00000000-0000-0000-0000-000000000000',
+    sourceResourceGroup: 'source-rg',
+    targetResourceGroup: 'target-rg',
+  };
+
+  const differences: ComparisonDifference[] = [];
+  let totalTypes = 0;
+  let totalResources = 0;
+
+  // Get all unique resource types from both sources
+  const allTypes = new Set<string>();
+  sourceArtifacts.forEach((_, type) => allTypes.add(type));
+  targetArtifacts.forEach((_, type) => allTypes.add(type));
+
+  // Compare each resource type
+  for (const resourceType of allTypes) {
+    const sourceResources = sourceArtifacts.get(resourceType) ?? [];
+    const targetResources = targetArtifacts.get(resourceType) ?? [];
+
+    // Determine skip flags based on resource type (string comparison)
+    const skipSecretValues = resourceType === String(ResourceType.NamedValue);
+    const skipLoggerCreds = resourceType === String(ResourceType.Logger);
+
+    const typeDiffs = compareResourceLists(
+      resourceType,
+      sourceResources,
+      targetResources,
+      normalizeContext,
+      undefined, // No exclusions for local compare
+      skipSecretValues,
+      skipLoggerCreds,
+    );
+
+    differences.push(...typeDiffs);
+    totalTypes++;
+    totalResources += Math.max(sourceResources.length, targetResources.length);
+  }
+
+  const totalDifferences = differences.filter(
+    (d) => d.diffType !== 'property-diff' || (d.diffs && d.diffs.length > 0),
+  ).length;
+
+  return {
+    totalTypes,
+    totalResources,
+    totalDifferences,
+    differences,
+  };
 }
