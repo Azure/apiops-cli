@@ -88,6 +88,8 @@ Available on all commands (`extract`, `publish`, `init`):
 | `AZURE_TENANT_ID` | all | Microsoft Entra ID (Azure AD) tenant ID |
 | `AZURE_API_VERSION` | extract, publish | APIM REST API version (default: `2024-05-01`) |
 | `COMMIT_ID` | publish | Git commit SHA for incremental publish (alternative to `--commit-id`) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | extract, publish | OpenTelemetry OTLP exporter endpoint for telemetry |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | extract, publish | Azure Monitor Application Insights connection string for telemetry |
 
 ### Authentication Environment Variables
 
