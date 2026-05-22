@@ -23,11 +23,10 @@ import { loadOverrideConfig } from '../lib/config-loader.js';
 interface CompareCommandOptions {
   sourceResourceGroup: string;
   sourceServiceName: string;
-  sourceSubscriptionId?: string;
+  sourceSubscriptionId: string;
   targetResourceGroup: string;
   targetServiceName: string;
-  targetSubscriptionId?: string;
-  subscriptionId?: string;
+  targetSubscriptionId: string;
   format?: string;
   cloud?: string;
   logLevel?: string;
@@ -59,9 +58,9 @@ export function createCompareCommand(): Command {
       '--source-service-name <name>',
       'Source APIM service name',
     )
-    .option(
+    .requiredOption(
       '--source-subscription-id <id>',
-      'Source Azure subscription ID (defaults to --subscription-id)',
+      'Source Azure subscription ID',
     )
     .requiredOption(
       '--target-resource-group <name>',
@@ -71,9 +70,9 @@ export function createCompareCommand(): Command {
       '--target-service-name <name>',
       'Target APIM service name',
     )
-    .option(
+    .requiredOption(
       '--target-subscription-id <id>',
-      'Target Azure subscription ID (defaults to --subscription-id)',
+      'Target Azure subscription ID',
     )
     .action(async (options: CompareCommandOptions) => {
       try {
@@ -134,27 +133,20 @@ function parseLogLevel(level?: string): LogLevel | undefined {
 async function runCompare(
   options: CompareCommandOptions,
   globalOpts: {
-    subscriptionId?: string;
     cloud?: string;
     format?: string;
     logLevel?: string;
   },
 ): Promise<void> {
-  // Determine subscription IDs
-  const sourceSubscriptionId =
-    options.sourceSubscriptionId ?? globalOpts.subscriptionId;
-  const targetSubscriptionId =
-    options.targetSubscriptionId ?? globalOpts.subscriptionId;
+  // Extract required subscription IDs
+  const sourceSubscriptionId = options.sourceSubscriptionId;
+  const targetSubscriptionId = options.targetSubscriptionId;
 
   if (!sourceSubscriptionId) {
-    throw new Error(
-      'Source subscription ID required (--source-subscription-id or --subscription-id)',
-    );
+    throw new Error('Source subscription ID required (--source-subscription-id)');
   }
   if (!targetSubscriptionId) {
-    throw new Error(
-      'Target subscription ID required (--target-subscription-id or --subscription-id)',
-    );
+    throw new Error('Target subscription ID required (--target-subscription-id)');
   }
 
   const cloudName = globalOpts.cloud ?? 'public';
