@@ -82,15 +82,51 @@ describe('RESOURCE_TYPE_METADATA', () => {
     }
   });
 
-  it('non-association resource types have supportsGet=true', () => {
-    const nonAssociationTypes = [
+  it('workspaceSupported is optional and boolean when present', () => {
+    for (const [type, meta] of Object.entries(RESOURCE_TYPE_METADATA)) {
+      if (meta.workspaceSupported !== undefined) {
+        expect(typeof meta.workspaceSupported, `${type} workspaceSupported should be boolean`).toBe('boolean');
+      }
+    }
+  });
+
+  it('workspace-capable types have workspaceSupported=true', () => {
+    const expectedWorkspaceTypes = [
+      ResourceType.NamedValue,
+      ResourceType.Tag,
+      ResourceType.Backend,
+      ResourceType.Logger,
+      ResourceType.Group,
+      ResourceType.Diagnostic,
+      ResourceType.PolicyFragment,
       ResourceType.Product,
       ResourceType.Api,
-      ResourceType.Tag,
-      ResourceType.ServicePolicy,
+      ResourceType.Subscription,
+      ResourceType.GlobalSchema,
+      ResourceType.Documentation,
     ];
-    for (const type of nonAssociationTypes) {
-      expect(RESOURCE_TYPE_METADATA[type].supportsGet, `${type} should have supportsGet=true`).toBe(true);
+    for (const type of expectedWorkspaceTypes) {
+      expect(
+        RESOURCE_TYPE_METADATA[type].workspaceSupported,
+        `${type} should have workspaceSupported=true`
+      ).toBe(true);
+    }
+  });
+
+  it('non-workspace types do not have workspaceSupported=true', () => {
+    const nonWorkspaceTypes = [
+      ResourceType.ServicePolicy,
+      ResourceType.ProductPolicy,
+      ResourceType.ProductApi,
+      ResourceType.GatewayApi,
+      ResourceType.ApiPolicy,
+      ResourceType.ApiOperation,
+    ];
+    for (const type of nonWorkspaceTypes) {
+      expect(
+        RESOURCE_TYPE_METADATA[type].workspaceSupported,
+        `${type} should not have workspaceSupported=true`
+      ).not.toBe(true);
     }
   });
 });

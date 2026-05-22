@@ -9,7 +9,7 @@
 import { IApimClient } from '../clients/iapim-client.js';
 import { IArtifactStore } from '../clients/iartifact-store.js';
 import { ApimServiceContext } from '../models/types.js';
-import { ResourceType } from '../models/resource-types.js';
+import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { FilterConfig } from '../models/config.js';
 import { extractResourceType } from './resource-extractor.js';
 import { extractApiResources } from './api-extractor.js';
@@ -17,23 +17,13 @@ import { extractProductResources } from './product-extractor.js';
 import { logger } from '../lib/logger.js';
 
 /**
- * Types that can exist at the workspace level.
- * Not all APIM resource types support workspace scoping.
+ * Types that can exist at the workspace level, derived from RESOURCE_TYPE_METADATA.
+ * Enumerated in declaration order for deterministic iteration.
+ * A type is workspace-capable when its metadata has `workspaceSupported: true`.
  */
-const WORKSPACE_SUPPORTED_TYPES: ResourceType[] = [
-  ResourceType.NamedValue,
-  ResourceType.Tag,
-  ResourceType.Backend,
-  ResourceType.Logger,
-  ResourceType.Diagnostic,
-  ResourceType.PolicyFragment,
-  ResourceType.Product,
-  ResourceType.Api,
-  ResourceType.Subscription,
-  ResourceType.GlobalSchema,
-  ResourceType.Documentation,
-  ResourceType.Group,
-];
+const WORKSPACE_SUPPORTED_TYPES: ResourceType[] = Object.values(ResourceType).filter(
+  (type) => RESOURCE_TYPE_METADATA[type].workspaceSupported === true
+);
 
 /**
  * Result of extracting a single workspace.

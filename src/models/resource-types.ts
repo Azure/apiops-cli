@@ -67,6 +67,12 @@ export interface ResourceTypeMetadata {
    * individual GET per item to fetch the complete resource.
    */
   readonly listOmitsFields?: boolean;
+  /**
+   * True when this resource type is supported at the workspace scope.
+   * Used by workspace-extractor to derive the set of types to extract
+   * without maintaining a separate hardcoded list.
+   */
+  readonly workspaceSupported?: boolean;
 }
 
 export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> = {
@@ -75,12 +81,14 @@ export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> 
     artifactDirectory: 'namedValues/{0}',
     infoFile: 'namedValueInformation.json',
     supportsGet: true,
+    workspaceSupported: true,
   },
   [ResourceType.Tag]: {
     armPathSuffix: 'tags/{0}',
     artifactDirectory: 'tags/{0}',
     infoFile: 'tagInformation.json',
     supportsGet: true,
+    workspaceSupported: true,
   },
   [ResourceType.Gateway]: {
     armPathSuffix: 'gateways/{0}',
@@ -99,30 +107,35 @@ export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> 
     artifactDirectory: 'backends/{0}',
     infoFile: 'backendInformation.json',
     supportsGet: true,
+    workspaceSupported: true,
   },
   [ResourceType.Logger]: {
     armPathSuffix: 'loggers/{0}',
     artifactDirectory: 'loggers/{0}',
     infoFile: 'loggerInformation.json',
     supportsGet: true,
+    workspaceSupported: true,
   },
   [ResourceType.Group]: {
     armPathSuffix: 'groups/{0}',
     artifactDirectory: 'groups/{0}',
     infoFile: 'groupInformation.json',
     supportsGet: true,
+    workspaceSupported: true,
   },
   [ResourceType.Diagnostic]: {
     armPathSuffix: 'diagnostics/{0}',
     artifactDirectory: 'diagnostics/{0}',
     infoFile: 'diagnosticInformation.json',
     supportsGet: true,
+    workspaceSupported: true,
   },
   [ResourceType.PolicyFragment]: {
     armPathSuffix: 'policyFragments/{0}',
     artifactDirectory: 'policyFragments/{0}',
     infoFile: 'policyFragmentInformation.json',
     supportsGet: true,
+    workspaceSupported: true,
   },
   [ResourceType.ServicePolicy]: {
     armPathSuffix: 'policies/policy',
@@ -135,6 +148,7 @@ export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> 
     artifactDirectory: 'products/{0}',
     infoFile: 'productInformation.json',
     supportsGet: true,
+    workspaceSupported: true,
   },
   [ResourceType.ProductPolicy]: {
     armPathSuffix: 'products/{0}/policies/policy',
@@ -165,6 +179,7 @@ export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> 
     artifactDirectory: 'apis/{0}',
     infoFile: 'apiInformation.json',
     supportsGet: true,
+    workspaceSupported: true,
   },
   [ResourceType.ApiPolicy]: {
     armPathSuffix: 'apis/{0}/policies/policy',
@@ -207,12 +222,14 @@ export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> 
     artifactDirectory: 'subscriptions/{0}',
     infoFile: 'subscriptionInformation.json',
     supportsGet: true,
+    workspaceSupported: true,
   },
   [ResourceType.GlobalSchema]: {
     armPathSuffix: 'schemas/{0}',
     artifactDirectory: 'schemas/{0}',
     infoFile: 'schemaInformation.json',
     supportsGet: true,
+    workspaceSupported: true,
   },
   [ResourceType.PolicyRestriction]: {
     armPathSuffix: 'policyRestrictions/{0}',
@@ -225,6 +242,7 @@ export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> 
     artifactDirectory: 'documentations/{0}',
     infoFile: 'documentationInformation.json',
     supportsGet: true,
+    workspaceSupported: true,
   },
   [ResourceType.ApiSchema]: {
     armPathSuffix: 'apis/{0}/schemas/{1}',
