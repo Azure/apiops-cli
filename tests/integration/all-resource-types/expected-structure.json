@@ -714,37 +714,5 @@
         }
       }
     ]
-  },
-  "validationRules": {
-    "globalRules": [
-      "All JSON files must be valid JSON",
-      "All policy.xml files must be valid XML",
-      "All specification files must be valid for their format (YAML/JSON/GraphQL/WSDL/WADL)",
-      "File names must match resource type conventions from resource-types.ts",
-      "Directory structure must match artifactDirectory patterns from resource-types.ts"
-    ],
-    "secretRedactionRules": [
-      "NamedValue with secret=true: properties.value must be null or '[REDACTED]'",
-      "Logger credentials: instrumentationKey and connectionString must be redacted",
-      "Subscription keys: primaryKey and secondaryKey must be redacted"
-    ],
-    "protocolValidation": [
-      "REST APIs: protocols array should include 'https' or 'http'",
-      "SOAP APIs: type should be 'soap'",
-      "GraphQL APIs: type should be 'graphql'",
-      "WebSocket APIs: protocols should include 'wss' or 'ws', type should be 'websocket'"
-    ]
-  },
-  "notes": [
-    "This manifest is generated from all-resources.bicep and extraction service code",
-    "Actual counts may vary by SKU (Developer, Premium, StandardV2, PremiumV2)",
-    "Some resources (workspaces, self-hosted gateways) are SKU-dependent",
-    "Revision naming follows pattern: {apiName};rev={N}",
-    "Operations may not have individual info files (ApiOperation has infoFile: null)",
-    "ProductTag is embedded in productInformation.json, not separate files",
-    "ServicePolicy is stored at root as policy.xml, not in a policies/ directory",
-    "Wiki resources use wiki.md filename, not wikiInformation.json",
-    "Association files (apis.json, groups.json) contain arrays of {name: string} objects",
-    "Specification formats: yaml (default), json, graphql, wsdl, wadl"
-  ]
+  }
 }
