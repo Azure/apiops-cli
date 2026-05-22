@@ -86,7 +86,6 @@ apiops publish \
 | `--subscription-id <id>` | string | env: `AZURE_SUBSCRIPTION_ID` | Azure subscription ID (required) |
 | `--log-level <level>` | string | `info` | Log level: `debug`, `info`, `warn`, `error` |
 | `--format <type>` | string | `text` | Output format: `text` or `json` |
-| `--api-version <version>` | string | `2024-05-01` (env: `AZURE_API_VERSION`) | APIM REST API version override |
 | `--cloud <name>` | string | `public` | Sovereign cloud: `public`, `china`, `usgov`, `germany` |
 | `--client-id <id>` | string | — | Service principal client ID |
 | `--client-secret <secret>` | string | — | Service principal client secret |
