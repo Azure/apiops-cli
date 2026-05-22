@@ -851,4 +851,220 @@ describe('publish-service', () => {
       expect(productApiCalls).toHaveLength(0);
     });
   });
+
+  describe('auto-generated ID handling', () => {
+    it('should skip auto-generated NamedValues (24-char hex IDs)', async () => {
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.NamedValue, nameParts: ['my-manual-nv'] },
+        { type: ResourceType.NamedValue, nameParts: ['69f15c3c10a45d29d855583a'] }, // Auto-generated
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runPublish(client, store, config);
+
+      // Only one NamedValue should be published (the manual one)
+      expect(result.totalPuts).toBe(1);
+      const nvCalls = (client.putResource.mock.calls as unknown[][]).filter((c) => {
+        const d = c[1] as ResourceDescriptor;
+        return d.type === ResourceType.NamedValue;
+      });
+      expect(nvCalls).toHaveLength(1);
+      expect((nvCalls[0][1] as ResourceDescriptor).nameParts).toEqual(['my-manual-nv']);
+    });
+
+    it('should log debug message when skipping auto-generated NamedValues', async () => {
+      const debugSpy = vi.spyOn((await import('../../../src/lib/logger.js')).logger, 'debug').mockImplementation(() => {});
+
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.NamedValue, nameParts: ['69f16ad1ee7da61d543198f7'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      await runPublish(client, store, config);
+
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Skipping auto-generated named value')
+      );
+
+      debugSpy.mockRestore();
+    });
+
+    it('should publish NamedValues with human-readable names', async () => {
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.NamedValue, nameParts: ['src-nv-plain'] },
+        { type: ResourceType.NamedValue, nameParts: ['my-api-key'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runPublish(client, store, config);
+
+      // Both should be published
+      expect(result.totalPuts).toBe(2);
+    });
+  });
+
+  describe('override application in publish flow', () => {
+    it('should apply overrides when config has override section', async () => {
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.Backend, nameParts: ['my-backend'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      vi.mocked(store.readResource).mockResolvedValue({
+        name: 'my-backend',
+        properties: {
+          url: 'https://original.example.com',
+          protocol: 'http',
+        },
+      });
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        overrides: {
+          backends: {
+            'my-backend': {
+              url: 'https://overridden.example.com',
+            },
+          },
+        },
+        logLevel: LogLevel.INFO,
+      };
+
+      await runPublish(client, store, config);
+
+      // Verify putResource was called with the overridden value
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({ type: ResourceType.Backend, nameParts: ['my-backend'] }),
+        expect.objectContaining({
+          properties: expect.objectContaining({
+            url: 'https://overridden.example.com',
+          }),
+        })
+      );
+    });
+
+    it('should not modify resources when no overrides match', async () => {
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.Backend, nameParts: ['my-backend'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      const originalJson = {
+        name: 'my-backend',
+        properties: {
+          url: 'https://original.example.com',
+          protocol: 'http',
+        },
+      };
+      vi.mocked(store.readResource).mockResolvedValue(originalJson);
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        overrides: {
+          backends: {
+            'other-backend': {
+              url: 'https://overridden.example.com',
+            },
+          },
+        },
+        logLevel: LogLevel.INFO,
+      };
+
+      await runPublish(client, store, config);
+
+      // Verify putResource was called with original value
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({ type: ResourceType.Backend }),
+        expect.objectContaining({
+          properties: expect.objectContaining({
+            url: 'https://original.example.com',
+          }),
+        })
+      );
+    });
+
+    it('should apply overrides case-insensitively', async () => {
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.NamedValue, nameParts: ['MyNV'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      vi.mocked(store.readResource).mockResolvedValue({
+        name: 'MyNV',
+        properties: {
+          value: 'original-value',
+          displayName: 'Original',
+        },
+      });
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        overrides: {
+          namedValues: {
+            'mynv': {
+              value: 'overridden-value',
+            },
+          },
+        },
+        logLevel: LogLevel.INFO,
+      };
+
+      await runPublish(client, store, config);
+
+      // Override should match despite case difference
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({ type: ResourceType.NamedValue }),
+        expect.objectContaining({
+          properties: expect.objectContaining({
+            value: 'overridden-value',
+          }),
+        })
+      );
+    });
+  });
 });

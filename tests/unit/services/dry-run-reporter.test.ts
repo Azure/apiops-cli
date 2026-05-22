@@ -294,5 +294,130 @@ describe('dry-run-reporter', () => {
         expect(action.operation).toBe('PUT');
       }
     });
+
+    it('should detect differences between cloud and local: update scenario', async () => {
+      const client = createMockClient(new Map([
+        ['NamedValue:my-nv', true], // Exists in cloud
+      ]));
+      const store = createMockStore();
+
+      const descriptors: ResourceDescriptor[] = [
+        { type: ResourceType.NamedValue, nameParts: ['my-nv'] },
+      ];
+
+      const report = await generateDryRunReport(store, client, testContext, testConfig, descriptors);
+
+      // Resource exists - should be marked as PUT (update)
+      expect(report.actions).toHaveLength(1);
+      expect(report.actions[0].operation).toBe('PUT');
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringMatching(/\[DRY RUN\] PUT.*my-nv/)
+      );
+      // Should NOT contain "(new)" since resource exists
+      expect(loggerInfoSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('(new)')
+      );
+    });
+
+    it('should detect differences between cloud and local: create scenario', async () => {
+      const client = createMockClient(new Map([
+        ['Backend:my-backend', false], // Does not exist in cloud
+      ]));
+      const store = createMockStore();
+
+      const descriptors: ResourceDescriptor[] = [
+        { type: ResourceType.Backend, nameParts: ['my-backend'] },
+      ];
+
+      const report = await generateDryRunReport(store, client, testContext, testConfig, descriptors);
+
+      // Resource doesn't exist - should be marked as PUT (create)
+      expect(report.actions).toHaveLength(1);
+      expect(report.actions[0].operation).toBe('PUT');
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('(new)')
+      );
+    });
+
+    it('should detect deletions when cloud has resources not in local artifacts', async () => {
+      const client = createMockClient(new Map([
+        ['Tag:old-tag', true], // Exists in cloud but not in local
+      ]));
+      const store = createMockStore();
+
+      const deletedDescriptors: ResourceDescriptor[] = [
+        { type: ResourceType.Tag, nameParts: ['old-tag'] },
+      ];
+
+      const report = await generateDryRunReport(
+        store,
+        client,
+        testContext,
+        testConfig,
+        [], // No creates/updates
+        deletedDescriptors // Incremental delete
+      );
+
+      expect(report.actions).toHaveLength(1);
+      expect(report.actions[0].operation).toBe('DELETE');
+      expect(report.summary.deletes).toBe(1);
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[DRY RUN] DELETE')
+      );
+    });
+
+    it('should skip deletions when resource already absent from cloud', async () => {
+      const client = createMockClient(new Map([
+        ['Tag:old-tag', false], // Already absent in cloud
+      ]));
+      const store = createMockStore();
+
+      const deletedDescriptors: ResourceDescriptor[] = [
+        { type: ResourceType.Tag, nameParts: ['old-tag'] },
+      ];
+
+      const report = await generateDryRunReport(
+        store,
+        client,
+        testContext,
+        testConfig,
+        [],
+        deletedDescriptors
+      );
+
+      expect(report.actions).toHaveLength(1);
+      expect(report.actions[0].operation).toBe('SKIP');
+      expect(report.summary.skips).toBe(1);
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('already absent')
+      );
+    });
+
+    it('should compare multiple resources with mixed states', async () => {
+      const client = createMockClient(new Map([
+        ['NamedValue:nv-existing', true], // Exists - update
+        ['Backend:backend-new', false],   // New - create
+        ['Tag:tag-existing', true],       // Exists - update
+      ]));
+      const store = createMockStore();
+
+      const descriptors: ResourceDescriptor[] = [
+        { type: ResourceType.NamedValue, nameParts: ['nv-existing'] },
+        { type: ResourceType.Backend, nameParts: ['backend-new'] },
+        { type: ResourceType.Tag, nameParts: ['tag-existing'] },
+      ];
+
+      const report = await generateDryRunReport(store, client, testContext, testConfig, descriptors);
+
+      expect(report.actions).toHaveLength(3);
+      expect(report.summary.creates).toBe(3);
+      expect(report.summary.deletes).toBe(0);
+      expect(report.summary.skips).toBe(0);
+      
+      // Verify new vs update indicators
+      const newResourceLogs = (loggerInfoSpy.mock.calls as unknown[][])
+        .filter(c => typeof c[0] === 'string' && c[0].includes('(new)'));
+      expect(newResourceLogs).toHaveLength(1);
+    });
   });
 });

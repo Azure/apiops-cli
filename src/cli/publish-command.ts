@@ -23,6 +23,7 @@ import { getCloudConfig, buildArmBaseUrl } from '../lib/cloud-config.js';
 interface PublishOptions {
   resourceGroup: string;
   serviceName: string;
+  subscriptionId: string;
   source: string;
   overrides?: string;
   commitId?: string;
@@ -38,6 +39,7 @@ export function createPublishCommand(): Command {
     .description('Publish local APIM artifacts to Azure APIM service')
     .requiredOption('--resource-group <rg>', 'Azure resource group name')
     .requiredOption('--service-name <name>', 'APIM service instance name')
+    .requiredOption('--subscription-id <id>', 'Azure subscription ID')
     .option('--source <dir>', 'Source directory with artifacts', './apim-artifacts')
     .option('--overrides <path>', 'Override configuration YAML file')
     .option(
@@ -72,14 +74,13 @@ async function executePublish(
   options: PublishOptions,
   globalOpts: {
     logLevel?: string;
-    subscriptionId?: string;
     cloud?: string;
     format?: string;
     apiVersion?: string;
   }
 ): Promise<void> {
   const subscriptionId =
-    globalOpts.subscriptionId ?? process.env.AZURE_SUBSCRIPTION_ID;
+    options.subscriptionId ?? process.env.AZURE_SUBSCRIPTION_ID;
 
   if (!subscriptionId) {
     logger.error(

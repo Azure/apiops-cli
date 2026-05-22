@@ -155,3 +155,29 @@ This enforces that `tarballRelPath` is only accessible when `mode === 'local'`, 
 - All 467 tests pass (init-command.test.ts validates both modes)
 - ESLint clean (no warnings or errors)
 - Backward compatible: Existing workflows with `--cli-package` continue to work
+
+### 2026-05-22: --subscription-id Scope Change
+
+**Problem:** `--subscription-id` was defined as a global option but is only needed for commands that interact with Azure (extract, publish, init).
+
+**Solution:** Moved `--subscription-id` from global options to command-specific options:
+- **Extract & Publish:** Added as required option (`.requiredOption('--subscription-id <id>', 'Azure subscription ID')`)
+- **Init:** Added as optional option (used in generated pipeline templates)
+- Removed from global options in `src/cli/index.ts`
+
+**Key Implementation Notes:**
+1. **Breaking change:** Command-line syntax changes from `apiops --subscription-id <id> extract` to `apiops extract --subscription-id <id>`
+2. **Environment variable fallback:** `AZURE_SUBSCRIPTION_ID` still works as fallback for all three commands
+3. **Interface updates:** Updated `ExtractOptions` and `PublishOptions` interfaces to include `subscriptionId: string`
+4. **Global opts cleanup:** Removed `subscriptionId?` from `globalOpts` type in `executeExtract()` and `executePublish()`
+5. **Test updates:** Changed test expectation from `toContain('--subscription-id')` to `not.toContain('--subscription-id')` for global help
+
+**Benefits:**
+- More precise: Only commands that need Azure context declare the option
+- Better help output: `apiops --help` is cleaner, command help is more specific
+- Aligns with compare work: Avoids overlapping CLI flag edits
+
+**Verification:**
+- All 885 tests pass
+- ESLint clean
+- Help output verified: global help excludes `--subscription-id`, extract/publish/init help includes it
