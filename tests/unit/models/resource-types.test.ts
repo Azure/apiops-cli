@@ -117,6 +117,10 @@ describe('RESOURCE_TYPE_METADATA', () => {
       ResourceType.GlobalSchema,
       ResourceType.Documentation,
     ];
+    const derivedWorkspaceTypes = Object.values(ResourceType).filter(
+      (type) => RESOURCE_TYPE_METADATA[type].workspaceSupported === true
+    );
+    expect(derivedWorkspaceTypes).toEqual(expectedWorkspaceTypes);
     for (const type of expectedWorkspaceTypes) {
       expect(
         RESOURCE_TYPE_METADATA[type].workspaceSupported,

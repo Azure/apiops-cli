@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { ResourceType, RESOURCE_TYPE_METADATA } from '../../../src/models/resource-types.js';
+import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext } from '../../../src/models/types.js';
 import { FilterConfig } from '../../../src/models/config.js';
 import { extractWorkspaces } from '../../../src/services/workspace-extractor.js';
@@ -58,9 +58,20 @@ describe('workspace-extractor', () => {
         client, store, testContext, '/output', filter
       );
 
-      const expectedTypes = Object.values(ResourceType).filter(
-        (type) => RESOURCE_TYPE_METADATA[type].workspaceSupported === true
-      );
+      const expectedTypes = [
+        ResourceType.NamedValue,
+        ResourceType.Tag,
+        ResourceType.Backend,
+        ResourceType.Logger,
+        ResourceType.Group,
+        ResourceType.Diagnostic,
+        ResourceType.PolicyFragment,
+        ResourceType.Product,
+        ResourceType.Api,
+        ResourceType.Subscription,
+        ResourceType.GlobalSchema,
+        ResourceType.Documentation,
+      ];
       expect(seenTypes).toEqual(expectedTypes);
     });
 
