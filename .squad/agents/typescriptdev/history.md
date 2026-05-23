@@ -249,3 +249,13 @@ Same rule applies to `expect(fs.copyFile).toHaveBeenCalledWith(...)` assertions 
 
 **Commit:** (pending)
 
+### 2026-05-23: Build failure due to incomplete dependency install (`tsc` not found)
+
+**Context:** `npm run build` failed immediately with `sh: 1: tsc: not found` even though `typescript` is declared in `devDependencies`.
+
+**Root cause:** The workspace had a partial `node_modules` install that did not include full dev tooling and was missing `node_modules/.bin/tsc`.
+
+**Resolution:** Ran `npm ci` from repository root to restore lockfile-consistent dependencies, then re-ran `npm run build` successfully.
+
+**Pattern:** If TypeScript is declared but `tsc` is missing at runtime, verify dependency install integrity before changing code or build scripts. For this repo, use `npm ci` as the first recovery step.
+
