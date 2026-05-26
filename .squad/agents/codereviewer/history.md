@@ -169,3 +169,15 @@
 **Verdict:** ✅ Charter now serves as authoritative reference for code review standards across all project phases. Tech-specific checks operationalize historical review findings (2026-04-06 through 2026-04-14) into explicit, repeatable criteria.
 
 **Pattern to remember:** The charter evolves as patterns emerge from actual reviews. When CodeReviewer flags something in a review that isn't yet in the charter, ApiOpsLead may enhance the charter to make the pattern explicit for future reviews.
+
+### 2026-05-26: Compare instance-field review
+
+**Context:** Reviewed the compare JSON instance-metadata change that tags one-sided diffs with `instance: 'source' | 'target'`.
+
+**Verdict:** ✅ APPROVED — No blocking issues found
+
+**Key Findings:**
+
+1. The change is at the correct seam: compare-service output, which updates the machine-readable contract without perturbing text or table output.
+2. Focused unit coverage is sufficient for the code path changed and verifies both instance assignments while preserving `property-diff` behavior.
+3. Remaining gap is non-blocking: add a future CLI-level JSON contract test to catch regressions in serialized output shape.

@@ -15,6 +15,7 @@ import { logger } from '../lib/logger.js';
  * Interface for init command options (from CLI flags)
  */
 interface InitOptions {
+  subscriptionId?: string;
   ci?: string;
   nonInteractive: boolean;
   artifactDir: string;
@@ -29,6 +30,7 @@ interface InitOptions {
 export function createInitCommand(): Command {
   const init = new Command('init')
     .description('Initialize APIM repository with CI/CD pipelines and configuration templates')
+    .option('--subscription-id <id>', 'Azure subscription ID (used in generated pipeline templates)')
     .option('--ci <provider>', 'CI/CD provider: github-actions or azure-devops')
     .option('--non-interactive', 'Skip interactive prompts (requires --ci)', false)
     .option('--artifact-dir <dir>', 'Artifact directory path', './apim-artifacts')

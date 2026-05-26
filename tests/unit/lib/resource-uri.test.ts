@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 import { describe, it, expect } from 'vitest';
-import { buildArmUri, parseArmUri, buildResourceLabel } from '../../../src/lib/resource-uri.js';
+import { buildArmUri, parseArmUri, buildResourceLabel, getRelativeResourceId } from '../../../src/lib/resource-uri.js';
 import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
 import { ResourceType } from '../../../src/models/resource-types.js';
 
@@ -260,6 +260,31 @@ describe('buildResourceLabel', () => {
     expect(label).toBe('apis/petstore/operations/get-user/policies/policy');
   });
 
+
+describe('getRelativeResourceId', () => {
+  it('should strip the APIM service prefix from a named value resource id', () => {
+    const resourceId =
+      '/subscriptions/sub-123/resourceGroups/rg-test/providers/Microsoft.ApiManagement/service/my-apim/namedValues/mySecret';
+
+    expect(getRelativeResourceId(resourceId, 'my-apim')).toBe(
+      'namedValues/mySecret',
+    );
+  });
+
+  it('should strip query parameters from the relative resource id', () => {
+    const resourceId =
+      '/subscriptions/sub-123/resourceGroups/rg-test/providers/Microsoft.ApiManagement/service/my-apim/apis/petstore?api-version=2024-05-01';
+
+    expect(getRelativeResourceId(resourceId, 'my-apim')).toBe('apis/petstore');
+  });
+
+  it('should return undefined when the service name does not match', () => {
+    const resourceId =
+      '/subscriptions/sub-123/resourceGroups/rg-test/providers/Microsoft.ApiManagement/service/my-apim/apis/petstore';
+
+    expect(getRelativeResourceId(resourceId, 'other-apim')).toBeUndefined();
+  });
+});
   it('should format product-child resource (ProductApi)', () => {
     const descriptor: ResourceDescriptor = {
       type: ResourceType.ProductApi,

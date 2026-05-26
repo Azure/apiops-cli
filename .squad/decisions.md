@@ -2,6 +2,78 @@
 
 ## Active Decisions
 
+### 2026-05-26T21:18:34Z: Compare JSON results include source or target instance metadata
+**By:** TypeScriptDev
+**Status:** Implemented
+**What:** Added an optional `instance: 'source' | 'target'` field to `ComparisonDifference` so structured compare output explicitly identifies whether a non-matching resource exists only in the source or only in the target APIM instance.
+
+**Implementation:**
+- `missing` diffs now emit `instance: 'source'`
+- `extra` diffs now emit `instance: 'target'`
+- `property-diff` entries remain unchanged
+- Focused unit coverage verifies both instance values and confirms property diffs are unaffected
+
+**Why:** `diffType` alone was ambiguous in JSON mode because it did not say which APIM instance owned a resource that appeared only on one side. The compare service is the right seam to make the machine-readable contract self-describing without changing table or text output.
+
+**Validation:**
+- `npx vitest run tests/unit/services/compare-service.test.ts`
+
+---
+
+### 2026-05-22T08:08:23Z: apiops compare Command — Cloud-to-Cloud Comparison
+**By:** ApimExpert  
+**Status:** Completed (lint errors pending)  
+**What:** Implemented `apiops compare` command for cloud-to-cloud APIM resource comparison, following the PowerShell Compare-ApimInstance.ps1 pattern.
+
+**Implementation:**
+- **Normalization module** (`src/lib/compare-normalizer.ts`) — strips instance-specific values (subscription IDs, resource groups, service names, timestamps, auto-generated IDs)
+- **Diff engine** (`src/lib/compare-differ.ts`) — deep recursive comparison with structured output
+- **Compare service** (`src/services/compare-service.ts`) — orchestrates all 34+ resource types with hierarchical comparison
+- **CLI command** (`src/cli/compare-command.ts`) — accepts `--source-*` and `--target-*` flags, supports text/JSON/table output, exit codes 0 (identical) / 1 (differences)
+
+**Key Features:**
+- Handles auto-generated IDs via content-based stable keys
+- Skips secret values and logger credentials per PowerShell logic
+- Built-in exclusions (administrators group, starter/unlimited products, master subscription, echo-api)
+- All 34+ resource types covered (APIs, products, backends, workspaces, gateways, policies, etc.)
+
+**Known Issues:**
+- 37 lint errors (Commander's untyped options + IApimClient) — non-blocking, fixed via type assertions
+- Local compare mode deferred (requires artifact loader + override merger)
+
+**Handoff:** TypescriptDev-compare-finish spawned to fix lint errors and add unit tests.
+
+---
+
+### 2026-05-22T08:08:23Z: Move --subscription-id from Global to Command-Specific Scope
+**By:** NodeJsDev  
+**Status:** Completed  
+**What:** Refactored `--subscription-id` from global options to command-specific options for `extract`, `publish`, and `init` commands.
+
+**Changes:**
+1. Removed `--subscription-id` from global options (`src/cli/index.ts`)
+2. Added `--subscription-id` as required option to `extract-command.ts`
+3. Added `--subscription-id` as required option to `publish-command.ts`
+4. Added `--subscription-id` as optional option to `init-command.ts`
+5. Updated test expectations in `tests/unit/cli/index.test.ts`
+
+**Rationale:**
+- **Precision:** Not all commands need subscription ID (e.g., `apiops --help`)
+- **Clarity:** Makes it explicit which commands require Azure context
+- **CLI alignment:** Avoids overlapping edits with compare command work
+
+**Impact:**
+- **Breaking change:** Users must now use `apiops extract --subscription-id <id>` instead of `apiops --subscription-id <id> extract`
+- **Environment variable:** `AZURE_SUBSCRIPTION_ID` still works as fallback
+- **Help output:** Global help no longer shows `--subscription-id`
+
+**Validation:**
+- ✅ All 885 tests pass
+- ✅ Lint passes
+- ✅ Build passes
+
+---
+
 ### 2026-05-14T05:20:00Z: APIM v1 → v2 SKU Migration via apiops-cli
 **By:** ApimExpert + ApiOpsLead (joint research and decision)  
 **Status:** Proposed for team governance review  
@@ -92,66 +164,6 @@
 **What:** Made `--cli-package` optional in `apiops init`. The command now supports two package consumption modes: (1) **Public npm mode** (default, when `--cli-package` NOT provided): generates package.json with `"@peterhauge/apiops-cli": "latest"`, no local tarball copy, no `.apiops/` directory created, standard consumption pattern after npm publish. (2) **Local tarball mode** (when `--cli-package <path>` provided): copies tarball to `.apiops/` directory, generates package.json with `"apiops": "file:.apiops/{tarball}"`, preserves existing behavior for local development/testing.
 **Why:** After publishing to npm as `@peterhauge/apiops-cli`, requiring users to download the package and run `apiops init --cli-package ./tarball.tgz` added unnecessary friction. Most users want to reference the public package directly. The change is backward compatible — existing workflows with `--cli-package` continue to work unchanged. Improves user experience with simpler onboarding.
 
-### 2026-04-21T19:35:00Z: SOAP/WADL spec extraction prefers link format with inline XML fallback
-**By:** ApimExpert (via Squad session with a user)
-**Status:** Implemented
-**What:** For soap-type APIs, `getApiSpecification` requests `format=wsdl-link` first. On HTTP 5xx, it falls back to the inline (non-link) `format=wsdl` export which returns raw WSDL XML in `properties.value`. WADL follows the same pattern (`wadl-link` → `format=wadl` fallback). The XML fallback content is saved as `specification.wsdl` / `specification.wadl` and is re-importable via PUT `?import=true&format=wsdl` (or `wadl-xml`).
-**Why:** User requires full round-trip fidelity — SOAP APIs must be re-importable to a new APIM instance. APIM's `wsdl-link` emitter deterministically returns HTTP 500 on many real-world SOAP APIs. Azure/apiops reference tool skips XML specs on 500 with comment "non-link exports cannot be reimported" — this is inaccurate; the inline form IS re-importable. Converting SOAP → OpenAPI via `openapi-link` works but loses SOAP semantics on round-trip.
-
-### 2026-04-21T19:34:00Z: Synthetic GraphQL APIs skip the graphql-link export call
-**By:** ApimExpert (via Squad session with a user)
-**Status:** Implemented
-**What:** Before calling `graphql-link` export, `api-extractor.ts` probes ApiSchema children via `hasGraphQLSchemaResource` and checks for `contentType` containing 'graphql'. If found (synthetic GraphQL — SDL stored as an ApiSchema resource), the export call is skipped. If not found (pass-through GraphQL), `graphql-link` is called normally.
-**Why:** APIM returns HTTP 406 on `graphql-link` export for synthetic GraphQL APIs because there is nothing to export — the SDL is already held as an ApiSchema child resource and is captured by standard ApiSchema extraction. Skipping the redundant call avoids the error without losing fidelity.
-
-### 2026-04-21T19:33:00Z: XML export fallback bypasses the default 5xx retry loop
-**By:** ApimExpert (via Squad session with user)
-**Status:** Implemented
-**What:** `getApiSpecification` passes `noRetryOn5xx=true` to `request()` when exporting `wsdl-link` or `wadl-link`. The fallback to inline format runs immediately on HTTP 5xx rather than after three retries.
-**Why:** APIM's wsdl-link/wadl-link 500 errors are deterministic failures in APIM's XML emitter, not transient. Retrying wastes time and delays the fallback. The inline format path is fast and reliable.
-
-### 2026-04-14T21:37:55Z: Resource Path Labels for Log Output
-**By:** CodeReviewer  
-**Status:** Approved  
-**What:** Implemented `buildResourceLabel()` utility to generate human-readable hierarchical resource paths in logs. Format: serviceName/grandparent/parent/name (e.g., "apim-1/petstore/get-user" instead of just "get-user"). Applied across resource-extractor.ts, api-extractor.ts, and extract-service.ts.
-**Why:** Improves observability by providing full context in log messages; aids debugging and tracing. Tested comprehensively (8 unit tests, all 467 integration tests passing). Compliant with Constitution §I-§VIII; no secret safety risks (only metadata logged).
-
-### 2026-04-13T23:35:35Z: Replace --verbose with --log-level Option
-**By:** TypeScriptDev  
-**Status:** Implemented  
-**What:** Replaced boolean `--verbose` flag with `--log-level <level>` supporting debug, info, warn, error (default: info). Logger updated with `LOG_LEVEL_PRIORITY` numeric filtering; all 432 tests pass.
-**Why:** Granular log control (4 levels vs. binary), production-friendly (suppress INFO noise), industry standard alignment (kubectl, docker, terraform), explicit semantics. Breaking change; users update `--verbose` to `--log-level debug`.
-
-### 2026-04-13T18:50:54Z: Comprehensive test coverage for API publisher and rate limiting
-**By:** TestEngineer
-**What:** Created `tests/unit/services/api-publisher.test.ts` (20 tests) covering all aspects of API publisher service, and enhanced `tests/unit/clients/apim-client.test.ts` with 4 rate-limiting tests for HTTP 429 handling.
-**Why:** Critical gap: api-publisher.ts had no dedicated test file despite being central to T032 (revision handling). Additionally, HTTP 429 rate limiting (FR-015) was untested. Both pose production risks. Solution maintains Constitution §VI (unit tests only, no external deps), full mock coverage, and edge case testing.
-
-### 2026-04-10T18:14:39Z: Text-first XML parsing in ApimClient.getResource
-**By:** TypeScriptDev
-**What:** Modified `getResource` to handle raw XML responses from APIM policy endpoints by reading response as text first, detecting XML via Content-Type header or body sniffing, then wrapping in ARM envelope.
-**Why:** APIM policy endpoints (ServicePolicy, ApiPolicy, etc.) return raw XML instead of JSON-wrapped XML. Previous implementation crashed on `response.json()`. Text-first approach is defensive, maintains backward compatibility (no interface changes), and handles both explicit and implicit XML detection.
-
-### 2025-04-09T05:34:00Z: Formalized commit message convention
-**By:** ApiOpsLead
-**What:** Codified the commit convention (include `Closes #N` or `Fixes #N` when resolving issues) into CONTRIBUTING.md and PR template. Previously this existed only in agent memory.
-**Why:** Conventions that only live in agent memory are invisible to human contributors and new AI agents. Formalizing in repo files ensures all contributors follow the same process.
-
-### 2025-05-18: GitHub Agentic Workflows (gh-aw) Adoption Strategy
-**By:** GitHubExpert  
-**Status:** Proposed  
-**Scope:** Branch maintenance workflows
-
-**Context:** Whether or not to use gh-aw or hand-rolled YAML implementations.
-
-**Decision:**
-- Use gh-aw LabelOps pattern, event pattern for advising.
-- Use hand-rolled yaml for deterministic outcode, like CI gates.
-
-**Impact:** Reduces maintenance burden for advisory workflows; eliminates keyword-matching brittleness in triage; no change to security posture.
-
----
-
 ### 2026-06-11: GitHub Agentic Workflows (gh-aw) Security Assessment
 **By:** SecurityExpert  
 **Status:** Proposed
@@ -194,6 +206,8 @@
 7. Human override always wins
 
 **Net Assessment:** gh-aw improves least-privilege, blast radius, auditability, and separation of concerns vs. current model. Weakens determinism and introduces prompt injection surface (mitigated by constraints). Net security improvement for advisory workflows when guardrails are in place.
+
+Archived entries older than 30 days are stored in `.squad/decisions-archive.md`.
 
 ---
 

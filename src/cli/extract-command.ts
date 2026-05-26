@@ -23,6 +23,7 @@ import { getCloudConfig, buildArmBaseUrl } from '../lib/cloud-config.js';
 interface ExtractOptions {
   resourceGroup: string;
   serviceName: string;
+  subscriptionId: string;
   output: string;
   filter?: string;
   transitive: boolean;
@@ -37,6 +38,7 @@ export function createExtractCommand(): Command {
     .description('Extract APIM configuration to local artifact files')
     .requiredOption('--resource-group <rg>', 'Azure resource group name')
     .requiredOption('--service-name <name>', 'APIM service instance name')
+    .requiredOption('--subscription-id <id>', 'Azure subscription ID')
     .option('--output <dir>', 'Output directory path', './apim-artifacts')
     .option('--filter <path>', 'Filter configuration YAML file')
     .option('--no-transitive', 'Disable transitive dependency inclusion')
@@ -63,13 +65,12 @@ async function executeExtract(
   options: ExtractOptions,
   globalOpts: {
     logLevel?: string;
-    subscriptionId?: string;
     cloud?: string;
     format?: string;
     apiVersion?: string;
   }
 ): Promise<void> {
-  const subscriptionId = globalOpts.subscriptionId ?? process.env.AZURE_SUBSCRIPTION_ID;
+  const subscriptionId = options.subscriptionId ?? process.env.AZURE_SUBSCRIPTION_ID;
 
   if (!subscriptionId) {
     logger.error('Subscription ID required: use --subscription-id or set AZURE_SUBSCRIPTION_ID');

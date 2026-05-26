@@ -44,7 +44,7 @@ describe('CLI entry point', () => {
     expect(result.stdout).toContain('apiops');
     expect(result.stdout).toContain('--log-level');
     expect(result.stdout).toContain('--format');
-    expect(result.stdout).toContain('--subscription-id');
+    expect(result.stdout).not.toContain('--subscription-id');
     expect(result.stdout).toContain('--cloud');
     expect(result.stdout).toContain('--otel');
     expect(result.exitCode).toBe(0);
@@ -102,6 +102,26 @@ describe('CLI entry point', () => {
       expect(result.stdout).toContain('--client-id');
       expect(result.stdout).toContain('--client-secret');
       expect(result.stdout).toContain('--tenant-id');
+      expect(result.exitCode).toBe(0);
+    });
+  });
+
+  describe('subscription-id flag visibility', () => {
+    it('should show --subscription-id in extract subcommand help', async () => {
+      const result = await runCli(['extract', '--help']);
+      expect(result.stdout).toContain('--subscription-id');
+      expect(result.exitCode).toBe(0);
+    });
+
+    it('should show --subscription-id in publish subcommand help', async () => {
+      const result = await runCli(['publish', '--help']);
+      expect(result.stdout).toContain('--subscription-id');
+      expect(result.exitCode).toBe(0);
+    });
+
+    it('should show --subscription-id in init subcommand help', async () => {
+      const result = await runCli(['init', '--help']);
+      expect(result.stdout).toContain('--subscription-id');
       expect(result.exitCode).toBe(0);
     });
   });

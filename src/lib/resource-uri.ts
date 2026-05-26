@@ -110,3 +110,28 @@ export function buildResourceLabel(descriptor: ResourceDescriptor): string {
   // armPathSuffix has no leading slash, so the result is already relative
   return formatTemplatePath(metadata.armPathSuffix, descriptor.nameParts);
 }
+
+/**
+ * Returns the relative ARM path for an APIM resource id, excluding the APIM
+ * service prefix.
+ *
+ * Example:
+ *   /subscriptions/.../providers/Microsoft.ApiManagement/service/my-apim/namedValues/value1
+ *   → namedValues/value1
+ */
+export const getRelativeResourceId = (
+  resourceId: string,
+  serviceName: string,
+): string | undefined => {
+  if (resourceId.length === 0 || serviceName.length === 0) {
+    return undefined;
+  }
+
+  const relativePrefix = `/providers/Microsoft.ApiManagement/service/${serviceName}/`;
+  const prefixIndex = resourceId.indexOf(relativePrefix);
+  if (prefixIndex < 0) {
+    return undefined;
+  }
+
+  return resourceId.substring(prefixIndex + relativePrefix.length).split('?')[0];
+};

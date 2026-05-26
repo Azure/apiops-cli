@@ -186,3 +186,87 @@ Same rule applies to `expect(fs.copyFile).toHaveBeenCalledWith(...)` assertions 
 - Issue #16 closed
 
 **Tests:** Created `tests/unit/lib/user-agent.test.ts` (3 tests) and added to `apim-client.test.ts` (2 tests)
+
+### 2026-05-22: Team Update — apiops compare Spawned; Lint Fixes + Testing Pending
+
+**Team context:**
+- ApimExpert completed cloud-to-cloud compare implementation (34+ resource types, normalization, diff engine)
+- NodeJsDev completed --subscription-id scope refactor (global → command-specific)
+- TestEngineer actively testing compare module (running)
+- TypescriptDev-compare-finish (this agent) spawned to finish compare work
+
+**Handed-off artifacts:**
+- compare-normalizer.ts: 37 lint errors (@typescript-eslint/no-unsafe-*) due to Commander untyped options
+- compare-differ.ts: deep comparison logic, well-tested in ApimExpert's unit testing
+- compare-service.ts: orchestrates 34+ resource types with hierarchical comparison
+- compare-command.ts: CLI interface with text/JSON/table output
+
+**Tasks for this agent:**
+1. Fix 37 lint errors via explicit type assertions in Commander options handling
+2. Add unit tests for normalizer and differ modules
+3. Implement local compare mode stub (artifact + overrides loader)
+4. Add integration tests for cloud compare
+
+**Known issues:**
+- All 885 existing tests pass; lint errors are non-blocking but should be resolved
+- Local compare deferred due to scope; will be implemented as stub only
+
+
+### 2026-06-14: Compare Command Type Safety Fixes (Issue #22)
+
+**Context:** Completed type-safety cleanup for the compare command implementation left by ApimExpert and NodeJsDev, reducing lint errors from 37 to 0.
+
+**Key Issues Fixed:**
+1. Missing `CompareConfig` interface definition in `src/models/config.ts` — Added interface with properly typed `sourceClient` and `targetClient` properties of type `IApimClient`
+2. Missing `armResourceType` property in `ResourceTypeMetadata` interface — Added to all 39 metadata entries using Python script
+3. Unsafe type assignments when iterating over `ResourceType` enum arrays — Fixed by explicitly typing arrays as `readonly ResourceType[]` instead of using `as const`
+4. Incorrect resource type references:
+   - `ResourceType.ApiVersionSet` → `ResourceType.VersionSet` (correct enum name)
+   - `ResourceType.ApiResolver` → `ResourceType.GraphQLResolver` (correct enum name)
+5. Undefined Workspace types — Workspace resource types not yet in `ResourceType` enum, so disabled workspace comparison code with clear comments
+
+**Type Safety Patterns:**
+- When iterating over arrays containing enum values, explicitly type as `readonly ResourceType[]` to preserve type information through iteration
+- Import `IApimClient` as `type` import to avoid unused import warnings when only used for type annotations
+- For Record<EnumType, T> indexed access, TypeScript doesn't guarantee key existence — either assert key exists or handle undefined case
+- Resource ID extraction from `Record<string, unknown>` requires runtime type checking: `const id = resource.id; if (typeof id !== 'string') continue;`
+
+**Implementation Details:**
+- `buildArmBaseUrl()` expects `cloudName` string ('public', 'china', etc.), not `cloudConfig.armEndpoint`
+- Python script automated adding `armResourceType` to 39 metadata entries by extracting first path segment from `armPathSuffix`
+- Workspace comparison code commented out (not deleted) pending future Workspace type definitions
+
+**Testing:**
+- All 899 existing tests pass
+- Zero lint errors (down from 37)
+- No test changes needed — demonstrates backward compatibility of type-safety improvements
+
+**Files Modified:**
+- `src/models/config.ts` — Added `CompareConfig` interface
+- `src/models/resource-types.ts` — Added `armResourceType` to `ResourceTypeMetadata` and all 39 metadata entries
+- `src/cli/compare-command.ts` — Fixed `buildArmBaseUrl` usage (cloudName instead of armEndpoint)
+- `src/services/compare-service.ts` — Fixed all type-safety issues, disabled Workspace comparison
+
+**Commit:** (pending)
+
+### 2026-05-26: Compare JSON instance metadata
+
+**Context:** Added instance ownership metadata to compare JSON results so source-only and target-only resources are distinguishable without inferring semantics from `diffType`.
+
+**Key Decisions:**
+- Extended `ComparisonDifference` with optional `instance: 'source' | 'target'`
+- Set `instance: 'source'` for `missing` results and `instance: 'target'` for `extra` results at the compare service output seam
+- Left `property-diff` unchanged because it already describes a bilateral comparison, not one-sided ownership
+
+**Pattern:** When structured CLI output is ambiguous, fix the result model at the service boundary rather than encoding meaning in presentation-specific formatting.
+
+**Validation:** `npx vitest run tests/unit/services/compare-service.test.ts`
+
+### 2026-05-26: Compare JSON output now identifies source vs target ownership
+
+**Context:** `apiops compare --format json` exposed `diffType: 'missing' | 'extra'`, but that was ambiguous without the table/text formatter's wording.
+
+**Pattern:** When human-readable output already interprets a structural enum, add the missing semantic data to the shared result model instead of post-processing CLI strings. For compare results, source-only resources should carry `instance: 'source'` and target-only resources should carry `instance: 'target'` directly on `ComparisonDifference`.
+
+**Guardrail:** Keep `property-diff` shape unchanged unless the extra metadata is semantically meaningful. Focused service-level tests are enough here because the CLI JSON path is a direct `JSON.stringify(result)` passthrough.
+
