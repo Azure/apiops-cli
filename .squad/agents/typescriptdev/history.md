@@ -249,13 +249,24 @@ Same rule applies to `expect(fs.copyFile).toHaveBeenCalledWith(...)` assertions 
 
 **Commit:** (pending)
 
-### 2026-05-23: Build failure due to incomplete dependency install (`tsc` not found)
+### 2026-05-26: Compare JSON instance metadata
 
-**Context:** `npm run build` failed immediately with `sh: 1: tsc: not found` even though `typescript` is declared in `devDependencies`.
+**Context:** Added instance ownership metadata to compare JSON results so source-only and target-only resources are distinguishable without inferring semantics from `diffType`.
 
-**Root cause:** The workspace had a partial `node_modules` install that did not include full dev tooling and was missing `node_modules/.bin/tsc`.
+**Key Decisions:**
+- Extended `ComparisonDifference` with optional `instance: 'source' | 'target'`
+- Set `instance: 'source'` for `missing` results and `instance: 'target'` for `extra` results at the compare service output seam
+- Left `property-diff` unchanged because it already describes a bilateral comparison, not one-sided ownership
 
-**Resolution:** Ran `npm ci` from repository root to restore lockfile-consistent dependencies, then re-ran `npm run build` successfully.
+**Pattern:** When structured CLI output is ambiguous, fix the result model at the service boundary rather than encoding meaning in presentation-specific formatting.
 
-**Pattern:** If TypeScript is declared but `tsc` is missing at runtime, verify dependency install integrity before changing code or build scripts. For this repo, use `npm ci` as the first recovery step.
+**Validation:** `npx vitest run tests/unit/services/compare-service.test.ts`
+
+### 2026-05-26: Compare JSON output now identifies source vs target ownership
+
+**Context:** `apiops compare --format json` exposed `diffType: 'missing' | 'extra'`, but that was ambiguous without the table/text formatter's wording.
+
+**Pattern:** When human-readable output already interprets a structural enum, add the missing semantic data to the shared result model instead of post-processing CLI strings. For compare results, source-only resources should carry `instance: 'source'` and target-only resources should carry `instance: 'target'` directly on `ComparisonDifference`.
+
+**Guardrail:** Keep `property-diff` shape unchanged unless the extra metadata is semantically meaningful. Focused service-level tests are enough here because the CLI JSON path is a direct `JSON.stringify(result)` passthrough.
 
