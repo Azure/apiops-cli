@@ -155,6 +155,13 @@ function normalizeString(value: string, context: NormalizeContext): string {
   s = s.replace(new RegExp(escapeRegex(sourceSub), 'g'), placeholderSub);
   s = s.replace(new RegExp(escapeRegex(targetSub), 'g'), placeholderSub);
 
+  // Normalize resource group segment for any ARM resource ID under normalized subscriptions.
+  // This avoids false diffs when equivalent dependent resources live in different RGs.
+  s = s.replace(
+    /\/subscriptions\/\{\{sub\}\}\/resourceGroups\/[^/]+(?=\/providers\/)/g,
+    '/subscriptions/{{sub}}/resourceGroups/{{rg}}',
+  );
+
   // Neutralize service name in any remaining positions
   s = s.replace(
     new RegExp(escapeRegex(context.sourceServiceName), 'g'),

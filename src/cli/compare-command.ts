@@ -232,14 +232,9 @@ function outputTable(result: CompareResult): void {
 
   if (result.totalDifferences === 0) {
     console.log('✅ PASS — Instances are identical');
-    console.log(
-      `   ${result.totalTypes} resource types compared, ${result.totalResources} resources matched`,
-    );
   } else {
     console.log('❌ FAIL — Differences found');
-    console.log(
-      `   ${result.totalDifferences} difference(s) across ${result.totalTypes} resource types`,
-    );
+    console.log(`   ${result.totalDifferences} difference(s) found`);
     console.log('');
 
     // Group by resource type
@@ -336,13 +331,9 @@ async function runLocalCompare(
 
 function outputText(result: CompareResult): void {
   if (result.totalDifferences === 0) {
-    logger.info(
-      `✅ PASS — ${result.totalTypes} resource types compared, ${result.totalResources} resources matched`,
-    );
+    logger.info('✅ PASS — Instances are identical');
   } else {
-    logger.error(
-      `❌ FAIL — ${result.totalDifferences} difference(s) found across ${result.totalTypes} resource types`,
-    );
+    logger.error(`❌ FAIL — ${result.totalDifferences} difference(s) found`);
     for (const diff of result.differences) {
       if (diff.diffType === 'missing') {
         logger.error(

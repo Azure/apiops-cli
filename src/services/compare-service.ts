@@ -27,15 +27,15 @@ import { LogLevel } from '../lib/logger.js';
 import { loadLocalArtifacts } from './local-artifact-loader.js';
 
 export interface CompareResult {
-  totalTypes: number;
-  totalResources: number;
   totalDifferences: number;
   differences: ComparisonDifference[];
 }
 
 export interface ComparisonDifference {
+  instance?: 'source' | 'target';
   resourceType: string;
   resourceName: string;
+  displayName?: string;
   diffType: 'missing' | 'extra' | 'property-diff';
   diffs?: ResourceDiff[];
 }
@@ -66,8 +66,6 @@ export async function compareApimInstances(
   };
 
   const differences: ComparisonDifference[] = [];
-  let totalTypes = 0;
-  let totalResources = 0;
 
   // Get clients from config
   const sourceClient: IApimClient = config.sourceClient;
@@ -113,8 +111,6 @@ export async function compareApimInstances(
       typeConfig.skipLoggerCreds ?? false,
     );
     differences.push(...typeDiffs);
-    totalTypes++;
-    totalResources += typeDiffs.length;
   }
 
   // Compare APIs
@@ -128,8 +124,6 @@ export async function compareApimInstances(
     EXCLUDE_APIS,
   );
   differences.push(...apiDiffs);
-  totalTypes++;
-  totalResources += apiDiffs.length;
 
   // Enumerate APIs for child resource comparison
   const sourceApis = await safeListResources(
@@ -170,8 +164,6 @@ export async function compareApimInstances(
         config.target,
       );
       differences.push(...childDiffs);
-      totalTypes++;
-      totalResources += childDiffs.length;
     }
 
     // API Operation Policies
@@ -195,8 +187,6 @@ export async function compareApimInstances(
         config.target,
       );
       differences.push(...opPolicyDiffs);
-      totalTypes++;
-      totalResources += opPolicyDiffs.length;
     }
 
     // API Resolver Policies
@@ -220,8 +210,6 @@ export async function compareApimInstances(
         config.target,
       );
       differences.push(...resolverPolicyDiffs);
-      totalTypes++;
-      totalResources += resolverPolicyDiffs.length;
     }
   }
 
@@ -259,8 +247,6 @@ export async function compareApimInstances(
         config.target,
       );
       differences.push(...childDiffs);
-      totalTypes++;
-      totalResources += childDiffs.length;
     }
   }
 
@@ -283,8 +269,6 @@ export async function compareApimInstances(
       config.target,
     );
     differences.push(...gatewayApiDiffs);
-    totalTypes++;
-    totalResources += gatewayApiDiffs.length;
   }
 
   // Note: Workspace comparison disabled - Workspace types not yet defined in ResourceType enum
@@ -326,8 +310,6 @@ export async function compareApimInstances(
         config.target,
       );
       differences.push(...childDiffs);
-      totalTypes++;
-      totalResources += childDiffs.length;
     }
   }
   */
@@ -337,8 +319,6 @@ export async function compareApimInstances(
   ).length;
 
   return {
-    totalTypes,
-    totalResources,
     totalDifferences,
     differences,
   };
@@ -657,10 +637,15 @@ function compareResourceLists(
   // Find missing resources (in source but not in target)
   for (const name of sourceMap.keys()) {
     if (!targetMap.has(name)) {
+      const sourceResource = sourceMap.get(name)!;
+      const displayName = getComparisonDisplayName(sourceResource);
+
       differences.push({
         resourceType: typeLabel,
         resourceName: name,
         diffType: 'missing',
+        ...(displayName === undefined ? {} : { displayName }),
+        instance: 'source',
       });
     }
   }
@@ -668,10 +653,15 @@ function compareResourceLists(
   // Find extra resources (in target but not in source)
   for (const name of targetMap.keys()) {
     if (!sourceMap.has(name)) {
+      const targetResource = targetMap.get(name)!;
+      const displayName = getComparisonDisplayName(targetResource);
+
       differences.push({
         resourceType: typeLabel,
         resourceName: name,
         diffType: 'extra',
+        ...(displayName === undefined ? {} : { displayName }),
+        instance: 'target',
       });
     }
   }
@@ -682,6 +672,9 @@ function compareResourceLists(
 
     const sourceResource = sourceMap.get(name)!;
     const targetResource = targetMap.get(name)!;
+    const displayName =
+      getComparisonDisplayName(sourceResource) ??
+      getComparisonDisplayName(targetResource);
 
     const sourceNorm = normalizeResource(sourceResource, normalizeContext);
     const targetNorm = normalizeResource(targetResource, normalizeContext);
@@ -728,12 +721,32 @@ function compareResourceLists(
         resourceType: typeLabel,
         resourceName: name,
         diffType: 'property-diff',
+        ...(displayName === undefined ? {} : { displayName }),
         diffs,
       });
     }
   }
 
   return differences;
+}
+
+function getComparisonDisplayName(
+  resource: Record<string, unknown>,
+): string | undefined {
+  const properties = resource.properties;
+  if (typeof properties === 'object' && properties !== null) {
+    const displayName = (properties as Record<string, unknown>).displayName;
+    if (typeof displayName === 'string' && displayName.length > 0) {
+      return displayName;
+    }
+  }
+
+  const displayName = resource.displayName;
+  if (typeof displayName === 'string' && displayName.length > 0) {
+    return displayName;
+  }
+
+  return undefined;
 }
 
 /**
@@ -844,8 +857,6 @@ export async function compareLocalArtifacts(
   };
 
   const differences: ComparisonDifference[] = [];
-  let totalTypes = 0;
-  let totalResources = 0;
 
   // Get all unique resource types from both sources
   const allTypes = new Set<string>();
@@ -872,8 +883,6 @@ export async function compareLocalArtifacts(
     );
 
     differences.push(...typeDiffs);
-    totalTypes++;
-    totalResources += Math.max(sourceResources.length, targetResources.length);
   }
 
   const totalDifferences = differences.filter(
@@ -881,8 +890,6 @@ export async function compareLocalArtifacts(
   ).length;
 
   return {
-    totalTypes,
-    totalResources,
     totalDifferences,
     differences,
   };
