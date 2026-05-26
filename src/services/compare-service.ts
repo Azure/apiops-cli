@@ -24,9 +24,14 @@ import { RESOURCE_TYPE_METADATA, ResourceType } from '../models/resource-types.j
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import { CompareConfig, OverrideConfig } from '../models/config.js';
 import { LogLevel } from '../lib/logger.js';
+import { getRelativeResourceId } from '../lib/resource-uri.js';
 import { loadLocalArtifacts } from './local-artifact-loader.js';
 
+const resolveRelativeResourceId = getRelativeResourceId;
+
 export interface CompareResult {
+  sourceResourceId?: string;
+  targetResourceId?: string;
   totalDifferences: number;
   differences: ComparisonDifference[];
 }
@@ -36,25 +41,22 @@ export interface ComparisonDifference {
   resourceType: string;
   resourceName: string;
   displayName?: string;
+  relativeResourceId?: string;
   diffType: 'missing' | 'extra' | 'property-diff';
   diffs?: ResourceDiff[];
 }
-
-// Built-in resources to exclude from comparison
-const EXCLUDE_GROUPS = new Set(['administrators', 'developers', 'guests']);
-const EXCLUDE_PRODUCTS = new Set(['starter', 'unlimited']);
-const EXCLUDE_SUBSCRIPTIONS = new Set(['master']);
-const EXCLUDE_APIS = new Set(['echo-api']);
-
 /**
  * Compares two APIM instances and returns differences
  */
 export async function compareApimInstances(
   config: CompareConfig,
 ): Promise<CompareResult> {
-  logger.info(
-    `Comparing ${config.source.serviceName} → ${config.target.serviceName}`,
-  );
+  const shouldLogInfo = config.format !== 'json';
+  if (shouldLogInfo) {
+    logger.info(
+      `Comparing ${config.source.serviceName} → ${config.target.serviceName}`,
+    );
+  }
 
   const normalizeContext: NormalizeContext = {
     sourceServiceName: config.source.serviceName,
@@ -83,14 +85,14 @@ export async function compareApimInstances(
     { type: ResourceType.Gateway },
     { type: ResourceType.VersionSet },
     { type: ResourceType.Backend },
-    { type: ResourceType.Group, exclude: EXCLUDE_GROUPS },
+    { type: ResourceType.Group },
     { type: ResourceType.PolicyFragment },
     { type: ResourceType.GlobalSchema },
     { type: ResourceType.Logger, skipLoggerCreds: true },
     { type: ResourceType.Diagnostic },
     { type: ResourceType.ServicePolicy },
-    { type: ResourceType.Product, exclude: EXCLUDE_PRODUCTS },
-    { type: ResourceType.Subscription, exclude: EXCLUDE_SUBSCRIPTIONS },
+    { type: ResourceType.Product },
+    { type: ResourceType.Subscription },
     // Note: Workspace types not yet defined in ResourceType enum
     // { type: ResourceType.Workspace },
     { type: ResourceType.Documentation },
@@ -121,7 +123,6 @@ export async function compareApimInstances(
     normalizeContext,
     config.source,
     config.target,
-    EXCLUDE_APIS,
   );
   differences.push(...apiDiffs);
 
@@ -137,7 +138,7 @@ export async function compareApimInstances(
       if (typeof id !== 'string') return '';
       return extractResourceName(id);
     })
-    .filter((name) => name && !EXCLUDE_APIS.has(name));
+    .filter(Boolean);
 
   // Compare API children
   for (const apiName of apiNames) {
@@ -225,7 +226,7 @@ export async function compareApimInstances(
       if (typeof id !== 'string') return '';
       return extractResourceName(id);
     })
-    .filter((name) => name && !EXCLUDE_PRODUCTS.has(name));
+    .filter(Boolean);
 
   for (const productName of productNames) {
     const productChildTypes: readonly ResourceType[] = [
@@ -319,6 +320,8 @@ export async function compareApimInstances(
   ).length;
 
   return {
+    sourceResourceId: config.source.baseUrl,
+    targetResourceId: config.target.baseUrl,
     totalDifferences,
     differences,
   };
@@ -639,12 +642,21 @@ function compareResourceLists(
     if (!targetMap.has(name)) {
       const sourceResource = sourceMap.get(name)!;
       const displayName = getComparisonDisplayName(sourceResource);
+      const sourceResourceId =
+        typeof sourceResource.id === 'string' ? sourceResource.id : undefined;
+      const relativeResourceId = resolveRelativeResourceId(
+        sourceResourceId ?? '',
+        normalizeContext.sourceServiceName,
+      );
 
       differences.push({
         resourceType: typeLabel,
         resourceName: name,
         diffType: 'missing',
         ...(displayName === undefined ? {} : { displayName }),
+        ...(relativeResourceId === undefined
+          ? {}
+          : { relativeResourceId }),
         instance: 'source',
       });
     }
@@ -655,12 +667,21 @@ function compareResourceLists(
     if (!sourceMap.has(name)) {
       const targetResource = targetMap.get(name)!;
       const displayName = getComparisonDisplayName(targetResource);
+      const targetResourceId =
+        typeof targetResource.id === 'string' ? targetResource.id : undefined;
+      const relativeResourceId = resolveRelativeResourceId(
+        targetResourceId ?? '',
+        normalizeContext.targetServiceName,
+      );
 
       differences.push({
         resourceType: typeLabel,
         resourceName: name,
         diffType: 'extra',
         ...(displayName === undefined ? {} : { displayName }),
+        ...(relativeResourceId === undefined
+          ? {}
+          : { relativeResourceId }),
         instance: 'target',
       });
     }
@@ -675,6 +696,13 @@ function compareResourceLists(
     const displayName =
       getComparisonDisplayName(sourceResource) ??
       getComparisonDisplayName(targetResource);
+    const sourceResourceId =
+      typeof sourceResource.id === 'string' ? sourceResource.id : undefined;
+    const targetResourceId =
+      typeof targetResource.id === 'string' ? targetResource.id : undefined;
+    const relativeResourceId =
+      resolveRelativeResourceId(sourceResourceId ?? '', normalizeContext.sourceServiceName) ??
+      resolveRelativeResourceId(targetResourceId ?? '', normalizeContext.targetServiceName);
 
     const sourceNorm = normalizeResource(sourceResource, normalizeContext);
     const targetNorm = normalizeResource(targetResource, normalizeContext);
@@ -722,6 +750,9 @@ function compareResourceLists(
         resourceName: name,
         diffType: 'property-diff',
         ...(displayName === undefined ? {} : { displayName }),
+        ...(relativeResourceId === undefined
+          ? {}
+          : { relativeResourceId }),
         diffs,
       });
     }
@@ -831,7 +862,10 @@ export async function compareLocalArtifacts(
   _format: 'text' | 'json' | 'table' = 'text',
   _logLevel?: LogLevel,
 ): Promise<CompareResult> {
-  logger.info(`Comparing local artifacts: ${sourceDir} → ${targetDir}`);
+  const shouldLogInfo = _format !== 'json';
+  if (shouldLogInfo) {
+    logger.info(`Comparing local artifacts: ${sourceDir} → ${targetDir}`);
+  }
 
   // Load artifacts from both directories
   const sourceArtifacts = await loadLocalArtifacts(

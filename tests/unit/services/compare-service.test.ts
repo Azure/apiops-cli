@@ -8,7 +8,7 @@ import type {
   ApimServiceContext,
   ResourceDescriptor,
 } from '../../../src/models/types.js';
-import { LogLevel } from '../../../src/lib/logger.js';
+import { LogLevel, logger } from '../../../src/lib/logger.js';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { compareApimInstances } from '../../../src/services/compare-service.js';
 
@@ -59,6 +59,119 @@ function createContext(serviceName: string): ApimServiceContext {
 }
 
 describe('compare-service', () => {
+  it('includes built-in groups products and apis in compare results', async () => {
+    const sourceClient = createMockClient({
+      [ResourceType.Group]: [
+        createResource('source-apim', 'groups/developers', {
+          displayName: 'Developers',
+          description: 'Built-in group',
+        }),
+      ],
+      [ResourceType.Product]: [
+        createResource('source-apim', 'products/starter', {
+          displayName: 'Starter',
+          approvalRequired: false,
+        }),
+      ],
+      [ResourceType.Api]: [
+        createResource('source-apim', 'apis/echo-api', {
+          displayName: 'Echo API',
+          path: 'echo',
+        }),
+      ],
+    });
+    const targetClient = createMockClient();
+
+    const config: CompareConfig = {
+      source: createContext('source-apim'),
+      target: createContext('target-apim'),
+      sourceClient,
+      targetClient,
+      format: 'json',
+      logLevel: LogLevel.INFO,
+    };
+
+    const result = await compareApimInstances(config);
+
+    expect(result).toMatchObject({
+      sourceResourceId:
+        'https://management.azure.com/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/source-apim',
+      targetResourceId:
+        'https://management.azure.com/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/target-apim',
+    });
+
+    expect(result.differences).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          resourceType: 'groups',
+          resourceName: 'developers',
+          displayName: 'Developers',
+          diffType: 'missing',
+          relativeResourceId: 'groups/developers',
+          instance: 'source',
+        }),
+        expect.objectContaining({
+          resourceType: 'products',
+          resourceName: 'starter',
+          displayName: 'Starter',
+          diffType: 'missing',
+          relativeResourceId: 'products/starter',
+          instance: 'source',
+        }),
+        expect.objectContaining({
+          resourceType: 'apis',
+          resourceName: 'echo-api',
+          displayName: 'Echo API',
+          diffType: 'missing',
+          relativeResourceId: 'apis/echo-api',
+          instance: 'source',
+        }),
+      ]),
+    );
+  });
+
+  it('includes master subscriptions in compare results', async () => {
+    const sourceClient = createMockClient({
+      [ResourceType.Subscription]: [
+        createResource('source-apim', 'subscriptions/master', {
+          displayName: 'Master Subscription',
+        }),
+      ],
+    });
+    const targetClient = createMockClient();
+
+    const config: CompareConfig = {
+      source: createContext('source-apim'),
+      target: createContext('target-apim'),
+      sourceClient,
+      targetClient,
+      format: 'json',
+      logLevel: LogLevel.INFO,
+    };
+
+    const result = await compareApimInstances(config);
+
+    expect(result).toMatchObject({
+      sourceResourceId:
+        'https://management.azure.com/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/source-apim',
+      targetResourceId:
+        'https://management.azure.com/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/target-apim',
+    });
+
+    expect(result.differences).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          resourceType: 'subscriptions',
+          resourceName: 'master',
+          displayName: 'Master Subscription',
+          diffType: 'missing',
+          relativeResourceId: 'subscriptions/master',
+          instance: 'source',
+        }),
+      ]),
+    );
+  });
+
   it('adds instance metadata and optional display names without changing semantics when absent', async () => {
     const sourceClient = createMockClient({
       [ResourceType.Tag]: [createResource('source-apim', 'tags/source-only-tag')],
@@ -124,6 +237,7 @@ describe('compare-service', () => {
     );
 
     expect(missingDiff).not.toHaveProperty('displayName');
+    expect(missingDiff).toHaveProperty('relativeResourceId', 'tags/source-only-tag');
 
     const propertyDiff = result.differences.find(
       (difference) =>
@@ -134,8 +248,84 @@ describe('compare-service', () => {
     expect(propertyDiff).toMatchObject({
       diffType: 'property-diff',
       displayName: 'Shared backend',
+      relativeResourceId: 'backends/0123456789abcdef01234567',
       diffs: expect.any(Array),
     });
     expect(propertyDiff).not.toHaveProperty('instance');
+  });
+
+  it('includes source and target resource ids in compare differences', async () => {
+    const sourceClient = createMockClient({
+      [ResourceType.Subscription]: [
+        createResource('source-apim', 'subscriptions/master', {
+          displayName: 'Master subscription',
+        }),
+      ],
+    });
+    const targetClient = createMockClient({
+      [ResourceType.Subscription]: [
+        createResource('target-apim', 'subscriptions/target-only', {
+          displayName: 'Target subscription',
+        }),
+      ],
+    });
+
+    const config: CompareConfig = {
+      source: createContext('source-apim'),
+      target: createContext('target-apim'),
+      sourceClient,
+      targetClient,
+      format: 'json',
+      logLevel: LogLevel.INFO,
+    };
+
+    const result = await compareApimInstances(config);
+
+    expect(result).toMatchObject({
+      sourceResourceId:
+        'https://management.azure.com/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/source-apim',
+      targetResourceId:
+        'https://management.azure.com/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/target-apim',
+    });
+
+    expect(result.differences).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          resourceType: 'subscriptions',
+          resourceName: 'master',
+          diffType: 'missing',
+          instance: 'source',
+          relativeResourceId: 'subscriptions/master',
+        }),
+        expect.objectContaining({
+          resourceType: 'subscriptions',
+          resourceName: 'target-only',
+          diffType: 'extra',
+          instance: 'target',
+          relativeResourceId: 'subscriptions/target-only',
+        }),
+      ]),
+    );
+  });
+
+  it('does not emit info logs for json output', async () => {
+    const infoSpy = vi.spyOn(logger, 'info').mockImplementation(() => undefined);
+
+    const sourceClient = createMockClient();
+    const targetClient = createMockClient();
+
+    const config: CompareConfig = {
+      source: createContext('source-apim'),
+      target: createContext('target-apim'),
+      sourceClient,
+      targetClient,
+      format: 'json',
+      logLevel: LogLevel.INFO,
+    };
+
+    await compareApimInstances(config);
+
+    expect(infoSpy).not.toHaveBeenCalled();
+    infoSpy.mockRestore();
   });
 });

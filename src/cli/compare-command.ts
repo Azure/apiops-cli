@@ -195,13 +195,16 @@ async function runCompare(
     logLevel: parseLogLevel(globalOpts.logLevel),
   };
 
-  logger.info('Starting comparison...');
-  logger.info(
-    `  Source: ${sourceContext.serviceName} (${sourceContext.resourceGroup})`,
-  );
-  logger.info(
-    `  Target: ${targetContext.serviceName} (${targetContext.resourceGroup})`,
-  );
+  const shouldLogInfo = format !== 'json';
+  if (shouldLogInfo) {
+    logger.info('Starting comparison...');
+    logger.info(
+      `  Source: ${sourceContext.serviceName} (${sourceContext.resourceGroup})`,
+    );
+    logger.info(
+      `  Target: ${targetContext.serviceName} (${targetContext.resourceGroup})`,
+    );
+  }
 
   const result = await compareApimInstances(config);
 
@@ -299,9 +302,12 @@ async function runLocalCompare(
     ? await loadOverrideConfig(options.overrides)
     : undefined;
 
-  logger.info('Starting local artifact comparison...');
-  logger.info(`  Source: ${options.source}${overrides ? ' (with overrides)' : ''}`);
-  logger.info(`  Target: ${options.target}`);
+  const shouldLogInfo = format !== 'json';
+  if (shouldLogInfo) {
+    logger.info('Starting local artifact comparison...');
+    logger.info(`  Source: ${options.source}${overrides ? ' (with overrides)' : ''}`);
+    logger.info(`  Target: ${options.target}`);
+  }
 
   const artifactStore = new ArtifactStore();
 
