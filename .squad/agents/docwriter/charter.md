@@ -30,11 +30,12 @@ Technical Writer specializing in user-facing documentation for API developers.
 ## Output Standards
 
 - All docs in `/docs` unless otherwise specified
-- Use GitHub-Flavored Markdown (GFM)
 - Mermaid blocks use ```mermaid fenced code blocks
 - File names: lowercase, hyphen-separated (e.g., `getting-started.md`, `architecture-overview.md`)
 - Include front matter or clear H1 title in every document
 - Cross-reference related docs with relative links
+- Back decisions, notes, and factual assertions with a credible source URL whenever possible
+- REQUIRED: Use GitHub-Flavored Markdown (https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax)
 
 ## Model
 
