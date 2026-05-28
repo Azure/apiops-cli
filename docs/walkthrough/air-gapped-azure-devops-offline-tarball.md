@@ -40,16 +40,14 @@ flowchart LR
 | Requirement | Details |
 |-------------|---------|
 | **Connected workstation** | A machine with internet access to download the CLI and its dependencies |
-| **Node.js 22.x** | Installed on both the workstation and the agent (includes npm) |
 | **[Self-hosted Azure Pipelines agent](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/agents?view=azure-devops#self-hosted-agents)** | Registered in your agent pool, running in the air-gapped network |
+| **Node.js 22.x** | Installed on both the workstation and the Azure Pipelines agent (includes npm). Download of Node.js available at <https://nodejs.org/download>. |
 | **Azure connectivity from agent** | The agent must reach your APIM instance's ARM endpoint (network-level only) |
 | **File transfer mechanism** | A way to copy the npm cache directory into the air-gapped network |
 
-> **On-premises Azure DevOps:** If you run [Azure DevOps Server](https://learn.microsoft.com/en-us/azure/devops/server/install/get-started?view=azure-devops-2022), the same approach applies.
-
 ---
 
-## Step 1 — Pack the CLI
+### 1. Pack the CLI
 
 On the connected workstation:
 
@@ -59,17 +57,11 @@ npm pack @peterhauge/apiops-cli
 
 This produces `peterhauge-apiops-cli-<version>.tgz` in the current directory.
 
-Commit the tarball into your repository (e.g., under `.apiops/`) so the pipeline can reference it by path:
-
-```bash
-mkdir -p .apiops
-mv peterhauge-apiops-cli-*.tgz .apiops/
-git add .apiops/peterhauge-apiops-cli-*.tgz
-```
-
 ---
 
-## Step 2 — Initialize the Repository
+## 2.  Add `apiops` related files to repository
+
+### 2.1 Initialize your repository
 
 Pass `--cli-package` so the generated `package.json` references the local tarball instead of the public registry:
 
@@ -77,8 +69,7 @@ Pass `--cli-package` so the generated `package.json` references the local tarbal
 apiops init \
   --ci azure-devops \
   --environments dev,prod \
-  --cli-package ./.apiops/peterhauge-apiops-cli-<version>.tgz \
-  --non-interactive
+  --cli-package <path-to-tarball>/peterhauge-apiops-cli-<version>.tgz 
 ```
 
 This command generates:
@@ -90,9 +81,11 @@ This command generates:
 | `pipelines/run-publisher.yaml` | Publish pipeline |
 | `configuration.*.yaml` | Override templates |
 
+Follow the remaining instructions listed in created `IDENTITY-SETUP-AZDO.md` or run `/apiops-setup-identity` prompt. This creates the necessary variable groups and and service connections.
+
 ---
 
-## Step 3 — Generate the Lock File and Pre-Stage the npm Cache
+### 2.2 Generate the Lock File and Pre-Stage the npm Cache
 
 On the **connected workstation**, run:
 
@@ -101,7 +94,63 @@ npm install   # creates package-lock.json
 npm ci        # populates ~/.npm/_cacache/ with every package the lock file references
 ```
 
-Commit `package-lock.json` to the repository. The command `npm ci --offline` requires it.
+> The command `npm ci --offline` requires a package lock file.
+
+### 2.3 Modify Pipelines for Air-Gapped Operation
+
+The generated pipelines (`pipelines/run-extractor.yaml` and `pipelines/run-publisher.yaml`) need the following edits:
+
+| Edit | What to Change |
+|------|----------------|
+| 1. **Agent pool** | Update [pool YAML schema](https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/pool?view=azure-pipelines). Replace `pool: vmImage: ubuntu-latest` with self-hosted agent pool (e.g. `pool: name: air-gapped-pool`). <br>  (See next step [Configure the Azure DevOps Self-Hosted Agent](#3-configure-the-azure-devops-self-hosted-agent) for setup details.) |
+| 2. **Remove NodeTool task** | Delete the `NodeTool@0` step (Node.js is pre-installed on the agent).<br> No `npmAuthenticate@0` task is needed for offline mode. |
+| 3. **Use offline `npm ci`** | Change `npm ci` to `npm ci --offline`. |
+
+### 2.4 Commit `apiops` related files
+
+For the offline-tarball workflow, commit the files that make the pipeline fully reproducible without npm registry access:
+
+| File Name | Description |
+|-----------|-------------|
+| `.apiops/peterhauge-apiops-cli-<version>.tgz` | CLI package consumed by the pipelines. |
+| `package.json` | Contains the `file:` dependency pointing to the tarball. |
+| `package-lock.json` | Required for deterministic offline installs with `npm ci --offline`. |
+| `pipelines/run-extractor.yaml` | Azure DevOps extract pipeline definition. |
+| `pipelines/run-publisher.yaml` | Azure DevOps publish pipeline definition. |
+| `configuration.*.yaml` | Generated environment override templates. |
+
+```bash
+git add \
+    .apiops/peterhauge-apiops-cli-*.tgz \
+    package.json \
+    package-lock.json \
+    pipelines/run-extractor.yaml \
+    pipelines/run-publisher.yaml \
+    configuration.*.yaml
+git commit -m "chore: commit offline-tarball apiops bootstrap files"
+git push
+```
+---
+
+## 3. Configure the Azure DevOps Self-Hosted Agent
+
+Install and register the agent in the air-gapped network per the [self-hosted agent documentation](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/linux-agent?view=azure-devops).
+
+### 3.1 Verify rerequisites
+
+Verify the following:
+
+1. **Node.js 22.x** is installed and on `PATH`
+3. **Network access to Azure ARM** — the agent must reach `management.azure.com` (or [sovereign cloud equivalent](https://learn.microsoft.com/en-us/azure/developer/identity/national-cloud))
+4. **Network access to Azure DevOps** — the agent must reach your Azure DevOps org for job dispatch
+5. **Git** is installed (required by the `checkout` step)
+
+> **Agent pool:** Add your air-gapped agents to a [dedicated agent pool](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/pools-queues?view=azure-devops) (e.g., `air-gapped-pool`) so pipelines target them explicitly.
+
+
+### 3.2 Transfer npm cache files for offline use
+
+The command `npm ci --offline` requires package-lock.json and npm cache to be pre-populated.
 
 Then transfer the npm cache to the agent:
 
@@ -114,68 +163,18 @@ mkdir -p ~/.npm
 tar -xzf npm-cacache.tar.gz -C ~/.npm
 ```
 
-> Repeat this cache transfer every time dependencies change (CLI upgrade, new package, etc.).
+## 4 - Finish `apiops init` for pipeline
 
----
+If not already done, while on the air-gapped network, follow the remaining instructions listed in created `IDENTITY-SETUP-AZDO.md`. This creates the necessary variable groups and and service connections.
 
-## Step 4 — Configure the Self-Hosted Agent
-
-Install and register the agent in the air-gapped network per the [self-hosted agent documentation](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/linux-agent?view=azure-devops).
-
-Verify the following:
-
-1. **Node.js 22.x** is installed and on `PATH`
-2. **npm cache is pre-staged** at the agent service account's `~/.npm/_cacache/` (see Step 3)
-3. **Network access to Azure ARM** — the agent must reach `management.azure.com` (or [sovereign cloud equivalent](https://learn.microsoft.com/en-us/azure/developer/identity/national-cloud))
-4. **Network access to Azure DevOps** — the agent must reach your Azure DevOps org for job dispatch
-5. **Git** is installed (required by the `checkout` step)
-
-> **Agent pool:** Add your air-gapped agents to a [dedicated agent pool](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/pools-queues?view=azure-devops) (e.g., `air-gapped-pool`) so pipelines target them explicitly.
-
----
-
-## Step 5 — Modify Pipelines for Air-Gapped Operation
-
-The generated pipelines (`pipelines/run-extractor.yaml` and `pipelines/run-publisher.yaml`) need three edits:
-
-| Edit | What to Change |
-|------|----------------|
-| **Agent pool** | Replace `pool: vmImage: ubuntu-latest` with `pool: name: air-gapped-pool` ([pool YAML schema](https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/pool?view=azure-pipelines)) |
-| **Remove NodeTool task** | Delete the `NodeTool@0` step (Node.js is pre-installed on the agent) |
-| **Use offline `npm ci`** | Change `npm ci` to `npm ci --offline` so npm resolves entirely from the pre-staged cache |
-
-No `npmAuthenticate@0` task is needed — there is no registry to authenticate against. The `--offline` flag makes npm fail fast if any package is missing from the cache instead of attempting a network call.
-
-> **Azure authentication:** The `AzureCLI@2` task handles Azure authentication via the service connection. The service connection injects tokens for `DefaultAzureCredential`.
-
----
-
-## Step 6 — Configure Variable Groups and Service Connections
-
-Follow the standard [Azure DevOps integration guide](../ci-cd/azure-devops.md#variable-groups-configuration) to set up:
-
-1. **Variable group `apim-common`** — variables shared across all environments (e.g., subscription ID, tenant ID, common tags)
-2. **Variable groups `apim-dev`, `apim-prod`** — environment-specific variables (e.g., APIM instance name, resource group) that override values from `apim-common`
-3. **Service connections** — Azure Resource Manager connections scoped to your APIM instances; they can be referenced from either variable group
-
-These are configured in Azure DevOps and are injected at pipeline runtime.
-
----
-
-## Step 7 — Commit and Validate
-
-```bash
-git add .
-git commit -m "feat: air-gapped apiops setup with offline tarball"
-git push
-```
+## 5 — Commit and Validate
 
 Trigger the extract pipeline manually from **Pipelines → Run pipeline** and verify:
 
 1. `npm ci --offline` completes with no network calls
 2. `apiops extract` authenticates via the service connection and runs successfully
 
-> **✅ Setup complete.** Your air-gapped apiops pipelines are now operational. The remaining sections cover ongoing maintenance and reference material — read them as needed.
+> **✅ Setup complete.** Your air-gapped apiops pipelines are now operational. The remaining sections cover ongoing maintenance and troubleshooting.
 
 ---
 
@@ -183,9 +182,28 @@ Trigger the extract pipeline manually from **Pipelines → Run pipeline** and ve
 
 1. On a connected workstation, run `npm pack @peterhauge/apiops-cli` for the new version
 2. Replace `.apiops/peterhauge-apiops-cli-*.tgz` with the new tarball and update the `file:` path in `package.json`
-3. Regenerate `package-lock.json` (`npm install`)
+3. Regenerate `package-lock.json` 
+    ```bash
+    npm install
+    ```
 4. Re-populate and re-transfer the npm cache (`npm ci` on the workstation, then copy `~/.npm/_cacache/`)
+    ```bash
+    # On the workstation
+    tar -czf npm-cacache.tar.gz -C ~/.npm _cacache
+
+    # Transfer npm-cacache.tar.gz into the air-gapped network, then on the agent:
+    mkdir -p ~/.npm
+    tar -xzf npm-cacache.tar.gz -C ~/.npm
+    ```
 5. Commit the tarball and updated lock file
+    ```bash
+    git add \
+        .apiops/peterhauge-apiops-cli-*.tgz \
+        package.json \
+        package-lock.json \
+    git commit -m "chore: commit updated offline-tarball apiops bootstrap files"
+    git push
+    ```
 
 ---
 
@@ -207,9 +225,6 @@ Trigger the extract pipeline manually from **Pipelines → Run pipeline** and ve
 
 - [Local npm Registry walkthrough](air-gapped-azure-devops-local-registry.md) — recommended when an internal feed is available
 - [apiops init reference](../commands/init.md) — full `--cli-package` documentation
-- [Azure DevOps integration](../ci-cd/azure-devops.md) — standard (connected) setup
-- [Authentication guide](../guides/authentication.md) — service principal and managed identity options
-- [Air-gapped setup: GitHub Actions](air-gapped-github-actions.md)
 - [Self-hosted agents](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/agents?view=azure-devops#self-hosted-agents) — agent installation and configuration
 - [Azure DevOps Server](https://learn.microsoft.com/en-us/azure/devops/server/install/get-started?view=azure-devops-2022) — on-premises installation
 - [National cloud endpoints](https://learn.microsoft.com/en-us/azure/developer/identity/national-cloud) — sovereign cloud identity configuration
