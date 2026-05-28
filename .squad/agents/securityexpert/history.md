@@ -4,7 +4,7 @@
 
 - **Project:** apiops-cli — TypeScript CLI for Azure API Management operations
 - **Stack:** TypeScript 5.x, Node.js 22.x, Commander, @azure/identity, js-yaml, simple-git
-- **User:** Elizabeth Maher
+- **User:** User (redacted)
 - **Repo:** Azure/apiops-cli (public, open source)
 - **Security posture:** AI-first repo with strict human-in-the-loop policy
 

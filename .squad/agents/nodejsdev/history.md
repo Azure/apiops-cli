@@ -5,7 +5,7 @@
 - **Project:** apiops-cli — TypeScript CLI for Azure API Management (`apiops extract`, `apiops publish`, `apiops init`)
 - **Spec:** `specs/001-apiops-cli/spec.md`
 - **Constitution:** `.squad/identity/constitution.md` (v2.1.0)
-- **User:** Elizabeth Maher
+- **User:** User (redacted)
 - **Stack:** Node.js 22 LTS, Commander CLI framework, ESM, npm
 - **CLI commands:** `apiops extract [options]`, `apiops publish [options]`, `apiops init [options]`
 - **Key rule (Constitution §I):** Every interactive input MUST have a non-interactive flag equivalent. Non-interactive mode required when stdout is not a TTY.
