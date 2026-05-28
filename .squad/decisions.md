@@ -2,6 +2,19 @@
 
 ## Active Decisions
 
+### 2026-05-28T23:06:01Z: Team-Wide Evidence Standard
+**By:** User directive (anonymized)  
+**Status:** Active directive  
+**What:** All team members should back decisions, notes, and factual assertions with a credible source URL whenever possible.
+**Why:** Strengthens traceability and reviewability across public squad records.
+
+### 2026-05-28T22:55:05Z: DocWriter Uses GitHub-Style Markdown
+**By:** User directive (anonymized)  
+**Status:** Active directive  
+**What:** All documentation and guidance authored by DocWriter must use GitHub-style Markdown.
+**Why:** Ensures consistent rendering, readability, and contribution standards across repository documentation.
+**Source:** [Basic writing and formatting syntax - GitHub Docs](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax)
+
 ### 2026-05-14T05:20:00Z: APIM v1 → v2 SKU Migration via apiops-cli
 **By:** ApimExpert + ApiOpsLead (joint research and decision)  
 **Status:** Proposed for team governance review  
@@ -93,19 +106,19 @@
 **Why:** After publishing to npm as `@peterhauge/apiops-cli`, requiring users to download the package and run `apiops init --cli-package ./tarball.tgz` added unnecessary friction. Most users want to reference the public package directly. The change is backward compatible — existing workflows with `--cli-package` continue to work unchanged. Improves user experience with simpler onboarding.
 
 ### 2026-04-21T19:35:00Z: SOAP/WADL spec extraction prefers link format with inline XML fallback
-**By:** ApimExpert (via Squad session with enewman)
+**By:** ApimExpert (via Squad session with anonymized user)
 **Status:** Implemented
 **What:** For soap-type APIs, `getApiSpecification` requests `format=wsdl-link` first. On HTTP 5xx, it falls back to the inline (non-link) `format=wsdl` export which returns raw WSDL XML in `properties.value`. WADL follows the same pattern (`wadl-link` → `format=wadl` fallback). The XML fallback content is saved as `specification.wsdl` / `specification.wadl` and is re-importable via PUT `?import=true&format=wsdl` (or `wadl-xml`).
 **Why:** User requires full round-trip fidelity — SOAP APIs must be re-importable to a new APIM instance. APIM's `wsdl-link` emitter deterministically returns HTTP 500 on many real-world SOAP APIs (observed: 270 of 272 soap APIs in a production tenant). Azure/apiops reference tool skips XML specs on 500 with comment "non-link exports cannot be reimported" — this is inaccurate; the inline form IS re-importable. Converting SOAP → OpenAPI via `openapi-link` works but loses SOAP semantics on round-trip.
 
 ### 2026-04-21T19:34:00Z: Synthetic GraphQL APIs skip the graphql-link export call
-**By:** ApimExpert (via Squad session with enewman)
+**By:** ApimExpert (via Squad session with anonymized user)
 **Status:** Implemented
 **What:** Before calling `graphql-link` export, `api-extractor.ts` probes ApiSchema children via `hasGraphQLSchemaResource` and checks for `contentType` containing 'graphql'. If found (synthetic GraphQL — SDL stored as an ApiSchema resource), the export call is skipped. If not found (pass-through GraphQL), `graphql-link` is called normally.
 **Why:** APIM returns HTTP 406 on `graphql-link` export for synthetic GraphQL APIs because there is nothing to export — the SDL is already held as an ApiSchema child resource and is captured by standard ApiSchema extraction. Skipping the redundant call avoids the error without losing fidelity.
 
 ### 2026-04-21T19:33:00Z: XML export fallback bypasses the default 5xx retry loop
-**By:** ApimExpert (via Squad session with enewman)
+**By:** ApimExpert (via Squad session with anonymized user)
 **Status:** Implemented
 **What:** `getApiSpecification` passes `noRetryOn5xx=true` to `request()` when exporting `wsdl-link` or `wadl-link`. The fallback to inline format runs immediately on HTTP 5xx rather than after three retries.
 **Why:** APIM's wsdl-link/wadl-link 500 errors are deterministic failures in APIM's XML emitter, not transient. Retrying wastes time and delays the fallback. The inline format path is fast and reliable.
