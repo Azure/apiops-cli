@@ -98,5 +98,11 @@ the SDK surface, reference docs, or ad-hoc observation.
 
 **Research output:** `.squad/decisions.md` entry (merged from inbox), full analysis in `specs/sku-upgrade.md`
 
-### 2026-05-13: APIM v1 → v2 SKU Migration Research
+### 2026-05-19: `policyRestrictions.scope` grammar
+
+`Microsoft.ApiManagement/service/policyRestrictions@2025-09-01-preview`. Schema says `"Path to the policy document."` but the API validates `scope` as a **relative ARM path to an existing API, operation, or product**.
+
+- Accepted: `/apis/{apiId}`, `/apis/{apiId}/operations/{opId}`, `/products/{productId}`, `""`.
+- Classic Developer/Premium SKU only.
+- Docs: <https://learn.microsoft.com/rest/api/apimanagement/policy-restriction> · <https://learn.microsoft.com/azure/templates/microsoft.apimanagement/service/policyrestrictions>
 

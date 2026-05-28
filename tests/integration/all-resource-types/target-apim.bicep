@@ -117,7 +117,8 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
       name: 'standard'
     }
     tenantId: subscription().tenantId
-    enableRbacAuthorization: true
+    enableRbacAuthorization: false
+    accessPolicies: []
     enableSoftDelete: true
     softDeleteRetentionInDays: 7
   }
@@ -151,14 +152,19 @@ resource apim 'Microsoft.ApiManagement/service@2025-09-01-preview' = {
   }
 }
 
-// Grant APIM identity Key Vault Secrets User role for NamedValue KV ref
-resource kvRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, apim.id, '4633458b-17de-408a-b874-0445c86b69e6')
-  scope: keyVault
+resource kvAccessPolicy 'Microsoft.KeyVault/vaults/accessPolicies@2023-07-01' = {
+  name: 'add'
+  parent: keyVault
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
-    principalId: apim.identity.principalId
-    principalType: 'ServicePrincipal'
+    accessPolicies: [
+      {
+        tenantId: subscription().tenantId
+        objectId: apim.identity.principalId
+        permissions: {
+          secrets: ['get']
+        }
+      }
+    ]
   }
 }
 

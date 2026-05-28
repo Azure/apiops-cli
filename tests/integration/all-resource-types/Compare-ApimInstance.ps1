@@ -168,7 +168,7 @@ function Build-ResourceMap {
     # from source and target receive the same positional key ({{auto-id-0}}, etc.)
     if ($autoIdItems.Count -gt 0) {
         $sorted = $autoIdItems | Sort-Object {
-            $normVal = Normalize-PropertyValue -Value $_ `
+            $normVal = ConvertTo-NormalizedPropertyValue -Value $_ `
                 -SourceName $SourceName -TargetName $TargetName `
                 -SourceSub $SourceSub -TargetSub $TargetSub `
                 -SourceRg $SourceRg -TargetRg $TargetRg
@@ -184,7 +184,7 @@ function Build-ResourceMap {
     return $map
 }
 
-function Normalize-PropertyValue {
+function ConvertTo-NormalizedPropertyValue {
     <#
     .SYNOPSIS
         Recursively normalizes a property value: replaces instance-specific
@@ -236,7 +236,7 @@ function Normalize-PropertyValue {
     # --- Array ---
     if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string] -and $Value -isnot [System.Collections.IDictionary]) {
         $normalized = @(foreach ($item in $Value) {
-            Normalize-PropertyValue -Value $item `
+            ConvertTo-NormalizedPropertyValue -Value $item `
                 -SourceName $SourceName -TargetName $TargetName `
                 -SourceSub $SourceSub -TargetSub $TargetSub `
                 -SourceRg $SourceRg -TargetRg $TargetRg
@@ -257,7 +257,7 @@ function Normalize-PropertyValue {
             if ($key -in $StripTimestampProperties) { continue }  # Strip timestamps at any level
             if ($isRequestResponse -and $key -in $RequestResponseIgnoredProperties) { continue }
             if ($isRepresentation -and $key -in $RepresentationIgnoredProperties) { continue }
-            $out[$key] = Normalize-PropertyValue -Value $Value[$key] `
+            $out[$key] = ConvertTo-NormalizedPropertyValue -Value $Value[$key] `
                 -SourceName $SourceName -TargetName $TargetName `
                 -SourceSub $SourceSub -TargetSub $TargetSub `
                 -SourceRg $SourceRg -TargetRg $TargetRg
@@ -276,7 +276,7 @@ function Normalize-PropertyValue {
             if ($prop.Name -in $StripTimestampProperties) { continue }  # Strip timestamps at any level
             if ($isRequestResponse -and $prop.Name -in $RequestResponseIgnoredProperties) { continue }
             if ($isRepresentation -and $prop.Name -in $RepresentationIgnoredProperties) { continue }
-            $out[$prop.Name] = Normalize-PropertyValue -Value $prop.Value `
+            $out[$prop.Name] = ConvertTo-NormalizedPropertyValue -Value $prop.Value `
                 -SourceName $SourceName -TargetName $TargetName `
                 -SourceSub $SourceSub -TargetSub $TargetSub `
                 -SourceRg $SourceRg -TargetRg $TargetRg
@@ -288,7 +288,7 @@ function Normalize-PropertyValue {
     return $Value
 }
 
-function Normalize-Resource {
+function ConvertTo-NormalizedResource {
     <#
     .SYNOPSIS
         Strips top-level ARM envelope fields and applies property normalization.
@@ -306,7 +306,7 @@ function Normalize-Resource {
 
     # Normalize the properties bag (read-only fields, instance names, etc.)
     if ($clone.Contains('properties')) {
-        $clone['properties'] = Normalize-PropertyValue -Value $clone['properties'] `
+        $clone['properties'] = ConvertTo-NormalizedPropertyValue -Value $clone['properties'] `
             -SourceName $SourceApimName -TargetName $TargetApimName `
             -SourceSub $SourceSubscriptionId -TargetSub $TargetSubscriptionId `
             -SourceRg $SourceResourceGroup -TargetRg $TargetResourceGroup `
@@ -316,7 +316,7 @@ function Normalize-Resource {
     # Normalize any other top-level bags (e.g., location, sku)
     foreach ($key in @($clone.Keys)) {
         if ($key -eq 'properties') { continue }
-        $clone[$key] = Normalize-PropertyValue -Value $clone[$key] `
+        $clone[$key] = ConvertTo-NormalizedPropertyValue -Value $clone[$key] `
             -SourceName $SourceApimName -TargetName $TargetApimName `
             -SourceSub $SourceSubscriptionId -TargetSub $TargetSubscriptionId `
             -SourceRg $SourceResourceGroup -TargetRg $TargetResourceGroup
@@ -378,11 +378,7 @@ function Compare-NormalizedResources {
                 }
             }
             else {
-                $svLen = if ($null -ne $svJson) { $svJson.Length } else { 0 }
-                $tvLen = if ($null -ne $tvJson) { $tvJson.Length } else { 0 }
-                $svShort = if ($svLen -gt 120) { $svJson.Substring(0, 117) + '...' } else { $svJson }
-                $tvShort = if ($tvLen -gt 120) { $tvJson.Substring(0, 117) + '...' } else { $tvJson }
-                $diffs.Add("  DIFF at $currentPath`n    source: $svShort`n    target: $tvShort")
+                $diffs.Add("  DIFF at $currentPath`n    source: $svJson`n    target: $tvJson")
             }
         }
     }
@@ -390,17 +386,13 @@ function Compare-NormalizedResources {
     # Fallback: if JSON differs but no key-level diffs found, report the full diff
     if ($diffs.Count -eq 0) {
         $pathPrefix = if ($Path) { "${Path}: " } else { '' }
-        $srcLen = if ($null -ne $sourceJson) { $sourceJson.Length } else { 0 }
-        $tgtLen = if ($null -ne $targetJson) { $targetJson.Length } else { 0 }
-        $srcShort = if ($srcLen -gt 200) { $sourceJson.Substring(0, 197) + '...' } else { $sourceJson }
-        $tgtShort = if ($tgtLen -gt 200) { $targetJson.Substring(0, 197) + '...' } else { $targetJson }
-        $diffs.Add("  ${pathPrefix}JSON differs`n    source: $srcShort`n    target: $tgtShort")
+        $diffs.Add("  ${pathPrefix}JSON differs`n    source: $sourceJson`n    target: $targetJson")
     }
 
     return ,$diffs
 }
 
-function Should-SkipSecretValue {
+function Test-SkipSecretValue {
     <# Returns $true if this resource is a secret named value whose .value should be skipped. #>
     param($Resource)
     if (-not $Resource.PSObject.Properties['properties']) { return $false }
@@ -410,7 +402,7 @@ function Should-SkipSecretValue {
     return ($secret -eq $true)
 }
 
-function Should-SkipLoggerCredentials {
+function Test-SkipLoggerCredentials {
     <# Returns $true if this resource is an Event Hub or App Insights logger (credentials differ per instance). #>
     param($Resource)
     if (-not $Resource.PSObject.Properties['properties']) { return $false }
@@ -514,11 +506,11 @@ function Compare-ResourceType {
         $srcResource = $sourceMap[$name]
         $tgtResource = $targetMap[$name]
 
-        $srcNorm = Normalize-Resource -Resource $srcResource
-        $tgtNorm = Normalize-Resource -Resource $tgtResource
+        $srcNorm = ConvertTo-NormalizedResource -Resource $srcResource
+        $tgtNorm = ConvertTo-NormalizedResource -Resource $tgtResource
 
         # Skip secret named-value .value
-        if ($SkipSecretValues -and (Should-SkipSecretValue $srcResource)) {
+        if ($SkipSecretValues -and (Test-SkipSecretValue $srcResource)) {
             Write-Verbose "    Skipping secret value for: $name"
             if ($srcNorm.Contains('properties') -and $srcNorm['properties'] -is [System.Collections.IDictionary]) {
                 $srcNorm['properties'].Remove('value') | Out-Null
@@ -529,7 +521,7 @@ function Compare-ResourceType {
         }
 
         # Skip Event Hub logger credentials (connection strings differ per instance)
-        if ($SkipLoggerCreds -and (Should-SkipLoggerCredentials $srcResource)) {
+        if ($SkipLoggerCreds -and (Test-SkipLoggerCredentials $srcResource)) {
             Write-Verbose "    Skipping logger credentials for: $name"
             if ($srcNorm.Contains('properties') -and $srcNorm['properties'] -is [System.Collections.IDictionary]) {
                 $srcNorm['properties'].Remove('credentials') | Out-Null
@@ -599,7 +591,6 @@ try {
         @{ Label = 'Loggers';            Suffix = 'loggers';          Exclude = @(); SkipLoggerCreds = $true }
         @{ Label = 'Diagnostics';        Suffix = 'diagnostics';      Exclude = @()                      }
         @{ Label = 'Service Policy';     Suffix = 'policies';         Exclude = @()                      }
-        @{ Label = 'Products';           Suffix = 'products';         Exclude = @('starter', 'unlimited') }
         @{ Label = 'Subscriptions';      Suffix = 'subscriptions';    Exclude = @('master')              }
         @{ Label = 'Workspaces';         Suffix = 'workspaces';       Exclude = @()                      }
         @{ Label = 'Documentations';     Suffix = 'documentations';   Exclude = @()                      }

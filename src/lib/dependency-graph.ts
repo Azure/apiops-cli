@@ -20,9 +20,11 @@ import { DependencyEdge } from '../models/types.js';
 export const DEPENDENCY_EDGES: DependencyEdge[] = [
   // Tier 1 -> Tier 2 dependencies
   { from: ResourceType.Diagnostic, to: ResourceType.Logger, required: false },
+  { from: ResourceType.Diagnostic, to: ResourceType.Workspace, required: false },
   { from: ResourceType.ServicePolicy, to: ResourceType.NamedValue, required: false },
   { from: ResourceType.ServicePolicy, to: ResourceType.PolicyFragment, required: false },
   { from: ResourceType.Api, to: ResourceType.VersionSet, required: false },
+  { from: ResourceType.PolicyRestriction, to: ResourceType.Product, required: false },
 
   // Tier 2 -> Tier 3 dependencies
   { from: ResourceType.ProductPolicy, to: ResourceType.Product, required: true },
@@ -61,6 +63,7 @@ export const DEPENDENCY_EDGES: DependencyEdge[] = [
 ];
 
 export const TIER_1_RESOURCES: ResourceType[] = [
+  ResourceType.Workspace,
   ResourceType.NamedValue,
   ResourceType.Tag,
   ResourceType.Gateway,
@@ -70,7 +73,6 @@ export const TIER_1_RESOURCES: ResourceType[] = [
   ResourceType.Group,
   ResourceType.PolicyFragment,
   ResourceType.GlobalSchema,
-  ResourceType.PolicyRestriction,
   ResourceType.Documentation,
 ];
 
@@ -82,6 +84,7 @@ export const TIER_2_RESOURCES: ResourceType[] = [
 ];
 
 export const TIER_3_RESOURCES: ResourceType[] = [
+  ResourceType.PolicyRestriction,
   ResourceType.ProductPolicy,
   ResourceType.ProductGroup,
   ResourceType.ProductTag,

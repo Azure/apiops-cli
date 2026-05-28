@@ -285,12 +285,35 @@ describe('parseArtifactPath', () => {
     expect(result!.nameParts[0]).toBe('starter');
   });
 
+  it('should parse GatewayApi association file so gateway API links can be published', () => {
+    const filePath = path.join(baseDir, 'gateways', 'gw1', 'apis.json');
+    const result = parseArtifactPath(baseDir, filePath);
+    expect(result).toBeDefined();
+    expect(result!.type).toBe(ResourceType.GatewayApi);
+    expect(result!.nameParts).toEqual(['gw1']);
+  });
+
+  it('should ignore ProductApi association files because product publisher handles them', () => {
+    const filePath = path.join(baseDir, 'products', 'starter', 'apis.json');
+    const result = parseArtifactPath(baseDir, filePath);
+    expect(result).toBeUndefined();
+  });
+
   it('should parse workspace-scoped resource', () => {
     const filePath = path.join(baseDir, 'workspaces', 'ws1', 'apis', 'ws-api', 'apiInformation.json');
     const result = parseArtifactPath(baseDir, filePath);
     expect(result).toBeDefined();
     expect(result!.workspace).toBe('ws1');
     expect(result!.nameParts[0]).toBe('ws-api');
+  });
+
+  it('should parse workspace container descriptor', () => {
+    const filePath = path.join(baseDir, 'workspaces', 'ws1', 'workspaceInformation.json');
+    const result = parseArtifactPath(baseDir, filePath);
+    expect(result).toBeDefined();
+    expect(result!.type).toBe(ResourceType.Workspace);
+    expect(result!.nameParts).toEqual(['ws1']);
+    expect(result!.workspace).toBeUndefined();
   });
 
   it('should parse ApiDiagnostic info file (nameParts[0]=apiName, nameParts[1]=diagName)', () => {
