@@ -1,7 +1,7 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-  Phase 2c — Compare source and target APIM instances via ARM REST API.
+  Phase 4 — Compare source and target APIM instances via ARM REST API.
 #>
 
 [CmdletBinding()]
