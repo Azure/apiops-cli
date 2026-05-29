@@ -109,12 +109,70 @@ Requires an `integration-test` environment with secrets:
 - `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` (OIDC)
 - `APIM_PUBLISHER_EMAIL`
 
-### Comparison Script
+### Phases 2–5 Scripts
 
-`compare-apim-instances.ps1` can also be run standalone to diff any two APIM instances:
+Phases 2–5 are independent scripts that can be called separately for targeted re-runs, without re-executing the full round-trip:
+
+#### Phase 2 — Extract
+
+Extracts artifacts from the source APIM and validates the extracted structure.
 
 ```powershell
-.\compare-apim-instances.ps1 `
+.\run-roundtrip-phase2-extract.ps1 `
+  -SourceSubscriptionId "<source-sub-id>" `
+  -SourceResourceGroup "rg-src" `
+  -SourceApimName "apim-src" `
+  -SkuName "StandardV2"
+```
+
+#### Phase 3 — Generate Overrides
+
+Generates target environment overrides (Key Vault, App Insights, Event Hub) for publish.
+
+```powershell
+.\run-roundtrip-phase3-generate-overrides.ps1 `
+  -TargetResourceGroup "rg-tgt"
+```
+
+Requires `ExtractOutputDir` (default: `./extracted-artifacts`) to already be populated by the extract step.
+
+#### Phase 4 — Publish
+
+Publishes the extracted artifacts to the target APIM using the generated override file.
+
+```powershell
+.\run-roundtrip-phase4-publish.ps1 `
+  -TargetSubscriptionId "<target-sub-id>" `
+  -TargetResourceGroup "rg-tgt" `
+  -TargetApimName "apim-tgt"
+```
+
+Requires `ExtractOutputDir` (default: `./extracted-artifacts`) and an overrides file (defaults to `./extracted-artifacts/.overrides.yaml`).
+
+#### Phase 5 — Compare
+
+Compares source and target APIM instances via ARM REST API with deep property normalization.
+
+```powershell
+.\run-roundtrip-phase5-compare.ps1 `
+  -SourceSubscriptionId "<source-sub-id>" `
+  -SourceResourceGroup "rg-src" `
+  -SourceApimName "apim-src" `
+  -TargetSubscriptionId "<target-sub-id>" `
+  -TargetResourceGroup "rg-tgt" `
+  -TargetApimName "apim-tgt"
+```
+
+Exit codes: `0` = match, `1` = differences found, `2` = error.
+
+All four scripts accept `-LogLevel` (Info/Verbose/Debug), and phases 2–4 accept `-ExtractOutputDir`.
+
+### Comparison Script
+
+`Compare-ApimInstance.ps1` can also be run standalone to diff any two APIM instances directly without a state file:
+
+```powershell
+.\Compare-ApimInstance.ps1 `
   -SourceSubscriptionId "..." -SourceResourceGroup rg-src -SourceApimName apim-src `
   -TargetSubscriptionId "..." -TargetResourceGroup rg-tgt -TargetApimName apim-tgt
 ```
@@ -127,10 +185,15 @@ Exit codes: `0` = match, `1` = differences found, `2` = error.
 |------|---------|
 | `source-apim.bicep` | Source APIM with all 33 resource types |
 | `target-apim.bicep` | Blank target APIM + supporting infra |
-| `deploy-source.ps1` | Deploy/destroy the source instance |
 | `run-roundtrip-test.ps1` | Master orchestrator for the full test |
-| `compare-apim-instances.ps1` | ARM REST comparison script |
-| `validate-extracted-artifacts.ps1` | Validate extracted artifact structure |
+| `run-roundtrip-phase1-deploy.ps1` | Phase 1: deploy source + target APIM instances |
+| `run-roundtrip-phase2-extract.ps1` | Phase 2: extract artifacts from source APIM |
+| `run-roundtrip-phase3-generate-overrides.ps1` | Phase 3: generate target override config |
+| `run-roundtrip-phase4-publish.ps1` | Phase 4: publish artifacts to target |
+| `run-roundtrip-phase5-compare.ps1` | Phase 5: compare source vs target via ARM |
+| `run-roundtrip-phase6-teardown.ps1` | Phase 6: tear down resource groups |
+| `Compare-ApimInstance.ps1` | ARM REST comparison script (standalone) |
+| `Test-ExtractedArtifact.ps1` | Validate extracted artifact structure |
 | `expected-structure.json` | Manifest of expected extracted files |
 
 ## Cost

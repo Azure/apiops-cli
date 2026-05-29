@@ -83,6 +83,8 @@ on:
         required: true
       APIM_PUBLISHER_EMAIL:
         required: true
+      APIM_SKU:
+        required: false
 
 permissions:
   id-token: write
@@ -95,6 +97,8 @@ concurrency:
 env:
   SOURCE_RG: rg-apiops-bvt-source-${{ github.run_id }}
   TARGET_RG: rg-apiops-bvt-target-${{ github.run_id }}
+  SOURCE_APIM: apiops-bvt-src-${{ github.run_id }}
+  TARGET_APIM: apiops-bvt-tgt-${{ github.run_id }}
 
 jobs:
   roundtrip-test:
@@ -120,29 +124,122 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Run Round-Trip Test
+      - name: Run Round-Trip Phase 1 (Deploy)
         shell: pwsh
         run: |
-          $skipTeardown = '${{ inputs.skip_teardown }}' -eq 'true'
           $logLevel = '${{ inputs.log_level }}'
           if ([string]::IsNullOrWhiteSpace($logLevel)) { $logLevel = 'Verbose' }
           if ($logLevel -notin @('Info', 'Verbose', 'Debug')) {
             throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
           }
 
+          $skuName = '${{ secrets.APIM_SKU }}'
+          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = '${{ inputs.sku }}' }
+          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = 'StandardV2' }
+
           $params = @{
             SourceResourceGroup = '${{ env.SOURCE_RG }}'
             TargetResourceGroup = '${{ env.TARGET_RG }}'
-            SkuName            = '${{ inputs.sku }}'
+            SourceApimName     = '${{ env.SOURCE_APIM }}'
+            TargetApimName     = '${{ env.TARGET_APIM }}'
+            SourceSubscriptionId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}'
+            TargetSubscriptionId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}'
+            SkuName            = $skuName
             Location           = '${{ inputs.location }}'
             LogLevel           = $logLevel
             PublisherEmail     = '${{ secrets.APIM_PUBLISHER_EMAIL }}'
-            ExtractOutputDir   = './extracted-artifacts'
-            HardDelete         = $true
           }
-          if ($skipTeardown) { $params.SkipTeardown = $true }
+          ./tests/integration/all-resource-types/run-roundtrip-phase1-deploy.ps1 @params
 
-          ./tests/integration/all-resource-types/run-roundtrip-test.ps1 @params
+      - name: Azure Login (OIDC) - Refresh Before Phase 2
+        if: success()
+        uses: azure/login@v2
+        with:
+          # Phase 1 can run for a long time while APIM activates; refresh login
+          # before extract/publish so apiops receives a fresh federated session.
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run Round-Trip Phase 2 (Extract)
+        if: success()
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: |
+          $logLevel = '${{ inputs.log_level }}'
+          if ([string]::IsNullOrWhiteSpace($logLevel)) { $logLevel = 'Verbose' }
+          if ($logLevel -notin @('Info', 'Verbose', 'Debug')) {
+            throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
+          }
+
+          $skuName = '${{ secrets.APIM_SKU }}'
+          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = '${{ inputs.sku }}' }
+          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = 'StandardV2' }
+
+          ./tests/integration/all-resource-types/run-roundtrip-phase2-extract.ps1 `
+            -SourceSubscriptionId '${{ secrets.AZURE_SUBSCRIPTION_ID }}' `
+            -SourceResourceGroup '${{ env.SOURCE_RG }}' `
+            -SourceApimName '${{ env.SOURCE_APIM }}' `
+            -SkuName $skuName `
+            -LogLevel $logLevel `
+            -ExtractOutputDir './extracted-artifacts'
+
+      - name: Run Round-Trip Phase 3 (Generate Overrides)
+        if: success()
+        shell: pwsh
+        run: |
+          $logLevel = '${{ inputs.log_level }}'
+          if ([string]::IsNullOrWhiteSpace($logLevel)) { $logLevel = 'Verbose' }
+          if ($logLevel -notin @('Info', 'Verbose', 'Debug')) {
+            throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
+          }
+
+          ./tests/integration/all-resource-types/run-roundtrip-phase3-generate-overrides.ps1 `
+            -TargetResourceGroup '${{ env.TARGET_RG }}' `
+            -LogLevel $logLevel `
+            -ExtractOutputDir './extracted-artifacts'
+
+      - name: Run Round-Trip Phase 4 (Publish)
+        if: success()
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: |
+          $logLevel = '${{ inputs.log_level }}'
+          if ([string]::IsNullOrWhiteSpace($logLevel)) { $logLevel = 'Verbose' }
+          if ($logLevel -notin @('Info', 'Verbose', 'Debug')) {
+            throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
+          }
+
+          ./tests/integration/all-resource-types/run-roundtrip-phase4-publish.ps1 `
+            -TargetSubscriptionId '${{ secrets.AZURE_SUBSCRIPTION_ID }}' `
+            -TargetResourceGroup '${{ env.TARGET_RG }}' `
+            -TargetApimName '${{ env.TARGET_APIM }}' `
+            -LogLevel $logLevel `
+            -ExtractOutputDir './extracted-artifacts' `
+            -OverrideFile './extracted-artifacts/.overrides.yaml'
+
+      - name: Run Round-Trip Phase 5 (Compare)
+        if: success()
+        shell: pwsh
+        run: |
+          $logLevel = '${{ inputs.log_level }}'
+          if ([string]::IsNullOrWhiteSpace($logLevel)) { $logLevel = 'Verbose' }
+          if ($logLevel -notin @('Info', 'Verbose', 'Debug')) {
+            throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
+          }
+
+          ./tests/integration/all-resource-types/run-roundtrip-phase5-compare.ps1 `
+            -SourceSubscriptionId '${{ secrets.AZURE_SUBSCRIPTION_ID }}' `
+            -SourceResourceGroup '${{ env.SOURCE_RG }}' `
+            -SourceApimName '${{ env.SOURCE_APIM }}' `
+            -TargetSubscriptionId '${{ secrets.AZURE_SUBSCRIPTION_ID }}' `
+            -TargetResourceGroup '${{ env.TARGET_RG }}' `
+            -TargetApimName '${{ env.TARGET_APIM }}' `
+            -LogLevel $logLevel
 
       - name: Upload Extracted Artifacts
         if: always()
@@ -152,40 +249,12 @@ jobs:
           path: ./extracted-artifacts/
           if-no-files-found: ignore
 
-      - name: Emergency Teardown
-        if: failure() && inputs.skip_teardown != true
+      - name: Run Round-Trip Phase 6 (Teardown)
+        if: always() && inputs.skip_teardown != true
         shell: pwsh
         run: |
-          $sourceRg = '${{ env.SOURCE_RG }}'
-          $targetRg = '${{ env.TARGET_RG }}'
-          $location = '${{ inputs.location }}'
-
-          # Capture APIM names before RG deletion so we can purge soft-deleted services.
-          $sourceApimName = az apim list --resource-group $sourceRg --query "[0].name" -o tsv 2>$null
-          $targetApimName = az apim list --resource-group $targetRg --query "[0].name" -o tsv 2>$null
-
-          Write-Host "🚨 Emergency teardown — deleting resource groups..."
-          az group delete --name $sourceRg --yes --no-wait 2>$null
-          az group delete --name $targetRg --yes --no-wait 2>$null
-
-          Write-Host "⏳ Waiting for resource group deletions before APIM purge..."
-          $maxWaitSeconds = 900
-          $waited = 0
-          $interval = 30
-
-          while ($waited -lt $maxWaitSeconds) {
-            $srcExists = (az group exists --name $sourceRg -o tsv 2>$null) -eq 'true'
-            $tgtExists = (az group exists --name $targetRg -o tsv 2>$null) -eq 'true'
-            if (-not $srcExists -and -not $tgtExists) {
-              break
-            }
-            Start-Sleep -Seconds $interval
-            $waited += $interval
-          }
-
-          foreach ($apimName in @($sourceApimName, $targetApimName)) {
-            if (-not [string]::IsNullOrWhiteSpace($apimName)) {
-              Write-Host "🗑️  Purging soft-deleted APIM: $apimName"
-              az apim deletedservice purge --service-name $apimName --location $location 2>$null
-            }
-          }
+          ./tests/integration/all-resource-types/run-roundtrip-phase6-teardown.ps1 `
+            -SourceResourceGroup '${{ env.SOURCE_RG }}' `
+            -TargetResourceGroup '${{ env.TARGET_RG }}' `
+            -Location '${{ inputs.location }}' `
+            -HardDelete $true
