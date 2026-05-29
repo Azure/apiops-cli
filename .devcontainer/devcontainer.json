@@ -31,12 +31,12 @@
         "vitest.explorer",
         "GitHub.vscode-pull-request-github",
         "GitHub.copilot-chat",
-        "GitHub.vscode-github-actions",
         "ms-azuretools.vscode-azureresourcegroups",
         "ms-azure-devops.azure-pipelines",
         "vitest.dev",
         "ms-vscode.powershell",
-        "ms-azuretools.vscode-bicep"
+        "ms-azuretools.vscode-bicep",
+        "bierner.markdown-preview-github-styles"
       ]
     }
   },
