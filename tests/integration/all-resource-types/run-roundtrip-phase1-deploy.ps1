@@ -215,8 +215,8 @@ $state = [ordered]@{
 }
 
 $stateDir = Split-Path -Parent $StateFile
-if (-not [string]::IsNullOrWhiteSpace($stateDir) -and -not (Test-Path $stateDir)) {
-    New-Item -ItemType Directory -Path $stateDir -Force | Out-Null
+if (-not [string]::IsNullOrWhiteSpace($stateDir)) {
+    New-Item -ItemType Directory -Path $stateDir -Force -ErrorAction SilentlyContinue | Out-Null
 }
 
 $state | ConvertTo-Json -Depth 5 | Set-Content -Path $StateFile -Encoding utf8
