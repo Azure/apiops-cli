@@ -2,6 +2,7 @@
 
 Deploy APIM configuration using apiops-cli on [self-hosted Azure Pipelines agents](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/agents?view=azure-devops#self-hosted-agents) with **no internet access** and **no internal npm registry**. The CLI is packaged as a `.tgz` and the npm cache is pre-staged on the agent so `npm ci --offline` resolves every dependency from disk.
 
+> [!NOTE]
 > If you can host an internal npm feed instead, prefer the [Local npm Registry walkthrough](air-gapped-azure-devops-local-registry.md) — it requires far less manual artifact transfer.
 
 ---
@@ -82,8 +83,6 @@ This command generates:
 | `configuration.*.yaml` | Override templates |
 
 Follow the remaining instructions listed in created `IDENTITY-SETUP-AZDO.md` or run `/apiops-setup-identity` prompt. This creates the necessary variable groups and and service connections.
-
----
 
 ### 2.2 Generate the Lock File and Pre-Stage the npm Cache
 
@@ -174,7 +173,7 @@ Trigger the extract pipeline manually from **Pipelines → Run pipeline** and ve
 1. `npm ci --offline` completes with no network calls
 2. `apiops extract` authenticates via the service connection and runs successfully
 
-> **✅ Setup complete.** Your air-gapped apiops pipelines are now operational. The remaining sections cover ongoing maintenance and troubleshooting.
+**✅ Setup complete.**  The remaining sections cover ongoing maintenance and troubleshooting.
 
 ---
 

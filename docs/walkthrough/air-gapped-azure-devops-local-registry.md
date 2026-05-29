@@ -2,6 +2,7 @@
 
 Deploy APIM configuration using apiops-cli on [self-hosted Azure Pipelines agents](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/agents?view=azure-devops#self-hosted-agents) with **no internet access** at runtime. This walkthrough uses an Azure Artifacts npm feed as the package source so agents never reach the public npm registry.
 
+> [!NOTE]
 > Looking for the alternative that doesn't require a registry? See [Offline Tarball walkthrough](air-gapped-azure-devops-offline-tarball.md).
 
 ---
@@ -41,30 +42,119 @@ flowchart LR
 | **Azure connectivity from agent** | The agent must reach your APIM instance's ARM endpoint (network-level, not npm) |
 | **Local npm registry** | An [Azure Artifacts npm feed](https://learn.microsoft.com/en-us/azure/devops/artifacts/npm/npmrc?view=azure-devops) accessible from the air-gapped network |
 
-> **On-premises Azure DevOps:** If you run [Azure DevOps Server](https://learn.microsoft.com/en-us/azure/devops/server/install/get-started?view=azure-devops-2022) (formerly TFS), the same approach applies — Azure Artifacts is included in the server installation.
+> [!NOTE]
+> **On-premises Azure DevOps:** If you run [Azure DevOps Server](https://learn.microsoft.com/en-us/azure/devops/server/install/get-started?view=azure-devops-2022), the same approach applies — Azure Artifacts is included in the server installation.
+---
+
+## 1. Configure the Azure Artifacts npm Feed
+
+Set up an Azure Artifacts `npm` feed that serves packages to your air-gapped agents without requiring internet access at install time.
+
+###  Set variable values
+
+If using the command line examples, instead of the Azure DevOps website, the following variables must be set.
+
+```bash
+ORG="<org>"
+ORG_URL="https://dev.azure.com/${ORG}"
+
+PROJECT="<project>"
+
+FEED="apiops-cli-airgap"
+FEED_REGISTRY="https://pkgs.dev.azure.com/${ORG}/${PROJECT}/_packaging/${FEED}/npm/registry/"
+```
+
+### 1.1 **[Create a new feed](https://learn.microsoft.com/en-us/azure/devops/artifacts/get-started-npm?view=azure-devops#create-a-feed)** in your Azure DevOps organization.
+
+
+Authenticate to Azure CLI and configure which devops project you are working with.
+```bash
+az login
+
+az devops configure --defaults organization="$ORG_URL" project="$PROJECT"
+```
+
+Create feed (for example, `apiops-cli-airgap`):
+```bash
+cat > feed-create.json <<JSON
+{
+    "name": "${FEED}",
+    "description": "Local npm feed for air-gapped agents"
+}
+JSON
+
+az devops invoke \
+    --area packaging \
+    --resource feeds \
+    --route-parameters project="$PROJECT" \
+    --http-method POST \
+    --api-version 7.1 \
+    --in-file feed-create.json
+```
+
+### 1.2 Configure an upstream source
+
+**[Configure an upstream source](https://learn.microsoft.com/en-us/azure/devops/artifacts/how-to/set-up-upstream-sources?view=azure-devops)** pointing to `https://registry.npmjs.org`. The upstream is only used during controlled sync windows; once `@peterhauge/apiops-cli` and its dependencies are cached, the feed serves them locally.
+
+```bash
+cat > feed-upstream.json <<'JSON'
+{
+    "upstreamEnabled": true,
+    "upstreamSources": [
+        {
+            "name": "npmjs",
+            "protocol": "npm",
+            "location": "https://registry.npmjs.org/",
+            "upstreamSourceType": 1
+        }
+    ]
+}
+JSON
+
+az devops invoke \
+    --area packaging \
+    --resource feeds \
+    --route-parameters project="$PROJECT" feedId="$FEED" \
+    --http-method PATCH \
+    --api-version 7.1 \
+    --in-file feed-upstream.json
+```
+### 1.3 Populate the feed
+
+**[Populate the feed](https://learn.microsoft.com/en-us/azure/devops/artifacts/npm/npmrc?view=azure-devops)** from a connected workstation by running `npm install @peterhauge/apiops-cli` against the feed registry URL. This pulls the package and its transitive dependencies into the feed cache.
+
+```bash
+npm install @peterhauge/apiops-cli \
+    --registry "$FEED_REGISTRY" \
+    --//pkgs.dev.azure.com/${ORG}/${PROJECT}/_packaging/${FEED}/npm/registry/:_authToken="$(az account get-access-token --resource https://app.vssps.visualstudio.com --query accessToken -o tsv)"
+```
+
+### 1.4 Create a project `.npmrc`
+
+**[Create a project `.npmrc`](https://learn.microsoft.com/en-us/azure/devops/artifacts/npm/npmrc?view=azure-devops)** that points `registry=` at your feed URL and sets `always-auth=true`. Commit this file so pipelines and developers resolve against the local feed.
+
+Create `.npmrc` file
+
+```bash
+cat > .npmrc <<EOF
+registry=${FEED_REGISTRY}
+always-auth=true
+EOF
+```
+
+> [!TIP] 
+> Use the **Connect to feed** button in the Azure Artifacts UI to get the exact registry URL and a ready-to-copy `.npmrc` snippet for your feed.
 
 ---
 
-## Step 1 — Configure the Azure Artifacts npm Feed
+## 2. Add `apiops` related files to repository
 
-Set up an Azure Artifacts npm feed that serves packages to your air-gapped agents without requiring internet access at install time.
-
-1. **[Create a new feed](https://learn.microsoft.com/en-us/azure/devops/artifacts/get-started-npm?view=azure-devops#create-a-feed)** in your Azure DevOps organization.
-2. **[Configure an upstream source](https://learn.microsoft.com/en-us/azure/devops/artifacts/how-to/set-up-upstream-sources?view=azure-devops)** pointing to `https://registry.npmjs.org`. The upstream is only used during controlled sync windows; once `@peterhauge/apiops-cli` and its dependencies are cached, the feed serves them locally.
-3. **[Populate the feed](https://learn.microsoft.com/en-us/azure/devops/artifacts/npm/npmrc?view=azure-devops)** from a connected workstation by running `npm install @peterhauge/apiops-cli` against the feed registry URL. This pulls the package and its transitive dependencies into the feed cache.
-4. **[Add a project `.npmrc`](https://learn.microsoft.com/en-us/azure/devops/artifacts/npm/npmrc?view=azure-devops)** that points `registry=` at your feed URL and sets `always-auth=true`. Commit this file so pipelines and developers resolve against the local feed.
-
-> **Tip:** Use the **Connect to feed** button in the Azure Artifacts UI to get the exact registry URL and a ready-to-copy `.npmrc` snippet for your feed.
-
----
-
-## Step 2 — Initialize the Repository
+### 2.1 Initialize your repository
 
 ```bash
 apiops init \
-  --ci azure-devops \
-  --environments dev,prod \
-  --non-interactive
+    --ci azure-devops \
+    --environments dev,prod
 ```
 
 This generates:
@@ -76,9 +166,9 @@ This generates:
 | `pipelines/run-publisher.yaml` | Publish pipeline |
 | `configuration.*.yaml` | Override templates |
 
----
+Follow the remaining instructions listed in created `IDENTITY-SETUP-AZDO.md` or run `/apiops-setup-identity` prompt. This creates the necessary variable groups and and service connections.
 
-## Step 3 — Generate the Lock File
+### 2.2 Generate the Lock File
 
 ```bash
 npm install
@@ -86,13 +176,62 @@ npm install
 
 This creates `package-lock.json`. Commit it — the lock file is **required** for `npm ci` to work.
 
+### 2.3 Modify Pipelines for Air-Gapped Operation
+
+The generated pipelines (`pipelines/run-extractor.yaml` and `pipelines/run-publisher.yaml`) need the following edits:
+
+| Edit | What to Change |
+|------|----------------|
+| 1. **Agent pool** | Update [pool YAML schema](https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/pool?view=azure-pipelines). Replace `pool: vmImage: ubuntu-latest` with self-hosted agent pool (e.g., `pool: name: air-gapped-pool`).<br>(See next step [Configure the Azure DevOps Self-Hosted Agent](#3-configure-the-azure-devops-self-hosted-agent) for setup details.) |
+| 2. **Remove NodeTool task** | Delete the `NodeTool@0` step (Node.js is pre-installed on the agent). |
+| 3. **Add feed auth** | Insert [`npmAuthenticate@0`](https://learn.microsoft.com/en-us/azure/devops/pipelines/tasks/reference/npm-authenticate-v0?view=azure-pipelines) before the `npm ci` step. See necessary. yaml snippet below. |
+
+Add this task before any `npm ci` step in both pipelines:
+
+```yaml
+- task: npmAuthenticate@0
+    inputs:
+        workingFile: .npmrc
+```
+
+`npmAuthenticate@0` reads the committed `.npmrc` and injects credentials for the Azure Artifacts feed using the pipeline's built-in build service identity — no service connection needed for feeds in the same organization. The `npm ci` step then works as-is.
+
+> **Azure authentication:** The `AzureCLI@2` task handles Azure authentication separately, via the service connection. The service connection injects tokens for `DefaultAzureCredential`.
+
+### 2.4 Commit `apiops` related files
+
+Commit the files required to run the local-registry workflow on self-hosted agents:
+
+| File Name | Description |
+|-----------|-------------|
+| `.npmrc` | Points npm to the local Azure Artifacts feed (`registry=...`, `always-auth=true`). |
+| `package.json` | Declares the CLI dependency. |
+| `package-lock.json` | Required for deterministic installs with `npm ci`. |
+| `pipelines/run-extractor.yaml` | Azure DevOps extract pipeline definition. |
+| `pipelines/run-publisher.yaml` | Azure DevOps publish pipeline definition. |
+| `configuration.*.yaml` | Generated environment override templates. |
+
+```bash
+git add \
+    .npmrc \
+    package.json \
+    package-lock.json \
+    pipelines/run-extractor.yaml \
+    pipelines/run-publisher.yaml \
+    configuration.*.yaml
+git commit -m "chore: commit local-registry apiops bootstrap files"
+git push
+```
+
 ---
 
-## Step 4 — Configure the Self-Hosted Agent
+## 3. Configure the Azure DevOps Self-Hosted Agent
 
-Install and register the agent in the air-gapped network per the [self-hosted agent documentation](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/linux-agent?view=azure-devops):
+Install and register the agent in the air-gapped network per the [self-hosted agent documentation](https://learn.microsoft.com/en-us/azure/devops/pipelines/agents/linux-agent?view=azure-devops).
 
-Ensure:
+### 3.1 Verify prerequisites
+
+Verify the following:
 
 1. **Node.js 22.x** is installed and on `PATH`
 2. **Network access to the Azure Artifacts feed** — the agent can resolve packages from the local feed
@@ -104,45 +243,13 @@ Ensure:
 
 ---
 
-## Step 5 — Modify Pipelines for Air-Gapped Operation
+## 4 - Finish `apiops init` for pipeline
 
-The generated pipelines (`pipelines/run-extractor.yaml` and `pipelines/run-publisher.yaml`) need minimal edits:
-
-| Edit | What to Change |
-|------|----------------|
-| **Agent pool** | Replace `pool: vmImage: ubuntu-latest` with `pool: name: air-gapped-pool` ([pool YAML schema](https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/pool?view=azure-pipelines)) |
-| **Remove NodeTool task** | Delete the `NodeTool@0` step (Node.js is pre-installed on the agent) |
-| **Add feed auth** | Insert [`npmAuthenticate@0`](https://learn.microsoft.com/en-us/azure/devops/pipelines/tasks/reference/npm-authenticate-v0?view=azure-pipelines) before the `npm ci` step (see below) |
-
-### Feed Authentication
-
-Add this task before any `npm ci` step in both pipelines:
-
-```yaml
-- task: npmAuthenticate@0
-  inputs:
-    workingFile: .npmrc
-```
-
-`npmAuthenticate@0` reads the committed `.npmrc` and injects credentials for the Azure Artifacts feed using the pipeline's built-in build service identity — no service connection needed for feeds in the same organization. The `npm ci` step then works as-is.
-
-> **Azure authentication:** The `AzureCLI@2` task handles Azure authentication separately, via the service connection. The service connection injects tokens for `DefaultAzureCredential`.
+If not already done, while on the air-gapped network, follow the remaining instructions listed in created `IDENTITY-SETUP-AZDO.md`. This creates the necessary variable groups and and service connections.
 
 ---
 
-## Step 6 — Configure Variable Groups and Service Connections
-
-Follow the standard [Azure DevOps integration guide](../ci-cd/azure-devops.md#variable-groups-configuration) to set up:
-
-1. **Variable group `apim-common`** — variables shared across all environments (e.g., subscription ID, tenant ID, common tags)
-2. **Variable groups `apim-dev`, `apim-prod`** — environment-specific variables (e.g., APIM instance name, resource group) that override values from `apim-common`
-3. **Service connections** — Azure Resource Manager connections scoped to your APIM instances; they can be referenced from either variable group
-
-These are configured in Azure DevOps and are injected at pipeline runtime.
-
----
-
-## Step 7 — Commit and Validate
+## 5 — Commit and Validate
 
 ```bash
 git add .
@@ -155,13 +262,29 @@ Trigger the extract pipeline manually from **Pipelines → Run pipeline** and ve
 1. `npm ci` resolves all packages from the local Azure Artifacts feed (no calls to npmjs.org)
 2. `apiops extract` authenticates via the service connection and runs successfully
 
-> **✅ Setup complete.** Your air-gapped apiops pipelines are now operational. The remaining sections cover ongoing maintenance and reference material — read them as needed.
+**✅ Setup complete.**  The remaining sections cover ongoing maintenance and troubleshooting.
 
 ---
 
 ## Upgrading the CLI Version
 
-Sync the feed during a connectivity window to pull the new version, then update `package.json` and regenerate `package-lock.json`. Commit both.
+Sync the feed during a connectivity window to pull the new version, then update `package.json` and regenerate `package-lock.json`.
+
+```bash
+# Update package.json to the latest CLI version available in the feed
+npm install @peterhauge/apiops-cli --registry "$FEED_REGISTRY" --//pkgs.dev.azure.com/${ORG}/${PROJECT}/_packaging/${FEED}/npm/registry/:_authToken="$(az account get-access-token --resource https://app.vssps.visualstudio.com --query accessToken -o tsv)"
+
+# Rebuild lock file from package.json
+npm install
+```
+
+Commit both files:
+
+```bash
+git add package.json package-lock.json
+git commit -m "chore: bump apiops-cli version"
+git push
+```
 
 ---
 
@@ -181,7 +304,6 @@ Sync the feed during a connectivity window to pull the new version, then update 
 
 ## Further Reading
 
-- [Offline Tarball walkthrough](air-gapped-azure-devops-offline-tarball.md) — alternative for environments without a registry
 - [apiops init reference](../commands/init.md)
 - [Azure DevOps integration](../ci-cd/azure-devops.md) — standard (connected) setup
 - [Authentication guide](../guides/authentication.md) — service principal and managed identity options
