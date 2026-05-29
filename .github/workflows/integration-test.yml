@@ -32,7 +32,6 @@ on:
         type: choice
         options:
           - StandardV2
-          - Developer
           - Premium
           - PremiumV2
         default: StandardV2
@@ -40,7 +39,7 @@ on:
         description: 'Azure region'
         required: false
         type: string
-        default: 'centralus'
+        default: 'eastus'
       log_level:
         description: 'PowerShell log level (Info, Verbose, Debug)'
         required: false
@@ -58,7 +57,7 @@ on:
         description: 'Azure region'
         required: false
         type: string
-        default: 'centralus'
+        default: 'eastus'
       log_level:
         description: 'PowerShell log level (Info, Verbose, Debug)'
         required: false
@@ -89,6 +88,7 @@ env:
 jobs:
   roundtrip-test:
     name: Extract→Publish Round-Trip
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     environment: integration-test # Requires approval for cost protection
