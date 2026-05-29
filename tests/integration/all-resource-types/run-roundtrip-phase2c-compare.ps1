@@ -2,29 +2,27 @@
 <#
 .SYNOPSIS
   Phase 2c — Compare source and target APIM instances via ARM REST API.
-
-.DESCRIPTION
-  Reads the source and target APIM connection details from StateFile, then delegates
-  to Compare-ApimInstance.ps1 to perform a deep property comparison with normalization.
-  Can be invoked standalone or as part of the run-roundtrip-phase2-roundtrip.ps1
-  orchestrator.
-
-  Exit codes:
-    0 — instances match
-    1 — differences found
-    2 — error / fatal failure
-
-.EXAMPLE
-  .\run-roundtrip-phase2c-compare.ps1 -StateFile ./roundtrip-state.json
-
-.EXAMPLE
-  .\run-roundtrip-phase2c-compare.ps1 -StateFile ./roundtrip-state.json -LogLevel Debug
 #>
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [string]$StateFile,
+    [string]$SourceSubscriptionId,
+
+    [Parameter(Mandatory)]
+    [string]$SourceResourceGroup,
+
+    [Parameter(Mandatory)]
+    [string]$SourceApimName,
+
+    [Parameter(Mandatory)]
+    [string]$TargetSubscriptionId,
+
+    [Parameter(Mandatory)]
+    [string]$TargetResourceGroup,
+
+    [Parameter(Mandatory)]
+    [string]$TargetApimName,
 
     [ValidateSet('Info', 'Verbose', 'Debug')]
     [string]$LogLevel = 'Verbose'
@@ -36,29 +34,19 @@ $DebugPreference = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyCon
 
 $compareScript = Join-Path $PSScriptRoot 'Compare-ApimInstance.ps1'
 
-foreach ($requiredFile in @($compareScript, $StateFile)) {
-    if (-not (Test-Path $requiredFile)) {
-        Write-Error "Required file not found: $requiredFile"
-        exit 2
-    }
+if (-not (Test-Path $compareScript)) {
+    Write-Error "Required file not found: $compareScript"
+    exit 2
 }
-
-$state       = Get-Content -Path $StateFile -Raw | ConvertFrom-Json
-$sourceSubId = $state.sourceSubscriptionId
-$sourceRg    = $state.sourceResourceGroup
-$sourceName  = $state.sourceApimName
-$targetSubId = $state.targetSubscriptionId
-$targetRg    = $state.targetResourceGroup
-$targetName  = $state.targetApimName
 
 Write-Host "🔍 Compare — Compare source and target APIM instances"
 $compareArgs = @{
-    SourceSubscriptionId = $sourceSubId
-    SourceResourceGroup  = $sourceRg
-    SourceApimName       = $sourceName
-    TargetSubscriptionId = $targetSubId
-    TargetResourceGroup  = $targetRg
-    TargetApimName       = $targetName
+    SourceSubscriptionId = $SourceSubscriptionId
+    SourceResourceGroup  = $SourceResourceGroup
+    SourceApimName       = $SourceApimName
+    TargetSubscriptionId = $TargetSubscriptionId
+    TargetResourceGroup  = $TargetResourceGroup
+    TargetApimName       = $TargetApimName
 }
 switch ($LogLevel) {
     'Verbose' { $compareArgs.Verbose = $true }
