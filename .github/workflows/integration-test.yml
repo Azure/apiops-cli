@@ -214,7 +214,7 @@ jobs:
             throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
           }
 
-          ./tests/integration/all-resource-types/run-roundtrip-phase3-publish.ps1 `
+          ./tests/integration/all-resource-types/run-roundtrip-phase4-publish.ps1 `
             -TargetSubscriptionId '${{ secrets.AZURE_SUBSCRIPTION_ID }}' `
             -TargetResourceGroup '${{ env.TARGET_RG }}' `
             -TargetApimName '${{ env.TARGET_APIM }}' `
@@ -232,7 +232,7 @@ jobs:
             throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
           }
 
-          ./tests/integration/all-resource-types/run-roundtrip-phase4-compare.ps1 `
+          ./tests/integration/all-resource-types/run-roundtrip-phase5-compare.ps1 `
             -SourceSubscriptionId '${{ secrets.AZURE_SUBSCRIPTION_ID }}' `
             -SourceResourceGroup '${{ env.SOURCE_RG }}' `
             -SourceApimName '${{ env.SOURCE_APIM }}' `
@@ -253,7 +253,7 @@ jobs:
         if: always() && inputs.skip_teardown != true
         shell: pwsh
         run: |
-          ./tests/integration/all-resource-types/run-roundtrip-phase5-teardown.ps1 `
+          ./tests/integration/all-resource-types/run-roundtrip-phase6-teardown.ps1 `
             -SourceResourceGroup '${{ env.SOURCE_RG }}' `
             -TargetResourceGroup '${{ env.TARGET_RG }}' `
             -Location '${{ inputs.location }}' `

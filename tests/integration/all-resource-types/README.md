@@ -141,7 +141,7 @@ Requires `ExtractOutputDir` (default: `./extracted-artifacts`) to already be pop
 Publishes the extracted artifacts to the target APIM using the generated override file.
 
 ```powershell
-.\run-roundtrip-phase3-publish.ps1 `
+.\run-roundtrip-phase4-publish.ps1 `
   -TargetSubscriptionId "<target-sub-id>" `
   -TargetResourceGroup "rg-tgt" `
   -TargetApimName "apim-tgt"
@@ -154,7 +154,7 @@ Requires `ExtractOutputDir` (default: `./extracted-artifacts`) and an overrides 
 Compares source and target APIM instances via ARM REST API with deep property normalization.
 
 ```powershell
-.\run-roundtrip-phase4-compare.ps1 `
+.\run-roundtrip-phase5-compare.ps1 `
   -SourceSubscriptionId "<source-sub-id>" `
   -SourceResourceGroup "rg-src" `
   -SourceApimName "apim-src" `
@@ -189,9 +189,9 @@ Exit codes: `0` = match, `1` = differences found, `2` = error.
 | `run-roundtrip-phase1-deploy.ps1` | Phase 1: deploy source + target APIM instances |
 | `run-roundtrip-phase2-extract.ps1` | Phase 2: extract artifacts from source APIM |
 | `run-roundtrip-phase3-generate-overrides.ps1` | Phase 3: generate target override config |
-| `run-roundtrip-phase3-publish.ps1` | Phase 4: publish artifacts to target |
-| `run-roundtrip-phase4-compare.ps1` | Phase 5: compare source vs target via ARM |
-| `run-roundtrip-phase5-teardown.ps1` | Phase 6: tear down resource groups |
+| `run-roundtrip-phase4-publish.ps1` | Phase 4: publish artifacts to target |
+| `run-roundtrip-phase5-compare.ps1` | Phase 5: compare source vs target via ARM |
+| `run-roundtrip-phase6-teardown.ps1` | Phase 6: tear down resource groups |
 | `Compare-ApimInstance.ps1` | ARM REST comparison script (standalone) |
 | `Test-ExtractedArtifact.ps1` | Validate extracted artifact structure |
 | `expected-structure.json` | Manifest of expected extracted files |
