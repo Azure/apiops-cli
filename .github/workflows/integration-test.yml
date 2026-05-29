@@ -186,7 +186,22 @@ jobs:
             -LogLevel $logLevel `
             -ExtractOutputDir './extracted-artifacts'
 
-      - name: Run Round-Trip Phase 3 (Publish)
+      - name: Run Round-Trip Phase 3 (Generate Overrides)
+        if: success()
+        shell: pwsh
+        run: |
+          $logLevel = '${{ inputs.log_level }}'
+          if ([string]::IsNullOrWhiteSpace($logLevel)) { $logLevel = 'Verbose' }
+          if ($logLevel -notin @('Info', 'Verbose', 'Debug')) {
+            throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
+          }
+
+          ./tests/integration/all-resource-types/run-roundtrip-phase3-generate-overrides.ps1 `
+            -TargetResourceGroup '${{ env.TARGET_RG }}' `
+            -LogLevel $logLevel `
+            -ExtractOutputDir './extracted-artifacts'
+
+      - name: Run Round-Trip Phase 4 (Publish)
         if: success()
         shell: pwsh
         env:
@@ -204,9 +219,10 @@ jobs:
             -TargetResourceGroup '${{ env.TARGET_RG }}' `
             -TargetApimName '${{ env.TARGET_APIM }}' `
             -LogLevel $logLevel `
-            -ExtractOutputDir './extracted-artifacts'
+            -ExtractOutputDir './extracted-artifacts' `
+            -OverrideFile './extracted-artifacts/.overrides.yaml'
 
-      - name: Run Round-Trip Phase 4 (Compare)
+      - name: Run Round-Trip Phase 5 (Compare)
         if: success()
         shell: pwsh
         run: |
@@ -233,7 +249,7 @@ jobs:
           path: ./extracted-artifacts/
           if-no-files-found: ignore
 
-      - name: Run Round-Trip Phase 5 (Teardown)
+      - name: Run Round-Trip Phase 6 (Teardown)
         if: always() && inputs.skip_teardown != true
         shell: pwsh
         run: |

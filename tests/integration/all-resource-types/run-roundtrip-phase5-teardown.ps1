@@ -24,7 +24,7 @@ if ($SkipTeardown) {
     exit 0
 }
 
-Write-Host "🧹 PHASE 5 — Teardown"
+Write-Host "🧹 PHASE 6 — Teardown"
 
 $sourceApimName = $null
 $targetApimName = $null
