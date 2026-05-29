@@ -147,5 +147,11 @@ describe('copilot/identity-setup-prompt', () => {
       expect(prompt).toContain('RBAC permissions not yet propagated');
       expect(prompt).toContain('wait 5-10 minutes');
     });
+
+    it('should render all template placeholders', () => {
+      const prompt = generateIdentitySetupPrompt({ environments: ['dev', 'prod'] });
+      expect(prompt).not.toContain('{{');
+      expect(prompt).not.toContain('}}');
+    });
   });
 });
