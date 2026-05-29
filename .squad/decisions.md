@@ -2,6 +2,19 @@
 
 ## Active Decisions
 
+### 2026-05-28T23:06:01Z: Team-Wide Evidence Standard
+**By:** User directive (anonymized)  
+**Status:** Active directive  
+**What:** All team members should back decisions, notes, and factual assertions with a credible source URL whenever possible.
+**Why:** Strengthens traceability and reviewability across public squad records.
+
+### 2026-05-28T22:55:05Z: DocWriter Uses GitHub-Style Markdown
+**By:** User directive (anonymized)  
+**Status:** Active directive  
+**What:** All documentation and guidance authored by DocWriter must use GitHub-style Markdown.
+**Why:** Ensures consistent rendering, readability, and contribution standards across repository documentation.
+**Source:** [Basic writing and formatting syntax - GitHub Docs](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax)
+
 ### 2026-05-14T05:20:00Z: APIM v1 → v2 SKU Migration via apiops-cli
 **By:** ApimExpert + ApiOpsLead (joint research and decision)  
 **Status:** Proposed for team governance review  

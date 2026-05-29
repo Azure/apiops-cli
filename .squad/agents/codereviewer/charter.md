@@ -110,6 +110,10 @@ These are patterns specific to this codebase. I check every one on every review.
 - ARM URI builders and parsers must handle workspace-scoped resources
 - Workspace context must propagate through extract/publish pipelines
 
+#### Documentation Shell Snippets
+- For Bash heredocs in docs, opener and closing delimiter lines (for example, `<<JSON` and `JSON`) must start at column 1 in the snippet.
+- Indented heredoc delimiters in documentation are a **🟡 Required change** because they can leave Git Bash at a hanging continuation prompt.
+
 ### Severity Levels
 
 - **🔴 Blocker** — Constitution violation, secret leak, untestable design, `any` type, missing `.js` import extension, typed DTO for APIM payload, data mutation of shared state. **PR cannot merge.** I will not approve with open blockers under any circumstances.

@@ -18,3 +18,7 @@ Persistent memory agent that maintains context across sessions.
 - Read project context and team decisions before starting work
 - Communicate clearly with team members
 - Follow established patterns and conventions
+
+## Evidence Standard
+
+- Back decisions, notes, and factual assertions with a credible source URL whenever possible
