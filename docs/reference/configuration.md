@@ -39,7 +39,7 @@ Available on all commands (`extract`, `publish`, `init`):
 | `--cloud <name>` | Azure cloud environment | `public` |
 | `--log-level <level>` | Log verbosity: `debug`, `info`, `warn`, `error` | `info` |
 | `--format <format>` | Output format | `text` |
-| `--api-version <version>` | APIM REST API version | `2024-05-01` |
+| `--api-version <version>` | APIM REST API version | `2025-09-01-preview` |
 
 ### `apiops extract` Flags
 
@@ -86,7 +86,7 @@ Available on all commands (`extract`, `publish`, `init`):
 | `AZURE_CLIENT_ID` | all | Service principal client ID for authentication |
 | `AZURE_CLIENT_SECRET` | all | Service principal client secret for authentication |
 | `AZURE_TENANT_ID` | all | Microsoft Entra ID (Azure AD) tenant ID |
-| `AZURE_API_VERSION` | extract, publish | APIM REST API version (default: `2024-05-01`) |
+| `AZURE_API_VERSION` | extract, publish | APIM REST API version (default: `2025-09-01-preview`) |
 | `COMMIT_ID` | publish | Git commit SHA for incremental publish (alternative to `--commit-id`) |
 
 ### Authentication Environment Variables
@@ -149,7 +149,7 @@ backends:
 | Azure cloud | `public` | `--cloud` |
 | Log level | `info` | `--log-level` |
 | Output format | `text` | `--format` |
-| API version | `2024-05-01` | `--api-version` or `AZURE_API_VERSION` |
+| API version | `2025-09-01-preview` | `--api-version` or `AZURE_API_VERSION` |
 | Transitive deps | enabled | `--no-transitive` |
 | Dry run | disabled | `--dry-run` |
 | Delete unmatched | disabled | `--delete-unmatched` |

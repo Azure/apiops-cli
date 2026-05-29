@@ -89,9 +89,9 @@ async function executePublish(
   }
 
   // Build service context
-  // Default to a recent preview API version so newer resource types (e.g.
-  // MCP-typed APIs) are accepted by ARM. Older versions (e.g. 2024-05-01)
-  // reject MCP API payloads.
+  // Default to 2025-09-01-preview so newer resource types (e.g. MCP-typed
+  // APIs) are accepted by ARM. Older versions (e.g. 2024-05-01) can reject
+  // MCP API payloads.
   const apiVersion =
     globalOpts.apiVersion ?? process.env.AZURE_API_VERSION ?? '2025-09-01-preview';
   const cloudName = globalOpts.cloud ?? 'public';
