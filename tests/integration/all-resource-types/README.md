@@ -118,7 +118,11 @@ Phase 2 is split into three independent scripts that can be called separately fo
 Extracts artifacts from the source APIM and validates the extracted structure.
 
 ```powershell
-.\run-roundtrip-phase2a-extract.ps1 -StateFile ./roundtrip-state.json
+.\run-roundtrip-phase2a-extract.ps1 `
+  -SourceSubscriptionId "<source-sub-id>" `
+  -SourceResourceGroup "rg-src" `
+  -SourceApimName "apim-src" `
+  -SkuName "StandardV2"
 ```
 
 #### Phase 2b — Publish
@@ -126,7 +130,10 @@ Extracts artifacts from the source APIM and validates the extracted structure.
 Generates target environment overrides (Key Vault, App Insights, Event Hub) and publishes the extracted artifacts to the target APIM.
 
 ```powershell
-.\run-roundtrip-phase2b-publish.ps1 -StateFile ./roundtrip-state.json
+.\run-roundtrip-phase2b-publish.ps1 `
+  -TargetSubscriptionId "<target-sub-id>" `
+  -TargetResourceGroup "rg-tgt" `
+  -TargetApimName "apim-tgt"
 ```
 
 Requires `ExtractOutputDir` (default: `./extracted-artifacts`) to already be populated by the extract step.
@@ -136,12 +143,18 @@ Requires `ExtractOutputDir` (default: `./extracted-artifacts`) to already be pop
 Compares source and target APIM instances via ARM REST API with deep property normalization.
 
 ```powershell
-.\run-roundtrip-phase2c-compare.ps1 -StateFile ./roundtrip-state.json
+.\run-roundtrip-phase2c-compare.ps1 `
+  -SourceSubscriptionId "<source-sub-id>" `
+  -SourceResourceGroup "rg-src" `
+  -SourceApimName "apim-src" `
+  -TargetSubscriptionId "<target-sub-id>" `
+  -TargetResourceGroup "rg-tgt" `
+  -TargetApimName "apim-tgt"
 ```
 
 Exit codes: `0` = match, `1` = differences found, `2` = error.
 
-All three scripts accept `-StateFile` (mandatory), `-LogLevel` (Info/Verbose/Debug), and `-ExtractOutputDir` (2a/2b only).
+All three scripts accept `-LogLevel` (Info/Verbose/Debug), and 2a/2b accept `-ExtractOutputDir`.
 
 ### Comparison Script
 

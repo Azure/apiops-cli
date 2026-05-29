@@ -83,6 +83,12 @@ on:
         required: true
       APIM_PUBLISHER_EMAIL:
         required: true
+      SOURCE_SUBSCRIPTION_ID:
+        required: false
+      TARGET_SUBSCRIPTION_ID:
+        required: false
+      APIM_SKU:
+        required: false
 
 permissions:
   id-token: write
@@ -95,6 +101,8 @@ concurrency:
 env:
   SOURCE_RG: rg-apiops-bvt-source-${{ github.run_id }}
   TARGET_RG: rg-apiops-bvt-target-${{ github.run_id }}
+  SOURCE_APIM: apiops-bvt-src-${{ github.run_id }}
+  TARGET_APIM: apiops-bvt-tgt-${{ github.run_id }}
 
 jobs:
   roundtrip-test:
@@ -129,14 +137,27 @@ jobs:
             throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
           }
 
+          $sourceSubId = '${{ secrets.SOURCE_SUBSCRIPTION_ID }}'
+          if ([string]::IsNullOrWhiteSpace($sourceSubId)) { $sourceSubId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}' }
+
+          $targetSubId = '${{ secrets.TARGET_SUBSCRIPTION_ID }}'
+          if ([string]::IsNullOrWhiteSpace($targetSubId)) { $targetSubId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}' }
+
+          $skuName = '${{ secrets.APIM_SKU }}'
+          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = '${{ inputs.sku }}' }
+          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = 'StandardV2' }
+
           $params = @{
             SourceResourceGroup = '${{ env.SOURCE_RG }}'
             TargetResourceGroup = '${{ env.TARGET_RG }}'
-            SkuName            = '${{ inputs.sku }}'
+            SourceApimName     = '${{ env.SOURCE_APIM }}'
+            TargetApimName     = '${{ env.TARGET_APIM }}'
+            SourceSubscriptionId = $sourceSubId
+            TargetSubscriptionId = $targetSubId
+            SkuName            = $skuName
             Location           = '${{ inputs.location }}'
             LogLevel           = $logLevel
             PublisherEmail     = '${{ secrets.APIM_PUBLISHER_EMAIL }}'
-            StateFile          = './roundtrip-state.json'
           }
           ./tests/integration/all-resource-types/run-roundtrip-phase1-deploy.ps1 @params
 
@@ -163,8 +184,24 @@ jobs:
             throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
           }
 
+          $sourceSubId = '${{ secrets.SOURCE_SUBSCRIPTION_ID }}'
+          if ([string]::IsNullOrWhiteSpace($sourceSubId)) { $sourceSubId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}' }
+
+          $targetSubId = '${{ secrets.TARGET_SUBSCRIPTION_ID }}'
+          if ([string]::IsNullOrWhiteSpace($targetSubId)) { $targetSubId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}' }
+
+          $skuName = '${{ secrets.APIM_SKU }}'
+          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = '${{ inputs.sku }}' }
+          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = 'StandardV2' }
+
           ./tests/integration/all-resource-types/run-roundtrip-phase2-roundtrip.ps1 `
-            -StateFile './roundtrip-state.json' `
+            -SourceSubscriptionId $sourceSubId `
+            -SourceResourceGroup '${{ env.SOURCE_RG }}' `
+            -SourceApimName '${{ env.SOURCE_APIM }}' `
+            -TargetSubscriptionId $targetSubId `
+            -TargetResourceGroup '${{ env.TARGET_RG }}' `
+            -TargetApimName '${{ env.TARGET_APIM }}' `
+            -SkuName $skuName `
             -LogLevel $logLevel `
             -ExtractOutputDir './extracted-artifacts'
 
