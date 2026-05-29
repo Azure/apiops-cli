@@ -46,11 +46,6 @@ on:
         required: false
         type: string
         default: Verbose
-      skip_teardown:
-        description: 'Skip teardown (for debugging)'
-        required: false
-        type: boolean
-        default: false
 
   workflow_call:
     inputs:
@@ -69,11 +64,6 @@ on:
         required: false
         type: string
         default: Verbose
-      skip_teardown:
-        description: 'Skip teardown (for debugging)'
-        required: false
-        type: boolean
-        default: false
     secrets:
       AZURE_CLIENT_ID:
         required: true
@@ -123,7 +113,6 @@ jobs:
       - name: Run Round-Trip Test
         shell: pwsh
         run: |
-          $skipTeardown = '${{ inputs.skip_teardown }}' -eq 'true'
           $logLevel = '${{ inputs.log_level }}'
           if ([string]::IsNullOrWhiteSpace($logLevel)) { $logLevel = 'Verbose' }
           if ($logLevel -notin @('Info', 'Verbose', 'Debug')) {
@@ -140,7 +129,6 @@ jobs:
             ExtractOutputDir   = './extracted-artifacts'
             HardDelete         = $true
           }
-          if ($skipTeardown) { $params.SkipTeardown = $true }
 
           ./tests/integration/all-resource-types/run-roundtrip-test.ps1 @params
 
@@ -153,7 +141,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Emergency Teardown
-        if: failure() && inputs.skip_teardown != true
+        if: failure()
         shell: pwsh
         run: |
           $sourceRg = '${{ env.SOURCE_RG }}'
