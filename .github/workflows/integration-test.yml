@@ -171,7 +171,7 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Run Round-Trip Phase 2 (Extract→Publish→Verify)
+      - name: Run Round-Trip Phase 2a (Extract)
         if: success()
         shell: pwsh
         env:
@@ -187,23 +187,73 @@ jobs:
           $sourceSubId = '${{ secrets.SOURCE_SUBSCRIPTION_ID }}'
           if ([string]::IsNullOrWhiteSpace($sourceSubId)) { $sourceSubId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}' }
 
-          $targetSubId = '${{ secrets.TARGET_SUBSCRIPTION_ID }}'
-          if ([string]::IsNullOrWhiteSpace($targetSubId)) { $targetSubId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}' }
-
           $skuName = '${{ secrets.APIM_SKU }}'
           if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = '${{ inputs.sku }}' }
           if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = 'StandardV2' }
 
-          ./tests/integration/all-resource-types/run-roundtrip-phase2-roundtrip.ps1 `
+          ./tests/integration/all-resource-types/run-roundtrip-phase2a-extract.ps1 `
+            -SourceSubscriptionId $sourceSubId `
+            -SourceResourceGroup '${{ env.SOURCE_RG }}' `
+            -SourceApimName '${{ env.SOURCE_APIM }}' `
+            -SkuName $skuName `
+            -LogLevel $logLevel `
+            -ExtractOutputDir './extracted-artifacts'
+          $extractExitCode = $LASTEXITCODE
+          if ($extractExitCode -ge 2) {
+            exit $extractExitCode
+          }
+          if ($extractExitCode -ne 0) {
+            Write-Host "::warning::Phase 2a validation warnings (exit $extractExitCode) — continuing round-trip"
+          }
+          exit 0
+
+      - name: Run Round-Trip Phase 2b (Publish)
+        if: success()
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: |
+          $logLevel = '${{ inputs.log_level }}'
+          if ([string]::IsNullOrWhiteSpace($logLevel)) { $logLevel = 'Verbose' }
+          if ($logLevel -notin @('Info', 'Verbose', 'Debug')) {
+            throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
+          }
+
+          $targetSubId = '${{ secrets.TARGET_SUBSCRIPTION_ID }}'
+          if ([string]::IsNullOrWhiteSpace($targetSubId)) { $targetSubId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}' }
+
+          ./tests/integration/all-resource-types/run-roundtrip-phase2b-publish.ps1 `
+            -TargetSubscriptionId $targetSubId `
+            -TargetResourceGroup '${{ env.TARGET_RG }}' `
+            -TargetApimName '${{ env.TARGET_APIM }}' `
+            -LogLevel $logLevel `
+            -ExtractOutputDir './extracted-artifacts'
+
+      - name: Run Round-Trip Phase 2c (Compare)
+        if: success()
+        shell: pwsh
+        run: |
+          $logLevel = '${{ inputs.log_level }}'
+          if ([string]::IsNullOrWhiteSpace($logLevel)) { $logLevel = 'Verbose' }
+          if ($logLevel -notin @('Info', 'Verbose', 'Debug')) {
+            throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
+          }
+
+          $sourceSubId = '${{ secrets.SOURCE_SUBSCRIPTION_ID }}'
+          if ([string]::IsNullOrWhiteSpace($sourceSubId)) { $sourceSubId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}' }
+
+          $targetSubId = '${{ secrets.TARGET_SUBSCRIPTION_ID }}'
+          if ([string]::IsNullOrWhiteSpace($targetSubId)) { $targetSubId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}' }
+
+          ./tests/integration/all-resource-types/run-roundtrip-phase2c-compare.ps1 `
             -SourceSubscriptionId $sourceSubId `
             -SourceResourceGroup '${{ env.SOURCE_RG }}' `
             -SourceApimName '${{ env.SOURCE_APIM }}' `
             -TargetSubscriptionId $targetSubId `
             -TargetResourceGroup '${{ env.TARGET_RG }}' `
             -TargetApimName '${{ env.TARGET_APIM }}' `
-            -SkuName $skuName `
-            -LogLevel $logLevel `
-            -ExtractOutputDir './extracted-artifacts'
+            -LogLevel $logLevel
 
       - name: Upload Extracted Artifacts
         if: always()
