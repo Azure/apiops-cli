@@ -46,6 +46,8 @@ param(
     [ValidateSet('Developer', 'Premium', 'StandardV2', 'PremiumV2')]
     [string]$SkuName = 'StandardV2',
 
+    [string]$ApimName,
+
     [switch]$Destroy,
 
     [ValidateSet('Info', 'Verbose', 'Debug')]
@@ -178,6 +180,10 @@ $azArgs = @(
     '--parameters',     "skuName=$SkuName", "location=$Location", "publisherEmail=$PublisherEmail",
     '--output',         'json'
 ) + $azVerbosity
+
+if (-not [string]::IsNullOrWhiteSpace($ApimName)) {
+    $azArgs += @('--parameters', "apimName=$ApimName")
+}
 
 $raw = Invoke-MaskedAzCommand -Replacements $azReplacements -Arguments $azArgs
 

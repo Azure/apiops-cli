@@ -1,19 +1,6 @@
 <#
 .SYNOPSIS
   Master orchestrator for the extract→publish round-trip integration test.
-
-.DESCRIPTION
-  Single entry point that orchestrates phase scripts for deploy, round-trip, and
-  teardown. Works both locally and in CI.
-
-.EXAMPLE
-  .\run-roundtrip-test.ps1 -PublisherEmail admin@contoso.com
-
-.EXAMPLE
-  .\run-roundtrip-test.ps1 -PublisherEmail admin@contoso.com -SkipTeardown
-
-.EXAMPLE
-  .\run-roundtrip-test.ps1 -PublisherEmail admin@contoso.com -HardDelete
 #>
 
 #requires -Version 7.0
@@ -25,6 +12,18 @@ param(
 
     [Parameter()]
     [string]$TargetResourceGroup,
+
+    [Parameter()]
+    [string]$SourceApimName,
+
+    [Parameter()]
+    [string]$TargetApimName,
+
+    [Parameter()]
+    [string]$SourceSubscriptionId,
+
+    [Parameter()]
+    [string]$TargetSubscriptionId,
 
     [ValidateSet('Developer', 'Premium', 'StandardV2', 'PremiumV2')]
     [string]$SkuName = 'StandardV2',
@@ -60,8 +59,30 @@ if (-not $SourceResourceGroup) {
 if (-not $TargetResourceGroup) {
     $TargetResourceGroup = "bvt-$uniqueId-tgt-rg"
 }
+if (-not $SourceApimName) {
+    $SourceApimName = "bvt-$timestamp$random-src-apim"
+}
+if (-not $TargetApimName) {
+    $TargetApimName = "bvt-$timestamp$random-tgt-apim"
+}
 
-$stateFile = Join-Path $PSScriptRoot ".roundtrip-state-$uniqueId.json"
+if (-not $SourceSubscriptionId) {
+    $SourceSubscriptionId = $env:SOURCE_SUBSCRIPTION_ID
+}
+if (-not $TargetSubscriptionId) {
+    $TargetSubscriptionId = $env:TARGET_SUBSCRIPTION_ID
+}
+
+if (-not $SourceSubscriptionId -or -not $TargetSubscriptionId) {
+    $account = az account show --output json 2>$null | ConvertFrom-Json
+    if (-not $account) {
+        Write-Error "Not logged in to Azure CLI. Run 'az login' first."
+        exit 2
+    }
+    if (-not $SourceSubscriptionId) { $SourceSubscriptionId = $account.id }
+    if (-not $TargetSubscriptionId) { $TargetSubscriptionId = $account.id }
+}
+
 $phase1Script = Join-Path $PSScriptRoot 'run-roundtrip-phase1-deploy.ps1'
 $phase2Script = Join-Path $PSScriptRoot 'run-roundtrip-phase2-roundtrip.ps1'
 $phase3Script = Join-Path $PSScriptRoot 'run-roundtrip-phase3-teardown.ps1'
@@ -79,11 +100,14 @@ try {
     & $phase1Script `
         -SourceResourceGroup $SourceResourceGroup `
         -TargetResourceGroup $TargetResourceGroup `
+        -SourceApimName $SourceApimName `
+        -TargetApimName $TargetApimName `
+        -SourceSubscriptionId $SourceSubscriptionId `
+        -TargetSubscriptionId $TargetSubscriptionId `
         -SkuName $SkuName `
         -Location $Location `
         -LogLevel $LogLevel `
-        -PublisherEmail $PublisherEmail `
-        -StateFile $stateFile
+        -PublisherEmail $PublisherEmail
 
     if ($LASTEXITCODE -ne 0) {
         $exitCode = $LASTEXITCODE
@@ -91,7 +115,13 @@ try {
     }
 
     & $phase2Script `
-        -StateFile $stateFile `
+        -SourceSubscriptionId $SourceSubscriptionId `
+        -SourceResourceGroup $SourceResourceGroup `
+        -SourceApimName $SourceApimName `
+        -TargetSubscriptionId $TargetSubscriptionId `
+        -TargetResourceGroup $TargetResourceGroup `
+        -TargetApimName $TargetApimName `
+        -SkuName $SkuName `
         -LogLevel $LogLevel `
         -ExtractOutputDir $ExtractOutputDir
 
@@ -104,10 +134,6 @@ finally {
         -Location $Location `
         -HardDelete:$HardDelete `
         -SkipTeardown:$SkipTeardown
-
-    if (Test-Path $stateFile) {
-        Remove-Item -Path $stateFile -Force -ErrorAction SilentlyContinue
-    }
 }
 
 exit $exitCode

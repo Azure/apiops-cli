@@ -19,8 +19,13 @@ param(
     [Parameter(Mandatory)]
     [string]$PublisherEmail,
 
-    [Parameter(Mandatory)]
-    [string]$StateFile
+    [string]$SourceApimName,
+
+    [string]$TargetApimName,
+
+    [string]$SourceSubscriptionId,
+
+    [string]$TargetSubscriptionId
 )
 
 $ErrorActionPreference = 'Stop'
@@ -37,6 +42,9 @@ if (-not $account) {
 }
 
 $subscriptionId = $account.id
+if ([string]::IsNullOrWhiteSpace($SourceSubscriptionId)) { $SourceSubscriptionId = $subscriptionId }
+if ([string]::IsNullOrWhiteSpace($TargetSubscriptionId)) { $TargetSubscriptionId = $subscriptionId }
+
 Write-Host "🔐 Azure CLI authenticated: $($account.name) ($(Protect-SubscriptionId -Value $subscriptionId))"
 
 $deploySourceScript = Join-Path $PSScriptRoot 'Deploy-SourceApim.ps1'
@@ -60,7 +68,7 @@ $targetLogFile = Join-Path $logsDir "target-deploy-$timestamp.log"
 Write-Host "🚀 PHASE 1 — Deploy source and target APIM instances (parallel)"
 
 $sourceJob = Start-Job -Name 'DeploySource' -ScriptBlock {
-            param($script, $rg, $sku, $loc, $email, $transcriptFile, $logLevel)
+            param($script, $rg, $sku, $loc, $email, $transcriptFile, $logLevel, $apimName)
             $ErrorActionPreference = 'Stop'
             Start-Transcript -Path $transcriptFile -Force -UseMinimalHeader | Out-Null
             try {
@@ -70,6 +78,9 @@ $sourceJob = Start-Job -Name 'DeploySource' -ScriptBlock {
                     Location          = $loc
                     PublisherEmail    = $email
                     LogLevel          = $logLevel
+                }
+                if (-not [string]::IsNullOrWhiteSpace($apimName)) {
+                    $scriptArgs.ApimName = $apimName
                 }
                 $result = & $script @scriptArgs
                 if (-not $result -or -not $result.apimServiceName) {
@@ -79,10 +90,10 @@ $sourceJob = Start-Job -Name 'DeploySource' -ScriptBlock {
             } finally {
                 Stop-Transcript | Out-Null
             }
-} -ArgumentList $deploySourceScript, $SourceResourceGroup, $SkuName, $Location, $PublisherEmail, $sourceLogFile, $LogLevel
+} -ArgumentList $deploySourceScript, $SourceResourceGroup, $SkuName, $Location, $PublisherEmail, $sourceLogFile, $LogLevel, $SourceApimName
 
 $targetJob = Start-Job -Name 'DeployTarget' -ScriptBlock {
-            param($script, $rg, $sku, $loc, $email, $transcriptFile, $logLevel)
+            param($script, $rg, $sku, $loc, $email, $transcriptFile, $logLevel, $apimName)
             $ErrorActionPreference = 'Stop'
             Start-Transcript -Path $transcriptFile -Force -UseMinimalHeader | Out-Null
             try {
@@ -93,6 +104,9 @@ $targetJob = Start-Job -Name 'DeployTarget' -ScriptBlock {
                     PublisherEmail    = $email
                     LogLevel          = $logLevel
                 }
+                if (-not [string]::IsNullOrWhiteSpace($apimName)) {
+                    $scriptArgs.ApimName = $apimName
+                }
                 $result = & $script @scriptArgs
                 if (-not $result -or -not $result.apimServiceName -or -not $result.apimServiceName.value) {
                     throw "Target deployment returned no outputs"
@@ -101,7 +115,7 @@ $targetJob = Start-Job -Name 'DeployTarget' -ScriptBlock {
             } finally {
                 Stop-Transcript | Out-Null
             }
-} -ArgumentList $deployTargetScript, $TargetResourceGroup, $SkuName, $Location, $PublisherEmail, $targetLogFile, $LogLevel
+} -ArgumentList $deployTargetScript, $TargetResourceGroup, $SkuName, $Location, $PublisherEmail, $targetLogFile, $LogLevel, $TargetApimName
 
 $jobs = @($sourceJob, $targetJob)
 $sourceLastPos = 0
@@ -165,7 +179,7 @@ if ($exitCode -ne 0) {
     exit $exitCode
 }
 
-$sourceSubId = if ($sourceOutputs -and $sourceOutputs.subscriptionId) { $sourceOutputs.subscriptionId } else { $subscriptionId }
+$sourceSubId = if (-not [string]::IsNullOrWhiteSpace($SourceSubscriptionId)) { $SourceSubscriptionId } elseif ($sourceOutputs -and $sourceOutputs.subscriptionId) { $sourceOutputs.subscriptionId } else { $subscriptionId }
 $sourceRg = if ($sourceOutputs -and $sourceOutputs.resourceGroup) { $sourceOutputs.resourceGroup } else { $SourceResourceGroup }
 $sourceName = if ($sourceOutputs -and $sourceOutputs.apimServiceName) { $sourceOutputs.apimServiceName } else {
     $apimName = az apim list --resource-group $SourceResourceGroup --query "[0].name" -o tsv 2>$null
@@ -176,7 +190,7 @@ $sourceName = if ($sourceOutputs -and $sourceOutputs.apimServiceName) { $sourceO
     $apimName
 }
 
-$targetSubId = if ($targetOutputs -and $targetOutputs.subscriptionId.value) { $targetOutputs.subscriptionId.value } else { $subscriptionId }
+$targetSubId = if (-not [string]::IsNullOrWhiteSpace($TargetSubscriptionId)) { $TargetSubscriptionId } elseif ($targetOutputs -and $targetOutputs.subscriptionId.value) { $targetOutputs.subscriptionId.value } else { $subscriptionId }
 $targetRg = if ($targetOutputs -and $targetOutputs.resourceGroupName.value) { $targetOutputs.resourceGroupName.value } else { $TargetResourceGroup }
 $targetName = if ($targetOutputs -and $targetOutputs.apimServiceName.value) { $targetOutputs.apimServiceName.value } else {
     $apimName = az apim list --resource-group $TargetResourceGroup --query "[0].name" -o tsv 2>$null
@@ -203,7 +217,7 @@ if ($SkuName -in @('Developer', 'Premium')) {
     Write-Host "   ✅ source-apim-post-activation deployment confirmed"
 }
 
-$state = [ordered]@{
+$phase1Output = [ordered]@{
     sourceSubscriptionId = $sourceSubId
     sourceResourceGroup  = $sourceRg
     sourceApimName       = $sourceName
@@ -214,11 +228,12 @@ $state = [ordered]@{
     location             = $Location
 }
 
-$stateDir = Split-Path -Parent $StateFile
-if (-not [string]::IsNullOrWhiteSpace($stateDir)) {
-    New-Item -ItemType Directory -Path $stateDir -Force -ErrorAction SilentlyContinue | Out-Null
+if ($env:GITHUB_OUTPUT) {
+    foreach ($key in $phase1Output.Keys) {
+        "$key=$($phase1Output[$key])" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+    }
+    Write-Host "📋 Phase 1 outputs written to GITHUB_OUTPUT"
 }
 
-$state | ConvertTo-Json -Depth 5 | Set-Content -Path $StateFile -Encoding utf8
-Write-Host "✅ PHASE 1 complete — state saved to $StateFile"
-exit 0
+Write-Host "✅ PHASE 1 complete"
+return $phase1Output

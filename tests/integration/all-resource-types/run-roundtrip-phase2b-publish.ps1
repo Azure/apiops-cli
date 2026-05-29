@@ -2,27 +2,18 @@
 <#
 .SYNOPSIS
   Phase 2b — Generate target environment overrides and publish artifacts to target APIM.
-
-.DESCRIPTION
-  Generates a .overrides.yaml file inside ExtractOutputDir that rewrites source
-  environment references (Key Vault, App Insights, Event Hub) to target equivalents,
-  then runs `apiops publish` to apply the artifacts. Can be invoked standalone or as
-  part of the run-roundtrip-phase2-roundtrip.ps1 orchestrator.
-
-  Requires that run-roundtrip-phase2a-extract.ps1 (or equivalent) has already
-  populated ExtractOutputDir.
-
-.EXAMPLE
-  .\run-roundtrip-phase2b-publish.ps1 -StateFile ./roundtrip-state.json
-
-.EXAMPLE
-  .\run-roundtrip-phase2b-publish.ps1 -StateFile ./roundtrip-state.json -LogLevel Debug -ExtractOutputDir ./my-artifacts
 #>
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [string]$StateFile,
+    [string]$TargetSubscriptionId,
+
+    [Parameter(Mandatory)]
+    [string]$TargetResourceGroup,
+
+    [Parameter(Mandatory)]
+    [string]$TargetApimName,
 
     [ValidateSet('Info', 'Verbose', 'Debug')]
     [string]$LogLevel = 'Verbose',
@@ -36,11 +27,9 @@ $DebugPreference = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyCon
 
 $maskingModule = Join-Path $PSScriptRoot 'MaskingHelpers.psm1'
 
-foreach ($requiredFile in @($maskingModule, $StateFile)) {
-    if (-not (Test-Path $requiredFile)) {
-        Write-Error "Required file not found: $requiredFile"
-        exit 2
-    }
+if (-not (Test-Path $maskingModule)) {
+    Write-Error "Required file not found: $maskingModule"
+    exit 2
 }
 
 if (-not (Test-Path $ExtractOutputDir)) {
@@ -60,9 +49,6 @@ function Get-ApiopsLogLevel([string]$ScriptLogLevel) {
 }
 
 function Get-ApiopsAuthArgs {
-    # In CI, we explicitly pass client/tenant to apiops so DefaultAzureCredential
-    # can use the intended federated identity after long-running deploy phases.
-    # If env vars are unset (local runs), apiops falls back to default credential chain.
     $authArgs = @()
 
     if (-not [string]::IsNullOrWhiteSpace($env:AZURE_CLIENT_ID)) {
@@ -76,35 +62,30 @@ function Get-ApiopsAuthArgs {
     return $authArgs
 }
 
-$state       = Get-Content -Path $StateFile -Raw | ConvertFrom-Json
-$targetSubId = $state.targetSubscriptionId
-$targetRg    = $state.targetResourceGroup
-$targetName  = $state.targetApimName
-
 $apiopsLogLevel = Get-ApiopsLogLevel -ScriptLogLevel $LogLevel
 $apiopsAuthArgs = Get-ApiopsAuthArgs
 
 Write-Host "🔧 Publish — Generate override config for target environment"
-$targetKvUri        = az keyvault list --resource-group $targetRg --query "[0].properties.vaultUri" -o tsv
-$targetAiResourceId = az monitor app-insights component list --resource-group $targetRg --query "[0].id" -o tsv
-$targetAiKey        = az monitor app-insights component list --resource-group $targetRg --query "[0].instrumentationKey" -o tsv
-$targetEhNs         = az eventhubs namespace list --resource-group $targetRg --query "[0].name" -o tsv
+$targetKvUri        = az keyvault list --resource-group $TargetResourceGroup --query "[0].properties.vaultUri" -o tsv
+$targetAiResourceId = az monitor app-insights component list --resource-group $TargetResourceGroup --query "[0].id" -o tsv
+$targetAiKey        = az monitor app-insights component list --resource-group $TargetResourceGroup --query "[0].instrumentationKey" -o tsv
+$targetEhNs         = az eventhubs namespace list --resource-group $TargetResourceGroup --query "[0].name" -o tsv
 
 if (-not $targetKvUri) {
-    Write-Host "❌ Could not resolve target Key Vault URI in $(Protect-ResourceGroupName -Value $targetRg)"
+    Write-Host "❌ Could not resolve target Key Vault URI in $(Protect-ResourceGroupName -Value $TargetResourceGroup)"
     exit 2
 }
 if (-not $targetAiResourceId -or -not $targetAiKey) {
-    Write-Host "❌ Could not resolve target Application Insights details in $(Protect-ResourceGroupName -Value $targetRg)"
+    Write-Host "❌ Could not resolve target Application Insights details in $(Protect-ResourceGroupName -Value $TargetResourceGroup)"
     exit 2
 }
 if (-not $targetEhNs) {
-    Write-Host "❌ Could not resolve target Event Hub namespace in $(Protect-ResourceGroupName -Value $targetRg)"
+    Write-Host "❌ Could not resolve target Event Hub namespace in $(Protect-ResourceGroupName -Value $TargetResourceGroup)"
     exit 2
 }
 
 $targetEhConnStr = az eventhubs namespace authorization-rule keys list `
-    --resource-group $targetRg `
+    --resource-group $TargetResourceGroup `
     --namespace-name $targetEhNs `
     --name 'tgt-eh-send' `
     --query 'primaryConnectionString' -o tsv
@@ -136,14 +117,14 @@ $overrideYaml | Set-Content -Path $overrideFile -Encoding utf8
 
 Write-Host "📤 Publish — Publish artifacts to target APIM"
 $publishExitCode = Invoke-MaskedApiopsCommand -Replacements @{
-    $targetSubId = Protect-SubscriptionId -Value $targetSubId
-    $targetRg    = Protect-ResourceGroupName -Value $targetRg
-    $targetName  = Protect-ApimName -Value $targetName
+    $TargetSubscriptionId = Protect-SubscriptionId -Value $TargetSubscriptionId
+    $TargetResourceGroup  = Protect-ResourceGroupName -Value $TargetResourceGroup
+    $TargetApimName       = Protect-ApimName -Value $TargetApimName
 } -Arguments @(
     'publish',
-    '--subscription-id', $targetSubId,
-    '--resource-group',  $targetRg,
-    '--service-name',    $targetName,
+    '--subscription-id', $TargetSubscriptionId,
+    '--resource-group',  $TargetResourceGroup,
+    '--service-name',    $TargetApimName,
     '--source',          $ExtractOutputDir,
     '--overrides',       $overrideFile,
     '--log-level',       $apiopsLogLevel

@@ -2,24 +2,22 @@
 <#
 .SYNOPSIS
   Phase 2a — Extract artifacts from the source APIM instance and validate structure.
-
-.DESCRIPTION
-  Runs `apiops extract` against the source APIM instance described in StateFile, writes
-  artifacts to ExtractOutputDir, then validates the extracted structure against the
-  expected-structure.json manifest. Can be invoked standalone or as part of the
-  run-roundtrip-phase2-roundtrip.ps1 orchestrator.
-
-.EXAMPLE
-  .\run-roundtrip-phase2a-extract.ps1 -StateFile ./roundtrip-state.json
-
-.EXAMPLE
-  .\run-roundtrip-phase2a-extract.ps1 -StateFile ./roundtrip-state.json -LogLevel Debug -ExtractOutputDir ./my-artifacts
 #>
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
-    [string]$StateFile,
+    [string]$SourceSubscriptionId,
+
+    [Parameter(Mandatory)]
+    [string]$SourceResourceGroup,
+
+    [Parameter(Mandatory)]
+    [string]$SourceApimName,
+
+    [Parameter(Mandatory)]
+    [ValidateSet('Developer', 'Premium', 'StandardV2', 'PremiumV2')]
+    [string]$SkuName,
 
     [ValidateSet('Info', 'Verbose', 'Debug')]
     [string]$LogLevel = 'Verbose',
@@ -35,7 +33,7 @@ $maskingModule  = Join-Path $PSScriptRoot 'MaskingHelpers.psm1'
 $validateScript = Join-Path $PSScriptRoot 'Test-ExtractedArtifact.ps1'
 $manifestFile   = Join-Path $PSScriptRoot 'expected-structure.json'
 
-foreach ($requiredFile in @($maskingModule, $validateScript, $manifestFile, $StateFile)) {
+foreach ($requiredFile in @($maskingModule, $validateScript, $manifestFile)) {
     if (-not (Test-Path $requiredFile)) {
         Write-Error "Required file not found: $requiredFile"
         exit 2
@@ -54,9 +52,6 @@ function Get-ApiopsLogLevel([string]$ScriptLogLevel) {
 }
 
 function Get-ApiopsAuthArgs {
-    # In CI, we explicitly pass client/tenant to apiops so DefaultAzureCredential
-    # can use the intended federated identity after long-running deploy phases.
-    # If env vars are unset (local runs), apiops falls back to default credential chain.
     $authArgs = @()
 
     if (-not [string]::IsNullOrWhiteSpace($env:AZURE_CLIENT_ID)) {
@@ -70,12 +65,6 @@ function Get-ApiopsAuthArgs {
     return $authArgs
 }
 
-$state       = Get-Content -Path $StateFile -Raw | ConvertFrom-Json
-$sourceSubId = $state.sourceSubscriptionId
-$sourceRg    = $state.sourceResourceGroup
-$sourceName  = $state.sourceApimName
-$skuName     = $state.skuName
-
 $exitCode       = 0
 $apiopsLogLevel = Get-ApiopsLogLevel -ScriptLogLevel $LogLevel
 $apiopsAuthArgs = Get-ApiopsAuthArgs
@@ -88,17 +77,17 @@ if (Test-Path $ExtractOutputDir) {
 
 $extractArgs = @(
     'extract',
-    '--subscription-id', $sourceSubId,
-    '--resource-group',  $sourceRg,
-    '--service-name',    $sourceName,
+    '--subscription-id', $SourceSubscriptionId,
+    '--resource-group',  $SourceResourceGroup,
+    '--service-name',    $SourceApimName,
     '--output',          $ExtractOutputDir,
     '--log-level',       $apiopsLogLevel
 ) + $apiopsAuthArgs
 
 $extractExitCode = Invoke-MaskedApiopsCommand -Replacements @{
-    $sourceSubId = Protect-SubscriptionId -Value $sourceSubId
-    $sourceRg    = Protect-ResourceGroupName -Value $sourceRg
-    $sourceName  = Protect-ApimName -Value $sourceName
+    $SourceSubscriptionId = Protect-SubscriptionId -Value $SourceSubscriptionId
+    $SourceResourceGroup  = Protect-ResourceGroupName -Value $SourceResourceGroup
+    $SourceApimName       = Protect-ApimName -Value $SourceApimName
 } -Arguments $extractArgs
 
 if ($extractExitCode -ne 0) {
@@ -116,7 +105,7 @@ Write-Host "🔎 Extract — Validate extracted artifact structure"
 $validateArgs = @{
     ExtractedDir = $ExtractOutputDir
     ManifestFile = $manifestFile
-    SkuName      = $skuName
+    SkuName      = $SkuName
 }
 switch ($LogLevel) {
     'Verbose' { $validateArgs.Verbose = $true }
