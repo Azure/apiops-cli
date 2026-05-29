@@ -18,6 +18,7 @@ The kitchen sink APIM instance includes **every resource type and API protocol v
 | `src-rest-revisioned` | REST (revisioned) | OpenAPI |
 | `src-mcp-from-api` | MCP (from existing API) | None |
 | `src-mcp-from-external` | MCP (from external MCP server) | None |
+| `src-a2a-weather-agent` | A2A (JSON-RPC + agent card) | None |
 
 ### Backend Variations
 | Backend | Type |

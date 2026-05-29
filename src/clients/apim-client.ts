@@ -586,7 +586,7 @@ export class ApimClient implements IApimClient {
    *   graphql-link          – GraphQL SDL blob        (type=graphql)
    *   wsdl-link             – WSDL blob               (type=soap)
    *   openapi-link          – OpenAPI 3.0 YAML        (type=http, default)
-   *   undefined             –                         (type=websocket — no spec; callers should skip)
+   *   undefined             –                         (type=websocket|a2a — no spec; callers should skip)
    *
    * SOAP APIs use wsdl-link so the exported specification can be re-imported
    * faithfully on publish (matches the Azure/apiops reference tool). APIM's
@@ -612,6 +612,7 @@ export class ApimClient implements IApimClient {
       case 'graphql':   return 'graphql-link';
       case 'soap':      return 'wsdl-link';
       case 'websocket': return undefined;
+      case 'a2a':       return undefined;
       default:          return 'openapi-link';
     }
   }
@@ -743,4 +744,3 @@ export class ApimClient implements IApimClient {
   }
 
 }
-

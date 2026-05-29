@@ -791,6 +791,25 @@ describe('api-extractor', () => {
       expect(getApiSpecification).not.toHaveBeenCalled();
     });
 
+    it('should skip specification export for A2A APIs without calling the client', async () => {
+      const getApiSpecification = vi.fn();
+      const client = createMockClient({
+        getApiSpecification,
+        getResource: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+
+      const result = await extractApiResources(
+        client, store, testContext,
+        { type: ResourceType.Api, nameParts: ['a2a-api'] },
+        { name: 'a2a-api', properties: { type: 'a2a' } },
+        '/output'
+      );
+
+      expect(result.specification).toBe(false);
+      expect(getApiSpecification).not.toHaveBeenCalled();
+    });
+
     it('should not call ARM for MCP child resource (data is embedded on the API)', async () => {
       // ARM does not serve apis/{id}/mcpServers/default for MCP APIs; all
       // configuration lives on the API resource itself. The extractor must

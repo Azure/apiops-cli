@@ -358,6 +358,11 @@ async function extractApiSpecification(
     return false;
   }
 
+  if (apiType?.toLowerCase() === 'a2a') {
+    logger.debug(`Skipping spec export for A2A API "${getNamePart(apiDescriptor.nameParts, 0)}" — A2A APIs use JSON-RPC + agent card endpoints, not OpenAPI`);
+    return false;
+  }
+
   if (apiType?.toLowerCase() === 'graphql' && hasGraphQLSchema(extractedSchemas)) {
     logger.debug(
       `Skipping spec export for synthetic GraphQL API "${getNamePart(apiDescriptor.nameParts, 0)}" — schema is captured via ApiSchema`
