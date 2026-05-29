@@ -17,6 +17,14 @@ const templates = [
     exportName: 'azureDevOpsIdentityGuideTemplate',
     path: 'src/templates/identity/identity-guide-azure-devops.md',
   },
+  {
+    exportName: 'copilotGithubEnvironmentFederatedCredentialTemplate',
+    path: 'src/templates/copilot/github-environment-federated-credential.md',
+  },
+  {
+    exportName: 'copilotGithubEnvironmentSecretCommandsTemplate',
+    path: 'src/templates/copilot/github-environment-secret-commands.md',
+  },
 ];
 
 const rendered = await Promise.all(
