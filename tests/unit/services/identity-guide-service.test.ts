@@ -107,6 +107,16 @@ describe('identity-guide-service', () => {
       expect(guide).toContain('environment:dev');
       expect(guide).toContain('environment:prod');
     });
+
+    it('should render all template placeholders', () => {
+      const guide = identityGuideService.generateGitHubActionsGuide(
+        'sub-12345',
+        'my-rg',
+        ['dev']
+      );
+      expect(guide).not.toContain('{{');
+      expect(guide).not.toContain('}}');
+    });
   });
 
   describe('generateAzureDevOpsGuide', () => {
@@ -126,6 +136,16 @@ describe('identity-guide-service', () => {
         ['dev']
       );
       expect(guide).toContain('my-rg');
+    });
+
+    it('should render all template placeholders', () => {
+      const guide = identityGuideService.generateAzureDevOpsGuide(
+        'sub-12345',
+        'my-rg',
+        ['dev']
+      );
+      expect(guide).not.toContain('{{');
+      expect(guide).not.toContain('}}');
     });
 
   });
