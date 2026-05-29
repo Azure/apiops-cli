@@ -1,4 +1,22 @@
 #requires -Version 7.0
+<#
+.SYNOPSIS
+  Phase 2 orchestrator — Extract → Publish → Compare round-trip.
+
+.DESCRIPTION
+  Delegates to the three sub-scripts in sequence:
+    run-roundtrip-phase2a-extract.ps1  — extract artifacts from source APIM
+    run-roundtrip-phase2b-publish.ps1  — generate overrides and publish to target APIM
+    run-roundtrip-phase2c-compare.ps1  — compare source vs target via ARM REST API
+
+  Each sub-script can also be invoked independently for targeted re-runs.
+
+.EXAMPLE
+  .\run-roundtrip-phase2-roundtrip.ps1 -StateFile ./roundtrip-state.json
+
+.EXAMPLE
+  .\run-roundtrip-phase2-roundtrip.ps1 -StateFile ./roundtrip-state.json -LogLevel Debug -ExtractOutputDir ./my-artifacts
+#>
 
 [CmdletBinding()]
 param(
@@ -12,206 +30,47 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$VerbosePreference = if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' }
-$DebugPreference = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' }
 
-$maskingModule = Join-Path $PSScriptRoot 'MaskingHelpers.psm1'
-Import-Module $maskingModule -Force
+$extractScript = Join-Path $PSScriptRoot 'run-roundtrip-phase2a-extract.ps1'
+$publishScript = Join-Path $PSScriptRoot 'run-roundtrip-phase2b-publish.ps1'
+$compareScript = Join-Path $PSScriptRoot 'run-roundtrip-phase2c-compare.ps1'
 
-$compareScript = Join-Path $PSScriptRoot 'Compare-ApimInstance.ps1'
-$validateScript = Join-Path $PSScriptRoot 'Test-ExtractedArtifact.ps1'
-$manifestFile = Join-Path $PSScriptRoot 'expected-structure.json'
-
-foreach ($requiredFile in @($maskingModule, $compareScript, $validateScript, $manifestFile, $StateFile)) {
+foreach ($requiredFile in @($extractScript, $publishScript, $compareScript, $StateFile)) {
     if (-not (Test-Path $requiredFile)) {
         Write-Error "Required file not found: $requiredFile"
         exit 2
     }
 }
 
-function Get-ApiopsLogLevel([string]$ScriptLogLevel) {
-    switch ($ScriptLogLevel) {
-        'Info' { return 'info' }
-        'Verbose' { return 'warn' }
-        'Debug' { return 'debug' }
-        default { return 'info' }
-    }
-}
-
-function Get-ApiopsAuthArgs {
-    # In CI, we explicitly pass client/tenant to apiops so DefaultAzureCredential
-    # can use the intended federated identity after long-running deploy phases.
-    # If env vars are unset (local runs), apiops falls back to default credential chain.
-    $authArgs = @()
-
-    if (-not [string]::IsNullOrWhiteSpace($env:AZURE_CLIENT_ID)) {
-        $authArgs += @('--client-id', $env:AZURE_CLIENT_ID)
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($env:AZURE_TENANT_ID)) {
-        $authArgs += @('--tenant-id', $env:AZURE_TENANT_ID)
-    }
-
-    return $authArgs
-}
-
-$state = Get-Content -Path $StateFile -Raw | ConvertFrom-Json
-$sourceSubId = $state.sourceSubscriptionId
-$sourceRg = $state.sourceResourceGroup
-$sourceName = $state.sourceApimName
-$targetSubId = $state.targetSubscriptionId
-$targetRg = $state.targetResourceGroup
-$targetName = $state.targetApimName
-$skuName = $state.skuName
-
 $exitCode = 0
-$apiopsLogLevel = Get-ApiopsLogLevel -ScriptLogLevel $LogLevel
-$apiopsAuthArgs = Get-ApiopsAuthArgs
 
-Write-Host "📥 PHASE 2 — Extract from source APIM"
-if (Test-Path $ExtractOutputDir) {
-    Remove-Item -Path $ExtractOutputDir -Recurse -Force
-    Write-Host "   Cleaned previous extract output"
+# ── Phase 2a: Extract ────────────────────────────────────────────────────────
+Write-Host "📥 PHASE 2a — Extract artifacts from source APIM"
+& $extractScript -StateFile $StateFile -LogLevel $LogLevel -ExtractOutputDir $ExtractOutputDir
+$extractExitCode = $LASTEXITCODE
+if ($extractExitCode -ge 2) {
+    exit $extractExitCode
+} elseif ($extractExitCode -ne 0) {
+    $exitCode = $extractExitCode
+    Write-Host "⚠️  Continuing with round-trip despite extract/validation failures..."
 }
 
-$extractArgs = @(
-    'extract',
-    '--subscription-id', $sourceSubId,
-    '--resource-group',  $sourceRg,
-    '--service-name',    $sourceName,
-    '--output',          $ExtractOutputDir,
-    '--log-level',       $apiopsLogLevel
-) + $apiopsAuthArgs
-
-$extractExitCode = Invoke-MaskedApiopsCommand -Replacements @{
-    $sourceSubId = Protect-SubscriptionId -Value $sourceSubId
-    $sourceRg    = Protect-ResourceGroupName -Value $sourceRg
-    $sourceName  = Protect-ApimName -Value $sourceName
-} -Arguments $extractArgs
-
-if ($extractExitCode -ne 0) {
-    Write-Host "❌ Extract failed (exit code $extractExitCode)"
-    exit 2
-}
-
-$extractedFiles = Get-ChildItem -Path $ExtractOutputDir -Recurse -File -ErrorAction SilentlyContinue
-if (-not $extractedFiles -or $extractedFiles.Count -eq 0) {
-    Write-Host "❌ Extract produced no files in $ExtractOutputDir"
-    exit 2
-}
-
-Write-Host "�� PHASE 2.1 — Validate extracted artifact structure"
-$validateArgs = @{
-    ExtractedDir = $ExtractOutputDir
-    ManifestFile = $manifestFile
-    SkuName      = $skuName
-}
-switch ($LogLevel) {
-    'Verbose' { $validateArgs.Verbose = $true }
-    'Debug'   { $validateArgs.Debug = $true }
-}
-& $validateScript @validateArgs
-$validateExitCode = $LASTEXITCODE
-if ($validateExitCode -ne 0) {
-    Write-Host "❌ Artifact validation failed (exit code $validateExitCode)"
-    $exitCode = if ($validateExitCode -eq 2) { 2 } else { 1 }
-    Write-Host "⚠️  Continuing with round-trip despite validation failures..."
-}
-
-Write-Host "🔧 PHASE 2.5 — Generate override config for target environment"
-$targetKvUri = az keyvault list --resource-group $targetRg --query "[0].properties.vaultUri" -o tsv
-$targetAiResourceId = az monitor app-insights component list --resource-group $targetRg --query "[0].id" -o tsv
-$targetAiKey = az monitor app-insights component list --resource-group $targetRg --query "[0].instrumentationKey" -o tsv
-$targetEhNs = az eventhubs namespace list --resource-group $targetRg --query "[0].name" -o tsv
-
-if (-not $targetKvUri) {
-    Write-Host "❌ Could not resolve target Key Vault URI in $(Protect-ResourceGroupName -Value $targetRg)"
-    exit 2
-}
-if (-not $targetAiResourceId -or -not $targetAiKey) {
-    Write-Host "❌ Could not resolve target Application Insights details in $(Protect-ResourceGroupName -Value $targetRg)"
-    exit 2
-}
-if (-not $targetEhNs) {
-    Write-Host "❌ Could not resolve target Event Hub namespace in $(Protect-ResourceGroupName -Value $targetRg)"
-    exit 2
-}
-
-$targetEhConnStr = az eventhubs namespace authorization-rule keys list `
-    --resource-group $targetRg `
-    --namespace-name $targetEhNs `
-    --name 'tgt-eh-send' `
-    --query 'primaryConnectionString' -o tsv
-
-if (-not $targetEhConnStr) {
-    Write-Host "   ⚠️  Could not get Event Hub connection string — EH logger override will be empty"
-}
-
-$targetEhName = 'tgt-eh-logs'
-$overrideFile = [System.IO.Path]::GetFullPath((Join-Path $ExtractOutputDir '.overrides.yaml'))
-$overrideYaml = @"
-namedValues:
-  src-nv-keyvault:
-    keyVault:
-      secretIdentifier: "${targetKvUri}secrets/tgt-secret-value"
-
-loggers:
-  src-logger-appinsights:
-    resourceId: "$targetAiResourceId"
-    credentials:
-      instrumentationKey: "$targetAiKey"
-  src-logger-eventhub:
-    credentials:
-      name: "$targetEhName"
-      connectionString: "$targetEhConnStr"
-"@
-
-$overrideYaml | Set-Content -Path $overrideFile -Encoding utf8
-
-Write-Host "📤 PHASE 3 — Publish to target APIM"
-$publishExitCode = Invoke-MaskedApiopsCommand -Replacements @{
-    $targetSubId = Protect-SubscriptionId -Value $targetSubId
-    $targetRg    = Protect-ResourceGroupName -Value $targetRg
-    $targetName  = Protect-ApimName -Value $targetName
-} -Arguments @(
-    'publish',
-    '--subscription-id', $targetSubId,
-    '--resource-group',  $targetRg,
-    '--service-name',    $targetName,
-    '--source',          $ExtractOutputDir,
-    '--overrides',       $overrideFile,
-    '--log-level',       $apiopsLogLevel
-) + $apiopsAuthArgs
-
+# ── Phase 2b: Publish ────────────────────────────────────────────────────────
+Write-Host "📤 PHASE 2b — Publish artifacts to target APIM"
+& $publishScript -StateFile $StateFile -LogLevel $LogLevel -ExtractOutputDir $ExtractOutputDir
+$publishExitCode = $LASTEXITCODE
 if ($publishExitCode -ne 0) {
-    Write-Host "❌ Publish failed (exit code $publishExitCode)"
-    exit 2
+    exit $publishExitCode
 }
 
-Write-Host "🔍 PHASE 4 — Compare source and target APIM instances"
-$compareArgs = @{
-    SourceSubscriptionId = $sourceSubId
-    SourceResourceGroup  = $sourceRg
-    SourceApimName       = $sourceName
-    TargetSubscriptionId = $targetSubId
-    TargetResourceGroup  = $targetRg
-    TargetApimName       = $targetName
-}
-switch ($LogLevel) {
-    'Verbose' { $compareArgs.Verbose = $true }
-    'Debug'   { $compareArgs.Debug = $true }
-}
-& $compareScript @compareArgs
-$verifyExitCode = $LASTEXITCODE
-
-if ($verifyExitCode -eq 1) {
-    Write-Host "❌ Verification found differences"
+# ── Phase 2c: Compare ────────────────────────────────────────────────────────
+Write-Host "🔍 PHASE 2c — Compare source and target APIM instances"
+& $compareScript -StateFile $StateFile -LogLevel $LogLevel
+$compareExitCode = $LASTEXITCODE
+if ($compareExitCode -eq 1) {
     if ($exitCode -eq 0) { $exitCode = 1 }
-} elseif ($verifyExitCode -ge 2) {
-    Write-Host "❌ Verification encountered an error (exit code $verifyExitCode)"
+} elseif ($compareExitCode -ge 2) {
     $exitCode = 2
-} else {
-    Write-Host "✅ Verification complete — instances match"
 }
 
 exit $exitCode
