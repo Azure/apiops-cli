@@ -58,10 +58,12 @@ describe('workspace-extractor', () => {
         client, store, testContext, '/output', filter
       );
 
-      const expectedTypes = [
+      const expectedCallSequence = [
         ResourceType.NamedValue,
         ResourceType.Tag,
         ResourceType.Backend,
+        // Logger extraction preloads NamedValue display names for placeholder normalization.
+        ResourceType.NamedValue,
         ResourceType.Logger,
         ResourceType.Group,
         ResourceType.Diagnostic,
@@ -72,7 +74,7 @@ describe('workspace-extractor', () => {
         ResourceType.GlobalSchema,
         ResourceType.Documentation,
       ];
-      expect(seenTypes).toEqual(expectedTypes);
+      expect(seenTypes).toEqual(expectedCallSequence);
     });
 
     it('should skip extraction when no workspace names in filter', async () => {
