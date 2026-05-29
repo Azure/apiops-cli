@@ -171,7 +171,7 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Run Round-Trip Phase 2a (Extract)
+      - name: Run Round-Trip Phase 2 (Extract)
         if: success()
         shell: pwsh
         env:
@@ -191,23 +191,15 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = '${{ inputs.sku }}' }
           if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = 'StandardV2' }
 
-          ./tests/integration/all-resource-types/run-roundtrip-phase2a-extract.ps1 `
+          ./tests/integration/all-resource-types/run-roundtrip-phase2-extract.ps1 `
             -SourceSubscriptionId $sourceSubId `
             -SourceResourceGroup '${{ env.SOURCE_RG }}' `
             -SourceApimName '${{ env.SOURCE_APIM }}' `
             -SkuName $skuName `
             -LogLevel $logLevel `
             -ExtractOutputDir './extracted-artifacts'
-          $extractExitCode = $LASTEXITCODE
-          if ($extractExitCode -ge 2) {
-            exit $extractExitCode
-          }
-          if ($extractExitCode -ne 0) {
-            Write-Host "::warning::Phase 2a validation warnings (exit $extractExitCode) — continuing round-trip"
-          }
-          exit 0
 
-      - name: Run Round-Trip Phase 2b (Publish)
+      - name: Run Round-Trip Phase 3 (Publish)
         if: success()
         shell: pwsh
         env:
@@ -223,14 +215,14 @@ jobs:
           $targetSubId = '${{ secrets.TARGET_SUBSCRIPTION_ID }}'
           if ([string]::IsNullOrWhiteSpace($targetSubId)) { $targetSubId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}' }
 
-          ./tests/integration/all-resource-types/run-roundtrip-phase2b-publish.ps1 `
+          ./tests/integration/all-resource-types/run-roundtrip-phase3-publish.ps1 `
             -TargetSubscriptionId $targetSubId `
             -TargetResourceGroup '${{ env.TARGET_RG }}' `
             -TargetApimName '${{ env.TARGET_APIM }}' `
             -LogLevel $logLevel `
             -ExtractOutputDir './extracted-artifacts'
 
-      - name: Run Round-Trip Phase 2c (Compare)
+      - name: Run Round-Trip Phase 4 (Compare)
         if: success()
         shell: pwsh
         run: |
@@ -246,7 +238,7 @@ jobs:
           $targetSubId = '${{ secrets.TARGET_SUBSCRIPTION_ID }}'
           if ([string]::IsNullOrWhiteSpace($targetSubId)) { $targetSubId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}' }
 
-          ./tests/integration/all-resource-types/run-roundtrip-phase2c-compare.ps1 `
+          ./tests/integration/all-resource-types/run-roundtrip-phase4-compare.ps1 `
             -SourceSubscriptionId $sourceSubId `
             -SourceResourceGroup '${{ env.SOURCE_RG }}' `
             -SourceApimName '${{ env.SOURCE_APIM }}' `
@@ -263,11 +255,11 @@ jobs:
           path: ./extracted-artifacts/
           if-no-files-found: ignore
 
-      - name: Run Round-Trip Phase 3 (Teardown)
+      - name: Run Round-Trip Phase 5 (Teardown)
         if: always() && inputs.skip_teardown != true
         shell: pwsh
         run: |
-          ./tests/integration/all-resource-types/run-roundtrip-phase3-teardown.ps1 `
+          ./tests/integration/all-resource-types/run-roundtrip-phase5-teardown.ps1 `
             -SourceResourceGroup '${{ env.SOURCE_RG }}' `
             -TargetResourceGroup '${{ env.TARGET_RG }}' `
             -Location '${{ inputs.location }}' `

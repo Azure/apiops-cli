@@ -1,7 +1,7 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-  Phase 2a — Extract artifacts from the source APIM instance and validate structure.
+  Phase 2 — Extract artifacts from the source APIM instance and validate structure.
 #>
 
 [CmdletBinding()]

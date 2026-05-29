@@ -1,7 +1,7 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-  Phase 2b — Generate target environment overrides and publish artifacts to target APIM.
+  Phase 3 — Generate target environment overrides and publish artifacts to target APIM.
 #>
 
 [CmdletBinding()]
