@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 import { describe, it, expect } from 'vitest';
 import { buildArmUri, parseArmUri, buildResourceLabel } from '../../../src/lib/resource-uri.js';
 import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';

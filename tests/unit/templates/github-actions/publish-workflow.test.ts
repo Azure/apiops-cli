@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * Unit tests for T044: GitHub Actions publish workflow template
  */

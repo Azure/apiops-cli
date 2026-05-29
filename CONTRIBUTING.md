@@ -7,6 +7,20 @@ Thank you for your interest in contributing to **apiops-cli**! There are many wa
 - **Submit pull requests** — bug fixes, improvements, or new features are all welcome.
 - **Improve documentation** — corrections and clarifications in README or inline docs.
 
+Most contributions require you to agree to a Contributor License Agreement (CLA)
+declaring that you have the right to, and actually do, grant us the rights to use
+your contribution. For details, visit <https://cla.microsoft.com>.
+
+When you submit a pull request, a CLA bot will automatically determine whether you
+need to provide a CLA and decorate the PR appropriately (e.g., label, comment).
+Simply follow the instructions provided by the bot. You will only need to do this
+once across all repos using our CLA.
+
+This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
+For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/)
+or contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any
+additional questions or comments.
+
 ## Getting started
 
 ### VS Code (Recommended)
@@ -101,6 +115,29 @@ Dependencies and dev tools are listed in [`package.json`](./package.json). The p
 ## Troubleshooting
 
 **`apiops: command not found`** — run `npm link` from the repository root after building (see [Manual setup](#manual-setup) above).
+
+## Source file copyright headers
+
+**All source files MUST include the following copyright header at the very top of the file:**
+
+```typescript
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+```
+
+This applies to all files in `src/` and `tests/` directories. The header must appear before any other code or comments.
+
+Example:
+```typescript
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+import { Command } from 'commander';
+
+export class ExtractCommand {
+  // ...
+}
+```
 
 ## Pull request process
 

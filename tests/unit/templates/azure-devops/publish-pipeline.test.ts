@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * Unit tests for T046: Azure DevOps publish pipeline template
  */
@@ -197,8 +199,8 @@ describe('azure-devops/publish-pipeline', () => {
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
-      expect(pipeline).toContain('--override configuration.dev.yaml');
-      expect(pipeline).toContain('--override configuration.prod.yaml');
+      expect(pipeline).toContain('--overrides configuration.dev.yaml');
+      expect(pipeline).toContain('--overrides configuration.prod.yaml');
     });
 
     it('should use npm ci to install dependencies (uses tgz from package.json)', () => {

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T023: Product-specific extraction logic
  * Product associations (apis.json, groups.json, tags.json), product policies, product wikis.

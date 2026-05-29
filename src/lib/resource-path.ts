@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T013: Resource descriptor ↔ artifact file path mapping
  * Map descriptor to directory/file paths per data-model.md artifact conventions
@@ -8,16 +10,20 @@ import { ResourceDescriptor } from '../models/types.js';
 import { RESOURCE_TYPE_METADATA, ResourceType } from '../models/resource-types.js';
 
 /**
- * Association resource types that represent parent-child relationships
- * (not independently publishable resources).
- * These are handled specially during publishing via association files
- * (apis.json, groups.json) and should not be discovered as individual resources.
+ * Association resource types that are published by specialized parent publishers.
+ *
+ * Product associations are handled by product-publisher using the parent
+ * product descriptor, so their association files should not be discovered as
+ * independent resources.
+ *
+ * Gateway associations are intentionally excluded from this set because they
+ * are published via the generic association path in resource-publisher and
+ * must therefore be discovered from gateways/{gateway}/apis.json.
  */
-const ASSOCIATION_TYPES = new Set<ResourceType>([
+const PARENT_PUBLISHED_ASSOCIATION_TYPES = new Set<ResourceType>([
   ResourceType.ProductApi,
   ResourceType.ProductGroup,
   ResourceType.ProductTag,
-  ResourceType.GatewayApi,
 ]);
 
 const SUPPORTED_SPECIFICATION_EXTENSIONS = new Set([
@@ -367,6 +373,11 @@ export function parseArtifactPath(
     return undefined;
   }
 
+  const workspaceContainer = parseWorkspaceContainerDescriptor(fileName, workspace);
+  if (workspaceContainer) {
+    return workspaceContainer;
+  }
+
   // Try to match against each resource type's pattern
   for (const [typeKey, metadata] of Object.entries(RESOURCE_TYPE_METADATA)) {
     const type = typeKey as ResourceType;
@@ -377,8 +388,8 @@ export function parseArtifactPath(
 
     // Skip association resource types — these are handled specially during publishing
     // via their parent's association files (apis.json, groups.json)
-    if (ASSOCIATION_TYPES.has(type)) {
-      return undefined;
+    if (PARENT_PUBLISHED_ASSOCIATION_TYPES.has(type)) {
+      continue;
     }
 
     const nameParts = parseTemplatePath(
@@ -389,6 +400,24 @@ export function parseArtifactPath(
     if (nameParts !== undefined) {
       return { type, nameParts, workspace };
     }
+  }
+
+  return undefined;
+}
+
+function parseWorkspaceContainerDescriptor(
+  fileName: string,
+  workspace?: string
+): ResourceDescriptor | undefined {
+  // Workspace container descriptors are stored at:
+  //   workspaces/{workspace}/workspaceInformation.json
+  // and are not workspace-scoped children. Return a top-level Workspace
+  // descriptor so publish can create the container before workspace children.
+  if (fileName === 'workspaceInformation.json' && workspace) {
+    return {
+      type: ResourceType.Workspace,
+      nameParts: [workspace],
+    };
   }
 
   return undefined;

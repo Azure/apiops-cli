@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T035: Delete unmatched resources service
  * List current APIM resources, diff against artifact descriptors,

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T020: Extraction orchestrator
  * Coordinates resource type extraction across dependency tiers
@@ -551,18 +553,14 @@ async function extractWorkspaceResources(
   filter: FilterConfig | undefined,
   result: ExtractionResult
 ): Promise<void> {
-  try {
-    const wsResults = await extractWorkspaces(
-      client, store, context, outputDir, filter
-    );
+  const wsResults = await extractWorkspaces(
+    client, store, context, outputDir, filter
+  );
 
-    result.workspaceResults = wsResults;
+  result.workspaceResults = wsResults;
 
-    for (const ws of wsResults) {
-      result.totalExtracted += ws.resourceCount;
-      result.totalErrors += ws.errorCount;
-    }
-  } catch (error) {
-    logger.warn(`Workspace extraction failed: ${(error as Error).message}`);
+  for (const ws of wsResults) {
+    result.totalExtracted += ws.resourceCount;
+    result.totalErrors += ws.errorCount;
   }
 }

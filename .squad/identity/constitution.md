@@ -188,6 +188,14 @@ sensitive values in output, logs, or artifact files.
 - **Target Platforms**: Windows, macOS, Linux
 - **Target Commands**: `apiops extract`, `apiops publish`,
   `apiops init`
+- **Copyright Headers**: All TypeScript source files (`.ts`)
+  MUST include the Microsoft copyright header at the very
+  top:
+  ```typescript
+  // Copyright (c) Microsoft Corporation.
+  // Licensed under the MIT license.
+  ```
+  This applies to all files in `src/` and `tests/` directories.
 
 ## Development Workflow
 

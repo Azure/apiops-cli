@@ -5,7 +5,6 @@
 - **Project:** apiops-cli — TypeScript CLI for Azure API Management (`apiops extract`, `apiops publish`, `apiops init`)
 - **Spec:** `specs/001-apiops-cli/spec.md`
 - **Constitution:** `.squad/identity/constitution.md` (v2.1.0)
-- **User:** User (redacted)
 - **Stack:** TypeScript 6.x, Node.js 22 LTS, `@azure/identity` for auth, raw APIM REST API (no SDK for payloads)
 - **APIM REST API base:** `https://management.azure.com/subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.ApiManagement/service/{svc}`
 - **Key rule:** Resource bodies are `Record<string, unknown>` — never typed DTOs. Unknown properties MUST be preserved.
@@ -54,7 +53,7 @@
 
 Detection strategy in `api-extractor.ts#hasGraphQLSchemaResource`: list ApiSchema children, check for `contentType` containing `'graphql'`. If yes → skip export.
 
-**SOAP 500 divergence from Azure/apiops:** The reference tool at `C:\Users\<redacted>\source\repos\azure\apiops` catches HTTP 500 on XML exports and skips the spec with comment *"Don't export XML specifications, as the non-link exports cannot be reimported."* This is incorrect - inline `format=wsdl` output **is** re-importable via PUT `?import=true&format=wsdl`. Our implementation uses this fallback to preserve round-trip capability.
+**SOAP 500 divergence from Azure/apiops:** The reference tool catches HTTP 500 on XML exports and skips the spec with comment *"Don't export XML specifications, as the non-link exports cannot be reimported."* This is incorrect — inline `format=wsdl` output **is** re-importable via PUT `?import=true&format=wsdl`. Our implementation uses this fallback to preserve round-trip capability.
 
 **Retry policy for XML exports:** Pass `noRetryOn5xx=true` to `request()` for wsdl-link/wadl-link. The 500s are deterministic, not transient, so retries waste time. Fall back to inline format immediately.
 
@@ -99,5 +98,11 @@ the SDK surface, reference docs, or ad-hoc observation.
 
 **Research output:** `.squad/decisions.md` entry (merged from inbox), full analysis in `specs/sku-upgrade.md`
 
-### 2026-05-13: APIM v1 → v2 SKU Migration Research
+### 2026-05-19: `policyRestrictions.scope` grammar
+
+`Microsoft.ApiManagement/service/policyRestrictions@2025-09-01-preview`. Schema says `"Path to the policy document."` but the API validates `scope` as a **relative ARM path to an existing API, operation, or product**.
+
+- Accepted: `/apis/{apiId}`, `/apis/{apiId}/operations/{opId}`, `/products/{productId}`, `""`.
+- Classic Developer/Premium SKU only.
+- Docs: <https://learn.microsoft.com/rest/api/apimanagement/policy-restriction> · <https://learn.microsoft.com/azure/templates/microsoft.apimanagement/service/policyrestrictions>
 

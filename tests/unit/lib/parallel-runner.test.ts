@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 import { describe, it, expect } from 'vitest';
 import { ParallelRunner, runParallel } from '../../../src/lib/parallel-runner.js';
 

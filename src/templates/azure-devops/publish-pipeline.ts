@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T046: Azure DevOps publish pipeline template
  * Multi-stage pipeline with commit ID choice, environment selection, and variable groups
@@ -52,7 +54,7 @@ export function generatePublishPipeline(config: PublishPipelineConfig): string {
                       --resource-group $(APIM_RESOURCE_GROUP_${env.toUpperCase()}) \\
                       --service-name $(APIM_SERVICE_NAME_${env.toUpperCase()}) \\
                       --source ${config.artifactDir} \\
-                      --override configuration.${env}.yaml \\
+                      --overrides configuration.${env}.yaml \\
                       --commit-id $(Build.SourceVersion) \\
                       --subscription-id $(AZURE_SUBSCRIPTION_ID)
 
@@ -68,7 +70,7 @@ export function generatePublishPipeline(config: PublishPipelineConfig): string {
                       --resource-group $(APIM_RESOURCE_GROUP_${env.toUpperCase()}) \\
                       --service-name $(APIM_SERVICE_NAME_${env.toUpperCase()}) \\
                       --source ${config.artifactDir} \\
-                      --override configuration.${env}.yaml \\
+                      --overrides configuration.${env}.yaml \\
                       --subscription-id $(AZURE_SUBSCRIPTION_ID)
 `;
   }).join('\n');

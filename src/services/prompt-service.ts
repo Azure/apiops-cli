@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T049: Interactive prompt handler
  * TTY detection, question prompts for CI provider/artifact dir/environments

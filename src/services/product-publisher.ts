@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * Product publisher with association handling
  * Publish product and its associations (ProductApi, ProductGroup, ProductTag)
@@ -11,6 +13,7 @@ import { ResourceType } from '../models/resource-types.js';
 import { publishResource, type ResourcePublishResult } from './resource-publisher.js';
 import { logger } from '../lib/logger.js';
 import { getNamePart } from '../lib/resource-path.js';
+import { parseArmUri } from '../lib/resource-uri.js';
 
 /**
  * Publish a Product with all its associations (APIs, Groups, Tags).
@@ -25,11 +28,16 @@ export async function publishProduct(
 ): Promise<ResourcePublishResult> {
   try {
     const productName = getNamePart(descriptor.nameParts, 0);
+    const productExisted = (await client.getResource(context, descriptor)) !== undefined;
     
     // Step 1: Publish the Product itself
     const productResult = await publishResource(client, store, context, descriptor, config);
     if (productResult.status !== 'success') {
       return productResult;
+    }
+
+    if (!productExisted) {
+      await cleanupAutoCreatedProductResources(client, context, descriptor);
     }
 
     // Step 2: Publish ProductApi associations
@@ -84,6 +92,63 @@ export async function publishProduct(
       error: error instanceof Error ? error : new Error(String(error)),
     };
   }
+}
+
+async function cleanupAutoCreatedProductResources(
+  client: IApimClient,
+  context: ApimServiceContext,
+  productDescriptor: ResourceDescriptor
+): Promise<void> {
+  await cleanupProductGroups(client, context, productDescriptor);
+}
+
+async function cleanupProductGroups(
+  client: IApimClient,
+  context: ApimServiceContext,
+  productDescriptor: ResourceDescriptor
+): Promise<void> {
+  const productName = getNamePart(productDescriptor.nameParts, 0);
+  let deleted = 0;
+
+  for await (const productGroup of client.listResources(
+    context,
+    ResourceType.ProductGroup,
+    productDescriptor
+  )) {
+    const descriptor = parseProductGroupDescriptor(productGroup, context);
+    if (!descriptor || descriptor.workspace !== productDescriptor.workspace) {
+      continue;
+    }
+
+    try {
+      const removed = await client.deleteResource(context, descriptor);
+      if (removed) {
+        deleted++;
+      }
+    } catch (error) {
+      logger.warn(
+        `Failed to delete auto-created product group ${descriptor.nameParts.join('/')}: ${String(error)}`
+      );
+    }
+  }
+
+  if (deleted > 0) {
+    logger.info(`Deleted ${deleted} auto-created product group(s) for product: ${productName}`);
+  }
+}
+
+function parseProductGroupDescriptor(
+  productGroup: Record<string, unknown>,
+  context: ApimServiceContext
+): ResourceDescriptor | undefined {
+  if (typeof productGroup.id === 'string') {
+    const parsed = parseArmUri(productGroup.id, context);
+    if (parsed?.type === ResourceType.ProductGroup) {
+      return parsed;
+    }
+  }
+
+  return undefined;
 }
 
 /**

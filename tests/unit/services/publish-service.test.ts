@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * Unit tests for T030: Publish orchestration service
  */
@@ -203,6 +205,46 @@ describe('publish-service', () => {
       await runPublish(client, store, config);
 
       expect(publishApi).toHaveBeenCalled();
+    });
+
+    it('should publish regular APIs before MCP APIs in tier 2', async () => {
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.Api, nameParts: ['src-rest-openapi'] },
+        { type: ResourceType.Api, nameParts: ['src-mcp-from-api'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+
+      store.readResource.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) => {
+        const name = descriptor.nameParts[descriptor.nameParts.length - 1] ?? '';
+        if (name === 'src-mcp-from-api') {
+          return { name, properties: { mcpTools: [{ operationId: '/apis/src-rest-openapi/operations/get' }] } };
+        }
+        return { name, properties: {} };
+      });
+
+      const apiCallOrder: string[] = [];
+      vi.mocked(publishApi).mockImplementation(async (_client, _store, _context, descriptor) => {
+        apiCallOrder.push(descriptor.nameParts[0] ?? '');
+        return {
+          descriptor,
+          status: 'success',
+          action: 'put',
+        };
+      });
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      await runPublish(client, store, config);
+
+      expect(apiCallOrder).toEqual(['src-rest-openapi', 'src-mcp-from-api']);
     });
 
     it('should call generateDryRunReport in dry-run mode', async () => {

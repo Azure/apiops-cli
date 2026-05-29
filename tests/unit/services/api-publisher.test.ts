@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * Unit tests for T032: API publisher with revision handling
  */
@@ -205,6 +207,107 @@ describe('api-publisher', () => {
       expect(calls[0][3].nameParts[0]).toBe('orders-api;rev=1');
       expect(calls[1][3].nameParts[0]).toBe('orders-api;rev=2');
       expect(calls[2][3].nameParts[0]).toBe('orders-api;rev=3');
+
+      // Root API is only replayed when source marks it current (isCurrent=true).
+      // Default mock root payload has no isCurrent flag, so only the initial PUT runs.
+      expect(client.putResource).toHaveBeenCalledTimes(1);
+    });
+
+    it('should replay root API without re-importing specification after revisions', async () => {
+      const client = createMockClient();
+      const revisions = [{ type: ResourceType.Api, nameParts: ['orders-api;rev=2'] }];
+      const store = createMockStore(revisions);
+      store.readResource.mockResolvedValue({
+        name: 'orders-api',
+        properties: { path: 'orders', isCurrent: true },
+      });
+      store.readContent.mockResolvedValue({
+        content: 'openapi: "3.0.0"',
+        format: 'yaml',
+      });
+
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      // Spec is only read/injected on the first root publish.
+      expect(store.readContent).toHaveBeenCalledTimes(1);
+      expect(client.putResource).toHaveBeenCalledTimes(2);
+
+      const firstPayload = client.putResource.mock.calls[0][2] as Record<string, unknown>;
+      const secondPayload = client.putResource.mock.calls[1][2] as Record<string, unknown>;
+      const firstProps = firstPayload.properties as Record<string, unknown>;
+      const secondProps = secondPayload.properties as Record<string, unknown>;
+
+      expect(firstProps).toHaveProperty('format', 'openapi');
+      expect(firstProps).toHaveProperty('value', 'openapi: "3.0.0"');
+      expect(secondProps).not.toHaveProperty('format');
+      expect(secondProps).not.toHaveProperty('value');
+    });
+
+    it('should not replay root API when source root is not current', async () => {
+      const client = createMockClient();
+      const revisions = [{ type: ResourceType.Api, nameParts: ['orders-api;rev=2'] }];
+      const store = createMockStore(revisions);
+      store.readResource.mockResolvedValue({
+        name: 'orders-api',
+        properties: {
+          isCurrent: false,
+          apiRevision: '2',
+          serviceUrl: 'https://src-revisioned-backend-v2.example.com/api',
+        },
+      });
+
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      // Root is not current in source, so no root alignment replay is performed.
+      expect(client.putResource).toHaveBeenCalledTimes(1);
+      const alignedPayload = client.putResource.mock.calls[0][2] as Record<string, unknown>;
+      const alignedProps = alignedPayload.properties as Record<string, unknown>;
+
+      expect(alignedProps).toHaveProperty('apiRevision', '2');
+      expect(alignedProps).toHaveProperty('serviceUrl', 'https://src-revisioned-backend-v2.example.com/api');
+      expect(alignedProps).not.toHaveProperty('format');
+      expect(alignedProps).not.toHaveProperty('value');
+    });
+
+    it('should align active revision from source when active revision is 1', async () => {
+      const client = createMockClient();
+      const revisions = [{ type: ResourceType.Api, nameParts: ['orders-api;rev=2'] }];
+      const store = createMockStore(revisions);
+      store.readResource.mockResolvedValue({
+        name: 'orders-api',
+        properties: {
+          isCurrent: true,
+          apiRevision: '1',
+          serviceUrl: 'https://src-revisioned-backend.example.com/api',
+        },
+      });
+
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      // Second root PUT is the explicit active-revision alignment pass.
+      expect(client.putResource).toHaveBeenCalledTimes(2);
+      const alignedPayload = client.putResource.mock.calls[1][2] as Record<string, unknown>;
+      const alignedProps = alignedPayload.properties as Record<string, unknown>;
+
+      expect(alignedProps).toHaveProperty('apiRevision', '1');
+      expect(alignedProps).toHaveProperty('serviceUrl', 'https://src-revisioned-backend.example.com/api');
+      expect(alignedProps).not.toHaveProperty('format');
+      expect(alignedProps).not.toHaveProperty('value');
     });
 
     it('should skip non-matching revisions when filtering by API name', async () => {

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T032: API publisher with revision handling
  * Create root API first, then revisions in numeric order with forced revision numbers.
@@ -55,7 +57,22 @@ export async function publishApi(
     }
 
     // Step 2: Find and publish revisions in numeric order
-    await publishApiRevisions(client, store, context, descriptor, config);
+    const publishedRevisionCount = await publishApiRevisions(client, store, context, descriptor, config);
+
+    // Step 2b: Align root API only when source marks it as current.
+    // Source of truth is properties.isCurrent in root apiInformation.json.
+    if (publishedRevisionCount > 0 && rootResult.isCurrent === true) {
+      const alignResult = await alignActiveRevisionWithSource(
+        client,
+        store,
+        context,
+        descriptor,
+        config
+      );
+      if (alignResult.status !== 'success') {
+        return alignResult;
+      }
+    }
 
     // Step 3: Publish child resources in parallel
     // When a spec was imported, operations and schemas are auto-created by APIM
@@ -103,6 +120,11 @@ function getImportFormat(specFormat: string, _apiType?: string): string | undefi
 interface RootApiResult {
   status: 'success' | 'skipped';
   specImported: boolean;
+  isCurrent?: boolean;
+}
+
+interface PublishRootApiOptions {
+  includeSpecification?: boolean;
 }
 
 /**
@@ -116,7 +138,8 @@ async function publishRootApi(
   store: IArtifactStore,
   context: ApimServiceContext,
   descriptor: ResourceDescriptor,
-  config: PublishConfig
+  config: PublishConfig,
+  options?: PublishRootApiOptions
 ): Promise<RootApiResult & ResourcePublishResult> {
   let json = await store.readResource(config.sourceDir, descriptor);
   if (!json) {
@@ -130,10 +153,14 @@ async function publishRootApi(
 
   // Apply overrides
   json = applyOverrides(descriptor, json, config.overrides);
+  const isCurrent = getApiIsCurrent(json);
 
   // Try to read the specification file for this API
   let specImported = false;
-  const specResult = await store.readContent(config.sourceDir, descriptor, 'specification');
+  const includeSpecification = options?.includeSpecification ?? true;
+  const specResult = includeSpecification
+    ? await store.readContent(config.sourceDir, descriptor, 'specification')
+    : undefined;
   if (specResult) {
     const properties = json.properties as Record<string, unknown> | undefined;
     const apiType = properties?.type as string | undefined;
@@ -178,7 +205,24 @@ async function publishRootApi(
     status: 'success',
     action: 'put',
     specImported,
+    isCurrent,
   };
+}
+
+async function alignActiveRevisionWithSource(
+  client: IApimClient,
+  store: IArtifactStore,
+  context: ApimServiceContext,
+  descriptor: ResourceDescriptor,
+  config: PublishConfig
+): Promise<RootApiResult & ResourcePublishResult> {
+  logger.debug(
+    `Source marks "${getNamePart(descriptor.nameParts, 0)}" as current; re-applying root metadata to align active revision`
+  );
+
+  return publishRootApi(client, store, context, descriptor, config, {
+    includeSpecification: false,
+  });
 }
 
 /**
@@ -190,7 +234,7 @@ async function publishApiRevisions(
   context: ApimServiceContext,
   apiDescriptor: ResourceDescriptor,
   config: PublishConfig
-): Promise<void> {
+): Promise<number> {
   // List all resources from store
   const allDescriptors = await store.listResources(config.sourceDir);
 
@@ -212,6 +256,8 @@ async function publishApiRevisions(
   for (const revDescriptor of sortedRevisions) {
     await publishResource(client, store, context, revDescriptor, config);
   }
+
+  return sortedRevisions.length;
 }
 
 /**
@@ -395,4 +441,10 @@ function operationHasSchemaRefs(json: Record<string, unknown>): boolean {
 function extractRevisionNumber(apiName: string): number {
   const match = /;rev=(\d+)/.exec(apiName);
   return match ? parseInt(match[1], 10) : 0;
+}
+
+function getApiIsCurrent(json: Record<string, unknown>): boolean | undefined {
+  const properties = json.properties as Record<string, unknown> | undefined;
+  const isCurrent = properties?.isCurrent;
+  return typeof isCurrent === 'boolean' ? isCurrent : undefined;
 }

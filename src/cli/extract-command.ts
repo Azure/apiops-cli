@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T028 & T029: Extract command CLI registration
  * Commander subcommand with --resource-group, --service-name, --output,

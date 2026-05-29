@@ -1,6 +1,5 @@
 # APIOps v1 Research Report: Scenarios, Requirements & Edge Cases
 
-> **Source**: `c:\sources\apiops` — READ-ONLY analysis of the existing APIOps toolset  
 > **Purpose**: Extract every user scenario, requirement, and edge case the v2 rebuild must support
 
 ---

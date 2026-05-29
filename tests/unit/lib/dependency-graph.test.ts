@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 import { describe, it, expect } from 'vitest';
 import {
   DEPENDENCY_EDGES,
@@ -15,13 +17,13 @@ import { ResourceType } from '../../../src/models/resource-types.js';
 
 describe('dependency-graph', () => {
   describe('tier constants', () => {
-    it('should have 34 total resources across all tiers', () => {
+    it('should include all resource types across tiers', () => {
       const total =
         TIER_1_RESOURCES.length +
         TIER_2_RESOURCES.length +
         TIER_3_RESOURCES.length +
         TIER_4_RESOURCES.length;
-      expect(total).toBe(34);
+      expect(total).toBe(Object.values(ResourceType).length);
     });
 
     it('should not have duplicate resources across tiers', () => {
@@ -36,6 +38,7 @@ describe('dependency-graph', () => {
     });
 
     it('should place independent resources in tier 1', () => {
+      expect(TIER_1_RESOURCES).toContain(ResourceType.Workspace);
       expect(TIER_1_RESOURCES).toContain(ResourceType.NamedValue);
       expect(TIER_1_RESOURCES).toContain(ResourceType.Tag);
       expect(TIER_1_RESOURCES).toContain(ResourceType.Backend);
@@ -53,6 +56,7 @@ describe('dependency-graph', () => {
       expect(TIER_3_RESOURCES).toContain(ResourceType.ApiPolicy);
       expect(TIER_3_RESOURCES).toContain(ResourceType.ProductApi);
       expect(TIER_3_RESOURCES).toContain(ResourceType.ApiOperation);
+      expect(TIER_3_RESOURCES).toContain(ResourceType.PolicyRestriction);
     });
 
     it('should place grandchild resources in tier 4', () => {
@@ -62,9 +66,9 @@ describe('dependency-graph', () => {
   });
 
   describe('getTopologicalOrder', () => {
-    it('should return all 34 resource types', () => {
+    it('should return all resource types', () => {
       const order = getTopologicalOrder();
-      expect(order).toHaveLength(34);
+      expect(order).toHaveLength(Object.values(ResourceType).length);
     });
 
     it('should return tier-1 resources before tier-2', () => {

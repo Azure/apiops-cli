@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T010: IArtifactStore interface
  * Abstraction over local filesystem for reading/writing APIM artifact files

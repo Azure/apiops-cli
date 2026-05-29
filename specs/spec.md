@@ -3,7 +3,7 @@
 **Feature Branch**: `001-apiops-cli`
 **Created**: 2026-04-06
 **Status**: Draft
-**Input**: User description: "Build an apiops CLI tool that can extract APIM configuration to local files and publish local configuration files back to an APIM instance. Users can run this CLI tool directly (apiops extract ...) or they can integrate it in CI/CD pipelines automatically. We must plan for future expansion (new commands like apiops verify ...). Please use existing APIOps implementation at c:\sources\apiops as inspiration on scenarios & requirements, but we are rebuilding as a more general purpose tool with different technology stack."
+**Input**: User description: "Build an apiops CLI tool that can extract APIM configuration to local files and publish local configuration files back to an APIM instance. Users can run this CLI tool directly (apiops extract ...) or they can integrate it in CI/CD pipelines automatically. We must plan for future expansion (new commands like apiops verify ...). Please use existing APIOps Toolkit implementation as inspiration on scenarios & requirements, but we are rebuilding as a more general purpose tool with different technology stack."
 
 ## User Scenarios & Testing
 

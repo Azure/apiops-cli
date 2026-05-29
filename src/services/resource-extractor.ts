@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T021: Resource type extractor
  * Generic extract logic: list resources via IApimClient, write each to IArtifactStore.
@@ -86,6 +88,11 @@ export async function extractResourceType(
   };
 
   try {
+    const loggerTokenMap =
+      type === ResourceType.Logger
+        ? await loadNamedValueDisplayNameMap(client, context)
+        : undefined;
+
     const resources = client.listResources(context, type, parent);
 
     for await (const listJson of resources) {
@@ -115,6 +122,10 @@ export async function extractResourceType(
           if (full) {
             json = full;
           }
+        }
+
+        if (type === ResourceType.Logger && loggerTokenMap && loggerTokenMap.size > 0) {
+          json = normalizeLoggerCredentialPlaceholders(json, loggerTokenMap);
         }
 
         // Apply secret redaction
@@ -153,6 +164,68 @@ export async function extractResourceType(
   }
 
   return result;
+}
+
+async function loadNamedValueDisplayNameMap(
+  client: IApimClient,
+  context: ApimServiceContext
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+
+  for await (const namedValue of client.listResources(context, ResourceType.NamedValue)) {
+    const name = namedValue.name;
+    const properties = namedValue.properties as Record<string, unknown> | undefined;
+    const displayName = properties?.displayName;
+
+    if (typeof name === 'string' && typeof displayName === 'string' && displayName.length > 0) {
+      map.set(displayName, name);
+    }
+  }
+
+  return map;
+}
+
+function normalizeLoggerCredentialPlaceholders(
+  json: Record<string, unknown>,
+  displayNameToName: Map<string, string>
+): Record<string, unknown> {
+  const properties = json.properties as Record<string, unknown> | undefined;
+  const credentials = properties?.credentials;
+
+  if (!properties || credentials === undefined) {
+    return json;
+  }
+
+  const normalizeValue = (value: unknown): unknown => {
+    if (typeof value === 'string') {
+      return value.replace(/\{\{([^}]+)\}\}/g, (match, tokenName: string) => {
+        const mappedName = displayNameToName.get(tokenName);
+        return mappedName ? `{{${mappedName}}}` : match;
+      });
+    }
+
+    if (Array.isArray(value)) {
+      return value.map(normalizeValue);
+    }
+
+    if (value && typeof value === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+        out[key] = normalizeValue(child);
+      }
+      return out;
+    }
+
+    return value;
+  };
+
+  return {
+    ...json,
+    properties: {
+      ...properties,
+      credentials: normalizeValue(credentials),
+    },
+  };
 }
 
 /**

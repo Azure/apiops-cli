@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ArtifactStore } from '../../../src/clients/artifact-store.js';
 import { ResourceDescriptor } from '../../../src/models/types.js';

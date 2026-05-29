@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 /**
  * T017: Filesystem artifact store implementing IArtifactStore
  * Read/write resource JSON files, policy XML, API specs, associations, wiki markdown
