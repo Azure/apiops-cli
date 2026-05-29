@@ -36,6 +36,7 @@ Technical Writer specializing in user-facing documentation for API developers.
 - Cross-reference related docs with relative links
 - Back decisions, notes, and factual assertions with a credible source URL whenever possible
 - REQUIRED: Use GitHub-Flavored Markdown (https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax)
+- Bash heredoc safety rule: when examples use heredocs, the opener and closing delimiter (for example, `<<JSON` and `JSON`) must start at column 1 in the snippet. Do not indent heredoc lines.
 
 ## Model
 
