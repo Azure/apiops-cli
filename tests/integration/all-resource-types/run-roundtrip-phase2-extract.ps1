@@ -30,10 +30,11 @@ $VerbosePreference = if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } els
 $DebugPreference = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' }
 
 $maskingModule  = Join-Path $PSScriptRoot 'MaskingHelpers.psm1'
+$apiopsModule   = Join-Path $PSScriptRoot 'ApiopsHelpers.psm1'
 $validateScript = Join-Path $PSScriptRoot 'Test-ExtractedArtifact.ps1'
 $manifestFile   = Join-Path $PSScriptRoot 'expected-structure.json'
 
-foreach ($requiredFile in @($maskingModule, $validateScript, $manifestFile)) {
+foreach ($requiredFile in @($maskingModule, $apiopsModule, $validateScript, $manifestFile)) {
     if (-not (Test-Path $requiredFile)) {
         Write-Error "Required file not found: $requiredFile"
         exit 2
@@ -41,29 +42,7 @@ foreach ($requiredFile in @($maskingModule, $validateScript, $manifestFile)) {
 }
 
 Import-Module $maskingModule -Force
-
-function Get-ApiopsLogLevel([string]$ScriptLogLevel) {
-    switch ($ScriptLogLevel) {
-        'Info'    { return 'info' }
-        'Verbose' { return 'warn' }
-        'Debug'   { return 'debug' }
-        default   { return 'info' }
-    }
-}
-
-function Get-ApiopsAuthArgs {
-    $authArgs = @()
-
-    if (-not [string]::IsNullOrWhiteSpace($env:AZURE_CLIENT_ID)) {
-        $authArgs += @('--client-id', $env:AZURE_CLIENT_ID)
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($env:AZURE_TENANT_ID)) {
-        $authArgs += @('--tenant-id', $env:AZURE_TENANT_ID)
-    }
-
-    return $authArgs
-}
+Import-Module $apiopsModule -Force
 
 $exitCode       = 0
 $apiopsLogLevel = Get-ApiopsLogLevel -ScriptLogLevel $LogLevel
