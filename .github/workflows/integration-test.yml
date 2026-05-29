@@ -72,10 +72,6 @@ on:
         required: true
       APIM_PUBLISHER_EMAIL:
         required: true
-      SOURCE_SUBSCRIPTION_ID:
-        required: false
-      TARGET_SUBSCRIPTION_ID:
-        required: false
       APIM_SKU:
         required: false
 
@@ -127,12 +123,6 @@ jobs:
             throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
           }
 
-          $sourceSubId = '${{ secrets.SOURCE_SUBSCRIPTION_ID }}'
-          if ([string]::IsNullOrWhiteSpace($sourceSubId)) { $sourceSubId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}' }
-
-          $targetSubId = '${{ secrets.TARGET_SUBSCRIPTION_ID }}'
-          if ([string]::IsNullOrWhiteSpace($targetSubId)) { $targetSubId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}' }
-
           $skuName = '${{ secrets.APIM_SKU }}'
           if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = '${{ inputs.sku }}' }
           if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = 'StandardV2' }
@@ -142,8 +132,8 @@ jobs:
             TargetResourceGroup = '${{ env.TARGET_RG }}'
             SourceApimName     = '${{ env.SOURCE_APIM }}'
             TargetApimName     = '${{ env.TARGET_APIM }}'
-            SourceSubscriptionId = $sourceSubId
-            TargetSubscriptionId = $targetSubId
+            SourceSubscriptionId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}'
+            TargetSubscriptionId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}'
             SkuName            = $skuName
             Location           = '${{ inputs.location }}'
             LogLevel           = $logLevel
@@ -174,15 +164,12 @@ jobs:
             throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
           }
 
-          $sourceSubId = '${{ secrets.SOURCE_SUBSCRIPTION_ID }}'
-          if ([string]::IsNullOrWhiteSpace($sourceSubId)) { $sourceSubId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}' }
-
           $skuName = '${{ secrets.APIM_SKU }}'
           if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = '${{ inputs.sku }}' }
           if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = 'StandardV2' }
 
           ./tests/integration/all-resource-types/run-roundtrip-phase2-extract.ps1 `
-            -SourceSubscriptionId $sourceSubId `
+            -SourceSubscriptionId '${{ secrets.AZURE_SUBSCRIPTION_ID }}' `
             -SourceResourceGroup '${{ env.SOURCE_RG }}' `
             -SourceApimName '${{ env.SOURCE_APIM }}' `
             -SkuName $skuName `
@@ -202,11 +189,8 @@ jobs:
             throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
           }
 
-          $targetSubId = '${{ secrets.TARGET_SUBSCRIPTION_ID }}'
-          if ([string]::IsNullOrWhiteSpace($targetSubId)) { $targetSubId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}' }
-
           ./tests/integration/all-resource-types/run-roundtrip-phase3-publish.ps1 `
-            -TargetSubscriptionId $targetSubId `
+            -TargetSubscriptionId '${{ secrets.AZURE_SUBSCRIPTION_ID }}' `
             -TargetResourceGroup '${{ env.TARGET_RG }}' `
             -TargetApimName '${{ env.TARGET_APIM }}' `
             -LogLevel $logLevel `
@@ -222,17 +206,11 @@ jobs:
             throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
           }
 
-          $sourceSubId = '${{ secrets.SOURCE_SUBSCRIPTION_ID }}'
-          if ([string]::IsNullOrWhiteSpace($sourceSubId)) { $sourceSubId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}' }
-
-          $targetSubId = '${{ secrets.TARGET_SUBSCRIPTION_ID }}'
-          if ([string]::IsNullOrWhiteSpace($targetSubId)) { $targetSubId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}' }
-
           ./tests/integration/all-resource-types/run-roundtrip-phase4-compare.ps1 `
-            -SourceSubscriptionId $sourceSubId `
+            -SourceSubscriptionId '${{ secrets.AZURE_SUBSCRIPTION_ID }}' `
             -SourceResourceGroup '${{ env.SOURCE_RG }}' `
             -SourceApimName '${{ env.SOURCE_APIM }}' `
-            -TargetSubscriptionId $targetSubId `
+            -TargetSubscriptionId '${{ secrets.AZURE_SUBSCRIPTION_ID }}' `
             -TargetResourceGroup '${{ env.TARGET_RG }}' `
             -TargetApimName '${{ env.TARGET_APIM }}' `
             -LogLevel $logLevel
