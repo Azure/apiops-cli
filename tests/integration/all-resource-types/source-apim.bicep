@@ -58,35 +58,21 @@ info:
   title: Kitchen Sink REST API
   version: "1.0"
 paths:
-  /healthz:
+  /todos/1:
     get:
       operationId: healthCheck
       summary: Health check endpoint
       responses:
         "200":
           description: OK
-  /items:
+  /todos:
     get:
       operationId: listItems
       summary: List all items
       responses:
         "200":
           description: OK
-    post:
-      operationId: createItem
-      summary: Create an item
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name:
-                  type: string
-      responses:
-        "201":
-          description: Created
-  /items/{id}:
+  /todos/{id}:
     get:
       operationId: getItem
       summary: Get item by ID
@@ -96,6 +82,23 @@ paths:
           required: true
           schema:
             type: string
+      responses:
+        "200":
+          description: OK
+  /todos/add:
+    post:
+      operationId: createItem
+      summary: Create an item
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                todo:
+                  type: string
+                completed:
+                  type: boolean
       responses:
         "200":
           description: OK
@@ -214,7 +217,13 @@ var operationPolicyXml = '''
 <policies>
   <inbound>
     <base />
-    <rate-limit calls="100" renewal-period="60" />
+    <return-response>
+      <set-status code="200" reason="OK" />
+      <set-header name="Content-Type" exists-action="override">
+        <value>application/json</value>
+      </set-header>
+      <set-body>{"status":"ok","source":"apim-mcp-demo"}</set-body>
+    </return-response>
   </inbound>
   <backend><base /></backend>
   <outbound><base /></outbound>
@@ -358,6 +367,16 @@ resource apim 'Microsoft.ApiManagement/service@2025-09-01-preview' = {
   properties: {
     publisherEmail: publisherEmail
     publisherName: publisherName
+    customProperties: {
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Protocols.Server.Http2': 'True'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Ssl30': 'False'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Tls10': 'False'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Tls11': 'False'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Ciphers.TripleDes168': 'False'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Ssl30': 'False'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Tls10': 'False'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Tls11': 'False'
+    }
   }
 }
 
@@ -682,7 +701,7 @@ resource apiRestOpenapi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview
     protocols: ['https']
     format: 'openapi'
     value: openApiSpec
-    serviceUrl: 'https://src-backend.example.com/api'
+    serviceUrl: 'https://dummyjson.com'
     subscriptionRequired: false
     apiType: 'http'
   }
@@ -843,6 +862,13 @@ resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview'
     protocols: ['https']
     subscriptionRequired: false
     type: 'mcp'
+    mcpProperties: {
+      endpoints: {
+        mcp: {
+          uriTemplate: '/mcp'
+        }
+      }
+    }
     mcpTools: [
       {
         name: 'healthCheck'
@@ -871,8 +897,8 @@ resource backendMcpExternal 'Microsoft.ApiManagement/service/backends@2025-09-01
   parent: apim
   name: 'src-backend-mcp-external'
   properties: {
-    description: 'External MCP server backend (GitHub Copilot)'
-    url: 'https://api.githubcopilot.com/mcp'
+    description: 'External MCP server backend (demo proxy to the MCP-from-API endpoint)'
+    url: 'https://${apim.name}.azure-api.net'
     protocol: 'http'
   }
 }
@@ -885,7 +911,7 @@ resource apiMcpFromExternal 'Microsoft.ApiManagement/service/apis@2025-09-01-pre
   name: 'src-mcp-from-external'
   properties: any({
     displayName: 'KS MCP from External Server'
-    description: 'MCP server repackaging a public external MCP server via APIM'
+    description: 'MCP server that proxies another MCP endpoint via APIM backend routing'
     path: 'ks/mcp-external'
     protocols: ['https']
     subscriptionRequired: false
@@ -894,11 +920,94 @@ resource apiMcpFromExternal 'Microsoft.ApiManagement/service/apis@2025-09-01-pre
     mcpProperties: {
       endpoints: {
         mcp: {
-          uriTemplate: '/mcp'
+          uriTemplate: '/ks/mcp-from-api/mcp'
         }
       }
     }
   })
+}
+
+// Mock runtime API used by the A2A API backend settings.
+// This keeps the demo self-contained and avoids external dependencies.
+resource apiA2aRuntimeMock 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
+  parent: apim
+  name: 'src-a2a-runtime-mock'
+  properties: {
+    displayName: 'KS A2A Runtime Mock'
+    description: 'Mock runtime API used as the backend for the A2A demo API'
+    path: 'ks/a2a-runtime'
+    protocols: ['https']
+    serviceUrl: 'https://httpbin.org'
+    subscriptionRequired: false
+    apiType: 'http'
+  }
+}
+
+resource apiA2aRuntimeCardOperation 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-preview' = {
+  parent: apiA2aRuntimeMock
+  name: 'get-agent-card'
+  properties: {
+    displayName: 'Get agent card'
+    method: 'GET'
+    urlTemplate: '/.well-known/agent.json'
+    responses: [
+      {
+        statusCode: 200
+        description: 'OK'
+        representations: [
+          {
+            contentType: 'application/json'
+          }
+        ]
+      }
+    ]
+  }
+}
+
+resource apiA2aRuntimeCardPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2025-09-01-preview' = {
+  parent: apiA2aRuntimeCardOperation
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: '<policies><inbound><base /><return-response><set-status code="200" reason="OK" /><set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header><set-body>{"name":"KS A2A Weather Agent","description":"Demo agent card served by APIM","url":"https://${apim.name}.azure-api.net/ks/a2a-weather"}</set-body></return-response></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+  }
+}
+
+resource apiA2aRuntimeJsonRpcOperation 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-preview' = {
+  parent: apiA2aRuntimeMock
+  name: 'post-jsonrpc'
+  properties: {
+    displayName: 'JSON-RPC endpoint'
+    method: 'POST'
+    urlTemplate: '/'
+    request: {
+      representations: [
+        {
+          contentType: 'application/json'
+        }
+      ]
+    }
+    responses: [
+      {
+        statusCode: 200
+        description: 'OK'
+        representations: [
+          {
+            contentType: 'application/json'
+          }
+        ]
+      }
+    ]
+  }
+}
+
+resource apiA2aRuntimeJsonRpcPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2025-09-01-preview' = {
+  parent: apiA2aRuntimeJsonRpcOperation
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: '<policies><inbound><base /><return-response><set-status code="200" reason="OK" /><set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header><set-body>{"jsonrpc":"2.0","id":"demo","result":{"message":"A2A runtime reachable","source":"apim-a2a-mock"}}</set-body></return-response></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+  }
 }
 
 // 10. A2A API with JSON-RPC runtime and agent card settings
@@ -919,11 +1028,11 @@ resource apiA2a 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
     }
     a2aProperties: {
       agentCardPath: '/.well-known/agent.json'
-      agentCardBackendUrl: 'https://src-a2a-weather-agent.example.com/.well-known/agent.json'
+      agentCardBackendUrl: 'https://${apim.name}.azure-api.net/ks/a2a-runtime/.well-known/agent.json'
     }
     jsonRpcProperties: {
-      backendUrl: 'https://src-a2a-weather-agent.example.com'
-      path: '/'
+      backendUrl: 'https://${apim.name}.azure-api.net'
+      path: '/ks/a2a-runtime'
     }
     subscriptionRequired: true
     subscriptionKeyParameterNames: {
