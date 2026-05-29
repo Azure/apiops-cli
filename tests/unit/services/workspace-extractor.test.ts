@@ -72,7 +72,9 @@ describe('workspace-extractor', () => {
         ResourceType.GlobalSchema,
         ResourceType.Documentation,
       ];
-      expect(seenTypes).toEqual(expectedTypes);
+      // Deduplicate: loadNamedValueDisplayNameMap causes an extra listResources(NamedValue)
+      // call when processing Logger — strip duplicates to check primary iteration order only.
+      expect([...new Set(seenTypes)]).toEqual(expectedTypes);
     });
 
     it('should skip extraction when no workspace names in filter', async () => {
