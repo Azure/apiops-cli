@@ -144,6 +144,8 @@ jobs:
         if: success()
         uses: azure/login@v2
         with:
+          # Phase 1 can run for a long time while APIM activates; refresh login
+          # before extract/publish so apiops receives a fresh federated session.
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
@@ -182,4 +184,4 @@ jobs:
             -SourceResourceGroup '${{ env.SOURCE_RG }}' `
             -TargetResourceGroup '${{ env.TARGET_RG }}' `
             -Location '${{ inputs.location }}' `
-            -HardDelete
+            -HardDelete $true

@@ -5,6 +5,15 @@
 .DESCRIPTION
   Single entry point that orchestrates phase scripts for deploy, round-trip, and
   teardown. Works both locally and in CI.
+
+.EXAMPLE
+  .\run-roundtrip-test.ps1 -PublisherEmail admin@contoso.com
+
+.EXAMPLE
+  .\run-roundtrip-test.ps1 -PublisherEmail admin@contoso.com -SkipTeardown
+
+.EXAMPLE
+  .\run-roundtrip-test.ps1 -PublisherEmail admin@contoso.com -HardDelete
 #>
 
 #requires -Version 7.0

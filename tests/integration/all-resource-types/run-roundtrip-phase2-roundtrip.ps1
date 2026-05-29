@@ -39,6 +39,9 @@ function Get-ApiopsLogLevel([string]$ScriptLogLevel) {
 }
 
 function Get-ApiopsAuthArgs {
+    # In CI, we explicitly pass client/tenant to apiops so DefaultAzureCredential
+    # can use the intended federated identity after long-running deploy phases.
+    # If env vars are unset (local runs), apiops falls back to default credential chain.
     $authArgs = @()
 
     if (-not [string]::IsNullOrWhiteSpace($env:AZURE_CLIENT_ID)) {
@@ -120,6 +123,19 @@ $targetKvUri = az keyvault list --resource-group $targetRg --query "[0].properti
 $targetAiResourceId = az monitor app-insights component list --resource-group $targetRg --query "[0].id" -o tsv
 $targetAiKey = az monitor app-insights component list --resource-group $targetRg --query "[0].instrumentationKey" -o tsv
 $targetEhNs = az eventhubs namespace list --resource-group $targetRg --query "[0].name" -o tsv
+
+if (-not $targetKvUri) {
+    Write-Host "❌ Could not resolve target Key Vault URI in $(Protect-ResourceGroupName -Value $targetRg)"
+    exit 2
+}
+if (-not $targetAiResourceId -or -not $targetAiKey) {
+    Write-Host "❌ Could not resolve target Application Insights details in $(Protect-ResourceGroupName -Value $targetRg)"
+    exit 2
+}
+if (-not $targetEhNs) {
+    Write-Host "❌ Could not resolve target Event Hub namespace in $(Protect-ResourceGroupName -Value $targetRg)"
+    exit 2
+}
 
 $targetEhConnStr = az eventhubs namespace authorization-rule keys list `
     --resource-group $targetRg `
