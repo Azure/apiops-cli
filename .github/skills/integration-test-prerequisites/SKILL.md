@@ -159,7 +159,24 @@ gh api repos/${GITHUB_OWNER}/${GITHUB_REPO}/environments/${GITHUB_ENVIRONMENT}/s
 
 - `AADSTS70025`: Missing federated credential for presented subject.
 - `AADSTS700213`: Subject mismatch between token claim and federated credential.
+- `AADSTS700016`: Application/identity was deleted from the tenant. Recreate the UAMI and update secrets.
 - `Microsoft.Authorization/roleAssignments/write`: Missing `User Access Administrator` or `Owner`.
+
+## UI Access
+
+To view or edit environment secrets in the GitHub web UI, navigate to:
+
+```
+https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/settings/environments/{environment_id}/edit
+```
+
+The numeric `environment_id` can be retrieved via:
+
+```bash
+gh api repos/${GITHUB_OWNER}/${GITHUB_REPO}/environments --jq '.environments[] | select(.name=="'${GITHUB_ENVIRONMENT}'") | .id'
+```
+
+**Note:** Viewing environment settings requires **admin** access to the repository. In organizations using JIT (just-in-time) privilege elevation, you must activate admin access before the settings page will load (otherwise you get a 404).
 
 ## Anti-Patterns
 
