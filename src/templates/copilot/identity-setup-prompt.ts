@@ -9,10 +9,16 @@
  *   4. Setting GitHub repository secrets
  */
 
-import { copilotIdentitySetupPromptTemplate } from '../generated/embedded-markdown.js';
+import {
+  azureDevOpsIdentityGuideTemplate,
+  copilotGithubEnvironmentFederatedCredentialTemplate,
+  copilotGithubEnvironmentSecretCommandsTemplate,
+  copilotIdentitySetupPromptTemplate,
+} from '../generated/embedded-markdown.js';
 
 export interface IdentitySetupPromptConfig {
   environments: string[];
+  ciProvider?: 'github-actions' | 'azure-devops';
 }
 
 function renderTemplate(template: string, tokens: Record<string, string>): string {
@@ -23,6 +29,22 @@ function renderTemplate(template: string, tokens: Record<string, string>): strin
 }
 
 export function generateIdentitySetupPrompt(config: IdentitySetupPromptConfig): string {
+  if (config.ciProvider === 'azure-devops') {
+    const environmentsArrayPowerShell = config.environments
+      .map((environment) => `"${environment}"`)
+      .join(', ');
+    const environmentsArrayBash = config.environments
+      .map((environment) => `"${environment}"`)
+      .join(' ');
+
+    return renderTemplate(azureDevOpsIdentityGuideTemplate, {
+      SUBSCRIPTION_ID: '<your-subscription-id>',
+      RESOURCE_GROUP: '<your-resource-group>',
+      ENVIRONMENTS_ARRAY_POWERSHELL: environmentsArrayPowerShell,
+      ENVIRONMENTS_ARRAY_BASH: environmentsArrayBash,
+    });
+  }
+
   const envSecrets = config.environments.map((env) =>
     `- \`AZURE_SUBSCRIPTION_ID\` — Azure subscription ID for **${env}** environment
 - \`APIM_RESOURCE_GROUP_${env.toUpperCase()}\` — Resource group containing the **${env}** APIM instance
@@ -30,33 +52,16 @@ export function generateIdentitySetupPrompt(config: IdentitySetupPromptConfig): 
   ).join('\n');
 
   const envFedCreds = config.environments.map((env) =>
-    `### ${env} environment
-
-**On macOS/Linux (Bash):**
-\`\`\`bash
-az ad app federated-credential create \\
-  --id "$APP_ID" \\
-  --parameters '{
-    "name": "github-env-${env}",
-    "issuer": "https://token.actions.githubusercontent.com",
-    "subject": "repo:'"\${GITHUB_ORG}"'/'"\${GITHUB_REPO}"':environment:${env}",
-    "audiences": ["api://AzureADTokenExchange"]
-  }'
-\`\`\`
-
-**On Windows (PowerShell):**
-\`\`\`powershell
-az ad app federated-credential create \`
-  --id $APP_ID \`
-  --parameters '{\\"name\\":\\"github-env-${env}\\",\\"issuer\\":\\"https://token.actions.githubusercontent.com\\",\\"subject\\":\\"repo:'\${GITHUB_ORG}'/'\${GITHUB_REPO}':environment:${env}\\",\\"audiences\\":[\\"api://AzureADTokenExchange\\"]}'
-\`\`\``
+    renderTemplate(copilotGithubEnvironmentFederatedCredentialTemplate, {
+      ENV: env,
+    })
   ).join('\n\n');
 
   const ghSecretEnvCmds = config.environments.map((env) =>
-    `# ${env} environment secrets
-gh secret set AZURE_SUBSCRIPTION_ID --body "\${AZURE_SUBSCRIPTION_ID_${env.toUpperCase()}}" --env ${env}
-gh secret set APIM_RESOURCE_GROUP_${env.toUpperCase()} --body "\${APIM_RG_${env.toUpperCase()}}" --env ${env}
-gh secret set APIM_SERVICE_NAME_${env.toUpperCase()} --body "\${APIM_NAME_${env.toUpperCase()}}" --env ${env}`
+    renderTemplate(copilotGithubEnvironmentSecretCommandsTemplate, {
+      ENV: env,
+      ENV_UPPER: env.toUpperCase(),
+    })
   ).join('\n\n');
 
   const environmentCreationCommands = config.environments.map((env) =>

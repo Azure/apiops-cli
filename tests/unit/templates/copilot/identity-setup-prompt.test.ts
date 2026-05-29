@@ -153,5 +153,15 @@ describe('copilot/identity-setup-prompt', () => {
       expect(prompt).not.toContain('{{');
       expect(prompt).not.toContain('}}');
     });
+
+    it('should generate Azure DevOps instructions when ciProvider is azure-devops', () => {
+      const prompt = generateIdentitySetupPrompt({
+        environments: ['dev', 'prod'],
+        ciProvider: 'azure-devops',
+      });
+      expect(prompt).toContain('# Azure DevOps Identity Setup Guide');
+      expect(prompt).toContain('az devops service-endpoint azurerm create');
+      expect(prompt).not.toContain('gh secret set');
+    });
   });
 });
