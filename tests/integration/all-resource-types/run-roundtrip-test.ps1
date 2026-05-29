@@ -135,20 +135,6 @@ function Get-ApiopsLogLevel([string]$ScriptLogLevel) {
     }
 }
 
-function Get-ApiopsAuthArgs {
-    $authArgs = @()
-
-    if (-not [string]::IsNullOrWhiteSpace($env:AZURE_CLIENT_ID)) {
-        $authArgs += @('--client-id', $env:AZURE_CLIENT_ID)
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($env:AZURE_TENANT_ID)) {
-        $authArgs += @('--tenant-id', $env:AZURE_TENANT_ID)
-    }
-
-    return $authArgs
-}
-
 function Invoke-Teardown {
     if ($SkipTeardown) {
         Write-Host "⏭️  Teardown skipped (-SkipTeardown)"
@@ -502,8 +488,6 @@ try {
     Write-Host "   Output: $ExtractOutputDir"
 
     $apiopsLogLevel = Get-ApiopsLogLevel -ScriptLogLevel $LogLevel
-    $apiopsAuthArgs = Get-ApiopsAuthArgs
-
     # For SKUs that support workspaces (Premium / PremiumV2), pass a filter file
     # with the workspace name so the extractor includes workspace-scoped resources.
     # Without this, workspace extraction is silently skipped.
@@ -514,7 +498,7 @@ try {
         '--service-name',    $sourceName,
         '--output',          $ExtractOutputDir,
         '--log-level',       $apiopsLogLevel
-    ) + $apiopsAuthArgs
+    )
 
     $extractExitCode = Invoke-MaskedApiopsCommand -Replacements @{
         $sourceSubId = Protect-SubscriptionId -Value $sourceSubId
@@ -657,7 +641,7 @@ loggers:
         '--source',          $ExtractOutputDir,
         '--overrides',       $overrideFile,
         '--log-level',       $apiopsLogLevel
-    ) + $apiopsAuthArgs
+    )
 
     if ($publishExitCode -ne 0) {
         Write-Host "❌ Publish failed (exit code $publishExitCode)"
