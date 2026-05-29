@@ -44,6 +44,37 @@ function createMockStore() {
 
 describe('workspace-extractor', () => {
   describe('extractWorkspaces', () => {
+    it('should iterate only workspaceSupported types in enum order', async () => {
+      const client = createMockClient();
+      const seenTypes: ResourceType[] = [];
+      // eslint-disable-next-line require-yield
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType) {
+        seenTypes.push(type);
+      };
+      const store = createMockStore();
+      const filter: FilterConfig = { workspaceNames: ['ws-1'] };
+
+      await extractWorkspaces(
+        client, store, testContext, '/output', filter
+      );
+
+      const expectedTypes = [
+        ResourceType.NamedValue,
+        ResourceType.Tag,
+        ResourceType.Backend,
+        ResourceType.Logger,
+        ResourceType.Group,
+        ResourceType.Diagnostic,
+        ResourceType.PolicyFragment,
+        ResourceType.Product,
+        ResourceType.Api,
+        ResourceType.Subscription,
+        ResourceType.GlobalSchema,
+        ResourceType.Documentation,
+      ];
+      expect(seenTypes).toEqual(expectedTypes);
+    });
+
     it('should skip extraction when no workspace names in filter', async () => {
       const client = createMockClient();
       const store = createMockStore();
