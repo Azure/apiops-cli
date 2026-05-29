@@ -136,17 +136,17 @@ function Get-ApiopsLogLevel([string]$ScriptLogLevel) {
 }
 
 function Get-ApiopsAuthArgs {
-    $args = @()
+    $authArgs = @()
 
     if (-not [string]::IsNullOrWhiteSpace($env:AZURE_CLIENT_ID)) {
-        $args += @('--client-id', $env:AZURE_CLIENT_ID)
+        $authArgs += @('--client-id', $env:AZURE_CLIENT_ID)
     }
 
     if (-not [string]::IsNullOrWhiteSpace($env:AZURE_TENANT_ID)) {
-        $args += @('--tenant-id', $env:AZURE_TENANT_ID)
+        $authArgs += @('--tenant-id', $env:AZURE_TENANT_ID)
     }
 
-    return $args
+    return $authArgs
 }
 
 function Invoke-Teardown {
