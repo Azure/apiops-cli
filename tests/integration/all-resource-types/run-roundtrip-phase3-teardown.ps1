@@ -12,7 +12,7 @@ param(
 
     [switch]$SkipTeardown,
 
-    [switch]$HardDelete = $true
+    [bool]$HardDelete = $true
 )
 
 $ErrorActionPreference = 'Stop'
