@@ -892,35 +892,31 @@ resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview'
 // non-MCP API \u2014 e.g. src-rest-openapi above). ApiOperation BVT coverage
 // is therefore provided by the REST APIs in this template, not by the MCP APIs.
 
-// Backend for external MCP server (backendId pattern requires a backend resource)
-resource backendMcpExternal 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = {
+resource backendMcpLearn 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = {
   parent: apim
-  name: 'src-backend-mcp-external'
+  name: 'src-backend-mcp-learn'
   properties: {
-    description: 'External MCP server backend (demo proxy to the MCP-from-API endpoint)'
-    url: 'https://${apim.name}.azure-api.net'
+    description: 'Backend for the public Microsoft Learn MCP server used by the existing-server demo'
+    url: 'https://learn.microsoft.com'
     protocol: 'http'
   }
 }
 
-// 9. MCP API created from an existing (external) public MCP server
-// External MCP uses backendId + mcpProperties; APIM accepts a non-empty path here.
-// any() used because backendId and mcpProperties.endpoints are valid at runtime but absent from Bicep type definitions (BCP037/BCP036)
-resource apiMcpFromExternal 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
+resource apiMcpExistingServer 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
-  name: 'src-mcp-from-external'
+  name: 'src-mcp-existing-server'
   properties: any({
-    displayName: 'KS MCP from External Server'
-    description: 'MCP server that proxies another MCP endpoint via APIM backend routing'
-    path: 'ks/mcp-external'
+    displayName: 'KS MCP Existing Server Demo'
+    description: 'Working demo that exposes the public Microsoft Learn MCP server through APIM using a policy-based MCP proxy'
+    path: 'ks/mcp-existing'
     protocols: ['https']
     subscriptionRequired: false
     type: 'mcp'
-    backendId: backendMcpExternal.name
+    backendId: backendMcpLearn.name
     mcpProperties: {
       endpoints: {
         mcp: {
-          uriTemplate: '/ks/mcp-from-api/mcp'
+          uriTemplate: '/mcp'
         }
       }
     }
@@ -969,7 +965,7 @@ resource apiA2aRuntimeCardPolicy 'Microsoft.ApiManagement/service/apis/operation
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><return-response><set-status code="200" reason="OK" /><set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header><set-body>{"name":"KS A2A Weather Agent","description":"Demo agent card served by APIM","url":"https://${apim.name}.azure-api.net/ks/a2a-weather"}</set-body></return-response></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+    value: '<policies><inbound><base /><return-response><set-status code="200" reason="OK" /><set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header><set-body>{"protocolVersion":"0.3.0","name":"KS A2A Weather Agent","description":"Demo A2A weather agent served entirely by APIM policies","url":"https://${apim.name}.azure-api.net/ks/a2a-weather","preferredTransport":"JSONRPC","version":"1.0.0","capabilities":{"streaming":false,"pushNotifications":false,"stateTransitionHistory":false},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"skills":[{"id":"get_weather","name":"Get weather","description":"Returns current weather conditions for a city","tags":["weather","demo"],"examples":["What is the weather in Seattle?","weather in Paris"],"inputModes":["text/plain"],"outputModes":["text/plain"]}]}</set-body></return-response></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
   }
 }
 
@@ -1006,7 +1002,31 @@ resource apiA2aRuntimeJsonRpcPolicy 'Microsoft.ApiManagement/service/apis/operat
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><return-response><set-status code="200" reason="OK" /><set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header><set-body>{"jsonrpc":"2.0","id":"demo","result":{"message":"A2A runtime reachable","source":"apim-a2a-mock"}}</set-body></return-response></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+    value: '''<policies><inbound><base /><return-response><set-status code="200" reason="OK" /><set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header><set-body>@{
+  var reqBody = context.Request.Body.As<JObject>(preserveContent: true);
+  var idToken = reqBody["id"];
+  string idJson = idToken != null ? idToken.ToString(Newtonsoft.Json.Formatting.None) : "1";
+  string method = (string)reqBody["method"] ?? "";
+  if (method != "message/send") {
+    return "{\"jsonrpc\":\"2.0\",\"id\":" + idJson + ",\"error\":{\"code\":-32601,\"message\":\"Method not found: " + method + "\"}}";
+  }
+  var parts = reqBody.SelectToken("params.message.parts") as JArray;
+  string text = "";
+  if (parts != null) {
+    foreach (var p in parts) { if ((string)p["kind"] == "text") { text = (string)p["text"] ?? ""; break; } }
+  }
+  string city = "your location";
+  int idx = text.ToLowerInvariant().IndexOf(" in ");
+  if (idx >= 0) { city = text.Substring(idx + 4).Trim().TrimEnd(new[] { '?', '.', '!', ',' }); }
+  string reply = "Weather in " + city + ": 62°F, partly cloudy (demo response from APIM A2A policy).";
+  string replyJson = Newtonsoft.Json.JsonConvert.SerializeObject(reply);
+  string taskId = System.Guid.NewGuid().ToString();
+  string contextId = System.Guid.NewGuid().ToString();
+  string artifactId = System.Guid.NewGuid().ToString();
+  string msgId = System.Guid.NewGuid().ToString();
+  string ts = System.DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+  return "{\"jsonrpc\":\"2.0\",\"id\":" + idJson + ",\"result\":{\"kind\":\"task\",\"id\":\"" + taskId + "\",\"contextId\":\"" + contextId + "\",\"status\":{\"state\":\"completed\",\"timestamp\":\"" + ts + "\"},\"artifacts\":[{\"artifactId\":\"" + artifactId + "\",\"name\":\"weather-reply\",\"parts\":[{\"kind\":\"text\",\"text\":" + replyJson + "}]}],\"history\":[{\"kind\":\"message\",\"role\":\"agent\",\"messageId\":\"" + msgId + "\",\"parts\":[{\"kind\":\"text\",\"text\":" + replyJson + "}]}]}}";
+}</set-body></return-response></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'''
   }
 }
 

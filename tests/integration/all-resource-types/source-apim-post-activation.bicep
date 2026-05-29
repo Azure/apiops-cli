@@ -363,6 +363,38 @@ var mcpApiPolicyXml = '''
 </policies>
 '''
 
+var mcpExistingServerPolicyXml = '''
+<policies>
+  <inbound>
+    <base />
+    <set-variable name="requestBody" value="@(context.Request.Body?.As&lt;string&gt;(preserveContent: true) ?? string.Empty)" />
+    <set-variable name="sessionId" value="@(context.Request.Headers.GetValueOrDefault(&quot;Mcp-Session-Id&quot;, string.Empty))" />
+    <set-variable name="protocolVersion" value="@(context.Request.Headers.GetValueOrDefault(&quot;MCP-Protocol-Version&quot;, &quot;2025-03-26&quot;))" />
+    <send-request mode="new" response-variable-name="learnResp" timeout="60" ignore-error="false">
+      <set-url>https://learn.microsoft.com/api/mcp</set-url>
+      <set-method>@(context.Request.Method)</set-method>
+      <set-header name="Accept" exists-action="override">
+        <value>@(context.Request.Headers.GetValueOrDefault(&quot;Accept&quot;, &quot;text/event-stream&quot;))</value>
+      </set-header>
+      <set-header name="Content-Type" exists-action="override">
+        <value>@(context.Request.Headers.GetValueOrDefault(&quot;Content-Type&quot;, &quot;application/json&quot;))</value>
+      </set-header>
+      <set-header name="MCP-Protocol-Version" exists-action="override">
+        <value>@((string)context.Variables[&quot;protocolVersion&quot;])</value>
+      </set-header>
+      <set-header name="Mcp-Session-Id" exists-action="override">
+        <value>@((string)context.Variables[&quot;sessionId&quot;])</value>
+      </set-header>
+      <set-body>@((string)context.Variables[&quot;requestBody&quot;])</set-body>
+    </send-request>
+    <return-response response-variable-name="learnResp" />
+  </inbound>
+  <backend><base /></backend>
+  <outbound><base /></outbound>
+  <on-error><base /></on-error>
+</policies>
+'''
+
 var productPolicyXml = '''
 <policies>
   <inbound>
@@ -399,6 +431,11 @@ resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview'
   name: 'src-mcp-from-api'
 }
 
+resource apiMcpExistingServer 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' existing = {
+  parent: apim
+  name: 'src-mcp-existing-server'
+}
+
 resource servicePolicy 'Microsoft.ApiManagement/service/policies@2025-09-01-preview' = {
   parent: apim
   name: 'policy'
@@ -432,6 +469,15 @@ resource apiMcpFromApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2025
   properties: {
     format: 'rawxml'
     value: mcpApiPolicyXml
+  }
+}
+
+resource apiMcpExistingServerPolicy 'Microsoft.ApiManagement/service/apis/policies@2025-09-01-preview' = {
+  parent: apiMcpExistingServer
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: mcpExistingServerPolicyXml
   }
 }
 
