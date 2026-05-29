@@ -29,6 +29,9 @@
   .\run-roundtrip-test.ps1 -SourceResourceGroup rg-src -TargetResourceGroup rg-tgt -PublisherEmail admin@contoso.com
 
   # Keep resources after test for debugging
+  .\run-roundtrip-test.ps1 -PublisherEmail admin@contoso.com -SkipTeardown
+
+  # Hard-delete APIM instances on teardown (purge from soft-delete)
   .\run-roundtrip-test.ps1 -PublisherEmail admin@contoso.com -HardDelete
 #>
 
@@ -54,6 +57,8 @@ param(
     [string]$PublisherEmail,
 
     [string]$ExtractOutputDir = "$PSScriptRoot/extracted-artifacts",
+
+    [switch]$SkipTeardown,
 
     [switch]$HardDelete
 )
@@ -131,6 +136,10 @@ function Get-ApiopsLogLevel([string]$ScriptLogLevel) {
 }
 
 function Invoke-Teardown {
+    if ($SkipTeardown) {
+        Write-Host "⏭️  Teardown skipped (-SkipTeardown)"
+        return
+    }
     Write-Phase "🧹" "TEARDOWN — Deleting resource groups"
     
     # Capture APIM names before deletion for potential hard-delete
