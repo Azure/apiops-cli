@@ -242,6 +242,32 @@ try {
     $global:LASTEXITCODE = 0
     & $phase6CompareScript @phase6Args
 
+    if ($LASTEXITCODE -ne 0) {
+        $exitCode = $LASTEXITCODE
+        exit $exitCode
+    }
+
+    & $phase3Script `
+        -TargetSubscriptionId $TargetSubscriptionId `
+        -TargetResourceGroup $TargetResourceGroup `
+        -TargetApimName $TargetApimName `
+        -LogLevel $LogLevel `
+        -ExtractOutputDir $ExtractOutputDir
+
+    if ($LASTEXITCODE -ne 0) {
+        $exitCode = $LASTEXITCODE
+        exit $exitCode
+    }
+
+    & $phase4Script `
+        -SourceSubscriptionId $SourceSubscriptionId `
+        -SourceResourceGroup $SourceResourceGroup `
+        -SourceApimName $SourceApimName `
+        -TargetSubscriptionId $TargetSubscriptionId `
+        -TargetResourceGroup $TargetResourceGroup `
+        -TargetApimName $TargetApimName `
+        -LogLevel $LogLevel
+
     $exitCode = $LASTEXITCODE
 }
 catch {
