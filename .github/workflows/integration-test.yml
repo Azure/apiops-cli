@@ -39,7 +39,7 @@ on:
         description: 'Azure region'
         required: false
         type: string
-        default: 'eastus'
+        default: 'centralus'
       log_level:
         description: 'PowerShell log level (Info, Verbose, Debug)'
         required: false
@@ -57,7 +57,7 @@ on:
         description: 'Azure region'
         required: false
         type: string
-        default: 'eastus'
+        default: 'centralus'
       log_level:
         description: 'PowerShell log level (Info, Verbose, Debug)'
         required: false
