@@ -113,9 +113,6 @@ jobs:
       - name: Resolve Workflow Settings
         id: settings
         shell: pwsh
-        env:
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
         run: |
           $logLevel = '${{ inputs.log_level }}'
           if ([string]::IsNullOrWhiteSpace($logLevel)) { $logLevel = 'Verbose' }
