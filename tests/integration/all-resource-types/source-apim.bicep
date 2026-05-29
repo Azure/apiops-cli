@@ -901,6 +901,38 @@ resource apiMcpFromExternal 'Microsoft.ApiManagement/service/apis@2025-09-01-pre
   })
 }
 
+// 10. A2A API with JSON-RPC runtime and agent card settings
+// any() used because A2A properties are runtime-supported but may not be present
+// in this API version's Bicep type definitions.
+resource apiA2a 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
+  parent: apim
+  name: 'src-a2a-weather-agent'
+  properties: any({
+    displayName: 'KS A2A Weather Agent'
+    description: 'A2A API exposing JSON-RPC runtime and an APIM-mediated agent card'
+    path: 'ks/a2a-weather'
+    protocols: ['https']
+    type: 'a2a'
+    isAgent: true
+    agent: {
+      id: 'src-a2a-weather-agent'
+    }
+    a2aProperties: {
+      agentCardPath: '/.well-known/agent.json'
+      agentCardBackendUrl: 'https://src-a2a-weather-agent.example.com/.well-known/agent.json'
+    }
+    jsonRpcProperties: {
+      backendUrl: 'https://src-a2a-weather-agent.example.com'
+      path: '/'
+    }
+    subscriptionRequired: true
+    subscriptionKeyParameterNames: {
+      header: 'Ocp-Apim-Subscription-Key'
+      query: 'subscription-key'
+    }
+  })
+}
+
 // ---------------------------------------------------------------------------
 // TIER 3: Child Resources
 // ---------------------------------------------------------------------------

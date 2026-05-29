@@ -355,7 +355,7 @@
       ]
     },
     "apis": {
-      "minCount": 9,
+      "minCount": 10,
       "expected": [
         {
           "name": "src-rest-openapi",
@@ -596,6 +596,24 @@
             }
           },
           "notes": "MCP API repackaging an external MCP server: backendId points to the backend that holds the upstream URL (https://api.githubcopilot.com/mcp), and mcpProperties.endpoints.mcp.uriTemplate addresses the MCP endpoint exposed by that backend"
+        },
+        {
+          "name": "src-a2a-weather-agent",
+          "files": ["apiInformation.json"],
+          "spotChecks": {
+            "apiInformation.json": {
+              "properties.displayName": "KS A2A Weather Agent",
+              "properties.path": "ks/a2a-weather",
+              "properties.type": "a2a",
+              "properties.agent.id": "src-a2a-weather-agent",
+              "properties.a2aProperties.agentCardPath": "/.well-known/agent.json",
+              "properties.jsonRpcProperties.path": "/",
+              "properties.subscriptionRequired": true,
+              "properties.subscriptionKeyParameterNames.header": "Ocp-Apim-Subscription-Key",
+              "properties.subscriptionKeyParameterNames.query": "subscription-key"
+            }
+          },
+          "notes": "A2A API with JSON-RPC runtime mediation and agent card settings."
         }
       ]
     },

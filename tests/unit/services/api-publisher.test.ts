@@ -168,6 +168,36 @@ describe('api-publisher', () => {
       expect(tasks).toHaveLength(2);
     });
 
+    it('should not inject specification import fields for A2A APIs', async () => {
+      const client = createMockClient();
+      const store = createMockStore([]);
+      store.readResource.mockResolvedValue({
+        name: 'a2a-api',
+        properties: {
+          type: 'a2a',
+          path: 'ks/a2a',
+          protocols: ['https'],
+        },
+      });
+      store.readContent.mockResolvedValue({
+        content: 'openapi: "3.0.0"',
+        format: 'yaml',
+      });
+
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['a2a-api'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      const [, , payload] = client.putResource.mock.calls[0] as [unknown, unknown, Record<string, unknown>];
+      const properties = payload.properties as Record<string, unknown>;
+      expect(properties).not.toHaveProperty('format');
+      expect(properties).not.toHaveProperty('value');
+      expect(properties).not.toHaveProperty('apiType');
+    });
+
     it('should return failed result when root API publish fails', async () => {
       const client = createMockClient();
       const store = createMockStore([]);

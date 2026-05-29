@@ -97,6 +97,11 @@ export async function publishApi(
  * Maps spec file format to APIM ContentFormat for inline import.
  */
 function getImportFormat(specFormat: string, _apiType?: string): string | undefined {
+  const apiType = _apiType?.toLowerCase();
+  if (apiType === 'a2a') {
+    return undefined;
+  }
+
   switch (specFormat) {
     case 'yaml':
       return 'openapi';
@@ -178,7 +183,7 @@ async function publishRootApi(
 
       // The `type` property from GET is read-only and ignored on PUT.
       // APIM uses `apiType` to determine the API kind during spec import.
-      // Always set it explicitly (valid values: http, soap, websocket, graphql, odata, grpc, mcp).
+      // Always set it explicitly (valid values include http, soap, websocket, graphql, odata, grpc, mcp, a2a).
       if (apiType) {
         cleanProps.apiType = apiType;
       }
