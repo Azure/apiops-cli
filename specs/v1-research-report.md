@@ -1,6 +1,6 @@
-# APIOps v1 Research Report: Scenarios, Requirements & Edge Cases
+# APIOps Toolkit Research Report: Scenarios, Requirements & Edge Cases
 
-> **Purpose**: Extract every user scenario, requirement, and edge case the v2 rebuild must support
+> **Purpose**: Extract every user scenario, requirement, and edge case the APIOps CLI rebuild must support
 
 ---
 
@@ -542,7 +542,7 @@ Authentication is handled by `Azure.Core.Pipeline.BearerTokenAuthenticationPolic
 
 ### 5.6 Circular Dependencies
 
-Not explicitly handled. The PUT/DELETE ordering is **hardcoded** in `App.cs`, not dynamically computed. The ordering was manually determined to avoid dependency conflicts. The v2 architecture proposes topological sort via `DependencyGraph`.
+Not explicitly handled. The PUT/DELETE ordering is **hardcoded** in `App.cs`, not dynamically computed. The ordering was manually determined to avoid dependency conflicts. The APIOps CLI architecture proposes topological sort via `DependencyGraph`.
 
 ### 5.7 Long-Running Operations
 
@@ -625,7 +625,7 @@ All mirror service-level equivalents under `/workspaces/{name}/`:
 
 ---
 
-## 8. v2 Architecture Proposal (from `apiops-v2.md`)
+## 8. APIOps CLI Architecture Proposal (from `apiops-v2.md`)
 
 ### Key Decisions
 
@@ -653,7 +653,7 @@ ApiOps.Cli/            - Single CLI entry point
 
 ---
 
-## 9. Summary of v2 Requirements
+## 9. Summary of APIOps CLI Requirements
 
 ### Must Support
 

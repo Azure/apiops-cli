@@ -2,7 +2,12 @@
 
 **API Version**: 2024-05-01 | **Date**: 2026-04-06
 
-Comprehensive mapping of all APIM REST API resource types against v1 APIOps coverage, v2 APIOps planned coverage, and rationale for inclusion/exclusion.
+Comprehensive mapping of all APIM REST API resource types against APIOps Toolkit coverage, APIOps CLI planned coverage, and rationale for inclusion/exclusion.
+
+## Definitions
+
+- **APIOps Toolkit** — the original, community-maintained APIOps solution built on Azure Pipelines / GitHub Actions workflows. Source: <https://github.com/Azure/apiops>
+- **APIOps CLI** — the newer, standalone command-line tool that replaces the Toolkit with a more general-purpose, technology-agnostic approach. Source: <https://github.com/Azure/apiops-cli>
 
 ## Legend
 
@@ -14,9 +19,9 @@ Comprehensive mapping of all APIM REST API resource types against v1 APIOps cove
 
 ## Service-Level Resources
 
-| # | Resource Type | ARM Path | v1 APIOps | v2 APIOps | Should Cover | Notes |
-|---|-------------|----------|:---------:|:---------:|:------------:|-------|
-| 1 | Named Value | `/namedValues/{name}` | ✅ | ✅ | ✅ | Core config. Secrets redacted in v2. |
+| # | Resource Type | ARM Path | APIOps Toolkit | APIOps CLI | Should Cover | Notes |
+|---|-------------|----------|:--------------:|:----------:|:------------:|-------|
+| 1 | Named Value | `/namedValues/{name}` | ✅ | ✅ | ✅ | Core config. Secrets redacted in APIOps CLI. |
 | 2 | Tag | `/tags/{name}` | ✅ | ✅ | ✅ | Used across APIs, products, operations. |
 | 3 | Gateway | `/gateways/{name}` | ✅ | ✅ | ✅ | Self-hosted gateway definitions. |
 | 4 | Version Set | `/apiVersionSets/{name}` | ✅ | ✅ | ✅ | API versioning strategy definitions. |
@@ -27,40 +32,40 @@ Comprehensive mapping of all APIM REST API resource types against v1 APIOps cove
 | 9 | Policy Fragment | `/policyFragments/{name}` | ✅ | ✅ | ✅ | Reusable policy snippets. |
 | 10 | Service Policy | `/policies/policy` | ✅ | ✅ | ✅ | Global policy (all APIs). |
 | 11 | Subscription | `/subscriptions/{name}` | ✅ | ✅ | ✅ | API/product subscription keys. |
-| 12 | Global Schema | `/schemas/{name}` | ❌ | ✅ | ✅ | **NEW in v2.** Shared schemas referenced across APIs. |
-| 13 | Policy Restriction | `/policyRestrictions/{name}` | ❌ | ✅ | ✅ | **NEW in v2.** Governance — restricts which policies can be used. |
-| 14 | Documentation | `/documentations/{name}` | ❌ | ✅ | ✅ | **NEW in v2.** Service-level documentation resources. |
+| 12 | Global Schema | `/schemas/{name}` | ❌ | ✅ | ✅ | **NEW in APIOps CLI.** Shared schemas referenced across APIs. |
+| 13 | Policy Restriction | `/policyRestrictions/{name}` | ❌ | ✅ | ✅ | **NEW in APIOps CLI.** Governance — restricts which policies can be used. |
+| 14 | Documentation | `/documentations/{name}` | ❌ | ✅ | ✅ | **NEW in APIOps CLI.** Service-level documentation resources. |
 
 ## Product Resources
 
-| # | Resource Type | ARM Path | v1 APIOps | v2 APIOps | Should Cover | Notes |
-|---|-------------|----------|:---------:|:---------:|:------------:|-------|
+| # | Resource Type | ARM Path | APIOps Toolkit | APIOps CLI | Should Cover | Notes |
+|---|-------------|----------|:--------------:|:----------:|:------------:|-------|
 | 15 | Product | `/products/{name}` | ✅ | ✅ | ✅ | Product definitions. |
 | 16 | Product Policy | `/products/{name}/policies/policy` | ✅ | ✅ | ✅ | Per-product policies. |
 | 17 | Product Api | `/products/{name}/apis/{api}` | ✅ | ✅ | ✅ | Product → API associations. |
 | 18 | Product Group | `/products/{name}/groups/{group}` | ✅ | ✅ | ✅ | Product → group associations. |
 | 19 | Product Tag | `/products/{name}/tags/{tag}` | ✅ | ✅ | ✅ | Product → tag associations. |
-| 20 | Product Wiki | `/products/{name}/wikis/default` | ❌ | ✅ | ✅ | **NEW in v2.** Product documentation wiki. |
+| 20 | Product Wiki | `/products/{name}/wikis/default` | ❌ | ✅ | ✅ | **NEW in APIOps CLI.** Product documentation wiki. |
 | 21 | Product Subscriptions | `/products/{name}/subscriptions` | ➖ | ➖ | ➖ | Read-only listing. Subscriptions managed at service level (#11). |
 | 22 | Product Api Link | `/products/{name}/apiLinks/{link}` | ❌ | ❌ | ❓ | Newer association model. May replace Product Api (#17) in future. Monitor. |
 | 23 | Product Group Link | `/products/{name}/groupLinks/{link}` | ❌ | ❌ | ❓ | Newer association model. May replace Product Group (#18) in future. Monitor. |
 
 ## API Resources
 
-| # | Resource Type | ARM Path | v1 APIOps | v2 APIOps | Should Cover | Notes |
-|---|-------------|----------|:---------:|:---------:|:------------:|-------|
+| # | Resource Type | ARM Path | APIOps Toolkit | APIOps CLI | Should Cover | Notes |
+|---|-------------|----------|:--------------:|:----------:|:------------:|-------|
 | 24 | API | `/apis/{name}` | ✅ | ✅ | ✅ | API definitions. |
 | 25 | Api Policy | `/apis/{name}/policies/policy` | ✅ | ✅ | ✅ | Per-API policies. |
 | 26 | Api Tag | `/apis/{name}/tags/{tag}` | ✅ | ✅ | ✅ | API → tag associations. |
 | 27 | Api Diagnostic | `/apis/{name}/diagnostics/{diag}` | ✅ | ✅ | ✅ | Per-API diagnostic config. |
 | 28 | Api Operation | `/apis/{name}/operations/{op}` | ✅ | ✅ | ✅ | API operations (endpoints). |
 | 29 | Api Operation Policy | `/apis/{name}/operations/{op}/policies/policy` | ✅ | ✅ | ✅ | Per-operation policies. |
-| 30 | Api Schema | `/apis/{name}/schemas/{schema}` | ❌ | ✅ | ✅ | **NEW in v2.** Per-API schema definitions. |
-| 31 | Api Release | `/apis/{name}/releases/{release}` | ❌ | ✅ | ✅ | **NEW in v2.** Controls which revision is current. |
-| 32 | Api Tag Description | `/apis/{name}/tagDescriptions/{tagDesc}` | ❌ | ✅ | ✅ | **NEW in v2.** Tag descriptions for dev portal display. |
-| 33 | Api Wiki | `/apis/{name}/wikis/default` | ❌ | ✅ | ✅ | **NEW in v2.** API documentation wiki. |
-| 34 | GraphQL Api Resolver | `/apis/{name}/resolvers/{resolver}` | ❌ | ✅ | ✅ | **NEW in v2.** GraphQL field resolvers. |
-| 35 | GraphQL Api Resolver Policy | `/apis/{name}/resolvers/{resolver}/policies/policy` | ❌ | ✅ | ✅ | **NEW in v2.** Policies on GraphQL resolvers. |
+| 30 | Api Schema | `/apis/{name}/schemas/{schema}` | ❌ | ✅ | ✅ | **NEW in APIOps CLI.** Per-API schema definitions. |
+| 31 | Api Release | `/apis/{name}/releases/{release}` | ❌ | ✅ | ✅ | **NEW in APIOps CLI.** Controls which revision is current. |
+| 32 | Api Tag Description | `/apis/{name}/tagDescriptions/{tagDesc}` | ❌ | ✅ | ✅ | **NEW in APIOps CLI.** Tag descriptions for dev portal display. |
+| 33 | Api Wiki | `/apis/{name}/wikis/default` | ❌ | ✅ | ✅ | **NEW in APIOps CLI.** API documentation wiki. |
+| 34 | GraphQL Api Resolver | `/apis/{name}/resolvers/{resolver}` | ❌ | ✅ | ✅ | **NEW in APIOps CLI.** GraphQL field resolvers. |
+| 35 | GraphQL Api Resolver Policy | `/apis/{name}/resolvers/{resolver}/policies/policy` | ❌ | ✅ | ✅ | **NEW in APIOps CLI.** Policies on GraphQL resolvers. |
 | 36 | Api Revision | `/apis/{name}/revisions` | ✅ | ✅ | ✅ | List-only API; revisions extracted via API entity. |
 | 37 | Api Export | `/apis/{name}?export=true` | ➖ | ➖ | ➖ | Read-only export. Used by apiops-cli for spec extraction. |
 | 38 | Api Product | `/apis/{name}/products` | ➖ | ➖ | ➖ | Read-only reverse lookup. Managed via Product Api (#17). |
@@ -70,16 +75,16 @@ Comprehensive mapping of all APIM REST API resource types against v1 APIOps cove
 
 ## Gateway Child Resources
 
-| # | Resource Type | ARM Path | v1 APIOps | v2 APIOps | Should Cover | Notes |
-|---|-------------|----------|:---------:|:---------:|:------------:|-------|
+| # | Resource Type | ARM Path | APIOps Toolkit | APIOps CLI | Should Cover | Notes |
+|---|-------------|----------|:--------------:|:----------:|:------------:|-------|
 | 42 | Gateway Api | `/gateways/{name}/apis/{api}` | ✅ | ✅ | ✅ | Gateway → API associations. |
 | 43 | Gateway Certificate Authority | `/gateways/{gw}/certificateAuthorities/{ca}` | ❌ | ❌ | ❌ | Instance-specific. CA certs for self-hosted gateways differ per env. |
 | 44 | Gateway Hostname Configuration | `/gateways/{gw}/hostnameConfigurations/{host}` | ❌ | ❌ | ❌ | Instance-specific. Custom domains differ per env. |
 
 ## Identity & Auth Resources (Instance-Specific — Excluded)
 
-| # | Resource Type | ARM Path | v1 APIOps | v2 APIOps | Should Cover | Notes |
-|---|-------------|----------|:---------:|:---------:|:------------:|-------|
+| # | Resource Type | ARM Path | APIOps Toolkit | APIOps CLI | Should Cover | Notes |
+|---|-------------|----------|:--------------:|:----------:|:------------:|-------|
 | 45 | Authorization Server | `/authorizationServers/{name}` | ❌ | ❌ | ❌ | Instance-specific. OAuth client IDs/secrets differ per env. |
 | 46 | OpenID Connect Provider | `/openidConnectProviders/{name}` | ❌ | ❌ | ❌ | Instance-specific. OIDC metadata URLs/client IDs differ per env. |
 | 47 | Identity Provider | `/identityProviders/{name}` | ❌ | ❌ | ❌ | Instance-specific. Dev portal IdP app registrations differ per env. |
@@ -91,8 +96,8 @@ Comprehensive mapping of all APIM REST API resource types against v1 APIOps cove
 
 ## Developer Portal Resources (Instance-Specific — Excluded)
 
-| # | Resource Type | ARM Path | v1 APIOps | v2 APIOps | Should Cover | Notes |
-|---|-------------|----------|:---------:|:---------:|:------------:|-------|
+| # | Resource Type | ARM Path | APIOps Toolkit | APIOps CLI | Should Cover | Notes |
+|---|-------------|----------|:--------------:|:----------:|:------------:|-------|
 | 53 | Portal Config | `/portalconfigs/{name}` | ❌ | ❌ | ❌ | Instance-specific. Portal look & feel per env. |
 | 54 | Portal Revision | `/portalRevisions/{name}` | ❌ | ❌ | ❌ | Instance-specific. Portal publication snapshots. |
 | 55 | Sign In Settings | `/portalsettings/signin` | ❌ | ❌ | ❌ | Instance-specific. Auth URLs/callbacks differ per env. |
@@ -103,14 +108,14 @@ Comprehensive mapping of all APIM REST API resource types against v1 APIOps cove
 
 ## Cache & Infrastructure (Instance-Specific — Excluded)
 
-| # | Resource Type | ARM Path | v1 APIOps | v2 APIOps | Should Cover | Notes |
-|---|-------------|----------|:---------:|:---------:|:------------:|-------|
+| # | Resource Type | ARM Path | APIOps Toolkit | APIOps CLI | Should Cover | Notes |
+|---|-------------|----------|:--------------:|:----------:|:------------:|-------|
 | 60 | Cache | `/caches/{name}` | ❌ | ❌ | ❌ | Instance-specific. Points to env-specific Redis instances. |
 
 ## User & Notification Resources (Instance-Specific — Excluded)
 
-| # | Resource Type | ARM Path | v1 APIOps | v2 APIOps | Should Cover | Notes |
-|---|-------------|----------|:---------:|:---------:|:------------:|-------|
+| # | Resource Type | ARM Path | APIOps Toolkit | APIOps CLI | Should Cover | Notes |
+|---|-------------|----------|:--------------:|:----------:|:------------:|-------|
 | 61 | User | `/users/{name}` | ❌ | ❌ | ❌ | Instance-specific. User accounts per env. |
 | 62 | Group User | `/groups/{group}/users/{user}` | ❌ | ❌ | ❌ | Instance-specific. User membership per env. |
 | 63 | Notification | `/notifications/{name}` | ❌ | ❌ | ❌ | Instance-specific. Alert configs per env. |
@@ -120,8 +125,8 @@ Comprehensive mapping of all APIM REST API resource types against v1 APIOps cove
 
 ## Tenant & Service Management (Operational — Excluded)
 
-| # | Resource Type | ARM Path | v1 APIOps | v2 APIOps | Should Cover | Notes |
-|---|-------------|----------|:---------:|:---------:|:------------:|-------|
+| # | Resource Type | ARM Path | APIOps Toolkit | APIOps CLI | Should Cover | Notes |
+|---|-------------|----------|:--------------:|:----------:|:------------:|-------|
 | 67 | Tenant Access | `/tenant/access/{name}` | ❌ | ❌ | ❌ | Instance-specific. Git/API management access. |
 | 68 | Tenant Access Git | `/tenant/access/{name}/git` | ❌ | ❌ | ❌ | Instance-specific. Git-based config sync. |
 | 69 | Tenant Configuration | `/tenant/configuration/*` | ❌ | ❌ | ❌ | Instance-specific. Tenant-level config operations. |
@@ -129,16 +134,16 @@ Comprehensive mapping of all APIM REST API resource types against v1 APIOps cove
 
 ## Newer Link Models (Watch List)
 
-| # | Resource Type | ARM Path | v1 APIOps | v2 APIOps | Should Cover | Notes |
-|---|-------------|----------|:---------:|:---------:|:------------:|-------|
+| # | Resource Type | ARM Path | APIOps Toolkit | APIOps CLI | Should Cover | Notes |
+|---|-------------|----------|:--------------:|:----------:|:------------:|-------|
 | 71 | Tag Api Link | `/tags/{tag}/apiLinks/{link}` | ❌ | ❌ | ❓ | Reverse link model. May supplement Tag associations in future. |
 | 72 | Tag Operation Link | `/tags/{tag}/operationLinks/{link}` | ❌ | ❌ | ❓ | Reverse link model. May supplement Tag associations in future. |
 | 73 | Tag Product Link | `/tags/{tag}/productLinks/{link}` | ❌ | ❌ | ❓ | Reverse link model. May supplement Tag associations in future. |
 
 ## Read-Only / Operational (Not Applicable)
 
-| # | Resource Type | ARM Path | v1 APIOps | v2 APIOps | Should Cover | Notes |
-|---|-------------|----------|:---------:|:---------:|:------------:|-------|
+| # | Resource Type | ARM Path | APIOps Toolkit | APIOps CLI | Should Cover | Notes |
+|---|-------------|----------|:--------------:|:----------:|:------------:|-------|
 | 74 | Api Management Service | `/` (service root) | ➖ | ➖ | ➖ | The APIM instance itself. Created via IaC (Bicep/Terraform). |
 | 75 | Api Management Operations | (control plane) | ➖ | ➖ | ➖ | ARM operation metadata. |
 | 76 | Api Management Service Skus | `/skus` | ➖ | ➖ | ➖ | Read-only SKU listing. |
@@ -173,15 +178,15 @@ Comprehensive mapping of all APIM REST API resource types against v1 APIOps cove
 
 ## Summary
 
-| Category | Count | v1 | v2 | Delta |
-|----------|------:|:--:|:--:|:-----:|
+| Category | Count | APIOps Toolkit | APIOps CLI | Delta |
+|----------|------:|:--------------:|:----------:|:-----:|
 | Covered (promotable) | 33 | 23 | 33 | **+10** |
 | Instance-specific (excluded) | 27 | 0 | 0 | — |
 | Watch list (future) | 5 | 0 | 0 | — |
 | Read-only / operational (N/A) | 31 | 0 | 0 | — |
 | **Total resource types** | **96** | **23** | **33** | **+10** |
 
-### New in v2
+### New in APIOps CLI
 
 1. Global Schema
 2. Policy Restriction

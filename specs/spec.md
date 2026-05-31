@@ -196,7 +196,7 @@ The development team wants the CLI to support adding new top-level commands (e.g
 - **SC-003**: The `--dry-run` mode accurately predicts 100% of changes that a subsequent publish would make.
 - **SC-004**: Incremental publish (commit-based) processes only changed resources, completing in under 30 seconds for typical single-API changes.
 - **SC-005**: The tool runs successfully in GitHub Actions and Azure DevOps pipelines using service principal authentication without any manual intervention.
-- **SC-006**: Existing APIOps v1 users can point the new tool at their existing artifact directories and successfully publish without restructuring their files.
+- **SC-006**: Existing APIOps Toolkit users can point the new tool at their existing artifact directories and successfully publish without restructuring their files.
 - **SC-007**: Adding a new top-level command requires creating only the command module — no changes to existing command files, the main entry point, or shared infrastructure.
 - **SC-008**: Unknown APIM properties introduced in newer API versions are preserved through extract-edit-publish cycles with zero data loss.
 - **SC-009**: A new user can go from an empty repository to a working CI/CD pipeline (with extract and publish stages) by running `apiops init` and following the outputted identity-setup instructions, completing the process in under 15 minutes.
@@ -206,7 +206,7 @@ The development team wants the CLI to support adding new top-level commands (e.g
 
 - Users have an Azure subscription with permissions to read and write APIM resources (Contributor or equivalent role on the APIM instance).
 - The Azure APIM REST API remains stable within a given API version; the tool targets a default version but allows override.
-- The v1 APIOps artifact directory layout is the established convention and maintaining compatibility is strongly preferred over a new layout.
+- The APIOps Toolkit artifact directory layout is the established convention and maintaining compatibility is strongly preferred over a new layout.
 - Internet connectivity is available when running extract and publish (offline-only workflows are out of scope).
 - The tool is distributed as an npm package and/or standalone binary; distribution mechanism details are deferred to implementation planning.
 - APIM API secrets (named value values marked as secrets, subscription keys) are NOT extracted in plaintext — they must be handled via override configuration or key vault references.
