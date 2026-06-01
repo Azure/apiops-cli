@@ -189,6 +189,77 @@ backends:
         },
       });
     });
+
+    it('should support mixed toolkit and keyed-map formats in same file', async () => {
+      const content = `
+namedValues:
+  - name: nv1
+    properties:
+      value: "from-array"
+backends:
+  be1:
+    url: "https://from-map.example.com"
+`;
+      const filePath = path.join(tmpDir, 'override-mixed.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadOverrideConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.namedValues).toEqual({
+        nv1: {
+          value: 'from-array',
+        },
+      });
+      expect(config!.backends).toEqual({
+        be1: {
+          url: 'https://from-map.example.com',
+        },
+      });
+    });
+
+    it('should fall back to item fields when toolkit item has no properties object', async () => {
+      const content = `
+namedValues:
+  - name: nv1
+    value: "inline-value"
+`;
+      const filePath = path.join(tmpDir, 'override-no-properties.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadOverrideConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.namedValues).toEqual({
+        nv1: {
+          value: 'inline-value',
+        },
+      });
+    });
+
+    it('should ignore invalid override section and invalid array entries', async () => {
+      const content = `
+namedValues: 123
+backends:
+  - properties:
+      url: "https://missing-name.example.com"
+  - name: "   "
+    properties:
+      url: "https://blank-name.example.com"
+  - name: be1
+    properties:
+      url: "https://valid.example.com"
+`;
+      const filePath = path.join(tmpDir, 'override-invalid-items.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadOverrideConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.namedValues).toBeUndefined();
+      expect(config!.backends).toEqual({
+        be1: {
+          url: 'https://valid.example.com',
+        },
+      });
+    });
   });
 
   describe('loadOTelConfig', () => {

@@ -10,6 +10,7 @@ import * as yaml from 'js-yaml';
 import { FilterConfig, OverrideConfig } from '../models/config.js';
 import { logger } from './logger.js';
 
+/** Internal normalized override shape keyed by resource name. */
 type OverrideSection = Record<string, Record<string, unknown>>;
 
 /**
@@ -123,6 +124,9 @@ export async function loadOverrideConfig(filePath: string): Promise<OverrideConf
   }
 }
 
+/**
+ * Normalize all supported override sections into the internal keyed-map shape.
+ */
 function normalizeOverrideConfig(parsed: Record<string, unknown>): OverrideConfig {
   const normalized: OverrideConfig = {};
 
@@ -141,6 +145,12 @@ function normalizeOverrideConfig(parsed: Record<string, unknown>): OverrideConfi
   return normalized;
 }
 
+/**
+ * Normalize one override section into keyed-map format.
+ * Supports:
+ * - Existing keyed-map format: `{ backends: { myBackend: { url: ... } } }`
+ * - Toolkit list format: `{ backends: [{ name: myBackend, properties: { url: ... } }] }`
+ */
 function normalizeOverrideSection(
   section: unknown,
   sectionName: string
@@ -177,8 +187,12 @@ function normalizeOverrideSection(
       continue;
     }
 
+    logger.debug(
+      `Item in overrides.${sectionName} is missing a 'properties' object; using fields directly.`,
+      { name }
+    );
     normalized[name] = Object.fromEntries(
-      Object.entries(item).filter(([key]) => key !== 'name')
+      Object.entries(item).filter(([key]) => key !== 'name' && key !== 'properties')
     );
   }
 

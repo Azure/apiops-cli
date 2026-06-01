@@ -66,6 +66,8 @@ loggers:
 | `diagnostics` | `loggerId` |
 | `loggers` | `resourceId`, `credentials` |
 
+All listed keys belong under each item's `properties` object.
+
 ## Rules
 
 - `name` must match the resource name in extracted artifacts.
