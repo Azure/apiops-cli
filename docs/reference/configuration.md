@@ -131,11 +131,13 @@ Replaces environment-specific values at publish time. See [Environment Overrides
 ```yaml
 # configuration.prod.yaml
 namedValues:
-  api-key:
-    value: "{{api-key-prod}}"
+  - name: api-key
+    properties:
+      value: "{{api-key-prod}}"
 backends:
-  petstore-backend:
-    url: "https://api.contoso.com"
+  - name: petstore-backend
+    properties:
+      url: "https://api.contoso.com"
 ```
 
 ---

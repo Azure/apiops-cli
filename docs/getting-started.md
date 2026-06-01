@@ -80,11 +80,13 @@ Create `overrides.prod.yaml` for environment-specific values:
 
 ```yaml
 namedValues:
-  backend-url:
-    value: "https://api.prod.example.com"
+  - name: backend-url
+    properties:
+      value: "https://api.prod.example.com"
 backends:
-  my-backend:
-    url: "https://api.prod.example.com"
+  - name: my-backend
+    properties:
+      url: "https://api.prod.example.com"
 ```
 
 Publish to your target APIM instance:

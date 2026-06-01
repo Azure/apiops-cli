@@ -161,6 +161,34 @@ backends:
       expect(config).toBeDefined();
       expect(config).toEqual({});
     });
+
+    it('should normalize APIOPs toolkit array format', async () => {
+      const content = `
+namedValues:
+  - name: nv1
+    properties:
+      value: "overridden"
+backends:
+  - name: be1
+    properties:
+      url: "https://new-backend.com"
+`;
+      const filePath = path.join(tmpDir, 'override-toolkit.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadOverrideConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.namedValues).toEqual({
+        nv1: {
+          value: 'overridden',
+        },
+      });
+      expect(config!.backends).toEqual({
+        be1: {
+          url: 'https://new-backend.com',
+        },
+      });
+    });
   });
 
   describe('loadOTelConfig', () => {

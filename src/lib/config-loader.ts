@@ -10,6 +10,8 @@ import * as yaml from 'js-yaml';
 import { FilterConfig, OverrideConfig } from '../models/config.js';
 import { logger } from './logger.js';
 
+type OverrideSection = Record<string, Record<string, unknown>>;
+
 /**
  * Assert that a value is an array of strings. Throws on type mismatch.
  */
@@ -106,14 +108,87 @@ export async function loadFilterConfig(filePath: string): Promise<FilterConfig |
 export async function loadOverrideConfig(filePath: string): Promise<OverrideConfig | undefined> {
   try {
     const content = await fs.readFile(filePath, 'utf-8');
-    const parsed = (yaml.load(content) ?? {}) as OverrideConfig;
+    const parsed = (yaml.load(content) ?? {}) as Record<string, unknown>;
+    const normalized = normalizeOverrideConfig(parsed);
     
     logger.debug(`Loaded override config from ${filePath}`);
-    return parsed;
+    return normalized;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       logger.debug(`Override config file not found: ${filePath}`);
       return undefined;
+    }
+
+    function normalizeOverrideConfig(parsed: Record<string, unknown>): OverrideConfig {
+      const normalized: OverrideConfig = {};
+
+      const namedValues = normalizeOverrideSection(parsed.namedValues, 'namedValues');
+      const backends = normalizeOverrideSection(parsed.backends, 'backends');
+      const apis = normalizeOverrideSection(parsed.apis, 'apis');
+      const diagnostics = normalizeOverrideSection(parsed.diagnostics, 'diagnostics');
+      const loggers = normalizeOverrideSection(parsed.loggers, 'loggers');
+
+      if (namedValues !== undefined) normalized.namedValues = namedValues as OverrideConfig['namedValues'];
+      if (backends !== undefined) normalized.backends = backends as OverrideConfig['backends'];
+      if (apis !== undefined) normalized.apis = apis as OverrideConfig['apis'];
+      if (diagnostics !== undefined) normalized.diagnostics = diagnostics as OverrideConfig['diagnostics'];
+      if (loggers !== undefined) normalized.loggers = loggers as OverrideConfig['loggers'];
+
+      return normalized;
+    }
+
+    function normalizeOverrideSection(
+      section: unknown,
+      sectionName: string
+    ): OverrideSection | undefined {
+      if (section === undefined || section === null) {
+        return undefined;
+      }
+
+      if (isPlainObject(section)) {
+        return section as OverrideSection;
+      }
+
+      if (!Array.isArray(section)) {
+        logger.warn(`Ignoring invalid overrides.${sectionName}; expected object or array.`);
+        return undefined;
+      }
+
+      const normalized: OverrideSection = {};
+
+      for (const item of section) {
+        if (!isPlainObject(item)) {
+          logger.warn(`Ignoring invalid item in overrides.${sectionName}; expected object.`);
+          continue;
+        }
+
+        const itemRecord = item as Record<string, unknown>;
+        const name = itemRecord.name;
+        if (typeof name !== 'string' || name.trim().length === 0) {
+          logger.warn(`Ignoring item in overrides.${sectionName}; "name" is required.`);
+          continue;
+        }
+
+        if (isPlainObject(itemRecord.properties)) {
+          normalized[name] = itemRecord.properties as Record<string, unknown>;
+          continue;
+        }
+
+        normalized[name] = Object.fromEntries(
+          Object.entries(itemRecord).filter(([key]) => key !== 'name')
+        );
+      }
+
+      return normalized;
+    }
+
+    function isPlainObject(value: unknown): value is Record<string, unknown> {
+      return (
+        typeof value === 'object' &&
+        value !== null &&
+        !Array.isArray(value) &&
+        Object.prototype.toString.call(value) === '[object Object]'
+      );
     }
     throw new Error(`Failed to load override config from ${filePath}: ${(error as Error).message}`, { cause: error });
   }
