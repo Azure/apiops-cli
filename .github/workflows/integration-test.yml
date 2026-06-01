@@ -164,19 +164,33 @@ jobs:
             throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
           }
 
-          $skuName = '${{ secrets.APIM_SKU }}'
-          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = '${{ inputs.sku }}' }
-          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = 'StandardV2' }
-
           ./tests/integration/all-resource-types/run-roundtrip-phase2-extract.ps1 `
             -SourceSubscriptionId '${{ secrets.AZURE_SUBSCRIPTION_ID }}' `
             -SourceResourceGroup '${{ env.SOURCE_RG }}' `
             -SourceApimName '${{ env.SOURCE_APIM }}' `
+            -LogLevel $logLevel `
+            -ExtractOutputDir './extracted-artifacts'
+
+      - name: Run Round-Trip Phase 3 (Validate Extract)
+        if: success()
+        shell: pwsh
+        run: |
+          $logLevel = '${{ inputs.log_level }}'
+          if ([string]::IsNullOrWhiteSpace($logLevel)) { $logLevel = 'Verbose' }
+          if ($logLevel -notin @('Info', 'Verbose', 'Debug')) {
+            throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
+          }
+
+          $skuName = '${{ secrets.APIM_SKU }}'
+          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = '${{ inputs.sku }}' }
+          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = 'StandardV2' }
+
+          ./tests/integration/all-resource-types/run-roundtrip-phase3-validate-extract.ps1 `
             -SkuName $skuName `
             -LogLevel $logLevel `
             -ExtractOutputDir './extracted-artifacts'
 
-      - name: Run Round-Trip Phase 3 (Publish)
+      - name: Run Round-Trip Phase 4 (Publish)
         if: success()
         shell: pwsh
         env:
@@ -189,14 +203,14 @@ jobs:
             throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
           }
 
-          ./tests/integration/all-resource-types/run-roundtrip-phase3-publish.ps1 `
+          ./tests/integration/all-resource-types/run-roundtrip-phase4-publish.ps1 `
             -TargetSubscriptionId '${{ secrets.AZURE_SUBSCRIPTION_ID }}' `
             -TargetResourceGroup '${{ env.TARGET_RG }}' `
             -TargetApimName '${{ env.TARGET_APIM }}' `
             -LogLevel $logLevel `
             -ExtractOutputDir './extracted-artifacts'
 
-      - name: Run Round-Trip Phase 4 (Compare)
+      - name: Run Round-Trip Phase 5 (Compare)
         if: success()
         shell: pwsh
         run: |
@@ -206,7 +220,7 @@ jobs:
             throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
           }
 
-          ./tests/integration/all-resource-types/run-roundtrip-phase4-compare.ps1 `
+          ./tests/integration/all-resource-types/run-roundtrip-phase5-compare.ps1 `
             -SourceSubscriptionId '${{ secrets.AZURE_SUBSCRIPTION_ID }}' `
             -SourceResourceGroup '${{ env.SOURCE_RG }}' `
             -SourceApimName '${{ env.SOURCE_APIM }}' `
@@ -223,11 +237,11 @@ jobs:
           path: ./extracted-artifacts/
           if-no-files-found: ignore
 
-      - name: Run Round-Trip Phase 5 (Teardown)
+      - name: Run Round-Trip Phase 6 (Teardown)
         if: always()
         shell: pwsh
         run: |
-          ./tests/integration/all-resource-types/run-roundtrip-phase5-teardown.ps1 `
+          ./tests/integration/all-resource-types/run-roundtrip-phase6-teardown.ps1 `
             -SourceResourceGroup '${{ env.SOURCE_RG }}' `
             -TargetResourceGroup '${{ env.TARGET_RG }}' `
             -Location '${{ inputs.location }}' `

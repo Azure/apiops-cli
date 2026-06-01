@@ -85,11 +85,12 @@ if (-not $SourceSubscriptionId -or -not $TargetSubscriptionId) {
 
 $phase1Script = Join-Path $PSScriptRoot 'run-roundtrip-phase1-deploy.ps1'
 $phase2Script = Join-Path $PSScriptRoot 'run-roundtrip-phase2-extract.ps1'
-$phase3Script = Join-Path $PSScriptRoot 'run-roundtrip-phase3-publish.ps1'
-$phase4Script = Join-Path $PSScriptRoot 'run-roundtrip-phase4-compare.ps1'
-$phase5Script = Join-Path $PSScriptRoot 'run-roundtrip-phase5-teardown.ps1'
+$phase3Script = Join-Path $PSScriptRoot 'run-roundtrip-phase3-validate-extract.ps1'
+$phase4Script = Join-Path $PSScriptRoot 'run-roundtrip-phase4-publish.ps1'
+$phase5Script = Join-Path $PSScriptRoot 'run-roundtrip-phase5-compare.ps1'
+$phase6Script = Join-Path $PSScriptRoot 'run-roundtrip-phase6-teardown.ps1'
 
-foreach ($requiredFile in @($phase1Script, $phase2Script, $phase3Script, $phase4Script, $phase5Script)) {
+foreach ($requiredFile in @($phase1Script, $phase2Script, $phase3Script, $phase4Script, $phase5Script, $phase6Script)) {
     if (-not (Test-Path $requiredFile)) {
         Write-Error "Required file not found: $requiredFile"
         exit 2
@@ -120,7 +121,6 @@ try {
         -SourceSubscriptionId $SourceSubscriptionId `
         -SourceResourceGroup $SourceResourceGroup `
         -SourceApimName $SourceApimName `
-        -SkuName $SkuName `
         -LogLevel $LogLevel `
         -ExtractOutputDir $ExtractOutputDir
 
@@ -130,6 +130,16 @@ try {
     }
 
     & $phase3Script `
+        -SkuName $SkuName `
+        -LogLevel $LogLevel `
+        -ExtractOutputDir $ExtractOutputDir
+
+    if ($LASTEXITCODE -ne 0) {
+        $exitCode = $LASTEXITCODE
+        exit $exitCode
+    }
+
+    & $phase4Script `
         -TargetSubscriptionId $TargetSubscriptionId `
         -TargetResourceGroup $TargetResourceGroup `
         -TargetApimName $TargetApimName `
@@ -141,7 +151,7 @@ try {
         exit $exitCode
     }
 
-    & $phase4Script `
+    & $phase5Script `
         -SourceSubscriptionId $SourceSubscriptionId `
         -SourceResourceGroup $SourceResourceGroup `
         -SourceApimName $SourceApimName `
@@ -153,7 +163,7 @@ try {
     $exitCode = $LASTEXITCODE
 }
 finally {
-    & $phase5Script `
+    & $phase6Script `
         -SourceResourceGroup $SourceResourceGroup `
         -TargetResourceGroup $TargetResourceGroup `
         -Location $Location `
