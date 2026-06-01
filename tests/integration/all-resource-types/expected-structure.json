@@ -591,11 +591,11 @@
           "spotChecks": {
             "apiInformation.json": {
               "properties.displayName": "KS A2A Weather Agent",
-              "properties.path": "ks/a2a-weather",
+              "properties.path": "ks/a2a-managed",
               "properties.type": "a2a",
               "properties.agent.id": "src-a2a-weather-agent",
-              "properties.a2aProperties.agentCardPath": "/.well-known/agent.json",
-              "properties.jsonRpcProperties.path": "/",
+              "properties.a2aProperties.agentCardPath": "/.well-known/agent-card.json",
+              "properties.jsonRpcProperties.path": "/ks/a2a-weather",
               "properties.subscriptionRequired": true,
               "properties.subscriptionKeyParameterNames.header": "Ocp-Apim-Subscription-Key",
               "properties.subscriptionKeyParameterNames.query": "subscription-key"
