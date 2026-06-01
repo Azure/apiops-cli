@@ -192,7 +192,7 @@ backends:
       });
     });
 
-    it('should throw for deprecated keyed-map override format', async () => {
+    it('should throw for mixed toolkit and keyed-map override format', async () => {
       const content = `
 namedValues:
   - name: nv1
@@ -207,6 +207,23 @@ backends:
 
       await expect(loadOverrideConfig(filePath)).rejects.toThrow(
         'Invalid overrides.backends: expected an array in toolkit format'
+      );
+    });
+
+    it('should throw for pure keyed-map override format', async () => {
+      const content = `
+namedValues:
+  nv1:
+    value: "from-map"
+backends:
+  be1:
+    url: "https://from-map.example.com"
+`;
+      const filePath = path.join(tmpDir, 'override-pure-keyed-map.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      await expect(loadOverrideConfig(filePath)).rejects.toThrow(
+        'Invalid overrides.namedValues: expected an array in toolkit format'
       );
     });
 
