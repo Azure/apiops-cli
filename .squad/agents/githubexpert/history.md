@@ -2,6 +2,15 @@
 
 ## Learnings
 
+### 2026-07-15 — Merge main into feature branch (shallow clone handling)
+
+**Context:** Branch `copilot/fix-github-issue-96` was a shallow clone (grafted). Merging main required `git fetch --unshallow` first, then `git fetch origin main:refs/remotes/origin/main` to create the remote tracking ref. PR #93 (`Fix unit test failure in workspace tests`) fixed the failing workspace-extractor test. After merge, all 910 tests pass.
+
+**Key patterns:**
+- Always check `git rev-parse --is-shallow-repository` before merge/rebase operations.
+- Shallow clones won't have `origin/main` — need explicit fetch to create tracking ref.
+- Run tests before AND after merge to confirm the fix vs pre-existing failures.
+
 ### 2025-05-18 — gh-aw (GitHub Agentic Workflows) Feasibility Analysis
 
 **Context:** Evaluated [gh-aw](https://github.com/github/gh-aw) as a possible replacement for hand-rolled YAML workflows in the branch maintenance plan.
