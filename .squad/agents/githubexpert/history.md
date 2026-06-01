@@ -36,3 +36,9 @@
 5. **gh-aw *does* support custom GitHub Apps for writes.**  `safe-outputs.github-app` accepts `client-id`/`private-key` for the write-side job ([Safe Outputs — Global Configuration Options](https://github.github.com/gh-aw/reference/safe-outputs/#global-configuration-options)), and `on.github-app` does the same for activation and skip-if jobs ([Activation Token](https://github.github.com/gh-aw/reference/triggers/#activation-token-ongithub-token-ongithub-app)). Most safe-output types also accept a custom `github-token:`. A custom GitHub App pattern is therefore compatible with gh-aw and is **not** a blocker for adoption.
 
 6. **Phased adoption is a general engineering principle, not a gh-aw–specific finding.** The gh-aw homepage carries an explicit caution: *"GitHub Agentic Workflows is in early development and may change significantly… Use it with caution, and at your own risk."* ([homepage note](https://github.github.com/gh-aw/)). Combined with the platform's emphasis on human supervision, this supports starting with low-risk advisory workflows before adopting anything gating.
+
+### 2026-06-01 — Orchestration: merge main into branch
+
+**Context:** Scribe executed merge-main manifest for branch `copilot/fix-github-issue-96`. Merge validation: tests run before/after to confirm stability.
+
+**Pattern:** Standard merge orchestration with validation gates.
