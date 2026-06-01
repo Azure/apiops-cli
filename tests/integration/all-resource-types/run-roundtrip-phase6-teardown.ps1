@@ -1,4 +1,8 @@
 #requires -Version 7.0
+<#
+.SYNOPSIS
+  Phase 6 — Tear down source and target APIM resource groups.
+#>
 
 [CmdletBinding()]
 param(
@@ -24,7 +28,7 @@ if ($SkipTeardown) {
     exit 0
 }
 
-Write-Host "🧹 PHASE 5 — Teardown"
+Write-Host "🧹 PHASE 6 — Teardown"
 
 $sourceApimName = $null
 $targetApimName = $null

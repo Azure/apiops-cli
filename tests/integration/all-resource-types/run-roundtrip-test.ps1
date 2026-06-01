@@ -248,6 +248,16 @@ try {
     }
 
     & $phase3Script `
+        -SkuName $SkuName `
+        -LogLevel $LogLevel `
+        -ExtractOutputDir $ExtractOutputDir
+
+    if ($LASTEXITCODE -ne 0) {
+        $exitCode = $LASTEXITCODE
+        exit $exitCode
+    }
+
+    & $phase4Script `
         -TargetSubscriptionId $TargetSubscriptionId `
         -TargetResourceGroup $TargetResourceGroup `
         -TargetApimName $TargetApimName `
@@ -259,7 +269,7 @@ try {
         exit $exitCode
     }
 
-    & $phase4Script `
+    & $phase5Script `
         -SourceSubscriptionId $SourceSubscriptionId `
         -SourceResourceGroup $SourceResourceGroup `
         -SourceApimName $SourceApimName `
