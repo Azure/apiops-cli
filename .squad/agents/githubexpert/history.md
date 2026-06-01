@@ -37,6 +37,16 @@
 
 6. **Phased adoption is a general engineering principle, not a gh-aw–specific finding.** The gh-aw homepage carries an explicit caution: *"GitHub Agentic Workflows is in early development and may change significantly… Use it with caution, and at your own risk."* ([homepage note](https://github.github.com/gh-aw/)). Combined with the platform's emphasis on human supervision, this supports starting with low-risk advisory workflows before adopting anything gating.
 
+### 2026-07-15 — PR #102 metadata correction
+
+**Context:** PR #102 was auto-created with title/body describing only the last action (merge main) instead of the branch's actual work (override format alignment for issue #96). Updated PR body via `engine-tools-report_progress`. Title update blocked by `gh` CLI 403 — the Copilot agent token lacks GraphQL mutation scope for `updatePullRequest`.
+
+**Key patterns:**
+- `engine-tools-report_progress` updates PR body but NOT title.
+- `runtime-tools-create_pull_request` detects existing PRs but does not update them.
+- `gh pr edit` requires a token with full `repo` scope; the Copilot agent token (`ghu_*`) does not have it.
+- Always review auto-generated PR metadata before sharing — branch name `copilot/fix-github-issue-96` correctly hints at the real work, but the auto-title did not.
+
 ### 2026-06-01 — Orchestration: merge main into branch
 
 **Context:** Scribe executed merge-main manifest for branch `copilot/fix-github-issue-96`. Merge validation: tests run before/after to confirm stability.
