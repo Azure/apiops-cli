@@ -439,7 +439,7 @@ This section identifies content in `specs/` that should be adapted for user-faci
 | `specs/spec.md` | Product specification — internal design document, not user-facing. |
 | `specs/tasks.md` | Task tracking — project management artifact, not user documentation. |
 | `specs/research.md` | Internal research on API client patterns and alternatives considered. Useful for contributors but not end users. |
-| `specs/v1-research-report.md` | Internal analysis of v1 APIOps toolkit. Useful reference material for writing `guides/migration-from-v1.md` but not directly publishable. Keep as source material. |
+| `specs/v1-research-report.md` | Internal analysis of APIOps Toolkit. Useful reference material for writing `guides/migration-from-v1.md` but not directly publishable. Keep as source material. |
 | `specs/checklists/` | Requirements checklists — project artifacts, not user-facing. |
 | `specs/contracts/` | Interface contracts (cli-commands.md, iapim-client.md, iartifact-store.md) — internal API design, not user documentation. |
 
