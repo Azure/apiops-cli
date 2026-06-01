@@ -4,7 +4,6 @@
     "ms-vscode.vscode-typescript-next",
     "vitest.explorer",
     "GitHub.vscode-pull-request-github",
-    "GitHub.copilot",
     "GitHub.copilot-chat",
     "ms-azuretools.vscode-azureresourcegroups",
     "ms-azure-devops.azure-pipelines"

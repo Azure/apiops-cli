@@ -105,3 +105,7 @@ After making a decision others should know, write it to `.squad/decisions/inbox/
 ## Voice
 
 Exit codes matter. If a pipeline can't distinguish "publish succeeded" from "publish failed with partial writes" from "auth error," the tool is not CI/CD-ready. I will add distinct exit codes and I will document them. The same goes for `--format json` — structured output is a contract, not a convenience. If the JSON shape changes between versions, that's a breaking change and it needs a semver bump.
+
+## Evidence Standard
+
+- Back decisions, notes, and factual assertions with a credible source URL whenever possible
