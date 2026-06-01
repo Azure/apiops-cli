@@ -923,15 +923,13 @@ resource apiMcpExistingServer 'Microsoft.ApiManagement/service/apis@2025-09-01-p
   })
 }
 
-// Mock runtime API used by the A2A API backend settings.
-// This keeps the demo self-contained and avoids external dependencies.
 resource apiA2aRuntimeMock 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-a2a-runtime-mock'
   properties: {
     displayName: 'KS A2A Runtime Mock'
     description: 'Mock runtime API used as the backend for the A2A demo API'
-    path: 'ks/a2a-runtime'
+    path: 'ks/a2a-weather'
     protocols: ['https']
     serviceUrl: 'https://httpbin.org'
     subscriptionRequired: false
@@ -945,7 +943,7 @@ resource apiA2aRuntimeCardOperation 'Microsoft.ApiManagement/service/apis/operat
   properties: {
     displayName: 'Get agent card'
     method: 'GET'
-    urlTemplate: '/.well-known/agent.json'
+    urlTemplate: '/.well-known/agent-card.json'
     responses: [
       {
         statusCode: 200
@@ -965,7 +963,37 @@ resource apiA2aRuntimeCardPolicy 'Microsoft.ApiManagement/service/apis/operation
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><return-response><set-status code="200" reason="OK" /><set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header><set-body>{"protocolVersion":"0.3.0","name":"KS A2A Weather Agent","description":"Demo A2A weather agent served entirely by APIM policies","url":"https://${apim.name}.azure-api.net/ks/a2a-weather","preferredTransport":"JSONRPC","version":"1.0.0","capabilities":{"streaming":false,"pushNotifications":false,"stateTransitionHistory":false},"defaultInputModes":["text/plain"],"defaultOutputModes":["text/plain"],"skills":[{"id":"get_weather","name":"Get weather","description":"Returns current weather conditions for a city","tags":["weather","demo"],"examples":["What is the weather in Seattle?","weather in Paris"],"inputModes":["text/plain"],"outputModes":["text/plain"]}]}</set-body></return-response></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+    value: '''<policies><inbound><base /><return-response><set-status code="200" reason="OK" /><set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header><set-body>@("{\"protocolVersion\":\"0.3.0\",\"name\":\"KS A2A Weather Agent\",\"description\":\"Demo A2A weather agent served entirely by APIM policies\",\"url\":\"https://" + context.Request.OriginalUrl.Host + "/ks/a2a-weather\",\"preferredTransport\":\"JSONRPC\",\"version\":\"1.0.0\",\"capabilities\":{\"streaming\":false,\"pushNotifications\":false,\"stateTransitionHistory\":false},\"defaultInputModes\":[\"text/plain\"],\"defaultOutputModes\":[\"text/plain\"],\"skills\":[{\"id\":\"get_weather\",\"name\":\"Get weather\",\"description\":\"Returns current weather conditions for a city\",\"tags\":[\"weather\",\"demo\"],\"examples\":[\"What is the weather in Seattle?\",\"weather in Paris\"],\"inputModes\":[\"text/plain\"],\"outputModes\":[\"text/plain\"]}]}")</set-body></return-response></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'''
+  }
+}
+
+resource apiA2aRuntimeCardLegacyOperation 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-preview' = {
+  parent: apiA2aRuntimeMock
+  name: 'get-agent-card-legacy'
+  properties: {
+    displayName: 'Get agent card (legacy path)'
+    method: 'GET'
+    urlTemplate: '/.well-known/agent.json'
+    responses: [
+      {
+        statusCode: 200
+        description: 'OK'
+        representations: [
+          {
+            contentType: 'application/json'
+          }
+        ]
+      }
+    ]
+  }
+}
+
+resource apiA2aRuntimeCardLegacyPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2025-09-01-preview' = {
+  parent: apiA2aRuntimeCardLegacyOperation
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: '''<policies><inbound><base /><return-response><set-status code="200" reason="OK" /><set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header><set-body>@("{\"protocolVersion\":\"0.3.0\",\"name\":\"KS A2A Weather Agent\",\"description\":\"Demo A2A weather agent served entirely by APIM policies\",\"url\":\"https://" + context.Request.OriginalUrl.Host + "/ks/a2a-weather\",\"preferredTransport\":\"JSONRPC\",\"version\":\"1.0.0\",\"capabilities\":{\"streaming\":false,\"pushNotifications\":false,\"stateTransitionHistory\":false},\"defaultInputModes\":[\"text/plain\"],\"defaultOutputModes\":[\"text/plain\"],\"skills\":[{\"id\":\"get_weather\",\"name\":\"Get weather\",\"description\":\"Returns current weather conditions for a city\",\"tags\":[\"weather\",\"demo\"],\"examples\":[\"What is the weather in Seattle?\",\"weather in Paris\"],\"inputModes\":[\"text/plain\"],\"outputModes\":[\"text/plain\"]}]}")</set-body></return-response></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'''
   }
 }
 
@@ -1002,31 +1030,105 @@ resource apiA2aRuntimeJsonRpcPolicy 'Microsoft.ApiManagement/service/apis/operat
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '''<policies><inbound><base /><return-response><set-status code="200" reason="OK" /><set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header><set-body>@{
-  var reqBody = context.Request.Body.As<JObject>(preserveContent: true);
-  var idToken = reqBody["id"];
-  string idJson = idToken != null ? idToken.ToString(Newtonsoft.Json.Formatting.None) : "1";
-  string method = (string)reqBody["method"] ?? "";
-  if (method != "message/send") {
-    return "{\"jsonrpc\":\"2.0\",\"id\":" + idJson + ",\"error\":{\"code\":-32601,\"message\":\"Method not found: " + method + "\"}}";
-  }
-  var parts = reqBody.SelectToken("params.message.parts") as JArray;
-  string text = "";
-  if (parts != null) {
-    foreach (var p in parts) { if ((string)p["kind"] == "text") { text = (string)p["text"] ?? ""; break; } }
-  }
-  string city = "your location";
-  int idx = text.ToLowerInvariant().IndexOf(" in ");
-  if (idx >= 0) { city = text.Substring(idx + 4).Trim().TrimEnd(new[] { '?', '.', '!', ',' }); }
-  string reply = "Weather in " + city + ": 62°F, partly cloudy (demo response from APIM A2A policy).";
-  string replyJson = Newtonsoft.Json.JsonConvert.SerializeObject(reply);
-  string taskId = System.Guid.NewGuid().ToString();
-  string contextId = System.Guid.NewGuid().ToString();
-  string artifactId = System.Guid.NewGuid().ToString();
-  string msgId = System.Guid.NewGuid().ToString();
-  string ts = System.DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
-  return "{\"jsonrpc\":\"2.0\",\"id\":" + idJson + ",\"result\":{\"kind\":\"task\",\"id\":\"" + taskId + "\",\"contextId\":\"" + contextId + "\",\"status\":{\"state\":\"completed\",\"timestamp\":\"" + ts + "\"},\"artifacts\":[{\"artifactId\":\"" + artifactId + "\",\"name\":\"weather-reply\",\"parts\":[{\"kind\":\"text\",\"text\":" + replyJson + "}]}],\"history\":[{\"kind\":\"message\",\"role\":\"agent\",\"messageId\":\"" + msgId + "\",\"parts\":[{\"kind\":\"text\",\"text\":" + replyJson + "}]}]}}";
-}</set-body></return-response></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'''
+    value: '''<policies>
+  <inbound>
+    <base />
+    <set-variable name="reqBody" value='@(context.Request.Body.As<Newtonsoft.Json.Linq.JObject>(preserveContent: true))' />
+    <set-variable name="rpcId" value='@{ var t = ((Newtonsoft.Json.Linq.JObject)context.Variables["reqBody"])["id"]; return t != null ? t.ToString(Newtonsoft.Json.Formatting.None) : "1"; }' />
+    <set-variable name="rpcMethod" value='@((string)((Newtonsoft.Json.Linq.JObject)context.Variables["reqBody"])["method"] ?? "")' />
+    <choose>
+      <when condition='@((string)context.Variables["rpcMethod"] != "message/send")'>
+        <return-response>
+          <set-status code="200" reason="OK" />
+          <set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header>
+          <set-body>@("{\"jsonrpc\":\"2.0\",\"id\":" + (string)context.Variables["rpcId"] + ",\"error\":{\"code\":-32601,\"message\":\"Method not found: " + (string)context.Variables["rpcMethod"] + "\"}}")</set-body>
+        </return-response>
+      </when>
+    </choose>
+    <set-variable name="city" value='@{
+      var parts = ((Newtonsoft.Json.Linq.JObject)context.Variables["reqBody"]).SelectToken("params.message.parts") as Newtonsoft.Json.Linq.JArray;
+      string text = "";
+      if (parts != null) { foreach (var p in parts) { if ((string)p["kind"] == "text") { text = (string)p["text"] ?? ""; break; } } }
+      string city = text.Trim();
+      int idx = text.ToLowerInvariant().IndexOf(" in ");
+      if (idx >= 0) { city = text.Substring(idx + 4).Trim(); }
+      city = city.TrimEnd("?.!,".ToCharArray()).Trim();
+      if (string.IsNullOrWhiteSpace(city)) { city = "Seattle"; }
+      return city;
+    }' />
+    <send-request mode="new" response-variable-name="geoResp" timeout="10" ignore-error="true">
+      <set-url>@($"https://geocoding-api.open-meteo.com/v1/search?count=1&amp;name={System.Uri.EscapeDataString((string)context.Variables["city"])}")</set-url>
+      <set-method>GET</set-method>
+    </send-request>
+    <set-variable name="latlon" value='@{
+      var r = (IResponse)context.Variables["geoResp"];
+      if (r == null || r.StatusCode != 200) { return (string)null; }
+      var body = r.Body.As<Newtonsoft.Json.Linq.JObject>();
+      var arr = body["results"] as Newtonsoft.Json.Linq.JArray;
+      if (arr == null || arr.Count == 0) { return (string)null; }
+      string lat = arr[0]["latitude"].ToString(Newtonsoft.Json.Formatting.None);
+      string lon = arr[0]["longitude"].ToString(Newtonsoft.Json.Formatting.None);
+      string resolved = (string)arr[0]["name"];
+      string country = (string)arr[0]["country"];
+      return lat + "|" + lon + "|" + resolved + "|" + (country ?? "");
+    }' />
+    <choose>
+      <when condition='@(context.Variables["latlon"] == null)'>
+        <set-variable name="reply" value='@("Sorry, I could not find a location named " + (string)context.Variables["city"] + ".")' />
+      </when>
+      <otherwise>
+        <send-request mode="new" response-variable-name="wxResp" timeout="10" ignore-error="true">
+          <set-url>@{
+            var ll = ((string)context.Variables["latlon"]).Split('|');
+            return "https://api.open-meteo.com/v1/forecast?latitude=" + ll[0] + "&amp;longitude=" + ll[1] + "&amp;current=temperature_2m,weather_code,wind_speed_10m&amp;temperature_unit=fahrenheit&amp;wind_speed_unit=mph";
+          }</set-url>
+          <set-method>GET</set-method>
+        </send-request>
+        <set-variable name="reply" value='@{
+          var ll = ((string)context.Variables["latlon"]).Split('|');
+          string place = ll.Length >= 4 && !string.IsNullOrEmpty(ll[3]) ? (ll[2] + ", " + ll[3]) : ll[2];
+          var r = (IResponse)context.Variables["wxResp"];
+          if (r == null || r.StatusCode != 200) { return "Weather for " + place + " is currently unavailable."; }
+          var cur = r.Body.As<Newtonsoft.Json.Linq.JObject>()["current"] as Newtonsoft.Json.Linq.JObject;
+          if (cur == null) { return "Weather for " + place + " is currently unavailable."; }
+          double tempF = (double)cur["temperature_2m"];
+          int code = cur["weather_code"] != null ? (int)cur["weather_code"] : -1;
+          double wind = cur["wind_speed_10m"] != null ? (double)cur["wind_speed_10m"] : 0.0;
+          var codes = new System.Collections.Generic.Dictionary<int, string> {
+            {0,"clear sky"},{1,"mainly clear"},{2,"partly cloudy"},{3,"overcast"},
+            {45,"fog"},{48,"depositing rime fog"},
+            {51,"light drizzle"},{53,"moderate drizzle"},{55,"dense drizzle"},
+            {56,"light freezing drizzle"},{57,"dense freezing drizzle"},
+            {61,"light rain"},{63,"moderate rain"},{65,"heavy rain"},
+            {66,"light freezing rain"},{67,"heavy freezing rain"},
+            {71,"light snow"},{73,"moderate snow"},{75,"heavy snow"},{77,"snow grains"},
+            {80,"rain showers"},{81,"moderate rain showers"},{82,"violent rain showers"},
+            {85,"light snow showers"},{86,"heavy snow showers"},
+            {95,"thunderstorm"},{96,"thunderstorm with light hail"},{99,"thunderstorm with heavy hail"}
+          };
+          string cond = codes.ContainsKey(code) ? codes[code] : ("weather code " + code);
+          return "Weather in " + place + ": " + tempF.ToString("F0") + "°F, " + cond + ", wind " + wind.ToString("F0") + " mph (live data from Open-Meteo).";
+        }' />
+      </otherwise>
+    </choose>
+    <return-response>
+      <set-status code="200" reason="OK" />
+      <set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header>
+      <set-body>@{
+        string replyJson = Newtonsoft.Json.JsonConvert.SerializeObject((string)context.Variables["reply"]);
+        string taskId = System.Guid.NewGuid().ToString();
+        string contextId = System.Guid.NewGuid().ToString();
+        string artifactId = System.Guid.NewGuid().ToString();
+        string msgId = System.Guid.NewGuid().ToString();
+        string ts = System.DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + (string)context.Variables["rpcId"] + ",\"result\":{\"kind\":\"task\",\"id\":\"" + taskId + "\",\"contextId\":\"" + contextId + "\",\"status\":{\"state\":\"completed\",\"timestamp\":\"" + ts + "\"},\"artifacts\":[{\"artifactId\":\"" + artifactId + "\",\"name\":\"weather-reply\",\"parts\":[{\"kind\":\"text\",\"text\":" + replyJson + "}]}],\"history\":[{\"kind\":\"message\",\"role\":\"agent\",\"messageId\":\"" + msgId + "\",\"parts\":[{\"kind\":\"text\",\"text\":" + replyJson + "}]}]}}";
+      }</set-body>
+    </return-response>
+  </inbound>
+  <backend><base /></backend>
+  <outbound><base /></outbound>
+  <on-error><base /></on-error>
+</policies>'''
   }
 }
 
@@ -1039,7 +1141,7 @@ resource apiA2a 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   properties: any({
     displayName: 'KS A2A Weather Agent'
     description: 'A2A API exposing JSON-RPC runtime and an APIM-mediated agent card'
-    path: 'ks/a2a-weather'
+    path: 'ks/a2a-managed'
     protocols: ['https']
     type: 'a2a'
     isAgent: true
@@ -1047,18 +1149,14 @@ resource apiA2a 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
       id: 'src-a2a-weather-agent'
     }
     a2aProperties: {
-      agentCardPath: '/.well-known/agent.json'
-      agentCardBackendUrl: 'https://${apim.name}.azure-api.net/ks/a2a-runtime/.well-known/agent.json'
+      agentCardPath: '/.well-known/agent-card.json'
+      agentCardBackendUrl: 'https://${apim.name}.azure-api.net/ks/a2a-weather/.well-known/agent-card.json'
     }
     jsonRpcProperties: {
       backendUrl: 'https://${apim.name}.azure-api.net'
-      path: '/ks/a2a-runtime'
+      path: '/ks/a2a-weather'
     }
-    subscriptionRequired: true
-    subscriptionKeyParameterNames: {
-      header: 'Ocp-Apim-Subscription-Key'
-      query: 'subscription-key'
-    }
+    subscriptionRequired: false
   })
 }
 

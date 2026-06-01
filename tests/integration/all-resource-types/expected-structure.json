@@ -172,17 +172,6 @@
               "properties.pool.services": "exists"
             }
           }
-        },
-        {
-          "name": "src-backend-mcp-external",
-          "files": ["backendInformation.json"],
-          "spotChecks": {
-            "backendInformation.json": {
-              "properties.url": "https://api.githubcopilot.com/mcp",
-              "properties.protocol": "http"
-            }
-          },
-          "notes": "Upstream URL for the MCP-from-external API; the API resource references this backend via backendId"
         }
       ]
     },
@@ -579,23 +568,22 @@
           "notes": "MCP API exposing operations of an existing REST API as MCP tools via mcpTools (each tool's operationId references the backing REST API; this MCP API has no operations of its own)"
         },
         {
-          "name": "src-mcp-from-external",
-          "files": ["apiInformation.json", "mcpServerInformation.json"],
+          "name": "src-mcp-existing-server",
+          "files": ["apiInformation.json", "mcpServerInformation.json", "policy.xml"],
           "spotChecks": {
             "apiInformation.json": {
-              "properties.displayName": "KS MCP from External Server",
-              "properties.path": "ks/mcp-external",
+              "properties.displayName": "KS MCP Existing Server Demo",
+              "properties.path": "ks/mcp-existing",
               "properties.type": "mcp",
               "properties.subscriptionRequired": false,
-              "properties.backendId": "src-backend-mcp-external"
+              "properties.backendId": "src-backend-mcp-learn"
             },
             "mcpServerInformation.json": {
-              "properties.mcpProperties": "exists",
               "properties.mcpProperties.endpoints.mcp.uriTemplate": "/mcp",
-              "properties.backendId": "src-backend-mcp-external"
+              "properties.backendId": "src-backend-mcp-learn"
             }
           },
-          "notes": "MCP API repackaging an external MCP server: backendId points to the backend that holds the upstream URL (https://api.githubcopilot.com/mcp), and mcpProperties.endpoints.mcp.uriTemplate addresses the MCP endpoint exposed by that backend"
+          "notes": "Working existing-server MCP demo. APIM exposes a public Microsoft Learn MCP server through a policy-based MCP proxy so the API is extractable and demoable end to end."
         },
         {
           "name": "src-a2a-weather-agent",
