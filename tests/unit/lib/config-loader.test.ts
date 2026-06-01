@@ -124,11 +124,13 @@ workspaceNames: [p]
     it('should load a valid override YAML file', async () => {
       const content = `
 namedValues:
-  nv1:
-    value: "overridden"
+  - name: nv1
+    properties:
+      value: "overridden"
 backends:
-  be1:
-    url: "https://new-backend.com"
+  - name: be1
+    properties:
+      url: "https://new-backend.com"
 `;
       const filePath = path.join(tmpDir, 'override.yaml');
       await fs.writeFile(filePath, content, 'utf-8');
@@ -190,7 +192,7 @@ backends:
       });
     });
 
-    it('should support mixed toolkit and keyed-map formats in same file', async () => {
+    it('should throw for deprecated keyed-map override format', async () => {
       const content = `
 namedValues:
   - name: nv1
@@ -200,21 +202,12 @@ backends:
   be1:
     url: "https://from-map.example.com"
 `;
-      const filePath = path.join(tmpDir, 'override-mixed.yaml');
+      const filePath = path.join(tmpDir, 'override-keyed-map.yaml');
       await fs.writeFile(filePath, content, 'utf-8');
 
-      const config = await loadOverrideConfig(filePath);
-      expect(config).toBeDefined();
-      expect(config!.namedValues).toEqual({
-        nv1: {
-          value: 'from-array',
-        },
-      });
-      expect(config!.backends).toEqual({
-        be1: {
-          url: 'https://from-map.example.com',
-        },
-      });
+      await expect(loadOverrideConfig(filePath)).rejects.toThrow(
+        'Invalid overrides.backends: expected an array in toolkit format'
+      );
     });
 
     it('should fall back to item fields when toolkit item has no properties object', async () => {
@@ -235,9 +228,24 @@ namedValues:
       });
     });
 
-    it('should ignore invalid override section and invalid array entries', async () => {
+    it('should throw for invalid override section type', async () => {
       const content = `
 namedValues: 123
+`;
+      const filePath = path.join(tmpDir, 'override-invalid-section.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      await expect(loadOverrideConfig(filePath)).rejects.toThrow(
+        'Invalid overrides.namedValues: expected an array in toolkit format'
+      );
+    });
+
+    it('should ignore invalid array entries', async () => {
+      const content = `
+namedValues:
+  - name: nv1
+    properties:
+      value: "valid"
 backends:
   - properties:
       url: "https://missing-name.example.com"
@@ -253,7 +261,11 @@ backends:
 
       const config = await loadOverrideConfig(filePath);
       expect(config).toBeDefined();
-      expect(config!.namedValues).toBeUndefined();
+      expect(config!.namedValues).toEqual({
+        nv1: {
+          value: 'valid',
+        },
+      });
       expect(config!.backends).toEqual({
         be1: {
           url: 'https://valid.example.com',

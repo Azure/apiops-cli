@@ -125,7 +125,7 @@ export async function loadOverrideConfig(filePath: string): Promise<OverrideConf
 }
 
 /**
- * Normalize all supported override sections into the internal keyed-map shape.
+ * Normalize toolkit-format override sections into the internal keyed-map shape.
  */
 function normalizeOverrideConfig(parsed: Record<string, unknown>): OverrideConfig {
   const normalized: OverrideConfig = {};
@@ -147,9 +147,8 @@ function normalizeOverrideConfig(parsed: Record<string, unknown>): OverrideConfi
 
 /**
  * Normalize one override section into keyed-map format.
- * Supports:
- * - Existing keyed-map format: `{ backends: { myBackend: { url: ... } } }`
- * - Toolkit list format: `{ backends: [{ name: myBackend, properties: { url: ... } }] }`
+ * Supports toolkit list format only:
+ * - `{ backends: [{ name: myBackend, properties: { url: ... } }] }`
  */
 function normalizeOverrideSection(
   section: unknown,
@@ -159,13 +158,11 @@ function normalizeOverrideSection(
     return undefined;
   }
 
-  if (isPlainObject(section)) {
-    return section;
-  }
-
   if (!Array.isArray(section)) {
-    logger.warn(`Ignoring invalid overrides.${sectionName}; expected object or array.`);
-    return undefined;
+    throw new Error(
+      `Invalid overrides.${sectionName}: expected an array in toolkit format ` +
+      `([ { name, properties } ]), got ${typeof section}.`
+    );
   }
 
   const normalized: OverrideSection = {};
