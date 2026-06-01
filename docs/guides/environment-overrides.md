@@ -1,6 +1,6 @@
 # Environment Overrides Guide
 
-Environment overrides let you promote the same extracted APIM artifacts across environments (dev → test → prod) while changing only environment-specific values.
+Environment overrides let you promote the same extracted APIM artifacts across environments (dev to test to prod) while changing only environment-specific values.
 
 ## Use with publish
 
@@ -71,6 +71,7 @@ All listed keys belong under each item's `properties` object.
 ## Rules
 
 - `name` must match the resource name in extracted artifacts.
+- Unmatched names are ignored (they do not fail the publish command).
 - Overrides change **properties**, not resource names.
 - Override files are optional when publishing back to the same environment.
 

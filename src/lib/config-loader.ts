@@ -191,9 +191,15 @@ function normalizeOverrideSection(
       `Item in overrides.${sectionName} is missing a 'properties' object; using fields directly.`,
       { name }
     );
-    normalized[name] = Object.fromEntries(
+    const fallbackFields = Object.fromEntries(
       Object.entries(item).filter(([key]) => key !== 'name' && key !== 'properties')
     );
+    if (Object.keys(fallbackFields).length === 0) {
+      logger.warn(`Ignoring item in overrides.${sectionName}; no override fields were provided.`, { name });
+      continue;
+    }
+
+    normalized[name] = fallbackFields;
   }
 
   return normalized;
