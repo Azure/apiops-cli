@@ -6,7 +6,6 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)]
     [string]$SourceSubscriptionId,
 
     [Parameter(Mandatory)]
@@ -49,18 +48,25 @@ if (Test-Path $ExtractOutputDir) {
 
 $extractArgs = @(
     'extract',
-    '--subscription-id', $SourceSubscriptionId,
-    '--resource-group',  $SourceResourceGroup,
-    '--service-name',    $SourceApimName,
-    '--output',          $ExtractOutputDir,
-    '--log-level',       $apiopsLogLevel
-) + $apiopsAuthArgs
+    '--resource-group', $SourceResourceGroup,
+    '--service-name',   $SourceApimName,
+    '--output',         $ExtractOutputDir,
+    '--log-level',      $apiopsLogLevel
+)
+if (-not [string]::IsNullOrWhiteSpace($SourceSubscriptionId)) {
+    $extractArgs += @('--subscription-id', $SourceSubscriptionId)
+}
+$extractArgs += $apiopsAuthArgs
 
-$extractExitCode = Invoke-MaskedApiopsCommand -Replacements @{
-    $SourceSubscriptionId = Protect-SubscriptionId -Value $SourceSubscriptionId
-    $SourceResourceGroup  = Protect-ResourceGroupName -Value $SourceResourceGroup
-    $SourceApimName       = Protect-ApimName -Value $SourceApimName
-} -Arguments $extractArgs
+$replacements = @{
+    $SourceResourceGroup = Protect-ResourceGroupName -Value $SourceResourceGroup
+    $SourceApimName      = Protect-ApimName -Value $SourceApimName
+}
+if (-not [string]::IsNullOrWhiteSpace($SourceSubscriptionId)) {
+    $replacements[$SourceSubscriptionId] = Protect-SubscriptionId -Value $SourceSubscriptionId
+}
+
+$extractExitCode = Invoke-MaskedApiopsCommand -Replacements $replacements -Arguments $extractArgs
 
 if ($extractExitCode -ne 0) {
     Write-Host "❌ Extract failed (exit code $extractExitCode)"

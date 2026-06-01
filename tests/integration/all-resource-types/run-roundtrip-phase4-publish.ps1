@@ -6,7 +6,6 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)]
     [string]$TargetSubscriptionId,
 
     [Parameter(Mandatory)]
@@ -97,19 +96,28 @@ loggers:
 $overrideYaml | Set-Content -Path $overrideFile -Encoding utf8
 
 Write-Host "📤 Publish — Publish artifacts to target APIM"
-$publishExitCode = Invoke-MaskedApiopsCommand -Replacements @{
-    $TargetSubscriptionId = Protect-SubscriptionId -Value $TargetSubscriptionId
-    $TargetResourceGroup  = Protect-ResourceGroupName -Value $TargetResourceGroup
-    $TargetApimName       = Protect-ApimName -Value $TargetApimName
-} -Arguments @(
+$publishArgs = @(
     'publish',
-    '--subscription-id', $TargetSubscriptionId,
-    '--resource-group',  $TargetResourceGroup,
-    '--service-name',    $TargetApimName,
-    '--source',          $ExtractOutputDir,
-    '--overrides',       $overrideFile,
-    '--log-level',       $apiopsLogLevel
-) + $apiopsAuthArgs
+    '--resource-group', $TargetResourceGroup,
+    '--service-name',   $TargetApimName,
+    '--source',         $ExtractOutputDir,
+    '--overrides',      $overrideFile,
+    '--log-level',      $apiopsLogLevel
+)
+if (-not [string]::IsNullOrWhiteSpace($TargetSubscriptionId)) {
+    $publishArgs += @('--subscription-id', $TargetSubscriptionId)
+}
+$publishArgs += $apiopsAuthArgs
+
+$replacements = @{
+    $TargetResourceGroup = Protect-ResourceGroupName -Value $TargetResourceGroup
+    $TargetApimName      = Protect-ApimName -Value $TargetApimName
+}
+if (-not [string]::IsNullOrWhiteSpace($TargetSubscriptionId)) {
+    $replacements[$TargetSubscriptionId] = Protect-SubscriptionId -Value $TargetSubscriptionId
+}
+
+$publishExitCode = Invoke-MaskedApiopsCommand -Replacements $replacements -Arguments $publishArgs
 
 if ($publishExitCode -ne 0) {
     Write-Host "❌ Publish failed (exit code $publishExitCode)"

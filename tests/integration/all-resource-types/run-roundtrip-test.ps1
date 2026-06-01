@@ -68,7 +68,7 @@ param(
     [Parameter()]
     [string]$PublisherEmail = 'publisher@example.com',
 
-    [string]$ExtractOutputDir = "$PSScriptRoot/extracted-artifacts",
+    [string]$ExtractOutputDir,
 
     [switch]$SkipTeardown
 )
@@ -247,36 +247,52 @@ try {
         exit $exitCode
     }
 
-    & $phase3Script `
-        -SkuName $SkuName `
-        -LogLevel $LogLevel `
-        -ExtractOutputDir $ExtractOutputDir
+    $phase3Args = @{
+        SkuName   = $SkuName
+        LogLevel  = $LogLevel
+    }
+    if ($PSBoundParameters.ContainsKey('ExtractOutputDir')) {
+        $phase3Args.ExtractOutputDir = $ExtractOutputDir
+    }
+    & $phase3Script @phase3Args
 
     if ($LASTEXITCODE -ne 0) {
         $exitCode = $LASTEXITCODE
         exit $exitCode
     }
 
-    & $phase4Script `
-        -TargetSubscriptionId $TargetSubscriptionId `
-        -TargetResourceGroup $TargetResourceGroup `
-        -TargetApimName $TargetApimName `
-        -LogLevel $LogLevel `
-        -ExtractOutputDir $ExtractOutputDir
+    $phase4Args = @{
+        TargetResourceGroup = $TargetResourceGroup
+        TargetApimName      = $TargetApimName
+        LogLevel            = $LogLevel
+    }
+    if (-not [string]::IsNullOrWhiteSpace($TargetSubscriptionId)) {
+        $phase4Args.TargetSubscriptionId = $TargetSubscriptionId
+    }
+    if ($PSBoundParameters.ContainsKey('ExtractOutputDir')) {
+        $phase4Args.ExtractOutputDir = $ExtractOutputDir
+    }
+    & $phase4Script @phase4Args
 
     if ($LASTEXITCODE -ne 0) {
         $exitCode = $LASTEXITCODE
         exit $exitCode
     }
 
-    & $phase5Script `
-        -SourceSubscriptionId $SourceSubscriptionId `
-        -SourceResourceGroup $SourceResourceGroup `
-        -SourceApimName $SourceApimName `
-        -TargetSubscriptionId $TargetSubscriptionId `
-        -TargetResourceGroup $TargetResourceGroup `
-        -TargetApimName $TargetApimName `
-        -LogLevel $LogLevel
+    $phase5Args = @{
+        SourceResourceGroup = $SourceResourceGroup
+        SourceApimName      = $SourceApimName
+        TargetResourceGroup = $TargetResourceGroup
+        TargetApimName      = $TargetApimName
+        LogLevel            = $LogLevel
+    }
+    if (-not [string]::IsNullOrWhiteSpace($SourceSubscriptionId)) {
+        $phase5Args.SourceSubscriptionId = $SourceSubscriptionId
+    }
+    if (-not [string]::IsNullOrWhiteSpace($TargetSubscriptionId)) {
+        $phase5Args.TargetSubscriptionId = $TargetSubscriptionId
+    }
+    & $phase5Script @phase5Args
 
     $exitCode = $LASTEXITCODE
 }
