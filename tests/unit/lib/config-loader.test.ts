@@ -162,7 +162,7 @@ backends:
       expect(config).toEqual({});
     });
 
-    it('should normalize APIOPs toolkit array format', async () => {
+    it('should normalize APIOps toolkit array format', async () => {
       const content = `
 namedValues:
   - name: nv1

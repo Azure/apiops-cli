@@ -13,9 +13,9 @@ apiops publish \
   --overrides ./configuration.prod.yaml
 ```
 
-## Override file format (APIOPs Toolkit-compatible)
+## Override file format (APIOps Toolkit-compatible)
 
-`apiops-cli` uses the APIOPs Toolkit override layout:
+`apiops-cli` uses the APIOps Toolkit override layout:
 
 - Top-level resource sections (`namedValues`, `backends`, `apis`, `diagnostics`, `loggers`)
 - Each section is a list
