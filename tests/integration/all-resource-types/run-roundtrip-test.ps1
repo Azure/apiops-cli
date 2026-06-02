@@ -60,7 +60,7 @@ param(
     [ValidateSet('Developer', 'Premium', 'Standard', 'StandardV2', 'PremiumV2')]
     [string]$SkuName = 'StandardV2',
 
-    [string]$Location,
+    [string]$Location = 'centralus',
 
     [ValidateSet('Info', 'Verbose', 'Debug')]
     [string]$LogLevel = 'Verbose',
@@ -132,11 +132,11 @@ try {
         TargetResourceGroup = $TargetResourceGroup
         SourceApimName      = $SourceApimName
         TargetApimName      = $TargetApimName
+        Location            = $Location
         PublisherEmail      = $PublisherEmail
         LogLevel            = $LogLevel
     }
     Add-ArgumentIfSet -Hashtable $phase1Args -Key 'SkuName' -Value $skuNameValue
-    Add-ArgumentIfSet -Hashtable $phase1Args -Key 'Location' -Value $locationValue
     Add-ArgumentIfSet -Hashtable $phase1Args -Key 'SourceSubscriptionId' -Value $SourceSubscriptionId
     Add-ArgumentIfSet -Hashtable $phase1Args -Key 'TargetSubscriptionId' -Value $TargetSubscriptionId
     $global:LASTEXITCODE = 0
