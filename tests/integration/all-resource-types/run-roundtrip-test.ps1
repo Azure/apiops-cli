@@ -68,7 +68,7 @@ param(
     [Parameter()]
     [string]$PublisherEmail = 'publisher@example.com',
 
-    [string]$ExtractOutputDir,
+    [string]$ExtractOutputDir = "$PSScriptRoot/extracted-artifacts",
 
     [switch]$SkipTeardown
 )
@@ -247,52 +247,59 @@ try {
         exit $exitCode
     }
 
+    # Phase 3: Validate `apiops extract`
     $phase3Args = @{
-        SkuName   = $SkuName
-        LogLevel  = $LogLevel
+        SkuName = $SkuName
+        LogLevel = $LogLevel
     }
-    if ($PSBoundParameters.ContainsKey('ExtractOutputDir')) {
-        $phase3Args.ExtractOutputDir = $ExtractOutputDir
-    }
-    & $phase3Script @phase3Args
+    Add-ArgumentIfSet -Hashtable $phase3Args -Key 'ExtractOutputDir' -Value $extractOutputDirValue
+    & $phase3ValidateExtractScript @phase3Args
 
     if ($LASTEXITCODE -ne 0) {
         $exitCode = $LASTEXITCODE
         exit $exitCode
     }
 
+    # Phase 4: Generate target environment overrides
     $phase4Args = @{
         TargetResourceGroup = $TargetResourceGroup
-        TargetApimName      = $TargetApimName
-        LogLevel            = $LogLevel
+        TargetSubscriptionId = $TargetSubscriptionId
+        LogLevel = $LogLevel
     }
-    if (-not [string]::IsNullOrWhiteSpace($TargetSubscriptionId)) {
-        $phase4Args.TargetSubscriptionId = $TargetSubscriptionId
-    }
-    if ($PSBoundParameters.ContainsKey('ExtractOutputDir')) {
-        $phase4Args.ExtractOutputDir = $ExtractOutputDir
-    }
-    & $phase4Script @phase4Args
+    Add-ArgumentIfSet -Hashtable $phase4Args -Key 'ExtractOutputDir' -Value $extractOutputDirValue
+    & $phase4CreateOverridesScript @phase4Args
 
     if ($LASTEXITCODE -ne 0) {
         $exitCode = $LASTEXITCODE
         exit $exitCode
     }
 
+    # Phase 5: Publish extracted artifacts to target
     $phase5Args = @{
+        TargetResourceGroup = $TargetResourceGroup
+        TargetApimName      = $TargetApimName
+        TargetSubscriptionId = $TargetSubscriptionId
+        LogLevel = $LogLevel
+    }
+    Add-ArgumentIfSet -Hashtable $phase5Args -Key 'ExtractOutputDir' -Value $extractOutputDirValue
+    & $phase5PublishScript @phase5Args
+
+    if ($LASTEXITCODE -ne 0) {
+        $exitCode = $LASTEXITCODE
+        exit $exitCode
+    }
+
+    # Phase 6: Compare source and target APIM instances
+    $phase6Args = @{
         SourceResourceGroup = $SourceResourceGroup
         SourceApimName      = $SourceApimName
         TargetResourceGroup = $TargetResourceGroup
         TargetApimName      = $TargetApimName
-        LogLevel            = $LogLevel
+        SourceSubscriptionId = $SourceSubscriptionId
+        TargetSubscriptionId = $TargetSubscriptionId
+        LogLevel = $LogLevel
     }
-    if (-not [string]::IsNullOrWhiteSpace($SourceSubscriptionId)) {
-        $phase5Args.SourceSubscriptionId = $SourceSubscriptionId
-    }
-    if (-not [string]::IsNullOrWhiteSpace($TargetSubscriptionId)) {
-        $phase5Args.TargetSubscriptionId = $TargetSubscriptionId
-    }
-    & $phase5Script @phase5Args
+    & $phase6CompareScript @phase6Args
 
     $exitCode = $LASTEXITCODE
 }
