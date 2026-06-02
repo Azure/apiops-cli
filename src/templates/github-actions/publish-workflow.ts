@@ -14,19 +14,22 @@ export function generatePublishWorkflow(config: PublishWorkflowConfig): string {
   const envChoices = config.environments.map((env) => `          - ${env}`).join('\n');
 
   const envJobs = config.environments.map((env, idx) => {
-    const autoDeployComment = idx === 0
-      ? `    # To enable automatic deployment on push to main, uncomment the condition below:
-    # if: github.event.inputs.ENVIRONMENT == '${env}' || github.event_name == 'push'`
-      : `    # To enable automatic deployment on push to main, uncomment the condition below:
-    # if: github.event.inputs.ENVIRONMENT == '${env}' || github.event_name == 'push'
-    # And change needs to: needs: [get-commit, publish-${config.environments[idx - 1]}]`;
+    const previousEnvironment = idx > 0 ? config.environments[idx - 1] : null;
+    const needs = previousEnvironment ? `[get-commit, publish-${previousEnvironment}]` : 'get-commit';
+
+    const jobComment = idx === 0
+      ? `    # Automatically deploys to ${env} on push to main (incremental mode) or when selected via workflow_dispatch`
+      : `    # Deploys to ${env} after ${previousEnvironment} succeeds (sequential promotion).
+    # Configure environment protection rules to require approval before deploying to ${env}.`;
+
+    const jobCondition = `github.event.inputs.ENVIRONMENT == '${env}' || github.event_name == 'push'`;
 
     return `  publish-${env}:
-${autoDeployComment}
-    if: github.event.inputs.ENVIRONMENT == '${env}'
+${jobComment}
+    if: ${jobCondition}
     runs-on: ubuntu-latest
     environment: ${env}
-    needs: get-commit
+    needs: ${needs}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

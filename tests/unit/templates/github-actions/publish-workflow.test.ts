@@ -94,11 +94,12 @@ describe('github-actions/publish-workflow', () => {
       expect(workflow).toContain('environment: prod');
     });
 
-    it('should chain jobs with needs dependencies', () => {
+    it('should chain subsequent environment jobs on the previous environment', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'staging', 'prod'],
       });
+      // Subsequent environments depend on both get-commit and the previous env job
       expect(workflow).toContain('needs: [get-commit, publish-dev]');
       expect(workflow).toContain('needs: [get-commit, publish-staging]');
     });
@@ -108,6 +109,7 @@ describe('github-actions/publish-workflow', () => {
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
+      // First env uses simple `needs: get-commit`; subsequent envs use array form with chaining
       expect(workflow).toContain('needs: get-commit');
     });
 
@@ -204,6 +206,47 @@ describe('github-actions/publish-workflow', () => {
       });
       expect(workflow).toContain('npm install');
       expect(workflow).toContain('npx apiops publish');
+    });
+
+    it('should enable first environment to run automatically on push to main', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+      });
+      // First environment's if-condition must include the push event trigger
+      expect(workflow).toContain("ENVIRONMENT == 'dev' || github.event_name == 'push'");
+    });
+
+    it('should enable all environments to run on push for sequential promotion', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'staging', 'prod'],
+      });
+      // All environments must run on push so the "Review deployments" approval flow works
+      expect(workflow).toContain("ENVIRONMENT == 'dev' || github.event_name == 'push'");
+      expect(workflow).toContain("ENVIRONMENT == 'staging' || github.event_name == 'push'");
+      expect(workflow).toContain("ENVIRONMENT == 'prod' || github.event_name == 'push'");
+    });
+
+    it('should include generic approval guidance for non-first environments without GitHub settings steps', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'staging'],
+      });
+      expect(workflow).toContain('Configure environment protection rules to require approval before deploying to staging.');
+      expect(workflow).not.toContain('Settings > Environments > staging');
+      expect(workflow).not.toContain('Required reviewers');
+    });
+
+    it('should pass commit_id on push trigger via incremental step condition', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+      });
+      // The incremental step condition is true when COMMIT_ID_CHOICE is empty (push trigger),
+      // so --commit-id will be passed automatically on push.
+      expect(workflow).toContain("COMMIT_ID_CHOICE != 'publish-all-artifacts-in-repo'");
+      expect(workflow).toContain('--commit-id ${{ needs.get-commit.outputs.commit_id }}');
     });
   });
 });
