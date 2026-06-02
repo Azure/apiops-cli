@@ -1,13 +1,15 @@
 <#
 .SYNOPSIS
-    Master orchestrator for the 5-phase round-trip integration workflow.
+    Master orchestrator for the 7-phase round-trip integration workflow.
 .DESCRIPTION
     Single entry point that runs the full round-trip sequence:
         1) deploy source + target APIM instances,
-        2) extract from source and validate extracted artifact structure,
-        3) publish artifacts to target,
-        4) compare source and target,
-        5) teardown.
+        2) extract from source,
+        3) validate extracted artifact structure,
+        4) generate target environment overrides,
+        5) publish artifacts to target,
+        6) compare source and target,
+        7) teardown.
 
     Works both locally and in CI (writes to GITHUB_OUTPUT when available).
 
@@ -18,11 +20,7 @@
   Exit codes:
     0 — all phases passed
     1 — extract validation failed or verification diff detected
-    2 — deployment, extract, or publish error
-
-.PARAMETER HardDelete
-    Controls whether teardown waits for resource group deletion and purges
-    soft-deleted APIM instances. Defaults to $true.
+    2 — deployment, extract, publish, or teardown error
 
 .EXAMPLE
     # Full run (auto-generates unique resource group and APIM names)
@@ -33,9 +31,6 @@
 
     # Keep resources after test for debugging
     .\run-roundtrip-test.ps1 -PublisherEmail admin@contoso.com -SkipTeardown
-
-    # Disable hard-delete behavior on teardown (no purge wait)
-    .\run-roundtrip-test.ps1 -PublisherEmail admin@contoso.com -HardDelete:$false
 #>
 
 #requires -Version 7.0
@@ -63,7 +58,7 @@ param(
     [ValidateSet('Developer', 'Premium', 'StandardV2', 'PremiumV2')]
     [string]$SkuName = 'StandardV2',
 
-    [string]$Location = 'eastus2',
+    [string]$Location,
 
     [ValidateSet('Info', 'Verbose', 'Debug')]
     [string]$LogLevel = 'Verbose',
@@ -71,18 +66,15 @@ param(
     [Parameter()]
     [string]$PublisherEmail = 'publisher@example.com',
 
-    [string]$ExtractOutputDir,
+    [string]$ExtractOutputDir = "$PSScriptRoot/extracted-artifacts",
 
-    [switch]$SkipTeardown,
-
-    [switch]$HardDelete
+    [switch]$SkipTeardown
 )
 
 $ErrorActionPreference = 'Stop'
 
-if (-not $PSBoundParameters.ContainsKey('HardDelete')) {
-    $HardDelete = $true
-}
+$scriptArgModule = Join-Path $PSScriptRoot 'modules/ScriptArgumentHelpers.psm1'
+Import-Module $scriptArgModule -Force
 
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $random = -join ((97..122) | Get-Random -Count 3 | ForEach-Object { [char]$_ })
@@ -108,120 +100,136 @@ if (-not $TargetSubscriptionId) {
     $TargetSubscriptionId = $env:TARGET_SUBSCRIPTION_ID
 }
 
-$phase1Script = Join-Path $PSScriptRoot 'run-roundtrip-phase1-deploy.ps1'
-$phase2Script = Join-Path $PSScriptRoot 'run-roundtrip-phase2-extract.ps1'
-$phase3Script = Join-Path $PSScriptRoot 'run-roundtrip-phase3-validate-extract.ps1'
-$phase4Script = Join-Path $PSScriptRoot 'run-roundtrip-phase4-publish.ps1'
-$phase5Script = Join-Path $PSScriptRoot 'run-roundtrip-phase5-compare.ps1'
-$phase6Script = Join-Path $PSScriptRoot 'run-roundtrip-phase6-teardown.ps1'
+$extractOutputDirValue = Get-BoundParameterValueOrNull -BoundParameters $PSBoundParameters -Name 'ExtractOutputDir'
+$skuNameValue = Get-BoundParameterValueOrNull -BoundParameters $PSBoundParameters -Name 'SkuName'
+$locationValue = Get-BoundParameterValueOrNull -BoundParameters $PSBoundParameters -Name 'Location'
 
-foreach ($requiredFile in @($phase1Script, $phase2Script, $phase3Script, $phase4Script, $phase5Script, $phase6Script)) {
+# Verify scripts for all phases available
+$phase1DeployScript = Join-Path $PSScriptRoot 'phases/run-phase1-deploy.ps1'
+$phase2ExtractScript = Join-Path $PSScriptRoot 'phases/run-phase2-extract.ps1'
+$phase3ValidateExtractScript = Join-Path $PSScriptRoot 'phases/run-phase3-validate-extract.ps1'
+$phase4CreateOverridesScript = Join-Path $PSScriptRoot 'phases/run-phase4-create-overrides.ps1'
+$phase5PublishScript = Join-Path $PSScriptRoot 'phases/run-phase5-publish.ps1'
+$phase6CompareScript = Join-Path $PSScriptRoot 'phases/run-phase6-compare.ps1'
+$phase7TeardownScript = Join-Path $PSScriptRoot 'phases/run-phase7-teardown.ps1'
+
+foreach ($requiredFile in @($phase1DeployScript, $phase2ExtractScript, $phase3ValidateExtractScript, $phase4CreateOverridesScript, $phase5PublishScript, $phase6CompareScript, $phase7TeardownScript)) {
     if (-not (Test-Path $requiredFile)) {
         Write-Error "Required file not found: $requiredFile"
         exit 2
     }
 }
-
 $exitCode = 0
 
 try {
+    # Phase 1: Deploy source apim instance and minimal target apim instance
     $phase1Args = @{
         SourceResourceGroup = $SourceResourceGroup
         TargetResourceGroup = $TargetResourceGroup
         SourceApimName      = $SourceApimName
         TargetApimName      = $TargetApimName
-        SkuName             = $SkuName
-        Location            = $Location
-        LogLevel            = $LogLevel
         PublisherEmail      = $PublisherEmail
+        LogLevel            = $LogLevel
     }
-    if (-not [string]::IsNullOrWhiteSpace($SourceSubscriptionId)) {
-        $phase1Args.SourceSubscriptionId = $SourceSubscriptionId
-    }
-    if (-not [string]::IsNullOrWhiteSpace($TargetSubscriptionId)) {
-        $phase1Args.TargetSubscriptionId = $TargetSubscriptionId
-    }
-    & $phase1Script @phase1Args
+    Add-ArgumentIfSet -Hashtable $phase1Args -Key 'SkuName' -Value $skuNameValue
+    Add-ArgumentIfSet -Hashtable $phase1Args -Key 'Location' -Value $locationValue
+    Add-ArgumentIfSet -Hashtable $phase1Args -Key 'SourceSubscriptionId' -Value $SourceSubscriptionId
+    Add-ArgumentIfSet -Hashtable $phase1Args -Key 'TargetSubscriptionId' -Value $TargetSubscriptionId
+    $phase1Output = & $phase1DeployScript @phase1Args
 
     if ($LASTEXITCODE -ne 0) {
         $exitCode = $LASTEXITCODE
         exit $exitCode
     }
 
+    # Update values based on deployment output.
+    $SourceSubscriptionId = $phase1Output.sourceSubscriptionId
+    $TargetSubscriptionId = $phase1Output.targetSubscriptionId
+    $SourceResourceGroup = $phase1Output.sourceResourceGroup
+    $TargetResourceGroup = $phase1Output.targetResourceGroup
+    $SourceApimName = $phase1Output.sourceApimName
+    $TargetApimName = $phase1Output.targetApimName
+    $SkuName = $phase1Output.skuName
+    $Location = $phase1Output.location
+
+    # Phase 2: `apiops extract`
     $phase2Args = @{
         SourceResourceGroup = $SourceResourceGroup
         SourceApimName      = $SourceApimName
         SkuName             = $SkuName
+        SourceSubscriptionId = $SourceSubscriptionId
         LogLevel            = $LogLevel
     }
-    if (-not [string]::IsNullOrWhiteSpace($SourceSubscriptionId)) {
-        $phase2Args.SourceSubscriptionId = $SourceSubscriptionId
-    }
-    if ($PSBoundParameters.ContainsKey('ExtractOutputDir')) {
-        $phase2Args.ExtractOutputDir = $ExtractOutputDir
-    }
-    & $phase2Script @phase2Args
+    Add-ArgumentIfSet -Hashtable $phase2Args -Key 'ExtractOutputDir' -Value $extractOutputDirValue
+    & $phase2ExtractScript @phase2Args
 
     if ($LASTEXITCODE -ne 0) {
         $exitCode = $LASTEXITCODE
         exit $exitCode
     }
 
+    # Phase 3: Validate `apiops extract`
     $phase3Args = @{
-        SkuName   = $SkuName
-        LogLevel  = $LogLevel
+        SkuName = $SkuName
+        LogLevel = $LogLevel
     }
-    if ($PSBoundParameters.ContainsKey('ExtractOutputDir')) {
-        $phase3Args.ExtractOutputDir = $ExtractOutputDir
-    }
-    & $phase3Script @phase3Args
+    Add-ArgumentIfSet -Hashtable $phase3Args -Key 'ExtractOutputDir' -Value $extractOutputDirValue
+    & $phase3ValidateExtractScript @phase3Args
 
     if ($LASTEXITCODE -ne 0) {
         $exitCode = $LASTEXITCODE
         exit $exitCode
     }
 
+    # Phase 4: Generate target environment overrides
     $phase4Args = @{
         TargetResourceGroup = $TargetResourceGroup
-        TargetApimName      = $TargetApimName
-        LogLevel            = $LogLevel
+        TargetSubscriptionId = $TargetSubscriptionId
+        LogLevel = $LogLevel
     }
-    if (-not [string]::IsNullOrWhiteSpace($TargetSubscriptionId)) {
-        $phase4Args.TargetSubscriptionId = $TargetSubscriptionId
-    }
-    if ($PSBoundParameters.ContainsKey('ExtractOutputDir')) {
-        $phase4Args.ExtractOutputDir = $ExtractOutputDir
-    }
-    & $phase4Script @phase4Args
+    Add-ArgumentIfSet -Hashtable $phase4Args -Key 'ExtractOutputDir' -Value $extractOutputDirValue
+    & $phase4CreateOverridesScript @phase4Args
 
     if ($LASTEXITCODE -ne 0) {
         $exitCode = $LASTEXITCODE
         exit $exitCode
     }
 
+    # Phase 5: Publish extracted artifacts to target
     $phase5Args = @{
+        TargetResourceGroup = $TargetResourceGroup
+        TargetApimName      = $TargetApimName
+        TargetSubscriptionId = $TargetSubscriptionId
+        LogLevel = $LogLevel
+    }
+    Add-ArgumentIfSet -Hashtable $phase5Args -Key 'ExtractOutputDir' -Value $extractOutputDirValue
+    & $phase5PublishScript @phase5Args
+
+    if ($LASTEXITCODE -ne 0) {
+        $exitCode = $LASTEXITCODE
+        exit $exitCode
+    }
+
+    # Phase 6: Compare source and target APIM instances
+    $phase6Args = @{
         SourceResourceGroup = $SourceResourceGroup
         SourceApimName      = $SourceApimName
         TargetResourceGroup = $TargetResourceGroup
         TargetApimName      = $TargetApimName
-        LogLevel            = $LogLevel
+        SourceSubscriptionId = $SourceSubscriptionId
+        TargetSubscriptionId = $TargetSubscriptionId
+        LogLevel = $LogLevel
     }
-    if (-not [string]::IsNullOrWhiteSpace($SourceSubscriptionId)) {
-        $phase5Args.SourceSubscriptionId = $SourceSubscriptionId
-    }
-    if (-not [string]::IsNullOrWhiteSpace($TargetSubscriptionId)) {
-        $phase5Args.TargetSubscriptionId = $TargetSubscriptionId
-    }
-    & $phase5Script @phase5Args
+    & $phase6CompareScript @phase6Args
 
     $exitCode = $LASTEXITCODE
 }
 finally {
-    & $phase6Script `
+    # Phase 7: Teardown apim instances and supporting resources
+    & $phase7TeardownScript `
         -SourceResourceGroup $SourceResourceGroup `
         -TargetResourceGroup $TargetResourceGroup `
         -Location $Location `
-        -HardDelete:$HardDelete `
         -SkipTeardown:$SkipTeardown
 }
 

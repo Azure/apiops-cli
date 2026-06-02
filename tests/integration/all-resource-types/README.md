@@ -1,201 +1,52 @@
-# Kitchen Sink APIM — Build Verification Test Infrastructure
+# All types APIM Test Assets
 
-This directory contains Bicep templates and scripts to deploy a "kitchen sink" Azure API Management instance for end-to-end build verification testing of the APIOps CLI.
-
-## What Gets Deployed
-
-The kitchen sink APIM instance includes **every resource type and API protocol variation** that APIOps-v2 supports, covering all 33 resource types in the `ResourceType` enum:
-
-### API Protocol Variations
-| API | Type | Spec Format |
-|-----|------|-------------|
-| `src-rest-openapi` | REST | OpenAPI 3.0 YAML |
-| `src-soap-passthrough` | SOAP | WSDL |
-| `src-graphql-synthetic` | GraphQL | SDL (inline) |
-| `src-graphql-passthrough` | GraphQL | SDL (pass-through) |
-| `src-websocket` | WebSocket | None |
-| `src-rest-versioned-v1` | REST (versioned) | OpenAPI |
-| `src-rest-revisioned` | REST (revisioned) | OpenAPI |
-| `src-mcp-from-api` | MCP (from existing API) | None |
-| `src-mcp-existing-server` | MCP (working existing-server demo via Learn) | None |
-| `src-a2a-weather-agent` | A2A (JSON-RPC + agent card) | None |
-
-### Backend Variations
-| Backend | Type |
-|---------|------|
-| `src-backend-http` | Simple HTTP URL |
-| `src-backend-function` | Azure Function stub |
-| `src-backend-logicapp` | Logic App stub |
-| `src-backend-pool` | Pool (multi-backend) |
-| `src-backend-circuit-breaker` | Circuit breaker |
-
-### Other Resources
-- **Named Values**: Plain text, secret, Key Vault reference
-- **Tags**: 2 tags applied to APIs and products
-- **Gateway**: Self-hosted gateway with API association
-- **Version Set**: URL-path versioning scheme
-- **Loggers**: Application Insights + Event Hub
-- **Groups**: Custom group
-- **Policy Fragments**: CORS + rate limit
-- **Global Schema**: JSON schema
-- **Policy Restriction**: Scope-based restriction
-- **Documentation**: Getting started doc
-- **Diagnostics**: App Insights diagnostic at service and API level
-- **Service Policy**: Global CORS policy
-- **Products**: Starter + Premium with policies, API/group associations, tags, wikis
-- **Subscriptions**: All-APIs + product-scoped
-- **Workspace** (Developer v2 only): Workspace with backend, named value, tag, product, API
+Infrastructure and scripts for APIOps integration tests against a source and target APIM.
 
 ## Prerequisites
 
-- [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) installed and authenticated (`az login`)
-- An Azure subscription with permissions to create resources
-- [Bicep](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/install) (bundled with recent Azure CLI)
+- Azure CLI authenticated with `az login`
+- Subscription permissions to create/delete APIM and supporting resources
+- Bicep support via Azure CLI
 
-## Run
+## Quick Commands
 
-### Deploy
-
-```powershell
-# Deploy with defaults (StandardV2 SKU, centralus, auto-generated resource names)
-.\deploy-source.ps1 -ResourceGroupName rg-apiops-bvt -PublisherEmail admin@contoso.com
-
-# Deploy with Developer SKU (classic — supports self-hosted gateways, no workspaces)
-.\deploy-source.ps1 -ResourceGroupName rg-apiops-bvt -PublisherEmail admin@contoso.com -SkuName Developer
-
-# Deploy with Premium SKU (classic — supports everything including workspaces + gateways)
-.\deploy-source.ps1 -ResourceGroupName rg-apiops-bvt -PublisherEmail admin@contoso.com -SkuName Premium
-```
-
-> ⏱️ **APIM provisioning takes 30-45 minutes.** The script will wait for completion.
-
-### Run APIOps Extract Against It
-
-After deployment, the script outputs the exact CLI command:
+Run full round trip:
 
 ```powershell
-npx apiops extract \
-  --subscription-id <subscription-id> \
-  --resource-group  rg-apiops-bvt \
-  --service-name    src-apim-bvt \
-  --output-dir      ./extracted
+./run-roundtrip-test.ps1 -PublisherEmail admin@contoso.com
 ```
 
-### Destroy
+## Round-Trip Phases
 
-```powershell
-.\deploy-source.ps1 -ResourceGroupName rg-apiops-bvt -Destroy
-```
+| Phase | Script |
+|---|---|
+| Deploy source + target | `phases/run-phase1-deploy.ps1` |
+| Extract | `phases/run-phase2-extract.ps1` |
+| Validate extract | `phases/run-phase3-validate-extract.ps1` |
+| Create target overrides | `phases/run-phase4-create-overrides.ps1` |
+| Publish | `phases/run-phase5-publish.ps1` |
+| Compare | `phases/run-phase6-compare.ps1` |
+| Teardown | `phases/run-phase7-teardown.ps1` |
 
-## Round-Trip Integration Test
+## CI
 
-The round-trip test validates the full extract→publish cycle:
+Workflow: `.github/workflows/integration-test.yml` (`workflow_dispatch`)
 
-1. **Deploy** an all-resources source APIM (all 33 resource types)
-2. **Deploy** a blank target APIM (same SKU, supporting infra only)
-3. **Extract** from source using `apiops extract`
-4. **Publish** extracted artifacts to target using `apiops publish`
-5. **Compare** source vs target via ARM REST API (deep property comparison with normalization)
-6. **Teardown** both resource groups
+Required environment secrets:
 
-### Run via GitHub Actions
-
-The workflow at `.github/workflows/integration-test.yml` provides a manual trigger (`workflow_dispatch`) with:
-- **SKU selection** (StandardV2, Developer, Premium, PremiumV2)
-- **Location** (default: centralus)
-- **Log level** (Info, Verbose, Debug; default: Verbose)
-- **Skip teardown** toggle for debugging
-
-Requires an `integration-test` environment with secrets:
-- `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` (OIDC)
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
 - `APIM_PUBLISHER_EMAIL`
 
-### Phases 2–5 Scripts
+## Layout
 
-Phases 2–5 are independent scripts that can be called separately for targeted re-runs, without re-executing the full round-trip:
+- `bicep/` source and target templates
+- `modules/` shared PowerShell helpers
+- `phases/` phase scripts
+- `run-roundtrip-test.ps1` full orchestrator
 
-#### Phase 2 — Extract
+## Notes
 
-Extracts artifacts from the source APIM.
-
-```powershell
-.\run-roundtrip-phase2-extract.ps1 `
-  -SourceSubscriptionId "<source-sub-id>" `
-  -SourceResourceGroup "rg-src" `
-  -SourceApimName "apim-src"
-```
-
-#### Phase 3 — Validate Extract
-
-Validates the extracted artifact structure against the expected-structure manifest.
-
-```powershell
-.\run-roundtrip-phase3-validate-extract.ps1 `
-  -SkuName "StandardV2"
-```
-
-Requires `ExtractOutputDir` (default: `./extracted-artifacts`) to already be populated by the extract step.
-
-#### Phase 4 — Publish
-
-Generates target environment overrides (Key Vault, App Insights, Event Hub) and publishes the extracted artifacts to the target APIM.
-
-```powershell
-.\run-roundtrip-phase4-publish.ps1 `
-  -TargetSubscriptionId "<target-sub-id>" `
-  -TargetResourceGroup "rg-tgt" `
-  -TargetApimName "apim-tgt"
-```
-
-Requires `ExtractOutputDir` (default: `./extracted-artifacts`) to already be populated by the extract step.
-
-#### Phase 5 — Compare
-
-Compares source and target APIM instances via ARM REST API with deep property normalization.
-
-```powershell
-.\run-roundtrip-phase5-compare.ps1 `
-  -SourceSubscriptionId "<source-sub-id>" `
-  -SourceResourceGroup "rg-src" `
-  -SourceApimName "apim-src" `
-  -TargetSubscriptionId "<target-sub-id>" `
-  -TargetResourceGroup "rg-tgt" `
-  -TargetApimName "apim-tgt"
-```
-
-Exit codes: `0` = match, `1` = differences found, `2` = error.
-
-All scripts accept `-LogLevel` (Info/Verbose/Debug), and phases 2–4 accept `-ExtractOutputDir`.
-
-### Comparison Script
-
-`Compare-ApimInstance.ps1` can also be run standalone to diff any two APIM instances directly without a state file:
-
-```powershell
-.\Compare-ApimInstance.ps1 `
-  -SourceSubscriptionId "..." -SourceResourceGroup rg-src -SourceApimName apim-src `
-  -TargetSubscriptionId "..." -TargetResourceGroup rg-tgt -TargetApimName apim-tgt
-```
-
-Exit codes: `0` = match, `1` = differences found, `2` = error.
-
-## Files
-
-| File | Purpose |
-|------|---------|
-| `source-apim.bicep` | Source APIM with all 33 resource types |
-| `target-apim.bicep` | Blank target APIM + supporting infra |
-| `run-roundtrip-test.ps1` | Master orchestrator for the full test |
-| `run-roundtrip-phase1-deploy.ps1` | Phase 1: deploy source + target APIM instances |
-| `run-roundtrip-phase2-extract.ps1` | Phase 2: extract artifacts from source APIM |
-| `run-roundtrip-phase3-validate-extract.ps1` | Phase 3: validate extracted artifact structure |
-| `run-roundtrip-phase4-publish.ps1` | Phase 4: generate overrides + publish to target |
-| `run-roundtrip-phase5-compare.ps1` | Phase 5: compare source vs target via ARM |
-| `run-roundtrip-phase6-teardown.ps1` | Phase 6: tear down resource groups |
-| `Compare-ApimInstance.ps1` | ARM REST comparison script (standalone) |
-| `Test-ExtractedArtifact.ps1` | Validate extracted artifact structure |
-| `expected-structure.json` | Manifest of expected extracted files |
-
-## Cost
-
-This deployment incurs costs for APIM and supporting resources (App Insights, Event Hub, Key Vault). Deploy on demand and destroy after testing. See [Azure API Management pricing](https://azure.microsoft.com/pricing/details/api-management/) for details.
+- APIM provisioning is slow (typically 30-45 minutes).
+- Exit codes used by compare/validation phases: `0` success, `1` diff/validation failure, `2` execution error.

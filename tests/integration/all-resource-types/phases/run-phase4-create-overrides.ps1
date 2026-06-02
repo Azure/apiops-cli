@@ -1,7 +1,25 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-  Phase 4 — Generate target environment overrides and publish artifacts to target APIM.
+  Phase 4 — Generate target environment overrides for target APIM.
+.DESCRIPTION
+    Builds the override file for target-specific values and writes it into the
+    extracted-artifacts directory for the publish phase to consume.
+
+.PARAMETER TargetSubscriptionId
+    Optional subscription ID for the target APIM instance.
+
+.PARAMETER TargetResourceGroup
+    Target APIM resource group.
+
+.PARAMETER LogLevel
+    Logging verbosity passed to helper commands.
+
+.PARAMETER ExtractOutputDir
+    Directory containing the extracted artifacts and generated overrides.
+
+.EXAMPLE
+    .\run-phase4-create-overrides.ps1 -TargetResourceGroup rg-tgt
 #>
 
 [CmdletBinding()]
@@ -11,9 +29,6 @@ param(
     [Parameter(Mandatory)]
     [string]$TargetResourceGroup,
 
-    [Parameter(Mandatory)]
-    [string]$TargetApimName,
-
     [ValidateSet('Info', 'Verbose', 'Debug')]
     [string]$LogLevel = 'Verbose',
 
@@ -21,13 +36,11 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$VerbosePreference = if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' }
-$DebugPreference = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' }
 
-$maskingModule = Join-Path $PSScriptRoot 'MaskingHelpers.psm1'
-$apiopsModule  = Join-Path $PSScriptRoot 'ApiopsHelpers.psm1'
+$maskingModule = Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/MaskingHelpers.psm1'
+$scriptArgModule  = Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/ScriptArgumentHelpers.psm1'
 
-foreach ($requiredFile in @($maskingModule, $apiopsModule)) {
+foreach ($requiredFile in @($maskingModule, $scriptArgModule)) {
     if (-not (Test-Path $requiredFile)) {
         Write-Error "Required file not found: $requiredFile"
         exit 2
@@ -40,12 +53,12 @@ if (-not (Test-Path $ExtractOutputDir)) {
 }
 
 Import-Module $maskingModule -Force
-Import-Module $apiopsModule -Force
+Import-Module $scriptArgModule -Force
 
-$apiopsLogLevel = Get-ApiopsLogLevel -ScriptLogLevel $LogLevel
-$apiopsAuthArgs = Get-ApiopsAuthArgs
+Set-ScriptLogPreferences -LogLevel $LogLevel
 
-Write-Host "🔧 Publish — Generate override config for target environment"
+# Pull the target-specific values directly from Azure for the override file.
+Write-Host "🔧 Override — Generate target environment override file"
 $targetKvUri        = az keyvault list --resource-group $TargetResourceGroup --query "[0].properties.vaultUri" -o tsv
 $targetAiResourceId = az monitor app-insights component list --resource-group $TargetResourceGroup --query "[0].id" -o tsv
 $targetAiKey        = az monitor app-insights component list --resource-group $TargetResourceGroup --query "[0].instrumentationKey" -o tsv
@@ -74,7 +87,6 @@ if (-not $targetEhConnStr) {
     Write-Host "   ⚠️  Could not get Event Hub connection string — EH logger override will be empty"
 }
 
-$targetEhName = 'tgt-eh-logs'
 $overrideFile = [System.IO.Path]::GetFullPath((Join-Path $ExtractOutputDir '.overrides.yaml'))
 $overrideYaml = @"
 namedValues:
@@ -89,39 +101,11 @@ loggers:
       instrumentationKey: "$targetAiKey"
   src-logger-eventhub:
     credentials:
-      name: "$targetEhName"
+      name: "tgt-eh-logs"
       connectionString: "$targetEhConnStr"
 "@
 
 $overrideYaml | Set-Content -Path $overrideFile -Encoding utf8
 
-Write-Host "📤 Publish — Publish artifacts to target APIM"
-$publishArgs = @(
-    'publish',
-    '--resource-group', $TargetResourceGroup,
-    '--service-name',   $TargetApimName,
-    '--source',         $ExtractOutputDir,
-    '--overrides',      $overrideFile,
-    '--log-level',      $apiopsLogLevel
-)
-if (-not [string]::IsNullOrWhiteSpace($TargetSubscriptionId)) {
-    $publishArgs += @('--subscription-id', $TargetSubscriptionId)
-}
-$publishArgs += $apiopsAuthArgs
-
-$replacements = @{
-    $TargetResourceGroup = Protect-ResourceGroupName -Value $TargetResourceGroup
-    $TargetApimName      = Protect-ApimName -Value $TargetApimName
-}
-if (-not [string]::IsNullOrWhiteSpace($TargetSubscriptionId)) {
-    $replacements[$TargetSubscriptionId] = Protect-SubscriptionId -Value $TargetSubscriptionId
-}
-
-$publishExitCode = Invoke-MaskedApiopsCommand -Replacements $replacements -Arguments $publishArgs
-
-if ($publishExitCode -ne 0) {
-    Write-Host "❌ Publish failed (exit code $publishExitCode)"
-    exit 2
-}
-
-exit 0
+Write-Host "✅ Override file written: $overrideFile"
+Write-Output $overrideFile

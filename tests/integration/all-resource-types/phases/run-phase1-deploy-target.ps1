@@ -41,20 +41,19 @@ param(
 $ErrorActionPreference = 'Stop'
 $VerbosePreference = if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' }
 $DebugPreference   = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' }
-Import-Module (Join-Path $PSScriptRoot 'MaskingHelpers.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'DeploymentHelpers.psm1') -Force
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/MaskingHelpers.psm1') -Force
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/ScriptArgumentHelpers.psm1') -Force
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/DeploymentHelpers.psm1') -Force
 
-$bicepFile = Join-Path $PSScriptRoot 'target-apim.bicep'
+$bicepFile = Join-Path (Split-Path $PSScriptRoot -Parent) 'bicep/target-apim.bicep'
 
 if (-not (Test-Path $bicepFile)) {
     Write-Error "Bicep file not found at: $bicepFile"
 }
 
 # Verify az CLI authentication and capture subscription id for masked logging
-$account = az account show --output json 2>$null | ConvertFrom-Json
-if (-not $account) {
-    Write-Error "Not logged in to Azure CLI. Run 'az login' first."
-}
+$account = Assert-AzCliLoggedIn
+$apimNameValue = Get-BoundParameterValueOrNull -BoundParameters $PSBoundParameters -Name 'ApimName'
 $subscriptionId = $account.id
 
 Write-Host "Starting target APIM deployment..."
@@ -93,8 +92,8 @@ $azArgs = @(
     '--output',         'json'
 ) + $azVerbosity
 
-if (-not [string]::IsNullOrWhiteSpace($ApimName)) {
-    $azArgs += @('--parameters', "apimName=$ApimName")
+if (-not [string]::IsNullOrWhiteSpace($apimNameValue)) {
+  $azArgs += @('--parameters', "apimName=$apimNameValue")
 }
 
 $raw = Invoke-MaskedAzCommand -Replacements $azReplacements -Arguments $azArgs

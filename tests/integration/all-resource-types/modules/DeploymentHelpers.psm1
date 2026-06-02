@@ -1,5 +1,21 @@
 Import-Module (Join-Path $PSScriptRoot 'MaskingHelpers.psm1')
 
+<#
+.SYNOPSIS
+Prints masked details for failed ARM deployment operations.
+
+.PARAMETER ResourceGroupName
+Resource group that contains the deployment.
+
+.PARAMETER DeploymentName
+Deployment name to inspect.
+
+.PARAMETER Replacements
+Mask replacement map for output.
+
+.OUTPUTS
+None
+#>
 function Write-DeploymentFailureDetails {
     [CmdletBinding()]
     param(
@@ -33,6 +49,25 @@ function Write-DeploymentFailureDetails {
     Write-Host "================================================" -ForegroundColor Yellow
 }
 
+<#
+.SYNOPSIS
+Waits for an APIM instance to reach Succeeded provisioning.
+
+.PARAMETER ResourceGroupName
+Resource group containing the APIM instance.
+
+.PARAMETER ApimName
+APIM service name.
+
+.PARAMETER TimeoutSeconds
+Maximum wait time in seconds.
+
+.PARAMETER PollIntervalSeconds
+Polling interval in seconds.
+
+.OUTPUTS
+System.Boolean
+#>
 function Wait-ApimActivation {
     [CmdletBinding()]
     param(

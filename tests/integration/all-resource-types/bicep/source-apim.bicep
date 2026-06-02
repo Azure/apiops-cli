@@ -636,7 +636,7 @@ resource globalSchema 'Microsoft.ApiManagement/service/schemas@2025-09-01-previe
   }
 }
 
-// Activation-sensitive resources are deployed post-activation by Deploy-SourceApim.ps1.
+// Activation-sensitive resources are deployed post-activation by run-phase1-deploy-source.ps1.
 
 // ---------------------------------------------------------------------------
 // TIER 2: Resources with Dependencies
@@ -657,7 +657,7 @@ resource diagnostic 'Microsoft.ApiManagement/service/diagnostics@2025-09-01-prev
   }
 }
 
-// Service policy is deployed post-activation by Deploy-SourceApim.ps1.
+// Service policy is deployed post-activation by run-phase1-deploy-source.ps1.
 
 // --- Products ---
 resource productStarter 'Microsoft.ApiManagement/service/products@2025-09-01-preview' = {
@@ -1164,7 +1164,7 @@ resource apiA2a 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
 // TIER 3: Child Resources
 // ---------------------------------------------------------------------------
 
-// Product policy is deployed post-activation by Deploy-SourceApim.ps1.
+// Product policy is deployed post-activation by run-phase1-deploy-source.ps1.
 
 // --- Product API Associations ---
 resource productStarterApiRest 'Microsoft.ApiManagement/service/products/apis@2025-09-01-preview' = {
@@ -1210,9 +1210,9 @@ resource productStarterTag 'Microsoft.ApiManagement/service/products/tags@2025-0
   dependsOn: [tagEnv]
 }
 
-// Product wiki is deployed post-activation by Deploy-SourceApim.ps1.
+// Product wiki is deployed post-activation by run-phase1-deploy-source.ps1.
 
-// API policy is deployed post-activation by Deploy-SourceApim.ps1.
+// API policy is deployed post-activation by run-phase1-deploy-source.ps1.
 
 // --- API Tags ---
 resource apiRestTagEnv 'Microsoft.ApiManagement/service/apis/tags@2025-09-01-preview' = {
@@ -1288,7 +1288,7 @@ resource apiRestTagDescEnv 'Microsoft.ApiManagement/service/apis/tagDescriptions
   }
 }
 
-// API wiki is deployed post-activation by Deploy-SourceApim.ps1.
+// API wiki is deployed post-activation by run-phase1-deploy-source.ps1.
 
 // --- API Release (on revisioned API) ---
 resource apiRelease 'Microsoft.ApiManagement/service/apis/releases@2025-09-01-preview' = {

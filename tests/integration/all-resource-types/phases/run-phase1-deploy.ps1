@@ -1,5 +1,49 @@
 #requires -Version 7.0
 
+<#
+.SYNOPSIS
+    Phase 1 — Deploy source and target APIM instances in parallel.
+.DESCRIPTION
+    Creates the source and target APIM resource groups, deploys the instances,
+    and returns the resolved resource names for the later round-trip phases.
+
+    When subscription IDs are not supplied, the script uses the current Azure CLI
+    context as a fallback.
+
+.PARAMETER SourceResourceGroup
+    Resource group for the source APIM instance.
+
+.PARAMETER TargetResourceGroup
+    Resource group for the target APIM instance.
+
+.PARAMETER SkuName
+    APIM SKU to deploy.
+
+.PARAMETER Location
+    Azure region for the deployments.
+
+.PARAMETER LogLevel
+    Logging verbosity passed to the deployment scripts.
+
+.PARAMETER PublisherEmail
+    Publisher email address configured on the APIM instances.
+
+.PARAMETER SourceApimName
+    Optional explicit name for the source APIM instance.
+
+.PARAMETER TargetApimName
+    Optional explicit name for the target APIM instance.
+
+.PARAMETER SourceSubscriptionId
+    Optional subscription ID for the source deployment.
+
+.PARAMETER TargetSubscriptionId
+    Optional subscription ID for the target deployment.
+
+.EXAMPLE
+    .\run-phase1-deploy.ps1 -SourceResourceGroup rg-src -TargetResourceGroup rg-tgt -PublisherEmail admin@contoso.com
+#>
+
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
@@ -14,7 +58,7 @@ param(
     [string]$Location = 'eastus2',
 
     [ValidateSet('Info', 'Verbose', 'Debug')]
-    [string]$LogLevel = 'Verbose',
+    [string]$LogLevel = 'Info',
 
     [Parameter(Mandatory)]
     [string]$PublisherEmail,
@@ -29,26 +73,24 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$VerbosePreference = if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' }
-$DebugPreference = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' }
 
-$maskingModule = Join-Path $PSScriptRoot 'MaskingHelpers.psm1'
+$maskingModule = Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/MaskingHelpers.psm1'
+$scriptArgModule = Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/ScriptArgumentHelpers.psm1'
 Import-Module $maskingModule -Force
+Import-Module $scriptArgModule -Force
 
-$account = az account show --output json 2>$null | ConvertFrom-Json
-if (-not $account) {
-    Write-Error "Not logged in to Azure CLI. Run 'az login' first."
-    exit 2
-}
+Set-ScriptLogPreferences -LogLevel $LogLevel
+
+$account = Assert-AzCliLoggedIn
 
 $subscriptionId = $account.id
-if ([string]::IsNullOrWhiteSpace($SourceSubscriptionId)) { $SourceSubscriptionId = $subscriptionId }
-if ([string]::IsNullOrWhiteSpace($TargetSubscriptionId)) { $TargetSubscriptionId = $subscriptionId }
+$sourceSubscriptionIdValue = Get-BoundParameterValueOrNull -BoundParameters $PSBoundParameters -Name 'SourceSubscriptionId'
+$targetSubscriptionIdValue = Get-BoundParameterValueOrNull -BoundParameters $PSBoundParameters -Name 'TargetSubscriptionId'
 
 Write-Host "🔐 Azure CLI authenticated: $($account.name) ($(Protect-SubscriptionId -Value $subscriptionId))"
 
-$deploySourceScript = Join-Path $PSScriptRoot 'Deploy-SourceApim.ps1'
-$deployTargetScript = Join-Path $PSScriptRoot 'Deploy-TargetApim.ps1'
+$deploySourceScript = Join-Path $PSScriptRoot 'run-phase1-deploy-source.ps1'
+$deployTargetScript = Join-Path $PSScriptRoot 'run-phase1-deploy-target.ps1'
 
 foreach ($requiredFile in @($maskingModule, $deploySourceScript, $deployTargetScript)) {
     if (-not (Test-Path $requiredFile)) {
@@ -67,21 +109,29 @@ $targetLogFile = Join-Path $logsDir "target-deploy-$timestamp.log"
 
 Write-Host "🚀 PHASE 1 — Deploy source and target APIM instances (parallel)"
 
+$sourceDeployArgs = @{
+    ResourceGroupName = $SourceResourceGroup
+    SkuName           = $SkuName
+    Location          = $Location
+    PublisherEmail    = $PublisherEmail
+    LogLevel          = $LogLevel
+}
+Add-ArgumentIfSet -Hashtable $sourceDeployArgs -Key 'ApimName' -Value $SourceApimName
+
+$targetDeployArgs = @{
+    ResourceGroupName = $TargetResourceGroup
+    SkuName           = $SkuName
+    Location          = $Location
+    PublisherEmail    = $PublisherEmail
+    LogLevel          = $LogLevel
+}
+Add-ArgumentIfSet -Hashtable $targetDeployArgs -Key 'ApimName' -Value $TargetApimName
+
 $sourceJob = Start-Job -Name 'DeploySource' -ScriptBlock {
-            param($script, $rg, $sku, $loc, $email, $transcriptFile, $logLevel, $apimName)
+            param($script, $scriptArgs, $transcriptFile)
             $ErrorActionPreference = 'Stop'
             Start-Transcript -Path $transcriptFile -Force -UseMinimalHeader | Out-Null
             try {
-                $scriptArgs = @{
-                    ResourceGroupName = $rg
-                    SkuName           = $sku
-                    Location          = $loc
-                    PublisherEmail    = $email
-                    LogLevel          = $logLevel
-                }
-                if (-not [string]::IsNullOrWhiteSpace($apimName)) {
-                    $scriptArgs.ApimName = $apimName
-                }
                 $result = & $script @scriptArgs
                 if (-not $result -or -not $result.apimServiceName) {
                     throw "Source deployment returned no outputs"
@@ -90,23 +140,13 @@ $sourceJob = Start-Job -Name 'DeploySource' -ScriptBlock {
             } finally {
                 Stop-Transcript | Out-Null
             }
-} -ArgumentList $deploySourceScript, $SourceResourceGroup, $SkuName, $Location, $PublisherEmail, $sourceLogFile, $LogLevel, $SourceApimName
+} -ArgumentList $deploySourceScript, $sourceDeployArgs, $sourceLogFile
 
 $targetJob = Start-Job -Name 'DeployTarget' -ScriptBlock {
-            param($script, $rg, $sku, $loc, $email, $transcriptFile, $logLevel, $apimName)
+            param($script, $scriptArgs, $transcriptFile)
             $ErrorActionPreference = 'Stop'
             Start-Transcript -Path $transcriptFile -Force -UseMinimalHeader | Out-Null
             try {
-                $scriptArgs = @{
-                    ResourceGroupName = $rg
-                    SkuName           = $sku
-                    Location          = $loc
-                    PublisherEmail    = $email
-                    LogLevel          = $logLevel
-                }
-                if (-not [string]::IsNullOrWhiteSpace($apimName)) {
-                    $scriptArgs.ApimName = $apimName
-                }
                 $result = & $script @scriptArgs
                 if (-not $result -or -not $result.apimServiceName -or -not $result.apimServiceName.value) {
                     throw "Target deployment returned no outputs"
@@ -115,7 +155,7 @@ $targetJob = Start-Job -Name 'DeployTarget' -ScriptBlock {
             } finally {
                 Stop-Transcript | Out-Null
             }
-} -ArgumentList $deployTargetScript, $TargetResourceGroup, $SkuName, $Location, $PublisherEmail, $targetLogFile, $LogLevel, $TargetApimName
+} -ArgumentList $deployTargetScript, $targetDeployArgs, $targetLogFile
 
 $jobs = @($sourceJob, $targetJob)
 $sourceLastPos = 0
@@ -179,7 +219,7 @@ if ($exitCode -ne 0) {
     exit $exitCode
 }
 
-$sourceSubId = if (-not [string]::IsNullOrWhiteSpace($SourceSubscriptionId)) { $SourceSubscriptionId } elseif ($sourceOutputs -and $sourceOutputs.subscriptionId) { $sourceOutputs.subscriptionId } else { $subscriptionId }
+$sourceSubId = if (-not [string]::IsNullOrWhiteSpace($sourceSubscriptionIdValue)) { $sourceSubscriptionIdValue } elseif ($sourceOutputs -and $sourceOutputs.subscriptionId) { $sourceOutputs.subscriptionId } else { $subscriptionId }
 $sourceRg = if ($sourceOutputs -and $sourceOutputs.resourceGroup) { $sourceOutputs.resourceGroup } else { $SourceResourceGroup }
 $sourceName = if ($sourceOutputs -and $sourceOutputs.apimServiceName) { $sourceOutputs.apimServiceName } else {
     $apimName = az apim list --resource-group $SourceResourceGroup --query "[0].name" -o tsv 2>$null
@@ -190,7 +230,7 @@ $sourceName = if ($sourceOutputs -and $sourceOutputs.apimServiceName) { $sourceO
     $apimName
 }
 
-$targetSubId = if (-not [string]::IsNullOrWhiteSpace($TargetSubscriptionId)) { $TargetSubscriptionId } elseif ($targetOutputs -and $targetOutputs.subscriptionId.value) { $targetOutputs.subscriptionId.value } else { $subscriptionId }
+$targetSubId = if (-not [string]::IsNullOrWhiteSpace($targetSubscriptionIdValue)) { $targetSubscriptionIdValue } elseif ($targetOutputs -and $targetOutputs.subscriptionId.value) { $targetOutputs.subscriptionId.value } else { $subscriptionId }
 $targetRg = if ($targetOutputs -and $targetOutputs.resourceGroupName.value) { $targetOutputs.resourceGroupName.value } else { $TargetResourceGroup }
 $targetName = if ($targetOutputs -and $targetOutputs.apimServiceName.value) { $targetOutputs.apimServiceName.value } else {
     $apimName = az apim list --resource-group $TargetResourceGroup --query "[0].name" -o tsv 2>$null
@@ -201,7 +241,7 @@ $targetName = if ($targetOutputs -and $targetOutputs.apimServiceName.value) { $t
     $apimName
 }
 
-if ($SkuName -in @('Developer', 'Premium')) {
+if ($SkuName -in @('Developer', 'Premium', 'PremiumV2')) {
     $postActivationState = az deployment group list `
         --resource-group $sourceRg `
         --query "sort_by([?starts_with(name, 'source-apim-post-activation-')], &properties.timestamp)[-1].properties.provisioningState" `

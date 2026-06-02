@@ -57,8 +57,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $VerbosePreference = if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' }
 $DebugPreference   = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' }
-Import-Module (Join-Path $PSScriptRoot 'MaskingHelpers.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'DeploymentHelpers.psm1') -Force
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/MaskingHelpers.psm1') -Force
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/ScriptArgumentHelpers.psm1') -Force
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/DeploymentHelpers.psm1') -Force
 
 # Map this script's LogLevel (Info/Verbose/Debug) to the apiops CLI log level
 # values used in the printed example command.
@@ -84,8 +85,8 @@ if ($Destroy) {
 # ---------------------------------------------------------------------------
 # Deploy path
 # ---------------------------------------------------------------------------
-$bicepFile = Join-Path $PSScriptRoot 'source-apim.bicep'
-$postActivationBicepFile = Join-Path $PSScriptRoot 'source-apim-post-activation.bicep'
+$bicepFile = Join-Path (Split-Path $PSScriptRoot -Parent) 'bicep/source-apim.bicep'
+$postActivationBicepFile = Join-Path (Split-Path $PSScriptRoot -Parent) 'bicep/source-apim-post-activation.bicep'
 
 if (-not (Test-Path $bicepFile)) {
     Write-Error "Bicep file not found at: $bicepFile"
@@ -96,10 +97,8 @@ if (-not (Test-Path $postActivationBicepFile)) {
 
 # Verify az CLI is authenticated
 Write-Host "🔐 Verifying Azure CLI authentication..."
-$account = az account show --output json 2>$null | ConvertFrom-Json
-if (-not $account) {
-    Write-Error "Not logged in to Azure CLI. Run 'az login' first."
-}
+$account = Assert-AzCliLoggedIn
+$apimNameValue = Get-BoundParameterValueOrNull -BoundParameters $PSBoundParameters -Name 'ApimName'
 
 $subscriptionId = $account.id
 Write-Host "   Subscription: $($account.name) ($(Protect-SubscriptionId -Value $subscriptionId))" -ForegroundColor Gray
@@ -181,8 +180,8 @@ $azArgs = @(
     '--output',         'json'
 ) + $azVerbosity
 
-if (-not [string]::IsNullOrWhiteSpace($ApimName)) {
-    $azArgs += @('--parameters', "apimName=$ApimName")
+if (-not [string]::IsNullOrWhiteSpace($apimNameValue)) {
+    $azArgs += @('--parameters', "apimName=$apimNameValue")
 }
 
 $raw = Invoke-MaskedAzCommand -Replacements $azReplacements -Arguments $azArgs
@@ -217,7 +216,7 @@ $postArgs = @(
 ) + $azVerbosity
 
 Write-Host "Applying post-activation APIM resources..." -ForegroundColor Cyan
-$postRaw = Invoke-MaskedAzCommand -Replacements $postReplacements -Arguments $postArgs
+Invoke-MaskedAzCommand -Replacements $postReplacements -Arguments $postArgs
 if ($LASTEXITCODE -ne 0) {
     Write-DeploymentFailureDetails `
         -ResourceGroupName $ResourceGroupName `

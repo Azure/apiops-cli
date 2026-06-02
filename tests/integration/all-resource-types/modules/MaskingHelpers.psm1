@@ -28,6 +28,22 @@ $script:BuiltinRedactions = @(
        Replacement = '<REDACTED:email>' }
 )
 
+<#
+.SYNOPSIS
+Masks generic identifiers while preserving short prefix/suffix.
+
+.PARAMETER Value
+Input string to mask.
+
+.PARAMETER Prefix
+Visible prefix length.
+
+.PARAMETER Suffix
+Visible suffix length.
+
+.OUTPUTS
+System.String
+#>
 function Protect-Identifier {
     param(
         [string]$Value,
@@ -50,22 +66,65 @@ function Protect-Identifier {
     return "{0}...{1}" -f $Value.Substring(0, $Prefix), $Value.Substring($Value.Length - $Suffix)
 }
 
+<#
+.SYNOPSIS
+Replaces subscription IDs with a stable redaction token.
+
+.PARAMETER Value
+Subscription ID value.
+
+.OUTPUTS
+System.String
+#>
 function Protect-SubscriptionId {
     param([string]$Value)
     if (-not $script:EnableMasking) { return $Value }
     return '<REDACTED:subscription-id>'
 }
 
+<#
+.SYNOPSIS
+Masks resource group names with minimal context retained.
+
+.PARAMETER Value
+Resource group name.
+
+.OUTPUTS
+System.String
+#>
 function Protect-ResourceGroupName {
     param([string]$Value)
     return Protect-Identifier -Value $Value -Prefix 3 -Suffix 7
 }
 
+<#
+.SYNOPSIS
+Masks APIM service names with minimal context retained.
+
+.PARAMETER Value
+APIM service name.
+
+.OUTPUTS
+System.String
+#>
 function Protect-ApimName {
     param([string]$Value)
     return Protect-Identifier -Value $Value -Prefix 3 -Suffix 8
 }
 
+<#
+.SYNOPSIS
+Applies configured replacement and regex redaction rules.
+
+.PARAMETER Line
+Input log line.
+
+.PARAMETER Replacements
+Literal replacement map applied before regex masking.
+
+.OUTPUTS
+System.String
+#>
 function Protect-LogLine {
     param(
         [string]$Line,
@@ -98,6 +157,16 @@ function Protect-LogLine {
     return $protectedLine
 }
 
+<#
+.SYNOPSIS
+Resolves native executable paths, including Windows cmd wrappers.
+
+.PARAMETER Name
+Command name to resolve.
+
+.OUTPUTS
+System.Management.Automation.PSCustomObject
+#>
 function Resolve-NativeExecutable {
     param([string]$Name)
 
@@ -115,6 +184,25 @@ function Resolve-NativeExecutable {
     return [pscustomobject]@{ FilePath = $exePath; Prefix = $prefix }
 }
 
+<#
+.SYNOPSIS
+Runs a process and streams masked output.
+
+.PARAMETER FilePath
+Executable to run.
+
+.PARAMETER Arguments
+Argument list for the executable.
+
+.PARAMETER Replacements
+Mask replacement map for streamed lines.
+
+.PARAMETER CaptureStdout
+Capture and return stdout instead of streaming.
+
+.OUTPUTS
+System.String
+#>
 function Invoke-MaskedProcess {
     [CmdletBinding()]
     param(
@@ -216,6 +304,19 @@ function Invoke-MaskedProcess {
     }
 }
 
+<#
+.SYNOPSIS
+Runs npx apiops with masked output and returns exit code.
+
+.PARAMETER Arguments
+Arguments passed to `apiops`.
+
+.PARAMETER Replacements
+Mask replacement map for output.
+
+.OUTPUTS
+System.Int32
+#>
 function Invoke-MaskedApiopsCommand {
     [CmdletBinding()]
     param(
@@ -230,6 +331,19 @@ function Invoke-MaskedApiopsCommand {
     return $LASTEXITCODE
 }
 
+<#
+.SYNOPSIS
+Runs az with masked output and returns captured stdout.
+
+.PARAMETER Arguments
+Arguments passed to `az`.
+
+.PARAMETER Replacements
+Mask replacement map for output.
+
+.OUTPUTS
+System.String
+#>
 function Invoke-MaskedAzCommand {
     [CmdletBinding()]
     param(

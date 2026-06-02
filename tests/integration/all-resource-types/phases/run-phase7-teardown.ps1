@@ -1,7 +1,25 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-  Phase 6 — Tear down source and target APIM resource groups.
+  Phase 7 — Tear down source and target APIM resource groups.
+.DESCRIPTION
+    Deletes the source and target resource groups, optionally waits for hard
+    delete completion, and purges soft-deleted APIM instances when requested.
+
+.PARAMETER SourceResourceGroup
+    Source APIM resource group.
+
+.PARAMETER TargetResourceGroup
+    Target APIM resource group.
+
+.PARAMETER Location
+    Azure region used when purging soft-deleted APIM instances.
+
+.PARAMETER SkipTeardown
+    Skips teardown when specified.
+
+.EXAMPLE
+    .\run-phase7-teardown.ps1 -SourceResourceGroup rg-src -TargetResourceGroup rg-tgt
 #>
 
 [CmdletBinding()]
@@ -14,13 +32,11 @@ param(
 
     [string]$Location = 'eastus2',
 
-    [switch]$SkipTeardown,
-
-    [bool]$HardDelete = $true
+    [switch]$SkipTeardown
 )
 
 $ErrorActionPreference = 'Stop'
-$maskingModule = Join-Path $PSScriptRoot 'MaskingHelpers.psm1'
+$maskingModule = Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/MaskingHelpers.psm1'
 Import-Module $maskingModule -Force
 
 if ($SkipTeardown) {
@@ -28,24 +44,17 @@ if ($SkipTeardown) {
     exit 0
 }
 
-Write-Host "🧹 PHASE 6 — Teardown"
+Write-Host "🧹 PHASE 7 — Teardown"
 
 $sourceApimName = $null
 $targetApimName = $null
-if ($HardDelete) {
-    $sourceApimName = az apim list --resource-group $SourceResourceGroup --query "[0].name" -o tsv 2>$null
-    $targetApimName = az apim list --resource-group $TargetResourceGroup --query "[0].name" -o tsv 2>$null
-}
+$sourceApimName = az apim list --resource-group $SourceResourceGroup --query "[0].name" -o tsv 2>$null
+$targetApimName = az apim list --resource-group $TargetResourceGroup --query "[0].name" -o tsv 2>$null
 
 Write-Host "   Deleting $(Protect-ResourceGroupName -Value $SourceResourceGroup)..."
 az group delete --name $SourceResourceGroup --yes --no-wait 2>$null
 Write-Host "   Deleting $(Protect-ResourceGroupName -Value $TargetResourceGroup)..."
 az group delete --name $TargetResourceGroup --yes --no-wait 2>$null
-
-if (-not $HardDelete) {
-    Write-Host "🧹 Teardown initiated (async deletions)"
-    exit 0
-}
 
 Write-Host "   ⏳ Waiting for resource group deletions to complete for hard-delete..."
 $maxWaitMinutes = 15
