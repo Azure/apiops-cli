@@ -162,7 +162,6 @@ try {
     $phase2Args = @{
         SourceResourceGroup = $SourceResourceGroup
         SourceApimName      = $SourceApimName
-        SkuName             = $SkuName
         SourceSubscriptionId = $SourceSubscriptionId
         LogLevel            = $LogLevel
     }

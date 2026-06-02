@@ -18,9 +18,6 @@
 .PARAMETER SourceApimName
     Source APIM instance name.
 
-.PARAMETER SkuName
-    APIM SKU used to extract the artifacts.
-
 .PARAMETER LogLevel
     Logging verbosity passed to apiops and the validation step.
 
@@ -40,9 +37,6 @@ param(
 
     [Parameter(Mandatory)]
     [string]$SourceApimName,
-
-    [ValidateSet('Developer', 'Premium', 'Standard', 'StandardV2', 'PremiumV2')]
-    [string]$SkuName = 'StandardV2',
 
     [ValidateSet('Info', 'Verbose', 'Debug')]
     [string]$LogLevel = 'Verbose',
