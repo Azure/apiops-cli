@@ -253,6 +253,7 @@ try {
         LogLevel = $LogLevel
     }
     Add-ArgumentIfSet -Hashtable $phase3Args -Key 'ExtractOutputDir' -Value $extractOutputDirValue
+    $global:LASTEXITCODE = 0
     & $phase3ValidateExtractScript @phase3Args
 
     if ($LASTEXITCODE -ne 0) {
@@ -261,12 +262,14 @@ try {
     }
 
     # Phase 4: Generate target environment overrides
+    $currentPhase = 'phase4-create-overrides'
     $phase4Args = @{
         TargetResourceGroup = $TargetResourceGroup
         TargetSubscriptionId = $TargetSubscriptionId
         LogLevel = $LogLevel
     }
     Add-ArgumentIfSet -Hashtable $phase4Args -Key 'ExtractOutputDir' -Value $extractOutputDirValue
+    $global:LASTEXITCODE = 0
     & $phase4CreateOverridesScript @phase4Args
 
     if ($LASTEXITCODE -ne 0) {
@@ -275,6 +278,7 @@ try {
     }
 
     # Phase 5: Publish extracted artifacts to target
+    $currentPhase = 'phase5-publish'
     $phase5Args = @{
         TargetResourceGroup = $TargetResourceGroup
         TargetApimName      = $TargetApimName
@@ -282,6 +286,7 @@ try {
         LogLevel = $LogLevel
     }
     Add-ArgumentIfSet -Hashtable $phase5Args -Key 'ExtractOutputDir' -Value $extractOutputDirValue
+    $global:LASTEXITCODE = 0
     & $phase5PublishScript @phase5Args
 
     if ($LASTEXITCODE -ne 0) {
@@ -290,6 +295,7 @@ try {
     }
 
     # Phase 6: Compare source and target APIM instances
+    $currentPhase = 'phase6-compare'
     $phase6Args = @{
         SourceResourceGroup = $SourceResourceGroup
         SourceApimName      = $SourceApimName
@@ -299,6 +305,7 @@ try {
         TargetSubscriptionId = $TargetSubscriptionId
         LogLevel = $LogLevel
     }
+    $global:LASTEXITCODE = 0
     & $phase6CompareScript @phase6Args
 
     $exitCode = $LASTEXITCODE
