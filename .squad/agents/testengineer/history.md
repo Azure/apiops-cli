@@ -172,3 +172,43 @@ Gotchas for future PowerShell work:
 - `$x = if ($cond) { [List[T]]::new() }` assigns `$null` — PowerShell enumerates the empty list. Use `$x = $null; if ($cond) { $x = ... }`.
 - `ProcessStartInfo.StandardOutputEncoding/StandardErrorEncoding` default to OEM on Windows; force UTF-8 or `az --debug` output mangles.
 
+### 2026-05-19: Named Value Token Normalization Coverage Audit
+
+**Context:** User raised concern that Logger credential token normalization (commit 4cb0fa3) might not cover other resources that also use `{{namedValue}}` tokens.
+
+**Audit findings:**
+1. **Current implementation**: Only Logger resources have token normalization (lines 118-124 in resource-publisher.ts)
+2. **Current test coverage**: One test for Logger credential normalization (line 174-223 in resource-publisher.test.ts)
+3. **Gap identified**: Backend resources can also use `{{namedValue}}` tokens in `credentials.header` and `credentials.query` properties
+
+**Backend credentials structure from APIM REST API:**
+```json
+{
+  "credentials": {
+    "header": {
+      "Authorization": ["{{bearer-token}}"],
+      "x-api-key": ["{{api-key-namedvalue}}"]
+    },
+    "query": { ... },
+    "certificate": [ ... ]
+  }
+}
+```
+
+**Action taken:**
+- Added skipped test `should canonicalize backend credential named value references from overrides` to document the gap
+- Test currently fails: expects `{{Backend-Auth-Token}}` (canonical casing) but receives `{{backend-auth-token}}` (from override)
+- Test will pass once implementation is extended to Backend resources
+- Created decision inbox note at `.squad/decisions/inbox/testengineer-named-value-coverage.md` recommending P2 extension
+
+**Recommendation:** Generalize `normalizeLoggerCredentialNamedValueReferences()` to `normalizeCredentialNamedValueReferences()` and apply to both Logger and Backend resource types. The existing recursive logic already handles nested objects/arrays, so minimal code change required.
+
+**Other resource types reviewed:**
+- **Diagnostic**: References loggers by ARM ID, not named value tokens
+- **Policies (XML)**: Already handle `{{namedValue}}` tokens, but as opaque XML content, not JSON properties
+- **ApiOperation, PolicyFragment**: May use named values in future, but not documented in current APIM REST API
+
+**Pattern reinforced:** When implementing normalization/canonicalization logic, audit all resource types that share similar property patterns. Skipped tests document known gaps and serve as regression coverage when gaps are closed.
+
+**Result:** 34 tests passing, 1 skipped test documenting Backend normalization gap. Decision note created for team review.
+

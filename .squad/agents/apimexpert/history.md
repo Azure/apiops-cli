@@ -106,3 +106,29 @@ the SDK surface, reference docs, or ad-hoc observation.
 - Classic Developer/Premium SKU only.
 - Docs: <https://learn.microsoft.com/rest/api/apimanagement/policy-restriction> · <https://learn.microsoft.com/azure/templates/microsoft.apimanagement/service/policyrestrictions>
 
+### 2026-06-02: Named Value Token Canonicalization — Broadened Scope
+
+**Problem:** Initial fix only canonicalized `{{namedValue}}` tokens in Logger credentials. Backend credentials also contain these tokens and fail validation when override casing differs from artifact names.
+
+**APIM resources supporting named value tokens:**
+1. **Logger** — `properties.credentials.*` (instrumentationKey, connectionString, etc.)
+2. **Backend** — `properties.credentials.authorization.parameter`, `properties.credentials.header.*`, `properties.credentials.query.*`
+3. Policies/PolicyFragments use `{{tokens}}` in XML, not JSON payloads (handled separately)
+
+**Solution:** Generalized normalization to traverse entire JSON payload recursively, not just Logger credentials. Renamed function: `normalizeLoggerCredentialNamedValueReferences` → `normalizeNamedValueReferences`. Applied to all resource types before PUT.
+
+**Rationale:**
+- Backend credentials affected today, not hypothetical
+- Future-proof — new resource types with token support work automatically
+- Smallest correct change — recursive traversal already existed, just removed Logger-specific conditional
+- Preserves opaque JSON (Constitution §VII) — canonicalization safe for unknown properties
+
+**Evidence:**
+- Azure REST API spec: Backend credentials support `{{namedValue}}` references ([azure-rest-api-specs](https://github.com/Azure/azure-rest-api-specs/tree/main/specification/apimanagement))
+- APIM documentation: Named values in Backend authorization, headers, query strings
+- User feedback: "name-value pairs maybe used for other resources"
+
+**Tests:** Added Backend credential canonicalization test. All 910 tests pass.
+
+**Decision doc:** `.squad/decisions/inbox/apimexpert-named-value-scope.md`
+

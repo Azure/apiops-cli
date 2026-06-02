@@ -171,7 +171,7 @@ describe('resource-publisher', () => {
       );
     });
 
-    it('should canonicalize logger credential named value references from overrides', async () => {
+    it('should canonicalize named value references in logger credentials', async () => {
       const client = createMockClient();
       const store = createMockStore();
       const namedValueName = 'Logger-Credentials--658acc09217d201b30974554';
@@ -220,6 +220,136 @@ describe('resource-publisher', () => {
           }),
         })
       );
+    });
+
+    it('should canonicalize named value references in backend credentials', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const authTokenName = 'Backend-Auth-Token';
+      const apiKeyName = 'Backend-API-Key';
+
+      store.readResource.mockResolvedValue({
+        name: 'my-backend',
+        properties: {
+          url: 'https://api.example.com',
+          protocol: 'http',
+          credentials: {
+            authorization: {
+              scheme: 'Bearer',
+              parameter: '{{old-token}}',
+            },
+            header: {
+              'X-API-Key': ['{{old-api-key}}'],
+            },
+            query: {
+              token: ['{{old-token}}'],
+            },
+          },
+        },
+      });
+
+      store.listResources.mockResolvedValue([
+        { type: ResourceType.Backend, nameParts: ['my-backend'] },
+        { type: ResourceType.NamedValue, nameParts: [authTokenName] },
+        { type: ResourceType.NamedValue, nameParts: [apiKeyName] },
+      ]);
+
+      const configWithOverrides: PublishConfig = {
+        ...testConfig,
+        overrides: {
+          backends: {
+            'my-backend': {
+              credentials: {
+                authorization: {
+                  parameter: `{{${authTokenName.toLowerCase()}}}`,
+                },
+                header: {
+                  'X-API-Key': [`{{${apiKeyName.toLowerCase()}}}`],
+                },
+                query: {
+                  token: [`{{${authTokenName.toLowerCase()}}}`],
+                },
+              },
+            },
+          },
+        },
+      };
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Backend,
+        nameParts: ['my-backend'],
+      };
+
+      await publishResource(client, store, testContext, descriptor, configWithOverrides);
+
+      const putCall = client.putResource.mock.calls[0];
+      const putJson = putCall[2] as Record<string, unknown>;
+      const props = putJson.properties as Record<string, unknown>;
+      const credentials = props.credentials as Record<string, unknown>;
+      const authorization = credentials.authorization as Record<string, unknown>;
+      const header = credentials.header as Record<string, string[]>;
+      const query = credentials.query as Record<string, string[]>;
+
+      expect(authorization.parameter).toBe(`{{${authTokenName}}}`);
+      expect(header['X-API-Key'][0]).toBe(`{{${apiKeyName}}}`);
+      expect(query['token'][0]).toBe(`{{${authTokenName}}}`);
+    });
+
+    it.skip('should canonicalize backend credential named value references from overrides', async () => {
+      // TODO: Backend credentials can also use {{namedValue}} tokens (e.g., Authorization
+      // headers, API keys). Currently only Logger credentials are normalized. This test
+      // documents the gap and will pass once the normalization logic is extended to Backend.
+      // See: .squad/decisions/inbox/testengineer-named-value-coverage.md
+      const client = createMockClient();
+      const store = createMockStore();
+      const namedValueName = 'Backend-Auth-Token';
+      store.readResource.mockResolvedValue({
+        name: 'my-backend',
+        properties: {
+          url: 'https://api.example.com',
+          protocol: 'http',
+          credentials: {
+            header: {
+              Authorization: ['{{old-token}}'],
+            },
+          },
+        },
+      });
+      store.listResources.mockResolvedValue([
+        { type: ResourceType.Backend, nameParts: ['my-backend'] },
+        { type: ResourceType.NamedValue, nameParts: [namedValueName] },
+      ]);
+
+      const configWithOverrides: PublishConfig = {
+        ...testConfig,
+        overrides: {
+          backends: {
+            'my-backend': {
+              credentials: {
+                header: {
+                  Authorization: [`{{${namedValueName.toLowerCase()}}}`],
+                },
+              },
+            },
+          },
+        },
+      };
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Backend,
+        nameParts: ['my-backend'],
+      };
+
+      await publishResource(client, store, testContext, descriptor, configWithOverrides);
+
+      const putCall = client.putResource.mock.calls[0];
+      const putJson = putCall[2] as Record<string, unknown>;
+      const props = putJson.properties as Record<string, unknown>;
+      const credentials = props.credentials as Record<string, unknown>;
+      const header = credentials?.header as Record<string, unknown>;
+      
+      // This assertion will pass once Backend normalization is implemented
+      expect(header?.Authorization).toEqual([`{{${namedValueName}}}`]);
     });
 
     it('should preserve opaque JSON properties', async () => {
