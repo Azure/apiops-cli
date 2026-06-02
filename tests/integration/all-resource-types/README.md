@@ -13,7 +13,23 @@ Infrastructure and scripts for APIOps integration tests against a source and tar
 Run full round trip:
 
 ```powershell
+cd tests/integration/all-resource-types
 ./run-roundtrip-test.ps1 -PublisherEmail admin@contoso.com
+```
+
+Run full round trip with log:
+
+Bash:
+```bash
+set -o pipefail && log_file="tests/integration/all-resource-types/phases/logs/roundtrip-premium-$(date +%Y%m%d-%H%M%S).log" && echo "Logging to $log_file" && pwsh -NoLogo -NoProfile -File ./tests/integration/all-resource-types/run-roundtrip-test.ps1 -SkuName Premium 2>&1 | tee "$log_file"
+```
+
+Powershell:
+```powershell
+$logFile = "tests/integration/all-resource-types/phases/logs/roundtrip-premium-$((Get-Date).ToString('yyyyMMdd-HHmmss')).log"
+Write-Host "Logging to $logFile"
+.\tests\integration\all-resource-types\run-roundtrip-test.ps1 -SkuName Premium 2>&1 | Tee-Object -FilePath $logFile
+if ($LASTEXITCODE -ne 0) { throw "Round-trip failed with exit code $LASTEXITCODE. See $logFile" }
 ```
 
 ## Round-Trip Phases
