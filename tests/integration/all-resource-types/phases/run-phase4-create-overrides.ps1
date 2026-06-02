@@ -59,12 +59,20 @@ Import-Module $scriptArgModule -Force
 
 Set-ScriptLogPreferences -LogLevel $LogLevel
 
+$targetSubscriptionIdValue = Get-BoundParameterValueOrNull -BoundParameters $PSBoundParameters -Name 'TargetSubscriptionId'
+$subscriptionArgs = @()
+if (-not [string]::IsNullOrWhiteSpace($targetSubscriptionIdValue)) {
+    $subscriptionArgs = @('--subscription', $targetSubscriptionIdValue)
+}
+
 # Pull the target-specific values directly from Azure for the override file.
 Write-Host "🔧 Override — Generate target environment override file"
-$targetKvUri        = az keyvault list --resource-group $TargetResourceGroup --query "[0].properties.vaultUri" -o tsv
-$targetAiResourceId = az monitor app-insights component list --resource-group $TargetResourceGroup --query "[0].id" -o tsv
-$targetAiKey        = az monitor app-insights component list --resource-group $TargetResourceGroup --query "[0].instrumentationKey" -o tsv
-$targetEhNs         = az eventhubs namespace list --resource-group $TargetResourceGroup --query "[0].name" -o tsv
+$targetKvUri        = az keyvault list --resource-group $TargetResourceGroup @subscriptionArgs --query "[0].properties.vaultUri" -o tsv
+$targetAiResourceId = az resource list --resource-group $TargetResourceGroup --resource-type "Microsoft.Insights/components" @subscriptionArgs --query "[0].id" -o tsv
+$targetAiKey        = if (-not [string]::IsNullOrWhiteSpace($targetAiResourceId)) {
+    az resource show --ids $targetAiResourceId @subscriptionArgs --query "properties.InstrumentationKey" -o tsv
+}
+$targetEhNs         = az eventhubs namespace list --resource-group $TargetResourceGroup @subscriptionArgs --query "[0].name" -o tsv
 
 if (-not $targetKvUri) {
     Write-Host "❌ Could not resolve target Key Vault URI in $(Protect-ResourceGroupName -Value $TargetResourceGroup)"
@@ -83,6 +91,7 @@ $targetEhConnStr = az eventhubs namespace authorization-rule keys list `
     --resource-group $TargetResourceGroup `
     --namespace-name $targetEhNs `
     --name 'tgt-eh-send' `
+    @subscriptionArgs `
     --query 'primaryConnectionString' -o tsv
 
 if (-not $targetEhConnStr) {
