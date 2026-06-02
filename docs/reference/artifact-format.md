@@ -241,6 +241,7 @@ Example policy XML:
 - **Info file names** follow the pattern `{resourceType}Information.json`
 - **Policy files** are always named `policy.xml`
 - **API specifications** are named `specification.{ext}` (e.g., `specification.yaml`, `specification.json`, `specification.wsdl`)
+  - Specification files are not exported for API types that don't use OpenAPI/WSDL artifacts (for example: WebSocket, MCP, A2A).
 - **Wiki files** are named `wiki.md`
 
 ---

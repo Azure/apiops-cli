@@ -58,35 +58,21 @@ info:
   title: Kitchen Sink REST API
   version: "1.0"
 paths:
-  /healthz:
+  /todos/1:
     get:
       operationId: healthCheck
       summary: Health check endpoint
       responses:
         "200":
           description: OK
-  /items:
+  /todos:
     get:
       operationId: listItems
       summary: List all items
       responses:
         "200":
           description: OK
-    post:
-      operationId: createItem
-      summary: Create an item
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                name:
-                  type: string
-      responses:
-        "201":
-          description: Created
-  /items/{id}:
+  /todos/{id}:
     get:
       operationId: getItem
       summary: Get item by ID
@@ -96,6 +82,23 @@ paths:
           required: true
           schema:
             type: string
+      responses:
+        "200":
+          description: OK
+  /todos/add:
+    post:
+      operationId: createItem
+      summary: Create an item
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                todo:
+                  type: string
+                completed:
+                  type: boolean
       responses:
         "200":
           description: OK
@@ -214,7 +217,13 @@ var operationPolicyXml = '''
 <policies>
   <inbound>
     <base />
-    <rate-limit calls="100" renewal-period="60" />
+    <return-response>
+      <set-status code="200" reason="OK" />
+      <set-header name="Content-Type" exists-action="override">
+        <value>application/json</value>
+      </set-header>
+      <set-body>{"status":"ok","source":"apim-mcp-demo"}</set-body>
+    </return-response>
   </inbound>
   <backend><base /></backend>
   <outbound><base /></outbound>
@@ -358,6 +367,16 @@ resource apim 'Microsoft.ApiManagement/service@2025-09-01-preview' = {
   properties: {
     publisherEmail: publisherEmail
     publisherName: publisherName
+    customProperties: {
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Protocols.Server.Http2': 'True'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Ssl30': 'False'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Tls10': 'False'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Backend.Protocols.Tls11': 'False'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Ciphers.TripleDes168': 'False'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Ssl30': 'False'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Tls10': 'False'
+      'Microsoft.WindowsAzure.ApiManagement.Gateway.Security.Protocols.Tls11': 'False'
+    }
   }
 }
 
@@ -682,7 +701,7 @@ resource apiRestOpenapi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview
     protocols: ['https']
     format: 'openapi'
     value: openApiSpec
-    serviceUrl: 'https://src-backend.example.com/api'
+    serviceUrl: 'https://dummyjson.com'
     subscriptionRequired: false
     apiType: 'http'
   }
@@ -843,6 +862,13 @@ resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview'
     protocols: ['https']
     subscriptionRequired: false
     type: 'mcp'
+    mcpProperties: {
+      endpoints: {
+        mcp: {
+          uriTemplate: '/mcp'
+        }
+      }
+    }
     mcpTools: [
       {
         name: 'healthCheck'
@@ -866,31 +892,27 @@ resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview'
 // non-MCP API \u2014 e.g. src-rest-openapi above). ApiOperation BVT coverage
 // is therefore provided by the REST APIs in this template, not by the MCP APIs.
 
-// Backend for external MCP server (backendId pattern requires a backend resource)
-resource backendMcpExternal 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = {
+resource backendMcpLearn 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = {
   parent: apim
-  name: 'src-backend-mcp-external'
+  name: 'src-backend-mcp-learn'
   properties: {
-    description: 'External MCP server backend (GitHub Copilot)'
-    url: 'https://api.githubcopilot.com/mcp'
+    description: 'Backend for the public Microsoft Learn MCP server used by the existing-server demo'
+    url: 'https://learn.microsoft.com'
     protocol: 'http'
   }
 }
 
-// 9. MCP API created from an existing (external) public MCP server
-// External MCP uses backendId + mcpProperties; APIM accepts a non-empty path here.
-// any() used because backendId and mcpProperties.endpoints are valid at runtime but absent from Bicep type definitions (BCP037/BCP036)
-resource apiMcpFromExternal 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
+resource apiMcpExistingServer 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
-  name: 'src-mcp-from-external'
+  name: 'src-mcp-existing-server'
   properties: any({
-    displayName: 'KS MCP from External Server'
-    description: 'MCP server repackaging a public external MCP server via APIM'
-    path: 'ks/mcp-external'
+    displayName: 'KS MCP Existing Server Demo'
+    description: 'Working demo that exposes the public Microsoft Learn MCP server through APIM using a policy-based MCP proxy'
+    path: 'ks/mcp-existing'
     protocols: ['https']
     subscriptionRequired: false
     type: 'mcp'
-    backendId: backendMcpExternal.name
+    backendId: backendMcpLearn.name
     mcpProperties: {
       endpoints: {
         mcp: {
@@ -898,6 +920,243 @@ resource apiMcpFromExternal 'Microsoft.ApiManagement/service/apis@2025-09-01-pre
         }
       }
     }
+  })
+}
+
+resource apiA2aRuntimeMock 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
+  parent: apim
+  name: 'src-a2a-runtime-mock'
+  properties: {
+    displayName: 'KS A2A Runtime Mock'
+    description: 'Mock runtime API used as the backend for the A2A demo API'
+    path: 'ks/a2a-weather'
+    protocols: ['https']
+    serviceUrl: 'https://httpbin.org'
+    subscriptionRequired: false
+    apiType: 'http'
+  }
+}
+
+resource apiA2aRuntimeCardOperation 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-preview' = {
+  parent: apiA2aRuntimeMock
+  name: 'get-agent-card'
+  properties: {
+    displayName: 'Get agent card'
+    method: 'GET'
+    urlTemplate: '/.well-known/agent-card.json'
+    responses: [
+      {
+        statusCode: 200
+        description: 'OK'
+        representations: [
+          {
+            contentType: 'application/json'
+          }
+        ]
+      }
+    ]
+  }
+}
+
+resource apiA2aRuntimeCardPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2025-09-01-preview' = {
+  parent: apiA2aRuntimeCardOperation
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: '''<policies><inbound><base /><return-response><set-status code="200" reason="OK" /><set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header><set-body>@("{\"protocolVersion\":\"0.3.0\",\"name\":\"KS A2A Weather Agent\",\"description\":\"Demo A2A weather agent served entirely by APIM policies\",\"url\":\"https://" + context.Request.OriginalUrl.Host + "/ks/a2a-weather\",\"preferredTransport\":\"JSONRPC\",\"version\":\"1.0.0\",\"capabilities\":{\"streaming\":false,\"pushNotifications\":false,\"stateTransitionHistory\":false},\"defaultInputModes\":[\"text/plain\"],\"defaultOutputModes\":[\"text/plain\"],\"skills\":[{\"id\":\"get_weather\",\"name\":\"Get weather\",\"description\":\"Returns current weather conditions for a city\",\"tags\":[\"weather\",\"demo\"],\"examples\":[\"What is the weather in Seattle?\",\"weather in Paris\"],\"inputModes\":[\"text/plain\"],\"outputModes\":[\"text/plain\"]}]}")</set-body></return-response></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'''
+  }
+}
+
+resource apiA2aRuntimeCardLegacyOperation 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-preview' = {
+  parent: apiA2aRuntimeMock
+  name: 'get-agent-card-legacy'
+  properties: {
+    displayName: 'Get agent card (legacy path)'
+    method: 'GET'
+    urlTemplate: '/.well-known/agent.json'
+    responses: [
+      {
+        statusCode: 200
+        description: 'OK'
+        representations: [
+          {
+            contentType: 'application/json'
+          }
+        ]
+      }
+    ]
+  }
+}
+
+resource apiA2aRuntimeCardLegacyPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2025-09-01-preview' = {
+  parent: apiA2aRuntimeCardLegacyOperation
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: '''<policies><inbound><base /><return-response><set-status code="200" reason="OK" /><set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header><set-body>@("{\"protocolVersion\":\"0.3.0\",\"name\":\"KS A2A Weather Agent\",\"description\":\"Demo A2A weather agent served entirely by APIM policies\",\"url\":\"https://" + context.Request.OriginalUrl.Host + "/ks/a2a-weather\",\"preferredTransport\":\"JSONRPC\",\"version\":\"1.0.0\",\"capabilities\":{\"streaming\":false,\"pushNotifications\":false,\"stateTransitionHistory\":false},\"defaultInputModes\":[\"text/plain\"],\"defaultOutputModes\":[\"text/plain\"],\"skills\":[{\"id\":\"get_weather\",\"name\":\"Get weather\",\"description\":\"Returns current weather conditions for a city\",\"tags\":[\"weather\",\"demo\"],\"examples\":[\"What is the weather in Seattle?\",\"weather in Paris\"],\"inputModes\":[\"text/plain\"],\"outputModes\":[\"text/plain\"]}]}")</set-body></return-response></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'''
+  }
+}
+
+resource apiA2aRuntimeJsonRpcOperation 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-preview' = {
+  parent: apiA2aRuntimeMock
+  name: 'post-jsonrpc'
+  properties: {
+    displayName: 'JSON-RPC endpoint'
+    method: 'POST'
+    urlTemplate: '/'
+    request: {
+      representations: [
+        {
+          contentType: 'application/json'
+        }
+      ]
+    }
+    responses: [
+      {
+        statusCode: 200
+        description: 'OK'
+        representations: [
+          {
+            contentType: 'application/json'
+          }
+        ]
+      }
+    ]
+  }
+}
+
+resource apiA2aRuntimeJsonRpcPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2025-09-01-preview' = {
+  parent: apiA2aRuntimeJsonRpcOperation
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: '''<policies>
+  <inbound>
+    <base />
+    <set-variable name="reqBody" value='@(context.Request.Body.As<Newtonsoft.Json.Linq.JObject>(preserveContent: true))' />
+    <set-variable name="rpcId" value='@{ var t = ((Newtonsoft.Json.Linq.JObject)context.Variables["reqBody"])["id"]; return t != null ? t.ToString(Newtonsoft.Json.Formatting.None) : "1"; }' />
+    <set-variable name="rpcMethod" value='@((string)((Newtonsoft.Json.Linq.JObject)context.Variables["reqBody"])["method"] ?? "")' />
+    <choose>
+      <when condition='@((string)context.Variables["rpcMethod"] != "message/send")'>
+        <return-response>
+          <set-status code="200" reason="OK" />
+          <set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header>
+          <set-body>@("{\"jsonrpc\":\"2.0\",\"id\":" + (string)context.Variables["rpcId"] + ",\"error\":{\"code\":-32601,\"message\":\"Method not found: " + (string)context.Variables["rpcMethod"] + "\"}}")</set-body>
+        </return-response>
+      </when>
+    </choose>
+    <set-variable name="city" value='@{
+      var parts = ((Newtonsoft.Json.Linq.JObject)context.Variables["reqBody"]).SelectToken("params.message.parts") as Newtonsoft.Json.Linq.JArray;
+      string text = "";
+      if (parts != null) { foreach (var p in parts) { if ((string)p["kind"] == "text") { text = (string)p["text"] ?? ""; break; } } }
+      string city = text.Trim();
+      int idx = text.ToLowerInvariant().IndexOf(" in ");
+      if (idx >= 0) { city = text.Substring(idx + 4).Trim(); }
+      city = city.TrimEnd("?.!,".ToCharArray()).Trim();
+      if (string.IsNullOrWhiteSpace(city)) { city = "Seattle"; }
+      return city;
+    }' />
+    <send-request mode="new" response-variable-name="geoResp" timeout="10" ignore-error="true">
+      <set-url>@($"https://geocoding-api.open-meteo.com/v1/search?count=1&amp;name={System.Uri.EscapeDataString((string)context.Variables["city"])}")</set-url>
+      <set-method>GET</set-method>
+    </send-request>
+    <set-variable name="latlon" value='@{
+      var r = (IResponse)context.Variables["geoResp"];
+      if (r == null || r.StatusCode != 200) { return (string)null; }
+      var body = r.Body.As<Newtonsoft.Json.Linq.JObject>();
+      var arr = body["results"] as Newtonsoft.Json.Linq.JArray;
+      if (arr == null || arr.Count == 0) { return (string)null; }
+      string lat = arr[0]["latitude"].ToString(Newtonsoft.Json.Formatting.None);
+      string lon = arr[0]["longitude"].ToString(Newtonsoft.Json.Formatting.None);
+      string resolved = (string)arr[0]["name"];
+      string country = (string)arr[0]["country"];
+      return lat + "|" + lon + "|" + resolved + "|" + (country ?? "");
+    }' />
+    <choose>
+      <when condition='@(context.Variables["latlon"] == null)'>
+        <set-variable name="reply" value='@("Sorry, I could not find a location named " + (string)context.Variables["city"] + ".")' />
+      </when>
+      <otherwise>
+        <send-request mode="new" response-variable-name="wxResp" timeout="10" ignore-error="true">
+          <set-url>@{
+            var ll = ((string)context.Variables["latlon"]).Split('|');
+            return "https://api.open-meteo.com/v1/forecast?latitude=" + ll[0] + "&amp;longitude=" + ll[1] + "&amp;current=temperature_2m,weather_code,wind_speed_10m&amp;temperature_unit=fahrenheit&amp;wind_speed_unit=mph";
+          }</set-url>
+          <set-method>GET</set-method>
+        </send-request>
+        <set-variable name="reply" value='@{
+          var ll = ((string)context.Variables["latlon"]).Split('|');
+          string place = ll.Length >= 4 && !string.IsNullOrEmpty(ll[3]) ? (ll[2] + ", " + ll[3]) : ll[2];
+          var r = (IResponse)context.Variables["wxResp"];
+          if (r == null || r.StatusCode != 200) { return "Weather for " + place + " is currently unavailable."; }
+          var cur = r.Body.As<Newtonsoft.Json.Linq.JObject>()["current"] as Newtonsoft.Json.Linq.JObject;
+          if (cur == null) { return "Weather for " + place + " is currently unavailable."; }
+          double tempF = (double)cur["temperature_2m"];
+          int code = cur["weather_code"] != null ? (int)cur["weather_code"] : -1;
+          double wind = cur["wind_speed_10m"] != null ? (double)cur["wind_speed_10m"] : 0.0;
+          var codes = new System.Collections.Generic.Dictionary<int, string> {
+            {0,"clear sky"},{1,"mainly clear"},{2,"partly cloudy"},{3,"overcast"},
+            {45,"fog"},{48,"depositing rime fog"},
+            {51,"light drizzle"},{53,"moderate drizzle"},{55,"dense drizzle"},
+            {56,"light freezing drizzle"},{57,"dense freezing drizzle"},
+            {61,"light rain"},{63,"moderate rain"},{65,"heavy rain"},
+            {66,"light freezing rain"},{67,"heavy freezing rain"},
+            {71,"light snow"},{73,"moderate snow"},{75,"heavy snow"},{77,"snow grains"},
+            {80,"rain showers"},{81,"moderate rain showers"},{82,"violent rain showers"},
+            {85,"light snow showers"},{86,"heavy snow showers"},
+            {95,"thunderstorm"},{96,"thunderstorm with light hail"},{99,"thunderstorm with heavy hail"}
+          };
+          string cond = codes.ContainsKey(code) ? codes[code] : ("weather code " + code);
+          return "Weather in " + place + ": " + tempF.ToString("F0") + "°F, " + cond + ", wind " + wind.ToString("F0") + " mph (live data from Open-Meteo).";
+        }' />
+      </otherwise>
+    </choose>
+    <return-response>
+      <set-status code="200" reason="OK" />
+      <set-header name="Content-Type" exists-action="override"><value>application/json</value></set-header>
+      <set-body>@{
+        string replyJson = Newtonsoft.Json.JsonConvert.SerializeObject((string)context.Variables["reply"]);
+        string taskId = System.Guid.NewGuid().ToString();
+        string contextId = System.Guid.NewGuid().ToString();
+        string artifactId = System.Guid.NewGuid().ToString();
+        string msgId = System.Guid.NewGuid().ToString();
+        string ts = System.DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+        return "{\"jsonrpc\":\"2.0\",\"id\":" + (string)context.Variables["rpcId"] + ",\"result\":{\"kind\":\"task\",\"id\":\"" + taskId + "\",\"contextId\":\"" + contextId + "\",\"status\":{\"state\":\"completed\",\"timestamp\":\"" + ts + "\"},\"artifacts\":[{\"artifactId\":\"" + artifactId + "\",\"name\":\"weather-reply\",\"parts\":[{\"kind\":\"text\",\"text\":" + replyJson + "}]}],\"history\":[{\"kind\":\"message\",\"role\":\"agent\",\"messageId\":\"" + msgId + "\",\"parts\":[{\"kind\":\"text\",\"text\":" + replyJson + "}]}]}}";
+      }</set-body>
+    </return-response>
+  </inbound>
+  <backend><base /></backend>
+  <outbound><base /></outbound>
+  <on-error><base /></on-error>
+</policies>'''
+  }
+}
+
+// 10. A2A API with JSON-RPC runtime and agent card settings
+// any() used because A2A properties are runtime-supported but may not be present
+// in this API version's Bicep type definitions.
+resource apiA2a 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
+  parent: apim
+  name: 'src-a2a-weather-agent'
+  properties: any({
+    displayName: 'KS A2A Weather Agent'
+    description: 'A2A API exposing JSON-RPC runtime and an APIM-mediated agent card'
+    path: 'ks/a2a-managed'
+    protocols: ['https']
+    type: 'a2a'
+    isAgent: true
+    agent: {
+      id: 'src-a2a-weather-agent'
+    }
+    a2aProperties: {
+      agentCardPath: '/.well-known/agent-card.json'
+      agentCardBackendUrl: 'https://${apim.name}.azure-api.net/ks/a2a-weather/.well-known/agent-card.json'
+    }
+    jsonRpcProperties: {
+      backendUrl: 'https://${apim.name}.azure-api.net'
+      path: '/ks/a2a-weather'
+    }
+    subscriptionRequired: false
   })
 }
 

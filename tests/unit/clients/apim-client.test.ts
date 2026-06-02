@@ -1155,6 +1155,13 @@ describe('ApimClient.getApiSpecification', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it('should return undefined for a2a apiType without making an HTTP request', async () => {
+    const result = await client.getApiSpecification(testContext, 'a2a-api', 'a2a');
+
+    expect(result).toBeUndefined();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it('should handle top-level link format (api-version 2024-05-01)', async () => {
     // APIM 2024-05-01 returns { link: "..." } at the top level, not nested under value
     const exportResponse = {
