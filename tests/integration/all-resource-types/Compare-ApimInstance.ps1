@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
 <#
 .SYNOPSIS
     Compares two Azure API Management instances via ARM REST API.

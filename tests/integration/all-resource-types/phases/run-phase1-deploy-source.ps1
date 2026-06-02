@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
 <#
 .SYNOPSIS
   Deploys or destroys the Kitchen Sink APIM instance for BVT.

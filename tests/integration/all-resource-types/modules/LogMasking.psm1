@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
 # MaskingHelpers — secret-redaction utilities for the round-trip integration test scripts.
 
 $script:EnableMasking = $true

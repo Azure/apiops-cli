@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
 Import-Module (Join-Path $PSScriptRoot 'LogMasking.psm1')
 
 <#
