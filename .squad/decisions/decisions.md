@@ -67,3 +67,39 @@ All new `.ts` files in `src/` and `tests/` must include:
 - [Microsoft Open Source Program](https://opensource.microsoft.com/program)
 
 ---
+
+### 2026-06-02: Named Value Token Canonicalization — Broadened Scope
+**By:** ApimExpert  
+**Status:** Implemented  
+
+The initial fix for named value token canonicalization only applied to Logger resources. Backend resources also contain `{{namedValue}}` tokens in `credentials.header`, `credentials.query`, and `credentials.authorization.parameter`, and require the same casing-sensitive normalization.
+
+**Decision:** Generalize the normalization logic to canonicalize ALL `{{token}}` references across ANY resource type's entire JSON payload.
+- Renamed function: `normalizeLoggerCredentialNamedValueReferences` → `normalizeNamedValueReferences`
+- Removed Logger-specific resource type check; now applies to all resources
+- Recursive traversal handles unknown properties (Constitution §VII)
+- Implementation: `src/services/resource-publisher.ts`
+- Tests: Backend credential test added + all 910 tests pass
+
+**Rationale:** Backend credentials are affected today, not hypothetical. Future-proof for any new APIM resource types that support named value tokens.
+
+**Evidence:** Azure APIM REST API spec shows Backend credentials support `{{namedValue}}` references in authorization parameters, headers, and query strings. User report confirmed: "Named value pairs maybe used for other resources!"
+
+---
+
+### 2026-06-02: Extend Named Value Token Normalization to Backend Resources
+**By:** TestEngineer  
+**Status:** Audit Complete  
+
+Audit identified that named value token normalization only covered Logger resources, leaving Backend credentials vulnerable to APIM validation failures when override casing differs from artifact naming.
+
+**Findings:**
+- Backend resources contain `{{namedValue}}` tokens in `credentials.header`, `credentials.query`, and `credentials.authorization.parameter`
+- Example: override supplies `{{Bearer-Token}}` but artifact is named `bearer-token` → APIM rejects PUT
+- Skipped test added: `should canonicalize backend credential named value references from overrides` (test code in resource-publisher.test.ts)
+
+**Recommendation:** Extend normalization logic to Backend resources. Generalized approach (apply to all resource types) preferred over Backend-specific implementation.
+
+**Priority:** P2 (Medium) — Valid production use case but workaround exists (manual casing in overrides).
+
+---

@@ -132,3 +132,22 @@ the SDK surface, reference docs, or ad-hoc observation.
 
 **Decision doc:** `.squad/decisions/inbox/apimexpert-named-value-scope.md`
 
+
+### 2026-06-02: Named Value Normalization Generalization — Complete
+
+**Recommendation adopted:** TestEngineer's audit identified Backend resources as affected by the original Logger-only normalization. Generalized approach implemented as recommended.
+
+**Changes:**
+- Renamed: `normalizeLoggerCredentialNamedValueReferences()` → `normalizeNamedValueReferences()`
+- Scope: Now applies to all resource types (not just Logger)
+- Logic: Recursive JSON traversal, entire payload canonicalization
+- New test: Backend credential canonicalization (passing)
+
+**Verification:**
+- All 910 unit tests pass
+- Backend test covers credentials.header, credentials.query, credentials.authorization.parameter
+- Recursive approach handles unknown properties (Constitution §VII)
+
+**Decision merged:** Inbox notes moved to `.squad/decisions/decisions.md` (2026-06-02 entries).
+
+**Future-proofing:** Any new APIM resource type with `{{token}}` references will be automatically normalized without additional code changes.

@@ -212,3 +212,13 @@ Gotchas for future PowerShell work:
 
 **Result:** 34 tests passing, 1 skipped test documenting Backend normalization gap. Decision note created for team review.
 
+
+### 2026-06-02: Named Value Coverage Audit — Merged to Decisions
+
+**Team decision:** ApimExpert implemented the generalized approach, renaming `normalizeLoggerCredentialNamedValueReferences` → `normalizeNamedValueReferences` and applying it to all resource types (not just Logger). Recursive traversal now handles Backend credentials, future resource types, and preserves Constitution §VII (opaque JSON).
+
+**Test status:** Skipped test `should canonicalize backend credential named value references from overrides` now passes. All 910 tests passing.
+
+**Decision merged:** Inbox note moved to `.squad/decisions/decisions.md` (2026-06-02 entry).
+
+**Impact:** Backend resources with `{{namedValue}}` tokens in credentials now work correctly regardless of casing mismatch between override and artifact names.
