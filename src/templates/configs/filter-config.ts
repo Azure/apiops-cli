@@ -47,7 +47,44 @@ export function generateFilterConfig(): string {
 #   - rate-limit-fragment
 #   - cors-fragment
 
-# Uncomment to extract ALL resources (default behavior if no filters specified)
-# Leave all sections commented to extract everything
+# Extract only specific gateways
+# gatewayNames:
+#   - default
+#   - internal-gateway
+
+# Extract only specific version sets
+# versionSetNames:
+#   - payments-v1
+
+# Extract only specific groups
+# groupNames:
+#   - administrators
+
+# Extract only specific subscriptions
+# subscriptionNames:
+#   - starter-subscription
+
+# Extract only specific schemas
+# schemaNames:
+#   - pet-schema
+
+# Extract only specific policy restrictions
+# policyRestrictionNames:
+#   - global-policy-restriction
+
+# Extract only specific documentations
+# documentationNames:
+#   - getting-started
+
+# Extract only specific workspaces
+# workspaceNames:
+#   - dev-workspace
+
+# Filter behavior:
+# - Leave a section commented out to include ALL resources of that type
+# - Set a section to an empty array ([]) to exclude ALL resources of that type
+#   Example:
+#   gatewayNames: []
+#   subscriptionNames: []
 `;
 }

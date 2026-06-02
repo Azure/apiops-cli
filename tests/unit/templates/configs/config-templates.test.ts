@@ -40,6 +40,30 @@ describe('configs/filter-config', () => {
       expect(config).toContain('# policyFragmentNames:');
     });
 
+    it('should include commented examples for all supported filter fields', () => {
+      const config = generateFilterConfig();
+      const fields = [
+        'gatewayNames',
+        'versionSetNames',
+        'groupNames',
+        'subscriptionNames',
+        'schemaNames',
+        'policyRestrictionNames',
+        'documentationNames',
+        'workspaceNames',
+      ];
+      fields.forEach((field) => {
+        expect(config).toContain(`# ${field}:`);
+      });
+    });
+
+    it('should document empty arrays as exclude-all behavior', () => {
+      const config = generateFilterConfig();
+      expect(config).toContain('# - Set a section to an empty array ([]) to exclude ALL resources of that type');
+      expect(config).toContain('#   gatewayNames: []');
+      expect(config).toContain('#   subscriptionNames: []');
+    });
+
     it('should not have any uncommented configuration by default', () => {
       const config = generateFilterConfig();
       const lines = config.split('\n').filter((line) => line.trim() && !line.trim().startsWith('#'));
