@@ -52,6 +52,46 @@ function Write-DeploymentFailureDetails {
 }
 
 <#
+    .SYNOPSIS
+    Polls a condition until it succeeds or times out.
+
+    .PARAMETER Probe
+    Scriptblock invoked on each poll. Return $true when the condition is met.
+
+    .PARAMETER TimeoutSeconds
+    Maximum wait time in seconds.
+
+    .PARAMETER PollIntervalSeconds
+    Polling interval in seconds.
+
+    .PARAMETER TimeoutMessage
+    Error message thrown when the timeout is reached.
+
+    .OUTPUTS
+    System.Boolean
+    #>
+    function Invoke-PolledWait {
+        [CmdletBinding()]
+        param(
+            [Parameter(Mandatory)][scriptblock]$Probe,
+            [int]$TimeoutSeconds = 300,
+            [int]$PollIntervalSeconds = 10,
+            [Parameter(Mandatory)][string]$TimeoutMessage
+        )
+
+        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+        while ((Get-Date) -lt $deadline) {
+            if (& $Probe) {
+                return $true
+            }
+
+            Start-Sleep -Seconds $PollIntervalSeconds
+        }
+
+        throw $TimeoutMessage
+    }
+
+    <#
 .SYNOPSIS
 Waits for an APIM instance to reach Succeeded provisioning.
 
@@ -82,21 +122,89 @@ function Wait-ApimActivation {
     $maskedApim = Protect-ApimName -Value $ApimName
     Write-Host "Waiting for APIM '$maskedApim' to finish Activating (timeout ${TimeoutSeconds}s)..." -ForegroundColor Cyan
 
-    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-    $lastState = $null
-    while ((Get-Date) -lt $deadline) {
+    $activationState = @{ LastState = $null }
+    $probe = {
         $state = az apim show --resource-group $ResourceGroupName --name $ApimName --query provisioningState --output tsv 2>$null
-        if ($state -ne $lastState) {
+        if ($state -ne $activationState.LastState) {
             Write-Host "  provisioningState: $state" -ForegroundColor Gray
-            $lastState = $state
+            $activationState.LastState = $state
         }
         if ($state -eq 'Succeeded') { return $true }
         if ($state -eq 'Failed') { throw "APIM '$maskedApim' entered Failed state during activation wait" }
-        Start-Sleep -Seconds $PollIntervalSeconds
+        return $false
     }
-    throw "APIM '$maskedApim' did not reach Succeeded within ${TimeoutSeconds}s (last state: $lastState)"
+
+    Invoke-PolledWait `
+        -Probe $probe `
+        -TimeoutSeconds $TimeoutSeconds `
+        -PollIntervalSeconds $PollIntervalSeconds `
+        -TimeoutMessage "APIM '$maskedApim' did not reach Succeeded within ${TimeoutSeconds}s (last state: $($activationState.LastState))"
+}
+
+<#
+.SYNOPSIS
+Waits for an APIM API to become queryable via az CLI.
+
+.PARAMETER ResourceGroupName
+Resource group containing the APIM instance.
+
+.PARAMETER ApimServiceName
+APIM service name.
+
+.PARAMETER ApiId
+The API ID to query.
+
+.PARAMETER Replacements
+Mask replacement map for output.
+
+.PARAMETER TimeoutSeconds
+Maximum wait time in seconds.
+
+.PARAMETER PollIntervalSeconds
+Polling interval in seconds.
+
+.OUTPUTS
+System.Boolean
+#>
+function Wait-ApimApiQueryable {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ResourceGroupName,
+        [Parameter(Mandatory)][string]$ApimServiceName,
+        [Parameter(Mandatory)][string]$ApiId,
+        [hashtable]$Replacements = @{},
+        [int]$TimeoutSeconds = 300,
+        [int]$PollIntervalSeconds = 10
+    )
+
+    $maskedApim = Protect-ApimName -Value $ApimServiceName
+    Write-Host "Waiting for APIM API '$ApiId' to become queryable in '$maskedApim' (timeout ${TimeoutSeconds}s)..." -ForegroundColor Cyan
+
+    $probe = {
+        $probeArgs = @(
+            'apim', 'api', 'show',
+            '--resource-group', $ResourceGroupName,
+            '--service-name', $ApimServiceName,
+            '--api-id', $ApiId,
+            '--query', 'name',
+            '--output', 'tsv'
+        )
+        $probeResult = Invoke-MaskedAzCommand -Replacements $Replacements -Arguments $probeArgs
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($probeResult)) {
+            return $true
+        }
+
+        return $false
+    }
+
+    Invoke-PolledWait `
+        -Probe $probe `
+        -TimeoutSeconds $TimeoutSeconds `
+        -PollIntervalSeconds $PollIntervalSeconds `
+        -TimeoutMessage "Timed out waiting for API '$ApiId' to be queryable in APIM '$maskedApim' within ${TimeoutSeconds}s"
 }
 
 Export-ModuleMember -Function `
     Write-DeploymentFailureDetails, `
-    Wait-ApimActivation
+    Wait-ApimActivation, `
+    Wait-ApimApiQueryable

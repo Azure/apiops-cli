@@ -119,4 +119,7 @@ loggers:
 $overrideYaml | Set-Content -Path $overrideFile -Encoding utf8
 
 Write-Host "✅ Override file written: $overrideFile"
+if ($env:GITHUB_OUTPUT) {
+    "overrideFile=$overrideFile" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+}
 Write-Output $overrideFile

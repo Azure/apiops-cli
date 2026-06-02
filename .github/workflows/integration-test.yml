@@ -190,6 +190,7 @@ jobs:
             -ExtractOutputDir $extractOutputDir
 
       - name: Run Round-Trip Phase 4 (Create Overrides)
+        id: phase4
         if: success()
         shell: pwsh
         run: |
@@ -214,6 +215,7 @@ jobs:
             -TargetSubscriptionId '${{ steps.phase1.outputs.targetSubscriptionId }}' `
             -TargetResourceGroup '${{ steps.phase1.outputs.targetResourceGroup }}' `
             -TargetApimName '${{ steps.phase1.outputs.targetApimName }}' `
+            -OverrideFile '${{ steps.phase4.outputs.overrideFile }}' `
             -LogLevel '${{ steps.settings.outputs.logLevel }}' `
             -ExtractOutputDir $extractOutputDir
 

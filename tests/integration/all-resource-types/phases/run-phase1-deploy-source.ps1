@@ -203,11 +203,24 @@ $outputs = $result.properties.outputs
 
 # Deploy activation-sensitive APIM children after activation.
 $apimServiceName = $outputs.apimServiceName.value
-Wait-ApimActivation -ResourceGroupName $ResourceGroupName -ApimName $apimServiceName | Out-Null
+Wait-ApimActivation `
+    -ResourceGroupName $ResourceGroupName `
+    -ApimName $apimServiceName `
+    -TimeoutSeconds 2700 `
+    -PollIntervalSeconds 60 | Out-Null
 
-$postDeploymentName = "source-apim-post-activation-$(Get-Date -Format 'yyyyMMddHHmmss')"
 $postReplacements = $azReplacements.Clone()
 $postReplacements[$apimServiceName] = Protect-ApimName -Value $apimServiceName
+
+# Wait for MCP existing-server API to be queryable before applying its policy.
+$mcpApiId = 'src-mcp-existing-server'
+Wait-ApimApiQueryable `
+    -ResourceGroupName $ResourceGroupName `
+    -ApimServiceName $apimServiceName `
+    -ApiId $mcpApiId `
+    -Replacements $postReplacements | Out-Null
+
+$postDeploymentName = "source-apim-post-activation-$(Get-Date -Format 'yyyyMMddHHmmss')"
 $postArgs = @(
     'deployment', 'group', 'create',
     '--resource-group', $ResourceGroupName,
