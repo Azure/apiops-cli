@@ -272,10 +272,15 @@ try {
     $global:LASTEXITCODE = 0
     & $phase4CreateOverridesScript @phase4Args
 
-    if ($LASTEXITCODE -ne 0) {
+    if ($LASTEXITCODE -ne 0 -or -not $overrideFile) {
         $exitCode = $LASTEXITCODE
+        if ($exitCode -eq 0) {
+            $exitCode = 2
+        }
         exit $exitCode
     }
+
+    $overrideFile = [string]$overrideFile
 
     # Phase 5: Publish extracted artifacts to target
     $currentPhase = 'phase5-publish'
@@ -283,6 +288,7 @@ try {
         TargetResourceGroup = $TargetResourceGroup
         TargetApimName      = $TargetApimName
         TargetSubscriptionId = $TargetSubscriptionId
+        OverrideFile        = $overrideFile
         LogLevel = $LogLevel
     }
     Add-ArgumentIfSet -Hashtable $phase5Args -Key 'ExtractOutputDir' -Value $extractOutputDirValue
