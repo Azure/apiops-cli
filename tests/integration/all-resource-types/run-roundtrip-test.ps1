@@ -73,7 +73,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$scriptArgModule = Join-Path $PSScriptRoot 'modules/ScriptArgumentHelpers.psm1'
+$scriptArgModule = Join-Path $PSScriptRoot 'modules/ScriptRuntime.psm1'
 Import-Module $scriptArgModule -Force
 
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'

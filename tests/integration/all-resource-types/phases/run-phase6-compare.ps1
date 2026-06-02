@@ -55,7 +55,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$scriptArgModule = Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/ScriptArgumentHelpers.psm1'
+$scriptArgModule = Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/ScriptRuntime.psm1'
 
 $compareScript = Join-Path (Split-Path $PSScriptRoot -Parent) 'Compare-ApimInstance.ps1'
 

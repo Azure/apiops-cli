@@ -1,4 +1,4 @@
-Import-Module (Join-Path $PSScriptRoot 'MaskingHelpers.psm1')
+Import-Module (Join-Path $PSScriptRoot 'LogMasking.psm1')
 
 <#
 .SYNOPSIS

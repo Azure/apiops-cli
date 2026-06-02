@@ -57,9 +57,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $VerbosePreference = if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' }
 $DebugPreference   = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' }
-Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/MaskingHelpers.psm1') -Force
-Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/ScriptArgumentHelpers.psm1') -Force
-Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/DeploymentHelpers.psm1') -Force
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/LogMasking.psm1') -Force
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/ScriptRuntime.psm1') -Force
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/DeploymentOps.psm1') -Force
 
 # Map this script's LogLevel (Info/Verbose/Debug) to the apiops CLI log level
 # values used in the printed example command.
