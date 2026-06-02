@@ -1097,7 +1097,7 @@ describe('api-publisher', () => {
         }
         return null;
       });
-      store.readContent.mockResolvedValue({ content: 'wsdl: ...', format: 'wsdl' });
+      store.readContent.mockResolvedValue({ content: '<definitions/>', format: 'wsdl' });
 
       const apiDescriptor: ResourceDescriptor = { type: ResourceType.Api, nameParts: ['petstore'] };
       await publishApi(client, store, testContext, apiDescriptor, testConfig);
