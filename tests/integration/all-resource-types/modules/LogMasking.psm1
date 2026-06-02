@@ -96,6 +96,15 @@ System.String
 #>
 function Protect-ResourceGroupName {
     param([string]$Value)
+
+    if (-not $script:EnableMasking) { return $Value }
+    if ([string]::IsNullOrWhiteSpace($Value)) { return '<REDACTED:empty>' }
+
+    # Preserve the generated suffix for round-trip RGs: <prefix>-<date>-<time>-<rand>-<src|tgt>-rg
+    if ($Value -match '^([a-z0-9]+)-\d{8}-\d{6}-([a-z0-9]+)-(src|tgt)-rg$') {
+        return "$($Matches[1])-...-$($Matches[2])-$($Matches[3])-rg"
+    }
+
     return Protect-Identifier -Value $Value -Prefix 3 -Suffix 7
 }
 
