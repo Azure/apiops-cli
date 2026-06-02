@@ -26,8 +26,8 @@ param publisherEmail string
 @description('Publisher name shown in the developer portal.')
 param publisherName string = 'APIOps BVT'
 
-@description('APIM SKU name. Use StandardV2/PremiumV2 for v2 tiers, or Developer/Premium for classic.')
-@allowed(['Developer', 'Premium', 'StandardV2', 'PremiumV2'])
+@description('APIM SKU name. Use StandardV2/PremiumV2 for v2 tiers, or Developer/Premium/Standard for classic.')
+@allowed(['Developer', 'Premium', 'Standard', 'StandardV2', 'PremiumV2'])
 param skuName string = 'StandardV2'
 
 @description('Application Insights name for logger/diagnostic testing.')
@@ -46,7 +46,7 @@ param logAnalyticsName string = 'bvt-${uniqueString(resourceGroup().id)}-src-law
 // Variables
 // ---------------------------------------------------------------------------
 
-var isClassicSku = skuName == 'Developer' || skuName == 'Premium'
+var isClassicSku = skuName == 'Developer' || skuName == 'Premium' || skuName == 'Standard'
 var apimSkuCapacity = isClassicSku ? 1 : 1
 var supportsSelfHostedGateway = isClassicSku
 var supportsWorkspaces = skuName == 'Premium' || skuName == 'PremiumV2'

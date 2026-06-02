@@ -80,8 +80,8 @@ function Set-ScriptLogPreferences {
         [string]$LogLevel
     )
 
-    Set-Variable -Name VerbosePreference -Scope 1 -Value (if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' })
-    Set-Variable -Name DebugPreference -Scope 1 -Value (if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' })
+    Set-Variable -Name VerbosePreference -Scope 1 -Value $(if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' })
+    Set-Variable -Name DebugPreference -Scope 1 -Value $(if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' })
 }
 
 <#

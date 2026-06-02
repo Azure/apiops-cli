@@ -57,7 +57,7 @@ param(
     [Parameter()]
     [string]$TargetSubscriptionId,
 
-    [ValidateSet('Developer', 'Premium', 'StandardV2', 'PremiumV2')]
+    [ValidateSet('Developer', 'Premium', 'Standard', 'StandardV2', 'PremiumV2')]
     [string]$SkuName = 'StandardV2',
 
     [string]$Location,
@@ -122,9 +122,11 @@ foreach ($requiredFile in @($phase1DeployScript, $phase2ExtractScript, $phase3Va
     }
 }
 $exitCode = 0
+$currentPhase = 'phase-setup'
 
 try {
     # Phase 1: Deploy source apim instance and minimal target apim instance
+    $currentPhase = 'phase1-deploy'
     $phase1Args = @{
         SourceResourceGroup = $SourceResourceGroup
         TargetResourceGroup = $TargetResourceGroup
@@ -137,6 +139,7 @@ try {
     Add-ArgumentIfSet -Hashtable $phase1Args -Key 'Location' -Value $locationValue
     Add-ArgumentIfSet -Hashtable $phase1Args -Key 'SourceSubscriptionId' -Value $SourceSubscriptionId
     Add-ArgumentIfSet -Hashtable $phase1Args -Key 'TargetSubscriptionId' -Value $TargetSubscriptionId
+    $global:LASTEXITCODE = 0
     $phase1Output = & $phase1DeployScript @phase1Args
 
     if ($LASTEXITCODE -ne 0) {
@@ -155,6 +158,7 @@ try {
     $Location = $phase1Output.location
 
     # Phase 2: `apiops extract`
+    $currentPhase = 'phase2-extract'
     $phase2Args = @{
         SourceResourceGroup = $SourceResourceGroup
         SourceApimName      = $SourceApimName
@@ -163,6 +167,7 @@ try {
         LogLevel            = $LogLevel
     }
     Add-ArgumentIfSet -Hashtable $phase2Args -Key 'ExtractOutputDir' -Value $extractOutputDirValue
+    $global:LASTEXITCODE = 0
     & $phase2ExtractScript @phase2Args
 
     if ($LASTEXITCODE -ne 0) {
@@ -171,11 +176,13 @@ try {
     }
 
     # Phase 3: Validate `apiops extract`
+    $currentPhase = 'phase3-validate-extract'
     $phase3Args = @{
         SkuName = $SkuName
         LogLevel = $LogLevel
     }
     Add-ArgumentIfSet -Hashtable $phase3Args -Key 'ExtractOutputDir' -Value $extractOutputDirValue
+    $global:LASTEXITCODE = 0
     & $phase3ValidateExtractScript @phase3Args
 
     if ($LASTEXITCODE -ne 0) {
@@ -184,12 +191,14 @@ try {
     }
 
     # Phase 4: Generate target environment overrides
+    $currentPhase = 'phase4-create-overrides'
     $phase4Args = @{
         TargetResourceGroup = $TargetResourceGroup
         TargetSubscriptionId = $TargetSubscriptionId
         LogLevel = $LogLevel
     }
     Add-ArgumentIfSet -Hashtable $phase4Args -Key 'ExtractOutputDir' -Value $extractOutputDirValue
+    $global:LASTEXITCODE = 0
     & $phase4CreateOverridesScript @phase4Args
 
     if ($LASTEXITCODE -ne 0) {
@@ -198,6 +207,7 @@ try {
     }
 
     # Phase 5: Publish extracted artifacts to target
+    $currentPhase = 'phase5-publish'
     $phase5Args = @{
         TargetResourceGroup = $TargetResourceGroup
         TargetApimName      = $TargetApimName
@@ -205,6 +215,7 @@ try {
         LogLevel = $LogLevel
     }
     Add-ArgumentIfSet -Hashtable $phase5Args -Key 'ExtractOutputDir' -Value $extractOutputDirValue
+    $global:LASTEXITCODE = 0
     & $phase5PublishScript @phase5Args
 
     if ($LASTEXITCODE -ne 0) {
@@ -213,6 +224,7 @@ try {
     }
 
     # Phase 6: Compare source and target APIM instances
+    $currentPhase = 'phase6-compare'
     $phase6Args = @{
         SourceResourceGroup = $SourceResourceGroup
         SourceApimName      = $SourceApimName
@@ -222,9 +234,21 @@ try {
         TargetSubscriptionId = $TargetSubscriptionId
         LogLevel = $LogLevel
     }
+    $global:LASTEXITCODE = 0
     & $phase6CompareScript @phase6Args
 
     $exitCode = $LASTEXITCODE
+}
+catch {
+    $errorMessage = $_.Exception.Message
+    Write-Host "❌ Round-trip failed during $currentPhase" -ForegroundColor Red
+    Write-Host "   $errorMessage" -ForegroundColor Red
+
+    if ($LASTEXITCODE -ne 0) {
+        $exitCode = $LASTEXITCODE
+    } else {
+        $exitCode = 2
+    }
 }
 finally {
     # Phase 7: Teardown apim instances and supporting resources

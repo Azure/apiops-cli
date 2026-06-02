@@ -41,7 +41,7 @@ param(
     [Parameter(Mandatory)]
     [string]$SourceApimName,
 
-    [ValidateSet('Developer', 'Premium', 'StandardV2', 'PremiumV2')]
+    [ValidateSet('Developer', 'Premium', 'Standard', 'StandardV2', 'PremiumV2')]
     [string]$SkuName = 'StandardV2',
 
     [ValidateSet('Info', 'Verbose', 'Debug')]

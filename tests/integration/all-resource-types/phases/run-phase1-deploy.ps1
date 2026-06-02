@@ -54,7 +54,7 @@ param(
     [Parameter(Mandatory)]
     [string]$TargetResourceGroup,
 
-    [ValidateSet('Developer', 'Premium', 'StandardV2', 'PremiumV2')]
+    [ValidateSet('Developer', 'Premium', 'Standard', 'StandardV2', 'PremiumV2')]
     [string]$SkuName = 'StandardV2',
 
     [string]$Location = 'eastus2',

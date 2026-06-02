@@ -30,7 +30,7 @@ param publisherEmail string
 param publisherName string = 'APIOps BVT'
 
 @description('APIM SKU name. Must match the source instance SKU.')
-@allowed(['Developer', 'Premium', 'StandardV2', 'PremiumV2'])
+@allowed(['Developer', 'Premium', 'Standard', 'StandardV2', 'PremiumV2'])
 param skuName string = 'StandardV2'
 
 @description('Application Insights name for logger/diagnostic testing.')
@@ -49,7 +49,7 @@ param logAnalyticsName string = 'bvt-${uniqueString(resourceGroup().id)}-tgt-law
 // Variables
 // ---------------------------------------------------------------------------
 
-var isClassicSku = skuName == 'Developer' || skuName == 'Premium'
+var isClassicSku = skuName == 'Developer' || skuName == 'Premium' || skuName == 'Standard'
 var apimSkuCapacity = isClassicSku ? 1 : 1
 
 // ---------------------------------------------------------------------------

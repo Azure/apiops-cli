@@ -39,11 +39,11 @@ Desktop.ini
 .local-extract*/
 
 # Files for integration tests
-tests/integration/all-resource-types/logs/**
-tests/integration/all-resource-types/extracted-artifacts*/**
-tests/integration/all-resource-types/target-apim.json
-tests/integration/all-resource-types/source-apim.json
-tests/integration/all-resource-types/source-apim-post-activation.bicep
+tests/integration/all-resource-types/**/logs/**
+tests/integration/all-resource-types/**/extracted-artifacts*/**
+tests/integration/all-resource-types/bicep/target-apim.json
+tests/integration/all-resource-types/bicep/source-apim.json
+tests/integration/all-resource-types/bicep/source-apim-post-activation.bicep
 
 # Environment variables
 .env
@@ -57,4 +57,3 @@ tests/integration/all-resource-types/source-apim-post-activation.bicep
 # Squad: SubSquad activation file (local to this machine)
 .squad-workstream
 *.d.ts.map
-tests/integration/all-resource-types/source-apim-post-activation.json

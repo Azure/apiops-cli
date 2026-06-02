@@ -33,6 +33,7 @@ on:
         required: true
         type: choice
         options:
+          - Standard
           - StandardV2
           - Premium
           - PremiumV2

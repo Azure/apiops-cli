@@ -188,6 +188,43 @@ function Resolve-NativeExecutable {
 
 <#
 .SYNOPSIS
+Resolves the apiops CLI entrypoint from repository build output.
+
+.OUTPUTS
+System.Management.Automation.PSCustomObject
+#>
+function Resolve-ApiopsInvocation {
+    $moduleDir = Split-Path -Parent $PSCommandPath
+    $repoRoot = $null
+    $cursor = $moduleDir
+
+    while (-not [string]::IsNullOrWhiteSpace($cursor)) {
+        if (Test-Path (Join-Path $cursor 'package.json')) {
+            $repoRoot = $cursor
+            break
+        }
+
+        $parent = Split-Path -Parent $cursor
+        if ($parent -eq $cursor) {
+            break
+        }
+        $cursor = $parent
+    }
+
+    if ([string]::IsNullOrWhiteSpace($repoRoot)) {
+        throw 'Could not locate repository root from LogMasking module path.'
+    }
+
+    $distCliPath = Join-Path $repoRoot 'dist/cli/index.js'
+    if (-not (Test-Path $distCliPath)) {
+        throw "apiops CLI entrypoint not found: $distCliPath. Run 'npm run build' from repository root."
+    }
+
+    return [pscustomobject]@{ FilePath = 'node'; Prefix = @($distCliPath) }
+}
+
+<#
+.SYNOPSIS
 Runs a process and streams masked output.
 
 .PARAMETER FilePath
@@ -326,8 +363,9 @@ function Invoke-MaskedApiopsCommand {
         [hashtable]$Replacements
     )
 
-    Invoke-MaskedProcess -FilePath 'npx' `
-        -Arguments (@('apiops') + $Arguments) `
+    $apiops = Resolve-ApiopsInvocation
+    Invoke-MaskedProcess -FilePath $apiops.FilePath `
+        -Arguments (@($apiops.Prefix) + $Arguments) `
         -Replacements $Replacements
 
     return $LASTEXITCODE
@@ -366,6 +404,7 @@ Export-ModuleMember -Function `
     Protect-ApimName, `
     Protect-LogLine, `
     Resolve-NativeExecutable, `
+    Resolve-ApiopsInvocation, `
     Invoke-MaskedProcess, `
     Invoke-MaskedApiopsCommand, `
     Invoke-MaskedAzCommand
