@@ -5,8 +5,7 @@
 .SYNOPSIS
   Phase 7 — Tear down source and target APIM resource groups.
 .DESCRIPTION
-    Deletes the source and target resource groups, optionally waits for hard
-    delete completion, and purges soft-deleted APIM instances when requested.
+    Deletes the source and target resource groups, waits for the deletions to complete, and then purges any soft-deleted APIM instances in the specified location.
 
 .PARAMETER SourceResourceGroup
     Source APIM resource group.
