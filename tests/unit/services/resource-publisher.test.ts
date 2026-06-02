@@ -171,6 +171,57 @@ describe('resource-publisher', () => {
       );
     });
 
+    it('should canonicalize logger credential named value references from overrides', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const namedValueName = 'Logger-Credentials--658acc09217d201b30974554';
+      store.readResource.mockResolvedValue({
+        name: 'my-logger',
+        properties: {
+          loggerType: 'applicationInsights',
+          credentials: {
+            instrumentationKey: '{{Old-Value}}',
+          },
+        },
+      });
+      store.listResources.mockResolvedValue([
+        { type: ResourceType.Logger, nameParts: ['my-logger'] },
+        { type: ResourceType.NamedValue, nameParts: [namedValueName] },
+      ]);
+
+      const configWithOverrides: PublishConfig = {
+        ...testConfig,
+        overrides: {
+          loggers: {
+            'my-logger': {
+              credentials: {
+                instrumentationKey: `{{${namedValueName.toLowerCase()}}}`,
+              },
+            },
+          },
+        },
+      };
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Logger,
+        nameParts: ['my-logger'],
+      };
+
+      await publishResource(client, store, testContext, descriptor, configWithOverrides);
+
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        descriptor,
+        expect.objectContaining({
+          properties: expect.objectContaining({
+            credentials: expect.objectContaining({
+              instrumentationKey: `{{${namedValueName}}}`,
+            }),
+          }),
+        })
+      );
+    });
+
     it('should preserve opaque JSON properties', async () => {
       const client = createMockClient();
       const store = createMockStore();
@@ -1007,4 +1058,3 @@ describe('resource-publisher', () => {
     });
   });
 });
-
