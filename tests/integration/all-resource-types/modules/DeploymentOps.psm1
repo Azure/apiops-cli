@@ -180,17 +180,23 @@ function Wait-ApimApiQueryable {
     $maskedApim = Protect-ApimName -Value $ApimServiceName
     Write-Host "Waiting for APIM API '$ApiId' to become queryable in '$maskedApim' (timeout ${TimeoutSeconds}s)..." -ForegroundColor Cyan
 
+    $subscriptionId = az account show --query id --output tsv 2>$null
+    if ([string]::IsNullOrWhiteSpace($subscriptionId)) {
+        throw "Could not resolve active Azure subscription while waiting for API '$ApiId'"
+    }
+
+    $apiListUri = "https://management.azure.com/subscriptions/$subscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.ApiManagement/service/$ApimServiceName/apis?api-version=2025-09-01-preview"
+
     $probe = {
         $probeArgs = @(
-            'apim', 'api', 'show',
-            '--resource-group', $ResourceGroupName,
-            '--service-name', $ApimServiceName,
-            '--api-id', $ApiId,
-            '--query', 'name',
+            'rest',
+            '--method', 'get',
+            '--uri', $apiListUri,
+            '--query', "length(value[?name=='$ApiId'])",
             '--output', 'tsv'
         )
         $probeResult = Invoke-MaskedAzCommand -Replacements $Replacements -Arguments $probeArgs
-        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($probeResult)) {
+        if ($LASTEXITCODE -eq 0 -and "$probeResult" -eq '1') {
             return $true
         }
 
