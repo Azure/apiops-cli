@@ -128,13 +128,24 @@ describe('buildArtifactFilePath', () => {
     );
   });
 
-  it('should return undefined for types with no info file (ApiOperation)', () => {
+  it('should return undefined for types with no info file (ProductTag)', () => {
+    const descriptor: ResourceDescriptor = {
+      type: ResourceType.ProductTag,
+      nameParts: ['my-product', 'my-tag'],
+    };
+    const filePath = buildArtifactFilePath(baseDir, descriptor);
+    expect(filePath).toBeUndefined();
+  });
+
+  it('should return operationInformation.json path for ApiOperation', () => {
     const descriptor: ResourceDescriptor = {
       type: ResourceType.ApiOperation,
       nameParts: ['my-api', 'getUsers'],
     };
     const filePath = buildArtifactFilePath(baseDir, descriptor);
-    expect(filePath).toBeUndefined();
+    expect(filePath).toBe(
+      path.join(baseDir, 'apis', 'my-api', 'operations', 'getUsers', 'operationInformation.json')
+    );
   });
 
   it('should return policy.xml path for ServicePolicy', () => {
@@ -496,6 +507,7 @@ describe('buildArtifactFilePath + parseArtifactPath roundtrip for API child reso
     { type: ResourceType.ApiSchema, nameParts: ['my-api', 'my-schema'] },
     { type: ResourceType.ApiRelease, nameParts: ['my-api', 'my-release'] },
     { type: ResourceType.GraphQLResolver, nameParts: ['my-api', 'my-resolver'] },
+    { type: ResourceType.ApiOperation, nameParts: ['my-api', 'my-op'] },
     { type: ResourceType.ApiOperationPolicy, nameParts: ['my-api', 'my-op'] },
   ];
 

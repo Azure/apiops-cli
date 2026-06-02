@@ -57,10 +57,10 @@ $RequestResponseIgnoredProperties = @('description')
 
 # Properties ignored on representation objects (have 'contentType' or 'schemaId'):
 # - description: SOAP/WSDL import generates descriptions that vary
-# - schemaId/typeName: When APIs are published via spec import (OpenAPI/Swagger),
-#   APIM recreates operations from the spec but does NOT populate schemaId/typeName
-#   in representations — the spec itself provides schema resolution. These fields
-#   appear in extracted artifacts but are absent after spec-based publish.
+# - schemaId/typeName: For SOAP APIs whose operations have auto-generated IDs,
+#   PATCH reconciliation is skipped and these fields may differ. For REST APIs,
+#   PATCH reconciliation restores them after spec import, so they should match.
+#   Kept here for SOAP compatibility.
 $RepresentationIgnoredProperties = @('description', 'schemaId', 'typeName')
 
 # ── Helpers ─────────────────────────────────────────────────────────────────

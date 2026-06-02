@@ -204,7 +204,7 @@ export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> 
   [ResourceType.ApiOperation]: {
     armPathSuffix: 'apis/{0}/operations/{1}',
     artifactDirectory: 'apis/{0}/operations/{1}',
-    infoFile: null,
+    infoFile: 'operationInformation.json',
     supportsGet: true,
   },
   [ResourceType.ApiOperationPolicy]: {

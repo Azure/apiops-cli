@@ -266,10 +266,26 @@ async function publishApiRevisions(
 }
 
 /**
+ * Properties allowed in operation PATCH bodies.
+ * Restricted to fields that are valid for all API types (HTTP, SOAP, GraphQL, WebSocket, A2A).
+ * Avoids sending fields APIM rejects on non-HTTP API types.
+ */
+const OPERATION_PATCH_ALLOWLIST: ReadonlySet<string> = new Set([
+  'displayName',
+  'description',
+  'method',
+  'urlTemplate',
+  'templateParameters',
+  'request',
+  'responses',
+  'policies',
+]);
+
+/**
  * Resource types that are auto-created by APIM when importing a spec.
  * Both ApiOperation and ApiSchema are initially excluded, but we selectively
- * re-add: operations with schema references, and explicitly named schemas
- * (non-auto-generated 24-char hex IDs).
+ * re-add: explicitly named schemas (non-auto-generated 24-char hex IDs).
+ * Operations are always reconciled via PATCH after spec import.
  */
 const SPEC_MANAGED_CHILD_TYPES = new Set<ResourceType>([
   ResourceType.ApiOperation,
@@ -280,7 +296,8 @@ const SPEC_MANAGED_CHILD_TYPES = new Set<ResourceType>([
  * Publish all child resources of an API in parallel.
  * When specImported is true, skips ApiSchema and ApiOperation since APIM
  * auto-creates those from the imported specification. However:
- * - Operations with schema references are re-PUT explicitly so APIM preserves those links
+ * - All operations are reconciled via PATCH after spec import to restore
+ *   persisted metadata (description, schema references, etc.)
  * - Explicitly named schemas (non-24-char-hex IDs) are also re-published
  */
 async function publishApiChildren(
@@ -302,40 +319,7 @@ async function publishApiChildren(
       !(specImported && SPEC_MANAGED_CHILD_TYPES.has(d.type))
   );
 
-  // When a spec was imported, APIM auto-creates operations and schemas but loses
-  // schemaId/typeName references in representations. Re-include operations that
-  // carry such references so those links are explicitly restored via PUT.
   if (specImported) {
-    // In incremental mode, avoid re-publishing operation artifacts after spec
-    // import. This prevents stale operation JSON from overwriting newly
-    // imported OpenAPI operation metadata (for example descriptions).
-    const shouldRepublishSchemaRefOps = !config.commitId;
-
-    const operationDescriptors = allDescriptors.filter(
-      (d) =>
-        d.type === ResourceType.ApiOperation &&
-        getNamePart(d.nameParts, 0) === getNamePart(apiDescriptor.nameParts, 0)
-    );
-
-    if (shouldRepublishSchemaRefOps) {
-      const schemaRefOps = await filterOperationsWithSchemaRefs(
-        store,
-        config.sourceDir,
-        operationDescriptors
-      );
-
-      if (schemaRefOps.length > 0) {
-        logger.debug(
-          `Re-publishing ${schemaRefOps.length} operation(s) with schema references after spec import for "${getNamePart(apiDescriptor.nameParts, 0)}"`
-        );
-        childDescriptors = [...childDescriptors, ...schemaRefOps];
-      }
-    } else {
-      logger.debug(
-        `Skipping schema-reference operation re-publish for "${getNamePart(apiDescriptor.nameParts, 0)}" in incremental mode`
-      );
-    }
-
     // Re-include explicitly named schemas (non-auto-generated IDs).
     // Auto-generated schemas have 24-char hex names and are recreated by spec import.
     // Explicitly named schemas (like "src-rest-schema-item") must be published.
@@ -377,67 +361,77 @@ async function publishApiChildren(
       await runParallel(tasks, 5);
     }
   }
+
+  // After spec import, reconcile all operations by PATCHing with persisted metadata.
+  // This ensures APIM retains the original operation state (description, schema refs, etc.)
+  // regardless of what the importer defaulted. PATCH is idempotent and only updates
+  // the fields present in the persisted JSON.
+  if (specImported) {
+    await reconcileOperationsAfterSpecImport(client, store, context, apiDescriptor, config, allDescriptors);
+  }
 }
 
 /**
- * Returns the subset of operation descriptors whose stored artifact contains
- * at least one representation with a schemaId or typeName property.
- * These operations must be re-PUT after a spec import so APIM retains the
- * schema linkage that the import path discards.
+ * Reconcile all API operations after a spec import by PATCHing each operation
+ * with its persisted metadata. Only allow-listed properties are sent in the
+ * PATCH body so APIM does not reject the request for non-HTTP API types.
+ *
+ * Skips operations with auto-generated IDs (24-char hex) — these are SOAP
+ * operations recreated by the WSDL importer; their persisted JSON, if any,
+ * should not override the importer's result.
  */
-async function filterOperationsWithSchemaRefs(
+async function reconcileOperationsAfterSpecImport(
+  client: IApimClient,
   store: IArtifactStore,
-  sourceDir: string,
-  operationDescriptors: ResourceDescriptor[]
-): Promise<ResourceDescriptor[]> {
-  const result: ResourceDescriptor[] = [];
+  context: ApimServiceContext,
+  apiDescriptor: ResourceDescriptor,
+  config: PublishConfig,
+  allDescriptors: ResourceDescriptor[]
+): Promise<void> {
+  const operationDescriptors = allDescriptors.filter(
+    (d) =>
+      d.type === ResourceType.ApiOperation &&
+      getNamePart(d.nameParts, 0) === getNamePart(apiDescriptor.nameParts, 0) &&
+      !isAutoGeneratedId(getNamePart(d.nameParts, 1))
+  );
 
-  for (const descriptor of operationDescriptors) {
-    const json = await store.readResource(sourceDir, descriptor);
-    if (json && operationHasSchemaRefs(json)) {
-      result.push(descriptor);
-    }
-  }
+  if (operationDescriptors.length === 0) return;
 
-  return result;
-}
+  const tasks = operationDescriptors.map((descriptor) => async () => {
+    const json = await store.readResource(config.sourceDir, descriptor);
+    if (!json) return;
 
-/**
- * Returns true if the operation JSON contains at least one representation
- * (in request or any response) that has a schemaId or typeName property.
- */
-function operationHasSchemaRefs(json: Record<string, unknown>): boolean {
-  const props = json.properties as Record<string, unknown> | undefined;
-  if (!props) return false;
+    const props = json.properties as Record<string, unknown> | undefined;
+    if (!props) return;
 
-  const representationGroups: unknown[] = [];
-
-  const request = props.request as Record<string, unknown> | undefined;
-  if (request?.representations) {
-    representationGroups.push(request.representations);
-  }
-
-  const responses = props.responses as unknown[] | undefined;
-  if (Array.isArray(responses)) {
-    for (const response of responses) {
-      const r = response as Record<string, unknown>;
-      if (r.representations) {
-        representationGroups.push(r.representations);
+    // Build a PATCH body with only allow-listed properties present in the persisted JSON.
+    const patchProps: Record<string, unknown> = {};
+    for (const key of OPERATION_PATCH_ALLOWLIST) {
+      if (Object.hasOwn(props, key)) {
+        patchProps[key] = props[key];
       }
     }
-  }
 
-  for (const group of representationGroups) {
-    if (!Array.isArray(group)) continue;
-    for (const rep of group) {
-      const r = rep as Record<string, unknown>;
-      if (r.schemaId != null || r.typeName != null) {
-        return true;
-      }
+    if (Object.keys(patchProps).length === 0) return;
+
+    const patchBody: Record<string, unknown> = { properties: patchProps };
+
+    try {
+      await client.patchResource(context, descriptor, patchBody);
+      logger.debug(`Reconciled operation "${getNamePart(descriptor.nameParts, 1)}" after spec import`);
+    } catch (error) {
+      logger.warn(
+        `Failed to reconcile operation "${getNamePart(descriptor.nameParts, 1)}" after spec import: ${(error as Error).message}`
+      );
     }
-  }
+  });
 
-  return false;
+  if (tasks.length > 0) {
+    logger.debug(
+      `Reconciling ${tasks.length} operation(s) after spec import for "${getNamePart(apiDescriptor.nameParts, 0)}"`
+    );
+    await runParallel(tasks, 5);
+  }
 }
 
 /**

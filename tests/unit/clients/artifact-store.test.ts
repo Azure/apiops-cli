@@ -59,8 +59,8 @@ describe('ArtifactStore', () => {
 
     it('should handle types with no info file gracefully', async () => {
       const descriptor: ResourceDescriptor = {
-        type: ResourceType.ApiOperation,
-        nameParts: ['my-api', 'getUsers'],
+        type: ResourceType.ProductTag,
+        nameParts: ['my-product', 'my-tag'],
       };
 
       // writeResource should be a no-op

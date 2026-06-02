@@ -59,7 +59,7 @@ Resources scoped to a specific API.
 | ApiPolicy | `/apis/{name}/policies/policy` | `apis/{0}` | `policy.xml` | Policy applied to all operations in an API |
 | ApiTag | `/apis/{name}/tags/{tag}` | `apis/{0}/tags/{1}` | `tagInformation.json` | Tag applied to an API |
 | ApiDiagnostic | `/apis/{name}/diagnostics/{diag}` | `apis/{0}/diagnostics/{1}` | `diagnosticInformation.json` | Diagnostic settings scoped to an API |
-| ApiOperation | `/apis/{name}/operations/{op}` | `apis/{0}/operations/{1}` | *(none)* | Individual API operation (GET /users, POST /orders, etc.) |
+| ApiOperation | `/apis/{name}/operations/{op}` | `apis/{0}/operations/{1}` | `operationInformation.json` | Individual API operation (GET /users, POST /orders, etc.) |
 | ApiOperationPolicy | `/apis/{name}/operations/{op}/policies/policy` | `apis/{0}/operations/{1}` | `policy.xml` | Policy applied to a specific API operation |
 | ApiSchema | `/apis/{name}/schemas/{schema}` | `apis/{0}/schemas/{1}` | `schemaInformation.json` | Schema definition for request/response validation |
 | ApiRelease | `/apis/{name}/releases/{release}` | `apis/{0}/releases/{1}` | `releaseInformation.json` | API release record (makes a revision current) |

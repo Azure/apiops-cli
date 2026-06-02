@@ -375,6 +375,30 @@ export class ApimClient implements IApimClient {
     }
   }
 
+  async patchResource(
+    context: ApimServiceContext,
+    descriptor: ResourceDescriptor,
+    payload: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const url = buildArmUri(context, descriptor);
+
+    const response = await this.request(url, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+
+    const responseText = await response.text();
+    if (!responseText.trim()) {
+      return {};
+    }
+
+    try {
+      return JSON.parse(responseText) as Record<string, unknown>;
+    } catch {
+      throw new SyntaxError(`Non-JSON response from APIM PATCH ${url}: ${responseText.substring(0, 200)}`);
+    }
+  }
+
   async deleteResource(
     context: ApimServiceContext,
     descriptor: ResourceDescriptor

@@ -32,7 +32,8 @@ function createMockClient() {
   return {
     listResources: async function* () {},
     getResource: vi.fn(),
-    putResource: vi.fn().mockResolvedValue(undefined),
+    putResource: vi.fn().mockResolvedValue({}),
+    patchResource: vi.fn().mockResolvedValue({}),
     deleteResource: vi.fn(),
     listApiRevisions: async function* () {},
     getApiSpecification: vi.fn(),
@@ -836,18 +837,17 @@ describe('api-publisher', () => {
 
       await publishApi(client, store, testContext, apiDescriptor, testConfig);
 
-      // Only ApiPolicy and ApiTag should be published (2 tasks total across tiers)
-      // ApiOperation is skipped (no schema refs), auto-generated ApiSchema is skipped
+      // ApiPolicy + ApiTag via initial publish (2) + get-pets reconcile task (1) = 3 tasks total.
+      // Auto-generated ApiSchema is skipped throughout.
       const totalTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
         const tasks = call[0] as unknown[];
         return sum + tasks.length;
       }, 0);
-      expect(totalTasks).toBe(2);
+      expect(totalTasks).toBe(3);
     });
 
-    it('should re-publish operations with schema references even when spec was imported', async () => {
+    it('should reconcile all operations via PATCH after spec import', async () => {
       const client = createMockClient();
-      // Use auto-generated 24-char hex schema ID - these are skipped during spec import
       const children = [
         { type: ResourceType.ApiPolicy, nameParts: ['petstore', 'policy-1'] },
         { type: ResourceType.ApiOperation, nameParts: ['petstore', 'create-item'] },
@@ -856,7 +856,6 @@ describe('api-publisher', () => {
       ];
       const store = createMockStore(children);
 
-      // Root API resource
       store.readResource.mockImplementation(async (_dir: string, descriptor: ResourceDescriptor) => {
         if (descriptor.type === ResourceType.Api) {
           return { name: 'petstore', properties: { path: 'petstore' } };
@@ -865,7 +864,6 @@ describe('api-publisher', () => {
           descriptor.type === ResourceType.ApiOperation &&
           (descriptor.nameParts[1] ?? '') === 'create-item'
         ) {
-          // create-item has a schema reference in request representations
           return {
             name: 'create-item',
             properties: {
@@ -875,7 +873,7 @@ describe('api-publisher', () => {
             },
           };
         }
-        // get-items has no schema refs
+        // get-items returns null — no persisted JSON
         return null;
       });
       store.readContent.mockResolvedValue({
@@ -890,13 +888,13 @@ describe('api-publisher', () => {
 
       await publishApi(client, store, testContext, apiDescriptor, testConfig);
 
-      // ApiPolicy (1) + create-item operation re-published (1) = 2 tasks total
-      // Auto-generated ApiSchema and get-items (no schema ref) must be excluded
+      // ApiPolicy (1 initial) + create-item + get-items reconcile tasks (2) = 3 tasks total.
+      // Auto-generated ApiSchema is skipped throughout.
       const totalTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
         const tasks = call[0] as unknown[];
         return sum + tasks.length;
       }, 0);
-      expect(totalTasks).toBe(2);
+      expect(totalTasks).toBe(3);
     });
 
     it('should still re-publish explicitly named schemas in incremental mode after spec import', async () => {
@@ -920,7 +918,8 @@ describe('api-publisher', () => {
 
       await publishApi(client, store, testContext, apiDescriptor, incrementalConfig);
 
-      // Only the explicit schema should be published (auto-generated hex ID is skipped)
+      // Only the explicit schema should be published (auto-generated hex ID is skipped).
+      // No operation reconciliation tasks because there are no operation children.
       const totalTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
         const tasks = call[0] as unknown[];
         return sum + tasks.length;
@@ -928,7 +927,7 @@ describe('api-publisher', () => {
       expect(totalTasks).toBe(1);
     });
 
-    it('should not re-publish schema-reference operations in incremental mode after spec import', async () => {
+    it('should reconcile operations via PATCH even in incremental mode (commitId set)', async () => {
       const client = createMockClient();
       const children = [
         { type: ResourceType.ApiPolicy, nameParts: ['petstore', 'policy-1'] },
@@ -972,16 +971,16 @@ describe('api-publisher', () => {
 
       await publishApi(client, store, testContext, apiDescriptor, incrementalConfig);
 
-      // Only ApiPolicy should be published as child. The schema-ref operation
-      // must be skipped in incremental mode to preserve imported spec metadata.
+      // ApiPolicy (1 initial) + create-item reconcile task (1) = 2 tasks total.
+      // PATCH reconciliation always runs regardless of commitId.
       const totalTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
         const tasks = call[0] as unknown[];
         return sum + tasks.length;
       }, 0);
-      expect(totalTasks).toBe(1);
+      expect(totalTasks).toBe(2);
     });
 
-    it('should re-publish operations with schema references in response representations', async () => {
+    it('should reconcile operations via PATCH after spec import (schema refs in responses)', async () => {
       const client = createMockClient();
       const children = [
         { type: ResourceType.ApiOperation, nameParts: ['petstore', 'get-item'] },
@@ -1019,12 +1018,122 @@ describe('api-publisher', () => {
 
       await publishApi(client, store, testContext, apiDescriptor, testConfig);
 
-      // get-item has schema refs in response → re-published (1 task total)
+      // get-item reconcile task (1 total, no initial child publish tasks)
       const totalTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
         const tasks = call[0] as unknown[];
         return sum + tasks.length;
       }, 0);
       expect(totalTasks).toBe(1);
+    });
+
+    it('should PATCH operations with only allow-listed properties after spec import', async () => {
+      // Use an executing mock so patchResource calls can be verified
+      mockRunParallel.mockImplementation(async (tasks: Array<() => Promise<unknown>>) => {
+        for (const task of tasks) await task();
+      });
+
+      const client = createMockClient();
+      const children = [
+        { type: ResourceType.ApiOperation, nameParts: ['petstore', 'get-pets'] },
+      ];
+      const store = createMockStore(children);
+
+      store.readResource.mockImplementation(async (_dir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.Api) {
+          return { name: 'petstore', properties: { path: 'petstore' } };
+        }
+        if (descriptor.type === ResourceType.ApiOperation) {
+          return {
+            name: 'get-pets',
+            properties: {
+              displayName: 'List Pets',
+              description: null,
+              method: 'GET',
+              urlTemplate: '/pets',
+              // server-side field — must NOT appear in PATCH
+              internalId: 'server-generated-id',
+            },
+          };
+        }
+        return null;
+      });
+      store.readContent.mockResolvedValue({ content: 'openapi: "3.0.0"', format: 'yaml' });
+
+      const apiDescriptor: ResourceDescriptor = { type: ResourceType.Api, nameParts: ['petstore'] };
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      expect(client.patchResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({ type: ResourceType.ApiOperation, nameParts: ['petstore', 'get-pets'] }),
+        {
+          properties: {
+            displayName: 'List Pets',
+            description: null,
+            method: 'GET',
+            urlTemplate: '/pets',
+            // internalId must NOT be included
+          },
+        }
+      );
+    });
+
+    it('should skip PATCH reconciliation for auto-generated operation IDs', async () => {
+      mockRunParallel.mockImplementation(async (tasks: Array<() => Promise<unknown>>) => {
+        for (const task of tasks) await task();
+      });
+
+      const client = createMockClient();
+      const children = [
+        { type: ResourceType.ApiOperation, nameParts: ['petstore', '69f15c3c10a45d29d855583a'] },
+      ];
+      const store = createMockStore(children);
+
+      store.readResource.mockImplementation(async (_dir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.Api) {
+          return { name: 'petstore', properties: { path: 'petstore' } };
+        }
+        if (descriptor.type === ResourceType.ApiOperation) {
+          return { name: '69f15c3c10a45d29d855583a', properties: { method: 'GET' } };
+        }
+        return null;
+      });
+      store.readContent.mockResolvedValue({ content: 'wsdl: ...', format: 'wsdl' });
+
+      const apiDescriptor: ResourceDescriptor = { type: ResourceType.Api, nameParts: ['petstore'] };
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      // Auto-generated ID operation must not be patched
+      expect(client.patchResource).not.toHaveBeenCalled();
+    });
+
+    it('should skip PATCH when persisted JSON has no allow-listed properties', async () => {
+      mockRunParallel.mockImplementation(async (tasks: Array<() => Promise<unknown>>) => {
+        for (const task of tasks) await task();
+      });
+
+      const client = createMockClient();
+      const children = [
+        { type: ResourceType.ApiOperation, nameParts: ['petstore', 'get-pets'] },
+      ];
+      const store = createMockStore(children);
+
+      store.readResource.mockImplementation(async (_dir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.Api) {
+          return { name: 'petstore', properties: { path: 'petstore' } };
+        }
+        if (descriptor.type === ResourceType.ApiOperation) {
+          // Only server-side fields, none in allow-list
+          return { name: 'get-pets', properties: { internalId: 'x', etag: 'abc' } };
+        }
+        return null;
+      });
+      store.readContent.mockResolvedValue({ content: 'openapi: "3.0.0"', format: 'yaml' });
+
+      const apiDescriptor: ResourceDescriptor = { type: ResourceType.Api, nameParts: ['petstore'] };
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      // No allow-listed properties → patchResource must not be called
+      expect(client.patchResource).not.toHaveBeenCalled();
     });
 
     it('should publish all children when no specification file exists', async () => {
