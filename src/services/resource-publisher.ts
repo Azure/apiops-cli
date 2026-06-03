@@ -613,11 +613,7 @@ async function normalizeNamedValueReferences(
   }
 
   while (stack.length > 0) {
-    const frame = stack.pop();
-    if (!frame) {
-      continue;
-    }
-
+    const frame = stack.pop()!;
     const { source, assign } = frame;
 
     if (typeof source === 'string') {
@@ -628,6 +624,7 @@ async function normalizeNamedValueReferences(
     if (Array.isArray(source)) {
       const out: unknown[] = new Array(source.length);
       assign(out);
+      // Push in reverse so LIFO processing assigns array elements in natural order.
       for (let i = source.length - 1; i >= 0; i--) {
         stack.push({
           source: source[i],

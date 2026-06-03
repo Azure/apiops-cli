@@ -230,6 +230,7 @@ export function findTransitiveDependencies(
     return true;
   };
 
+  // Build once so each queue lookup stays O(1) during chain expansion.
   for (const [name] of namedValues) {
     namedValueKeyToName.set(name.toLowerCase(), name);
   }
@@ -255,11 +256,7 @@ export function findTransitiveDependencies(
 
   // Expand named value chains (e.g. A references B, B references C).
   while (namedValueQueue.length > 0) {
-    const currentName = namedValueQueue.shift();
-    if (!currentName) {
-      continue;
-    }
-
+    const currentName = namedValueQueue.shift()!;
     const canonicalName = namedValueKeyToName.get(currentName.toLowerCase());
     if (!canonicalName) {
       continue;
