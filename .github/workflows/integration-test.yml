@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
 # ===========================================================================
 # Integration Test — Extract→Publish Round-Trip
 # ===========================================================================
@@ -31,6 +33,7 @@ on:
         required: true
         type: choice
         options:
+          - Standard
           - StandardV2
           - Premium
           - PremiumV2
@@ -72,6 +75,8 @@ on:
         required: true
       APIM_PUBLISHER_EMAIL:
         required: true
+      APIM_SKU:
+        required: false
 
 permissions:
   id-token: write
@@ -84,6 +89,8 @@ concurrency:
 env:
   SOURCE_RG: rg-apiops-bvt-source-${{ github.run_id }}
   TARGET_RG: rg-apiops-bvt-target-${{ github.run_id }}
+  SOURCE_APIM: apiops-bvt-src-${{ github.run_id }}
+  TARGET_APIM: apiops-bvt-tgt-${{ github.run_id }}
 
 jobs:
   roundtrip-test:
@@ -103,14 +110,8 @@ jobs:
 
       - run: npm ci && npm run build
 
-      - name: Azure Login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Run Round-Trip Test
+      - name: Resolve Workflow Settings
+        id: settings
         shell: pwsh
         run: |
           $logLevel = '${{ inputs.log_level }}'
@@ -119,61 +120,140 @@ jobs:
             throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
           }
 
+          $skuName = '${{ secrets.APIM_SKU }}'
+          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = '${{ inputs.sku }}' }
+          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = 'StandardV2' }
+
+          "logLevel=$logLevel" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "skuName=$skuName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run Round-Trip Phase 1 (Deploy)
+        id: phase1
+        shell: pwsh
+        run: |
           $params = @{
             SourceResourceGroup = '${{ env.SOURCE_RG }}'
             TargetResourceGroup = '${{ env.TARGET_RG }}'
-            SkuName            = '${{ inputs.sku }}'
+            SourceApimName     = '${{ env.SOURCE_APIM }}'
+            TargetApimName     = '${{ env.TARGET_APIM }}'
+            SourceSubscriptionId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}'
+            TargetSubscriptionId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}'
+            SkuName            = '${{ steps.settings.outputs.skuName }}'
             Location           = '${{ inputs.location }}'
-            LogLevel           = $logLevel
+            LogLevel           = '${{ steps.settings.outputs.logLevel }}'
             PublisherEmail     = '${{ secrets.APIM_PUBLISHER_EMAIL }}'
-            ExtractOutputDir   = './extracted-artifacts'
-            HardDelete         = $true
           }
+          ./tests/integration/all-resource-types/phases/run-phase1-deploy.ps1 @params
 
-          ./tests/integration/all-resource-types/run-roundtrip-test.ps1 @params
+      - name: Azure Login - Refresh Before Phase 2
+        if: success()
+        uses: azure/login@v2
+        with:
+          # Phase 1 can run for a long time while APIM activates; refresh login
+          # before extract/publish so apiops receives a fresh federated session.
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run Round-Trip Phase 2 (Extract)
+        id: phase2
+        if: success()
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: |
+          ./tests/integration/all-resource-types/phases/run-phase2-extract.ps1 `
+            -SourceSubscriptionId '${{ steps.phase1.outputs.sourceSubscriptionId }}' `
+            -SourceResourceGroup '${{ steps.phase1.outputs.sourceResourceGroup }}' `
+            -SourceApimName '${{ steps.phase1.outputs.sourceApimName }}' `
+            -LogLevel '${{ steps.settings.outputs.logLevel }}' `
+            -ExtractOutputDir './extracted-artifacts'
+
+      - name: Run Round-Trip Phase 3 (Validate Extract)
+        if: success()
+        shell: pwsh
+        run: |
+          $skuName = '${{ steps.phase1.outputs.skuName }}'
+          $extractOutputDir = '${{ steps.phase2.outputs.ExtractOutputDir }}'
+
+          ./tests/integration/all-resource-types/phases/run-phase3-validate-extract.ps1 `
+            -SkuName $skuName `
+            -LogLevel '${{ steps.settings.outputs.logLevel }}' `
+            -ExtractOutputDir $extractOutputDir
+
+      - name: Run Round-Trip Phase 4 (Create Overrides)
+        id: phase4
+        if: success()
+        shell: pwsh
+        run: |
+          $extractOutputDir = '${{ steps.phase2.outputs.ExtractOutputDir }}'
+
+          ./tests/integration/all-resource-types/phases/run-phase4-create-overrides.ps1 `
+            -TargetSubscriptionId '${{ steps.phase1.outputs.targetSubscriptionId }}' `
+            -TargetResourceGroup '${{ steps.phase1.outputs.targetResourceGroup }}' `
+            -LogLevel '${{ steps.settings.outputs.logLevel }}' `
+            -ExtractOutputDir $extractOutputDir
+
+      - name: Run Round-Trip Phase 5 (Publish)
+        if: success()
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: |
+          $extractOutputDir = '${{ steps.phase2.outputs.ExtractOutputDir }}'
+
+          ./tests/integration/all-resource-types/phases/run-phase5-publish.ps1 `
+            -TargetSubscriptionId '${{ steps.phase1.outputs.targetSubscriptionId }}' `
+            -TargetResourceGroup '${{ steps.phase1.outputs.targetResourceGroup }}' `
+            -TargetApimName '${{ steps.phase1.outputs.targetApimName }}' `
+            -OverrideFile '${{ steps.phase4.outputs.overrideFile }}' `
+            -LogLevel '${{ steps.settings.outputs.logLevel }}' `
+            -ExtractOutputDir $extractOutputDir
+
+      - name: Run Round-Trip Phase 6 (Compare)
+        if: success()
+        shell: pwsh
+        run: |
+          ./tests/integration/all-resource-types/phases/run-phase6-compare.ps1 `
+            -SourceSubscriptionId '${{ steps.phase1.outputs.sourceSubscriptionId }}' `
+            -SourceResourceGroup '${{ steps.phase1.outputs.sourceResourceGroup }}' `
+            -SourceApimName '${{ steps.phase1.outputs.sourceApimName }}' `
+            -TargetSubscriptionId '${{ steps.phase1.outputs.targetSubscriptionId }}' `
+            -TargetResourceGroup '${{ steps.phase1.outputs.targetResourceGroup }}' `
+            -TargetApimName '${{ steps.phase1.outputs.targetApimName }}' `
+            -LogLevel '${{ steps.settings.outputs.logLevel }}'
 
       - name: Upload Extracted Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: extracted-artifacts-${{ inputs.sku }}
-          path: ./extracted-artifacts/
+          name: extracted-artifacts-${{ steps.phase1.outputs.skuName }}
+          path: ${{ steps.phase2.outputs.ExtractOutputDir || './extracted-artifacts/' }}
           if-no-files-found: ignore
 
-      - name: Emergency Teardown
-        if: failure()
+      - name: Run Round-Trip Phase 7 (Teardown)
+        if: always()
         shell: pwsh
         run: |
-          $sourceRg = '${{ env.SOURCE_RG }}'
-          $targetRg = '${{ env.TARGET_RG }}'
-          $location = '${{ inputs.location }}'
+          $sourceResourceGroup = '${{ steps.phase1.outputs.sourceResourceGroup }}'
+          if ([string]::IsNullOrWhiteSpace($sourceResourceGroup)) { $sourceResourceGroup = '${{ env.SOURCE_RG }}' }
 
-          # Capture APIM names before RG deletion so we can purge soft-deleted services.
-          $sourceApimName = az apim list --resource-group $sourceRg --query "[0].name" -o tsv 2>$null
-          $targetApimName = az apim list --resource-group $targetRg --query "[0].name" -o tsv 2>$null
+          $targetResourceGroup = '${{ steps.phase1.outputs.targetResourceGroup }}'
+          if ([string]::IsNullOrWhiteSpace($targetResourceGroup)) { $targetResourceGroup = '${{ env.TARGET_RG }}' }
 
-          Write-Host "🚨 Emergency teardown — deleting resource groups..."
-          az group delete --name $sourceRg --yes --no-wait 2>$null
-          az group delete --name $targetRg --yes --no-wait 2>$null
+          $location = '${{ steps.phase1.outputs.location }}'
+          if ([string]::IsNullOrWhiteSpace($location)) { $location = '${{ inputs.location }}' }
 
-          Write-Host "⏳ Waiting for resource group deletions before APIM purge..."
-          $maxWaitSeconds = 900
-          $waited = 0
-          $interval = 30
-
-          while ($waited -lt $maxWaitSeconds) {
-            $srcExists = (az group exists --name $sourceRg -o tsv 2>$null) -eq 'true'
-            $tgtExists = (az group exists --name $targetRg -o tsv 2>$null) -eq 'true'
-            if (-not $srcExists -and -not $tgtExists) {
-              break
-            }
-            Start-Sleep -Seconds $interval
-            $waited += $interval
-          }
-
-          foreach ($apimName in @($sourceApimName, $targetApimName)) {
-            if (-not [string]::IsNullOrWhiteSpace($apimName)) {
-              Write-Host "🗑️  Purging soft-deleted APIM: $apimName"
-              az apim deletedservice purge --service-name $apimName --location $location 2>$null
-            }
-          }
+          ./tests/integration/all-resource-types/phases/run-phase7-teardown.ps1 `
+            -SourceResourceGroup $sourceResourceGroup `
+            -TargetResourceGroup $targetResourceGroup `
+            -Location $location

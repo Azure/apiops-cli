@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
 <#
 .SYNOPSIS
   Deploys or destroys the Kitchen Sink APIM instance for BVT.
@@ -43,8 +45,10 @@ param(
 
     [string]$Location = 'eastus2',
 
-    [ValidateSet('Developer', 'Premium', 'StandardV2', 'PremiumV2')]
+    [ValidateSet('Developer', 'Premium', 'Standard', 'StandardV2', 'PremiumV2')]
     [string]$SkuName = 'StandardV2',
+
+    [string]$ApimName,
 
     [switch]$Destroy,
 
@@ -55,8 +59,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $VerbosePreference = if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' }
 $DebugPreference   = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' }
-Import-Module (Join-Path $PSScriptRoot 'MaskingHelpers.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'DeploymentHelpers.psm1') -Force
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/LogMasking.psm1') -Force
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/ScriptRuntime.psm1') -Force
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/DeploymentOps.psm1') -Force
 
 # Map this script's LogLevel (Info/Verbose/Debug) to the apiops CLI log level
 # values used in the printed example command.
@@ -82,8 +87,8 @@ if ($Destroy) {
 # ---------------------------------------------------------------------------
 # Deploy path
 # ---------------------------------------------------------------------------
-$bicepFile = Join-Path $PSScriptRoot 'source-apim.bicep'
-$postActivationBicepFile = Join-Path $PSScriptRoot 'source-apim-post-activation.bicep'
+$bicepFile = Join-Path (Split-Path $PSScriptRoot -Parent) 'bicep/source-apim.bicep'
+$postActivationBicepFile = Join-Path (Split-Path $PSScriptRoot -Parent) 'bicep/source-apim-post-activation.bicep'
 
 if (-not (Test-Path $bicepFile)) {
     Write-Error "Bicep file not found at: $bicepFile"
@@ -94,10 +99,8 @@ if (-not (Test-Path $postActivationBicepFile)) {
 
 # Verify az CLI is authenticated
 Write-Host "🔐 Verifying Azure CLI authentication..."
-$account = az account show --output json 2>$null | ConvertFrom-Json
-if (-not $account) {
-    Write-Error "Not logged in to Azure CLI. Run 'az login' first."
-}
+$account = Assert-AzCliLoggedIn
+$apimNameValue = Get-BoundParameterValueOrNull -BoundParameters $PSBoundParameters -Name 'ApimName'
 
 $subscriptionId = $account.id
 Write-Host "   Subscription: $($account.name) ($(Protect-SubscriptionId -Value $subscriptionId))" -ForegroundColor Gray
@@ -179,6 +182,10 @@ $azArgs = @(
     '--output',         'json'
 ) + $azVerbosity
 
+if (-not [string]::IsNullOrWhiteSpace($apimNameValue)) {
+    $azArgs += @('--parameters', "apimName=$apimNameValue")
+}
+
 $raw = Invoke-MaskedAzCommand -Replacements $azReplacements -Arguments $azArgs
 
 if ($LASTEXITCODE -ne 0) {
@@ -196,11 +203,24 @@ $outputs = $result.properties.outputs
 
 # Deploy activation-sensitive APIM children after activation.
 $apimServiceName = $outputs.apimServiceName.value
-Wait-ApimActivation -ResourceGroupName $ResourceGroupName -ApimName $apimServiceName | Out-Null
+Wait-ApimActivation `
+    -ResourceGroupName $ResourceGroupName `
+    -ApimName $apimServiceName `
+    -TimeoutSeconds 2700 `
+    -PollIntervalSeconds 60 | Out-Null
 
-$postDeploymentName = "source-apim-post-activation-$(Get-Date -Format 'yyyyMMddHHmmss')"
 $postReplacements = $azReplacements.Clone()
 $postReplacements[$apimServiceName] = Protect-ApimName -Value $apimServiceName
+
+# Wait for MCP existing-server API to be queryable before applying its policy.
+$mcpApiId = 'src-mcp-existing-server'
+Wait-ApimApiQueryable `
+    -ResourceGroupName $ResourceGroupName `
+    -ApimServiceName $apimServiceName `
+    -ApiId $mcpApiId `
+    -Replacements $postReplacements | Out-Null
+
+$postDeploymentName = "source-apim-post-activation-$(Get-Date -Format 'yyyyMMddHHmmss')"
 $postArgs = @(
     'deployment', 'group', 'create',
     '--resource-group', $ResourceGroupName,
@@ -211,7 +231,7 @@ $postArgs = @(
 ) + $azVerbosity
 
 Write-Host "Applying post-activation APIM resources..." -ForegroundColor Cyan
-$postRaw = Invoke-MaskedAzCommand -Replacements $postReplacements -Arguments $postArgs
+Invoke-MaskedAzCommand -Replacements $postReplacements -Arguments $postArgs
 if ($LASTEXITCODE -ne 0) {
     Write-DeploymentFailureDetails `
         -ResourceGroupName $ResourceGroupName `

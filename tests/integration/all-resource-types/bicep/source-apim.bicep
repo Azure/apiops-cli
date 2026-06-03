@@ -26,8 +26,8 @@ param publisherEmail string
 @description('Publisher name shown in the developer portal.')
 param publisherName string = 'APIOps BVT'
 
-@description('APIM SKU name. Use StandardV2/PremiumV2 for v2 tiers, or Developer/Premium for classic.')
-@allowed(['Developer', 'Premium', 'StandardV2', 'PremiumV2'])
+@description('APIM SKU name. Use StandardV2/PremiumV2 for v2 tiers, or Developer/Premium/Standard for classic.')
+@allowed(['Developer', 'Premium', 'Standard', 'StandardV2', 'PremiumV2'])
 param skuName string = 'StandardV2'
 
 @description('Application Insights name for logger/diagnostic testing.')
@@ -46,9 +46,9 @@ param logAnalyticsName string = 'bvt-${uniqueString(resourceGroup().id)}-src-law
 // Variables
 // ---------------------------------------------------------------------------
 
-var isClassicSku = skuName == 'Developer' || skuName == 'Premium'
+var isClassicSku = skuName == 'Developer' || skuName == 'Premium' || skuName == 'Standard'
 var apimSkuCapacity = isClassicSku ? 1 : 1
-var supportsSelfHostedGateway = isClassicSku
+var supportsSelfHostedGateway = skuName == 'Developer' || skuName == 'Premium'
 var supportsWorkspaces = skuName == 'Premium' || skuName == 'PremiumV2'
 
 // Minimal but valid OpenAPI 3.0 spec
@@ -636,7 +636,7 @@ resource globalSchema 'Microsoft.ApiManagement/service/schemas@2025-09-01-previe
   }
 }
 
-// Activation-sensitive resources are deployed post-activation by Deploy-SourceApim.ps1.
+// Activation-sensitive resources are deployed post-activation by run-phase1-deploy-source.ps1.
 
 // ---------------------------------------------------------------------------
 // TIER 2: Resources with Dependencies
@@ -657,7 +657,7 @@ resource diagnostic 'Microsoft.ApiManagement/service/diagnostics@2025-09-01-prev
   }
 }
 
-// Service policy is deployed post-activation by Deploy-SourceApim.ps1.
+// Service policy is deployed post-activation by run-phase1-deploy-source.ps1.
 
 // --- Products ---
 resource productStarter 'Microsoft.ApiManagement/service/products@2025-09-01-preview' = {
@@ -1164,7 +1164,7 @@ resource apiA2a 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
 // TIER 3: Child Resources
 // ---------------------------------------------------------------------------
 
-// Product policy is deployed post-activation by Deploy-SourceApim.ps1.
+// Product policy is deployed post-activation by run-phase1-deploy-source.ps1.
 
 // --- Product API Associations ---
 resource productStarterApiRest 'Microsoft.ApiManagement/service/products/apis@2025-09-01-preview' = {
@@ -1210,9 +1210,9 @@ resource productStarterTag 'Microsoft.ApiManagement/service/products/tags@2025-0
   dependsOn: [tagEnv]
 }
 
-// Product wiki is deployed post-activation by Deploy-SourceApim.ps1.
+// Product wiki is deployed post-activation by run-phase1-deploy-source.ps1.
 
-// API policy is deployed post-activation by Deploy-SourceApim.ps1.
+// API policy is deployed post-activation by run-phase1-deploy-source.ps1.
 
 // --- API Tags ---
 resource apiRestTagEnv 'Microsoft.ApiManagement/service/apis/tags@2025-09-01-preview' = {
@@ -1288,7 +1288,7 @@ resource apiRestTagDescEnv 'Microsoft.ApiManagement/service/apis/tagDescriptions
   }
 }
 
-// API wiki is deployed post-activation by Deploy-SourceApim.ps1.
+// API wiki is deployed post-activation by run-phase1-deploy-source.ps1.
 
 // --- API Release (on revisioned API) ---
 resource apiRelease 'Microsoft.ApiManagement/service/apis/releases@2025-09-01-preview' = {

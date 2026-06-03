@@ -1,0 +1,281 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+#requires -Version 7.0
+
+<#
+.SYNOPSIS
+    Phase 1 — Deploy source and target APIM instances in parallel.
+.DESCRIPTION
+    Creates the source and target APIM resource groups, deploys the instances,
+    and returns the resolved resource names for the later round-trip phases.
+
+    When subscription IDs are not supplied, the script uses the current Azure CLI
+    context as a fallback.
+
+.PARAMETER SourceResourceGroup
+    Resource group for the source APIM instance.
+
+.PARAMETER TargetResourceGroup
+    Resource group for the target APIM instance.
+
+.PARAMETER SkuName
+    APIM SKU to deploy.
+
+.PARAMETER Location
+    Azure region for the deployments.
+
+.PARAMETER LogLevel
+    Logging verbosity passed to the deployment scripts.
+
+.PARAMETER PublisherEmail
+    Publisher email address configured on the APIM instances.
+
+.PARAMETER SourceApimName
+    Optional explicit name for the source APIM instance.
+
+.PARAMETER TargetApimName
+    Optional explicit name for the target APIM instance.
+
+.PARAMETER SourceSubscriptionId
+    Optional subscription ID for the source deployment.
+
+.PARAMETER TargetSubscriptionId
+    Optional subscription ID for the target deployment.
+
+.EXAMPLE
+    .\run-phase1-deploy.ps1 -SourceResourceGroup rg-src -TargetResourceGroup rg-tgt -PublisherEmail admin@contoso.com
+#>
+
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)]
+    [string]$SourceResourceGroup,
+
+    [Parameter(Mandatory)]
+    [string]$TargetResourceGroup,
+
+    [ValidateSet('Developer', 'Premium', 'Standard', 'StandardV2', 'PremiumV2')]
+    [string]$SkuName = 'StandardV2',
+
+    [string]$Location = 'eastus2',
+
+    [ValidateSet('Info', 'Verbose', 'Debug')]
+    [string]$LogLevel = 'Info',
+
+    [Parameter(Mandatory)]
+    [string]$PublisherEmail,
+
+    [string]$SourceApimName,
+
+    [string]$TargetApimName,
+
+    [string]$SourceSubscriptionId,
+
+    [string]$TargetSubscriptionId
+)
+
+$ErrorActionPreference = 'Stop'
+
+$maskingModule = Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/LogMasking.psm1'
+$scriptArgModule = Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/ScriptRuntime.psm1'
+Import-Module $maskingModule -Force
+Import-Module $scriptArgModule -Force
+
+Set-ScriptLogPreferences -LogLevel $LogLevel
+
+$account = Assert-AzCliLoggedIn
+
+$subscriptionId = $account.id
+$sourceSubscriptionIdValue = Get-BoundParameterValueOrNull -BoundParameters $PSBoundParameters -Name 'SourceSubscriptionId'
+$targetSubscriptionIdValue = Get-BoundParameterValueOrNull -BoundParameters $PSBoundParameters -Name 'TargetSubscriptionId'
+
+Write-Host "🔐 Azure CLI authenticated: $($account.name) ($(Protect-SubscriptionId -Value $subscriptionId))"
+
+$deploySourceScript = Join-Path $PSScriptRoot 'run-phase1-deploy-source.ps1'
+$deployTargetScript = Join-Path $PSScriptRoot 'run-phase1-deploy-target.ps1'
+
+foreach ($requiredFile in @($maskingModule, $deploySourceScript, $deployTargetScript)) {
+    if (-not (Test-Path $requiredFile)) {
+        Write-Error "Required file not found: $requiredFile"
+        exit 2
+    }
+}
+
+$logsDir = Join-Path $PSScriptRoot 'logs'
+if (-not (Test-Path $logsDir)) {
+    New-Item -ItemType Directory -Path $logsDir -Force | Out-Null
+}
+$timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$sourceLogFile = Join-Path $logsDir "source-deploy-$timestamp.log"
+$targetLogFile = Join-Path $logsDir "target-deploy-$timestamp.log"
+
+Write-Host "🚀 PHASE 1 — Deploy source and target APIM instances (parallel)"
+
+$sourceDeployArgs = @{
+    ResourceGroupName = $SourceResourceGroup
+    SkuName           = $SkuName
+    Location          = $Location
+    PublisherEmail    = $PublisherEmail
+    LogLevel          = $LogLevel
+}
+Add-ArgumentIfSet -Hashtable $sourceDeployArgs -Key 'ApimName' -Value $SourceApimName
+
+$targetDeployArgs = @{
+    ResourceGroupName = $TargetResourceGroup
+    SkuName           = $SkuName
+    Location          = $Location
+    PublisherEmail    = $PublisherEmail
+    LogLevel          = $LogLevel
+}
+Add-ArgumentIfSet -Hashtable $targetDeployArgs -Key 'ApimName' -Value $TargetApimName
+
+$sourceJob = Start-Job -Name 'DeploySource' -ScriptBlock {
+            param($script, $scriptArgs, $transcriptFile)
+            $ErrorActionPreference = 'Stop'
+            Start-Transcript -Path $transcriptFile -Force -UseMinimalHeader | Out-Null
+            try {
+                $result = & $script @scriptArgs
+                if (-not $result -or -not $result.apimServiceName) {
+                    throw "Source deployment returned no outputs"
+                }
+                return $result
+            } finally {
+                Stop-Transcript | Out-Null
+            }
+} -ArgumentList $deploySourceScript, $sourceDeployArgs, $sourceLogFile
+
+$targetJob = Start-Job -Name 'DeployTarget' -ScriptBlock {
+            param($script, $scriptArgs, $transcriptFile)
+            $ErrorActionPreference = 'Stop'
+            Start-Transcript -Path $transcriptFile -Force -UseMinimalHeader | Out-Null
+            try {
+                $result = & $script @scriptArgs
+                if (-not $result -or -not $result.apimServiceName -or -not $result.apimServiceName.value) {
+                    throw "Target deployment returned no outputs"
+                }
+                return $result
+            } finally {
+                Stop-Transcript | Out-Null
+            }
+} -ArgumentList $deployTargetScript, $targetDeployArgs, $targetLogFile
+
+$jobs = @($sourceJob, $targetJob)
+$sourceLastPos = 0
+$targetLastPos = 0
+
+while (($jobs | Where-Object { $_.State -eq 'Running' }).Count -gt 0) {
+    if (Test-Path $sourceLogFile) {
+        $content = Get-Content $sourceLogFile -Raw -ErrorAction SilentlyContinue
+        if ($content -and $content.Length -gt $sourceLastPos) {
+            $newContent = $content.Substring($sourceLastPos)
+            $newContent -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { Write-Host "   [SRC] $_" }
+            $sourceLastPos = $content.Length
+        }
+    }
+
+    if (Test-Path $targetLogFile) {
+        $content = Get-Content $targetLogFile -Raw -ErrorAction SilentlyContinue
+        if ($content -and $content.Length -gt $targetLastPos) {
+            $newContent = $content.Substring($targetLastPos)
+            $newContent -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { Write-Host "   [TGT] $_" }
+            $targetLastPos = $content.Length
+        }
+    }
+
+    Start-Sleep -Seconds 5
+}
+
+$sourceOutputs = $null
+$targetOutputs = $null
+$exitCode = 0
+
+if ($sourceJob.State -eq 'Failed') {
+    Write-Host "❌ Source deployment failed:"
+    $jobOutput = Receive-Job $sourceJob -ErrorAction SilentlyContinue 2>&1
+    if ($jobOutput) { $jobOutput | ForEach-Object { Write-Host "   $_" } }
+    if ($sourceJob.ChildJobs[0].Error) {
+        $sourceJob.ChildJobs[0].Error | ForEach-Object { Write-Host "   $_" }
+    }
+    $exitCode = 2
+} else {
+    $sourceOutputs = Receive-Job $sourceJob
+    Write-Host "   ✅ Source deployed: $(Protect-ApimName -Value $sourceOutputs.apimServiceName)"
+}
+Remove-Job $sourceJob
+
+if ($targetJob.State -eq 'Failed') {
+    Write-Host "❌ Target deployment failed:"
+    $jobOutput = Receive-Job $targetJob -ErrorAction SilentlyContinue 2>&1
+    if ($jobOutput) { $jobOutput | ForEach-Object { Write-Host "   $_" } }
+    if ($targetJob.ChildJobs[0].Error) {
+        $targetJob.ChildJobs[0].Error | ForEach-Object { Write-Host "   $_" }
+    }
+    $exitCode = 2
+} else {
+    $targetOutputs = Receive-Job $targetJob
+    Write-Host "   ✅ Target deployed: $(Protect-ApimName -Value $targetOutputs.apimServiceName.value)"
+}
+Remove-Job $targetJob
+
+if ($exitCode -ne 0) {
+    exit $exitCode
+}
+
+$sourceSubId = if (-not [string]::IsNullOrWhiteSpace($sourceSubscriptionIdValue)) { $sourceSubscriptionIdValue } elseif ($sourceOutputs -and $sourceOutputs.subscriptionId) { $sourceOutputs.subscriptionId } else { $subscriptionId }
+$sourceRg = if ($sourceOutputs -and $sourceOutputs.resourceGroup) { $sourceOutputs.resourceGroup } else { $SourceResourceGroup }
+$sourceName = if ($sourceOutputs -and $sourceOutputs.apimServiceName) { $sourceOutputs.apimServiceName } else {
+    $apimName = az apim list --resource-group $SourceResourceGroup --query "[0].name" -o tsv 2>$null
+    if (-not $apimName) {
+        Write-Host "❌ No APIM instance found in resource group $(Protect-ResourceGroupName -Value $SourceResourceGroup)"
+        exit 2
+    }
+    $apimName
+}
+
+$targetSubId = if (-not [string]::IsNullOrWhiteSpace($targetSubscriptionIdValue)) { $targetSubscriptionIdValue } elseif ($targetOutputs -and $targetOutputs.subscriptionId.value) { $targetOutputs.subscriptionId.value } else { $subscriptionId }
+$targetRg = if ($targetOutputs -and $targetOutputs.resourceGroupName.value) { $targetOutputs.resourceGroupName.value } else { $TargetResourceGroup }
+$targetName = if ($targetOutputs -and $targetOutputs.apimServiceName.value) { $targetOutputs.apimServiceName.value } else {
+    $apimName = az apim list --resource-group $TargetResourceGroup --query "[0].name" -o tsv 2>$null
+    if (-not $apimName) {
+        Write-Host "❌ No APIM instance found in resource group $(Protect-ResourceGroupName -Value $TargetResourceGroup)"
+        exit 2
+    }
+    $apimName
+}
+
+if ($SkuName -in @('Developer', 'Premium', 'PremiumV2')) {
+    $postActivationState = az deployment group list `
+        --resource-group $sourceRg `
+        --query "sort_by([?starts_with(name, 'source-apim-post-activation-')], &properties.timestamp)[-1].properties.provisioningState" `
+        -o tsv 2>$null
+    if (-not $postActivationState) {
+        Write-Host "❌ Could not find source-apim-post-activation deployment in $(Protect-ResourceGroupName -Value $sourceRg)"
+        exit 2
+    }
+    if ($postActivationState -ne 'Succeeded') {
+        Write-Host "❌ source-apim-post-activation deployment state is '$postActivationState' (expected 'Succeeded')"
+        exit 2
+    }
+    Write-Host "   ✅ source-apim-post-activation deployment confirmed"
+}
+
+$phase1Output = [ordered]@{
+    sourceSubscriptionId = $sourceSubId
+    sourceResourceGroup  = $sourceRg
+    sourceApimName       = $sourceName
+    targetSubscriptionId = $targetSubId
+    targetResourceGroup  = $targetRg
+    targetApimName       = $targetName
+    skuName              = $SkuName
+    location             = $Location
+}
+
+if ($env:GITHUB_OUTPUT) {
+    foreach ($key in $phase1Output.Keys) {
+        "$key=$($phase1Output[$key])" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+    }
+    Write-Host "📋 Phase 1 outputs written to GITHUB_OUTPUT"
+}
+
+Write-Host "✅ PHASE 1 complete"
+return $phase1Output

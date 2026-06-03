@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
 <#
 .SYNOPSIS
   Validates extracted APIM artifacts against expected structure manifest.
@@ -19,7 +21,7 @@
   Path to expected-structure.json manifest file.
 
 .PARAMETER SkuName
-  APIM SKU name (StandardV2, Developer, Premium, PremiumV2) to handle SKU-variant
+  APIM SKU name (StandardV2, Developer, Premium, Standard, PremiumV2) to handle SKU-variant
   resources. Default: StandardV2.
 
 .EXAMPLE
@@ -237,7 +239,7 @@ function Invoke-DirectoryValidation([string]$basePath, [psobject]$dirSpec, [stri
 
     # SKU filter check
     if (Test-SkuFilter $dirSpec $SkuName) {
-        Write-Host "  ⏭️  Skipping $label (SKU: requires $($dirSpec.skuFilter -join ', '))"
+        Write-Host "  ⏭️  Skipping $label (SKU: supported in $($dirSpec.skuFilter -join ', '))"
         return
     }
 
@@ -355,7 +357,7 @@ Write-Host ""
 if ($manifest.workspaces) {
     $wsSpec = $manifest.workspaces
     if (Test-SkuFilter $wsSpec $SkuName) {
-        Write-Host "  ⏭️  Skipping workspaces (SKU: requires $($wsSpec.skuFilter -join ', '))"
+        Write-Host "  ⏭️  Skipping workspaces (SKU: supported in $($wsSpec.skuFilter -join ', '))"
     }
     elseif ($wsSpec.expected) {
         foreach ($ws in $wsSpec.expected) {

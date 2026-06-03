@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
 <#
 .SYNOPSIS
   Deploys the target APIM instance for round-trip integration testing.
@@ -29,8 +31,10 @@ param(
 
     [string]$Location = 'eastus2',
 
-    [ValidateSet('Developer', 'Premium', 'StandardV2', 'PremiumV2')]
+    [ValidateSet('Developer', 'Premium', 'Standard', 'StandardV2', 'PremiumV2')]
     [string]$SkuName = 'StandardV2',
+
+    [string]$ApimName,
 
     [ValidateSet('Info', 'Verbose', 'Debug')]
     [string]$LogLevel = 'Info'
@@ -39,20 +43,19 @@ param(
 $ErrorActionPreference = 'Stop'
 $VerbosePreference = if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' }
 $DebugPreference   = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' }
-Import-Module (Join-Path $PSScriptRoot 'MaskingHelpers.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'DeploymentHelpers.psm1') -Force
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/LogMasking.psm1') -Force
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/ScriptRuntime.psm1') -Force
+Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/DeploymentOps.psm1') -Force
 
-$bicepFile = Join-Path $PSScriptRoot 'target-apim.bicep'
+$bicepFile = Join-Path (Split-Path $PSScriptRoot -Parent) 'bicep/target-apim.bicep'
 
 if (-not (Test-Path $bicepFile)) {
     Write-Error "Bicep file not found at: $bicepFile"
 }
 
 # Verify az CLI authentication and capture subscription id for masked logging
-$account = az account show --output json 2>$null | ConvertFrom-Json
-if (-not $account) {
-    Write-Error "Not logged in to Azure CLI. Run 'az login' first."
-}
+$account = Assert-AzCliLoggedIn
+$apimNameValue = Get-BoundParameterValueOrNull -BoundParameters $PSBoundParameters -Name 'ApimName'
 $subscriptionId = $account.id
 
 Write-Host "Starting target APIM deployment..."
@@ -90,6 +93,10 @@ $azArgs = @(
     '--parameters',     "skuName=$SkuName", "location=$Location", "publisherEmail=$PublisherEmail",
     '--output',         'json'
 ) + $azVerbosity
+
+if (-not [string]::IsNullOrWhiteSpace($apimNameValue)) {
+  $azArgs += @('--parameters', "apimName=$apimNameValue")
+}
 
 $raw = Invoke-MaskedAzCommand -Replacements $azReplacements -Arguments $azArgs
 

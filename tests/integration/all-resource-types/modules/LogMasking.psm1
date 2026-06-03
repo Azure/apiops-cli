@@ -1,3 +1,5 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
 # MaskingHelpers — secret-redaction utilities for the round-trip integration test scripts.
 
 $script:EnableMasking = $true
@@ -28,6 +30,22 @@ $script:BuiltinRedactions = @(
        Replacement = '<REDACTED:email>' }
 )
 
+<#
+.SYNOPSIS
+Masks generic identifiers while preserving short prefix/suffix.
+
+.PARAMETER Value
+Input string to mask.
+
+.PARAMETER Prefix
+Visible prefix length.
+
+.PARAMETER Suffix
+Visible suffix length.
+
+.OUTPUTS
+System.String
+#>
 function Protect-Identifier {
     param(
         [string]$Value,
@@ -50,22 +68,74 @@ function Protect-Identifier {
     return "{0}...{1}" -f $Value.Substring(0, $Prefix), $Value.Substring($Value.Length - $Suffix)
 }
 
+<#
+.SYNOPSIS
+Replaces subscription IDs with a stable redaction token.
+
+.PARAMETER Value
+Subscription ID value.
+
+.OUTPUTS
+System.String
+#>
 function Protect-SubscriptionId {
     param([string]$Value)
     if (-not $script:EnableMasking) { return $Value }
     return '<REDACTED:subscription-id>'
 }
 
+<#
+.SYNOPSIS
+Masks resource group names with minimal context retained.
+
+.PARAMETER Value
+Resource group name.
+
+.OUTPUTS
+System.String
+#>
 function Protect-ResourceGroupName {
     param([string]$Value)
+
+    if (-not $script:EnableMasking) { return $Value }
+    if ([string]::IsNullOrWhiteSpace($Value)) { return '<REDACTED:empty>' }
+
+    # Preserve the generated suffix for round-trip RGs: <prefix>-<date>-<time>-<rand>-<src|tgt>-rg
+    if ($Value -match '^([a-z0-9]+)-\d{8}-\d{6}-([a-z0-9]+)-(src|tgt)-rg$') {
+        return "$($Matches[1])-...-$($Matches[2])-$($Matches[3])-rg"
+    }
+
     return Protect-Identifier -Value $Value -Prefix 3 -Suffix 7
 }
 
+<#
+.SYNOPSIS
+Masks APIM service names with minimal context retained.
+
+.PARAMETER Value
+APIM service name.
+
+.OUTPUTS
+System.String
+#>
 function Protect-ApimName {
     param([string]$Value)
     return Protect-Identifier -Value $Value -Prefix 3 -Suffix 8
 }
 
+<#
+.SYNOPSIS
+Applies configured replacement and regex redaction rules.
+
+.PARAMETER Line
+Input log line.
+
+.PARAMETER Replacements
+Literal replacement map applied before regex masking.
+
+.OUTPUTS
+System.String
+#>
 function Protect-LogLine {
     param(
         [string]$Line,
@@ -98,6 +168,16 @@ function Protect-LogLine {
     return $protectedLine
 }
 
+<#
+.SYNOPSIS
+Resolves native executable paths, including Windows cmd wrappers.
+
+.PARAMETER Name
+Command name to resolve.
+
+.OUTPUTS
+System.Management.Automation.PSCustomObject
+#>
 function Resolve-NativeExecutable {
     param([string]$Name)
 
@@ -115,6 +195,62 @@ function Resolve-NativeExecutable {
     return [pscustomobject]@{ FilePath = $exePath; Prefix = $prefix }
 }
 
+<#
+.SYNOPSIS
+Resolves the apiops CLI entrypoint from repository build output.
+
+.OUTPUTS
+System.Management.Automation.PSCustomObject
+#>
+function Resolve-ApiopsInvocation {
+    $moduleDir = Split-Path -Parent $PSCommandPath
+    $repoRoot = $null
+    $cursor = $moduleDir
+
+    while (-not [string]::IsNullOrWhiteSpace($cursor)) {
+        if (Test-Path (Join-Path $cursor 'package.json')) {
+            $repoRoot = $cursor
+            break
+        }
+
+        $parent = Split-Path -Parent $cursor
+        if ($parent -eq $cursor) {
+            break
+        }
+        $cursor = $parent
+    }
+
+    if ([string]::IsNullOrWhiteSpace($repoRoot)) {
+        throw 'Could not locate repository root from LogMasking module path.'
+    }
+
+    $distCliPath = Join-Path $repoRoot 'dist/cli/index.js'
+    if (-not (Test-Path $distCliPath)) {
+        throw "apiops CLI entrypoint not found: $distCliPath. Run 'npm run build' from repository root."
+    }
+
+    return [pscustomobject]@{ FilePath = 'node'; Prefix = @($distCliPath) }
+}
+
+<#
+.SYNOPSIS
+Runs a process and streams masked output.
+
+.PARAMETER FilePath
+Executable to run.
+
+.PARAMETER Arguments
+Argument list for the executable.
+
+.PARAMETER Replacements
+Mask replacement map for streamed lines.
+
+.PARAMETER CaptureStdout
+Capture and return stdout instead of streaming.
+
+.OUTPUTS
+System.String
+#>
 function Invoke-MaskedProcess {
     [CmdletBinding()]
     param(
@@ -216,6 +352,19 @@ function Invoke-MaskedProcess {
     }
 }
 
+<#
+.SYNOPSIS
+Runs npx apiops with masked output and returns exit code.
+
+.PARAMETER Arguments
+Arguments passed to `apiops`.
+
+.PARAMETER Replacements
+Mask replacement map for output.
+
+.OUTPUTS
+System.Int32
+#>
 function Invoke-MaskedApiopsCommand {
     [CmdletBinding()]
     param(
@@ -223,13 +372,27 @@ function Invoke-MaskedApiopsCommand {
         [hashtable]$Replacements
     )
 
-    Invoke-MaskedProcess -FilePath 'npx' `
-        -Arguments (@('apiops') + $Arguments) `
+    $apiops = Resolve-ApiopsInvocation
+    Invoke-MaskedProcess -FilePath $apiops.FilePath `
+        -Arguments (@($apiops.Prefix) + $Arguments) `
         -Replacements $Replacements
 
     return $LASTEXITCODE
 }
 
+<#
+.SYNOPSIS
+Runs az with masked output and returns captured stdout.
+
+.PARAMETER Arguments
+Arguments passed to `az`.
+
+.PARAMETER Replacements
+Mask replacement map for output.
+
+.OUTPUTS
+System.String
+#>
 function Invoke-MaskedAzCommand {
     [CmdletBinding()]
     param(
@@ -250,6 +413,7 @@ Export-ModuleMember -Function `
     Protect-ApimName, `
     Protect-LogLine, `
     Resolve-NativeExecutable, `
+    Resolve-ApiopsInvocation, `
     Invoke-MaskedProcess, `
     Invoke-MaskedApiopsCommand, `
     Invoke-MaskedAzCommand
