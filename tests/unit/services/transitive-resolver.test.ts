@@ -152,6 +152,27 @@ describe('transitive-resolver', () => {
       const expanded = resolveTransitiveDependencies(policies, apis, filter);
       expect(expanded.namedValueNames).toEqual(['existing-secret']);
     });
+
+    it('should expand named values referenced by included named values', () => {
+      const policies = new Map<string, string>();
+      policies.set('policy', '<value>{{secret-a}}</value>');
+
+      const apis = new Map<string, Record<string, unknown>>();
+      const namedValues = new Map<string, Record<string, unknown>>();
+      namedValues.set('secret-a', {
+        properties: {
+          value: '{{secret-b}}',
+        },
+      });
+
+      const filter: FilterConfig = {
+        namedValueNames: [],
+      };
+
+      const expanded = resolveTransitiveDependencies(policies, apis, filter, namedValues);
+      expect(expanded.namedValueNames).toContain('secret-a');
+      expect(expanded.namedValueNames).toContain('secret-b');
+    });
   });
 
   describe('findTransitiveDependencies', () => {
@@ -184,6 +205,60 @@ describe('transitive-resolver', () => {
       const deps = findTransitiveDependencies(policies, apis);
       const nvDeps = deps.filter((d) => d.type === ResourceType.NamedValue);
       expect(nvDeps).toHaveLength(1);
+    });
+
+    it('should expand chained named value dependencies', () => {
+      const policies = new Map<string, string>();
+      policies.set('service-policy', '<value>{{secret-a}}</value>');
+
+      const apis = new Map<string, Record<string, unknown>>();
+      const namedValues = new Map<string, Record<string, unknown>>();
+      namedValues.set('secret-a', {
+        name: 'secret-a',
+        properties: {
+          value: '{{secret-b}}',
+        },
+      });
+      namedValues.set('secret-b', {
+        name: 'secret-b',
+        properties: {
+          value: '{{secret-c}}',
+        },
+      });
+      namedValues.set('secret-c', {
+        name: 'secret-c',
+        properties: {
+          value: 'plain-value',
+        },
+      });
+
+      const deps = findTransitiveDependencies(policies, apis, namedValues);
+      const nvNames = deps
+        .filter((d) => d.type === ResourceType.NamedValue)
+        .map((d) => d.nameParts[0]);
+
+      expect(nvNames).toContain('secret-a');
+      expect(nvNames).toContain('secret-b');
+      expect(nvNames).toContain('secret-c');
+    });
+
+    it('should ignore missing named values while expanding chains', () => {
+      const policies = new Map<string, string>();
+      policies.set('service-policy', '<value>{{secret-a}}</value>');
+
+      const apis = new Map<string, Record<string, unknown>>();
+      const namedValues = new Map<string, Record<string, unknown>>();
+      namedValues.set('secret-a', {
+        name: 'secret-a',
+        properties: {
+          value: '{{secret-missing}}',
+        },
+      });
+
+      const deps = findTransitiveDependencies(policies, apis, namedValues);
+
+      expect(deps.some((d) => d.type === ResourceType.NamedValue && d.nameParts[0] === 'secret-a')).toBe(true);
+      expect(deps.some((d) => d.type === ResourceType.NamedValue && d.nameParts[0] === 'secret-missing')).toBe(true);
     });
 
     it('should return empty array when no references', () => {

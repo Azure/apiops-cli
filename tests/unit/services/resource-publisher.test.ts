@@ -295,6 +295,48 @@ describe('resource-publisher', () => {
       expect(query['token'][0]).toBe(`{{${authTokenName}}}`);
     });
 
+    it('should preserve unknown named value references', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const knownName = 'Known-Token';
+
+      store.readResource.mockResolvedValue({
+        name: 'my-backend',
+        properties: {
+          credentials: {
+            authorization: {
+              parameter: '{{unknown-token}}',
+            },
+            query: {
+              token: ['{{known-token}}'],
+            },
+          },
+        },
+      });
+
+      store.listResources.mockResolvedValue([
+        { type: ResourceType.Backend, nameParts: ['my-backend'] },
+        { type: ResourceType.NamedValue, nameParts: [knownName] },
+      ]);
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Backend,
+        nameParts: ['my-backend'],
+      };
+
+      await publishResource(client, store, testContext, descriptor, testConfig);
+
+      const putCall = client.putResource.mock.calls[0];
+      const putJson = putCall[2] as Record<string, unknown>;
+      const props = putJson.properties as Record<string, unknown>;
+      const credentials = props.credentials as Record<string, unknown>;
+      const authorization = credentials.authorization as Record<string, unknown>;
+      const query = credentials.query as Record<string, string[]>;
+
+      expect(authorization.parameter).toBe('{{unknown-token}}');
+      expect(query['token'][0]).toBe(`{{${knownName}}}`);
+    });
+
     it('should preserve opaque JSON properties', async () => {
       const client = createMockClient();
       const store = createMockStore();

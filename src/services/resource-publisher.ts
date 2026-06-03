@@ -594,31 +594,67 @@ async function normalizeNamedValueReferences(
     return json;
   }
 
-  // Recursively normalize all {{named-value-token}} references to canonical names.
-  // APIM resource shapes vary widely (strings, nested objects, arrays), so traverse
-  // the entire payload structure.
-  const normalizeValue = (value: unknown): unknown => {
-    if (typeof value === 'string') {
-      return value.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (match, tokenName: string) => {
-        const canonicalName = namedValueNames.get(tokenName.toLowerCase());
-        return canonicalName ? `{{${canonicalName}}}` : match;
-      });
+  const normalizeTokenString = (value: string): string =>
+    value.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (match, tokenName: string) => {
+      const canonicalName = namedValueNames.get(tokenName.toLowerCase());
+      return canonicalName ? `{{${canonicalName}}}` : match;
+    });
+
+  const normalizedRoot: Record<string, unknown> = {};
+  const stack: Array<{ source: unknown; assign: (value: unknown) => void }> = [];
+
+  for (const [key, value] of Object.entries(json)) {
+    stack.push({
+      source: value,
+      assign: (normalizedValue: unknown) => {
+        normalizedRoot[key] = normalizedValue;
+      },
+    });
+  }
+
+  while (stack.length > 0) {
+    const frame = stack.pop();
+    if (!frame) {
+      continue;
     }
 
-    if (Array.isArray(value)) {
-      return value.map(normalizeValue);
+    const { source, assign } = frame;
+
+    if (typeof source === 'string') {
+      assign(normalizeTokenString(source));
+      continue;
     }
 
-    if (value && typeof value === 'object') {
-      const normalized: Record<string, unknown> = {};
-      for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-        normalized[key] = normalizeValue(child);
+    if (Array.isArray(source)) {
+      const out: unknown[] = new Array(source.length);
+      assign(out);
+      for (let i = source.length - 1; i >= 0; i--) {
+        stack.push({
+          source: source[i],
+          assign: (normalizedValue: unknown) => {
+            out[i] = normalizedValue;
+          },
+        });
       }
-      return normalized;
+      continue;
     }
 
-    return value;
-  };
+    if (source && typeof source === 'object') {
+      const out: Record<string, unknown> = {};
+      assign(out);
+      for (const [key, child] of Object.entries(source as Record<string, unknown>)) {
+        stack.push({
+          source: child,
+          assign: (normalizedValue: unknown) => {
+            out[key] = normalizedValue;
+          },
+        });
+      }
+      continue;
+    }
 
-  return normalizeValue(json) as Record<string, unknown>;
+    assign(source);
+  }
+
+  return normalizedRoot;
 }

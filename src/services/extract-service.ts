@@ -473,6 +473,7 @@ async function resolveAndExtractTransitive(
 
   // Build maps for transitive resolution
   const apiJsonMap = new Map<string, Record<string, unknown>>();
+  const namedValueJsonMap = new Map<string, Record<string, unknown>>();
   for (const apiResult of result.apiResults) {
     // Find the API's JSON from type results
     const apiTypeResults = result.typeResults.filter((r) => r.type === ResourceType.Api);
@@ -485,10 +486,21 @@ async function resolveAndExtractTransitive(
     }
   }
 
+  const namedValueTypeResults = result.typeResults.filter((r) => r.type === ResourceType.NamedValue);
+  for (const ntr of namedValueTypeResults) {
+    for (const extracted of ntr.extracted) {
+      if (extracted.status === 'success') {
+        const name = getNamePart(extracted.descriptor.nameParts, 0);
+        namedValueJsonMap.set(name, extracted.json);
+      }
+    }
+  }
+
   // Find transitive dependencies
   const transitiveDeps = findTransitiveDependencies(
     result.collectedPolicies,
-    apiJsonMap
+    apiJsonMap,
+    namedValueJsonMap
   );
 
   // Filter out already-extracted resources

@@ -113,7 +113,8 @@ export function scanApiVersionSetReference(
 export function resolveTransitiveDependencies(
   extractedPolicies: Map<string, string>,
   extractedApis: Map<string, Record<string, unknown>>,
-  currentFilter: FilterConfig
+  currentFilter: FilterConfig,
+  extractedNamedValues: Map<string, Record<string, unknown>> = new Map()
 ): FilterConfig {
   const expanded = { ...currentFilter };
   let changed = true;
@@ -140,6 +141,23 @@ export function resolveTransitiveDependencies(
       const versionSetRef = scanApiVersionSetReference(apiJson);
       if (versionSetRef && addToFilter(expanded, versionSetRef)) {
         changed = true;
+      }
+    }
+
+    // Scan extracted named values for references to other named values.
+    for (const [name, namedValueJson] of extractedNamedValues) {
+      const currentNamedValues = expanded.namedValueNames;
+      if (currentNamedValues !== undefined) {
+        const isIncluded = currentNamedValues.some((n) => n.toLowerCase() === name.toLowerCase());
+        if (!isIncluded) {
+          continue;
+        }
+      }
+
+      for (const ref of scanNamedValueReferences(namedValueJson)) {
+        if (addToFilter(expanded, ref)) {
+          changed = true;
+        }
       }
     }
   }
@@ -195,18 +213,34 @@ function addToFilter(
  */
 export function findTransitiveDependencies(
   policies: Map<string, string>,
-  apis: Map<string, Record<string, unknown>>
+  apis: Map<string, Record<string, unknown>>,
+  namedValues: Map<string, Record<string, unknown>> = new Map()
 ): ResourceDescriptor[] {
   const dependencies: ResourceDescriptor[] = [];
   const seen = new Set<string>();
+  const namedValueKeyToName = new Map<string, string>();
+
+  const addDependency = (dep: TransitiveDependency): boolean => {
+    const key = `${dep.type}:${dep.name.toLowerCase()}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    dependencies.push({ type: dep.type, nameParts: [dep.name] });
+    return true;
+  };
+
+  for (const [name] of namedValues) {
+    namedValueKeyToName.set(name.toLowerCase(), name);
+  }
+
+  const namedValueQueue: string[] = [];
 
   // Scan all policies
   for (const [, policyXml] of policies) {
     for (const dep of scanPolicyReferences(policyXml)) {
-      const key = `${dep.type}:${dep.name.toLowerCase()}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        dependencies.push({ type: dep.type, nameParts: [dep.name] });
+      if (addDependency(dep) && dep.type === ResourceType.NamedValue) {
+        namedValueQueue.push(dep.name);
       }
     }
   }
@@ -214,14 +248,72 @@ export function findTransitiveDependencies(
   // Scan API version set references
   for (const [, apiJson] of apis) {
     const dep = scanApiVersionSetReference(apiJson);
-    if (dep) {
-      const key = `${dep.type}:${dep.name.toLowerCase()}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        dependencies.push({ type: dep.type, nameParts: [dep.name] });
+    if (dep && addDependency(dep) && dep.type === ResourceType.NamedValue) {
+      namedValueQueue.push(dep.name);
+    }
+  }
+
+  // Expand named value chains (e.g. A references B, B references C).
+  while (namedValueQueue.length > 0) {
+    const currentName = namedValueQueue.shift();
+    if (!currentName) {
+      continue;
+    }
+
+    const canonicalName = namedValueKeyToName.get(currentName.toLowerCase());
+    if (!canonicalName) {
+      continue;
+    }
+
+    const namedValueJson = namedValues.get(canonicalName);
+    if (!namedValueJson) {
+      continue;
+    }
+
+    for (const dep of scanNamedValueReferences(namedValueJson)) {
+      if (addDependency(dep) && dep.type === ResourceType.NamedValue) {
+        namedValueQueue.push(dep.name);
       }
     }
   }
 
   return dependencies;
+}
+
+/**
+ * Scan named value JSON payload for references to other named values.
+ */
+function scanNamedValueReferences(namedValueJson: Record<string, unknown>): TransitiveDependency[] {
+  const refs: TransitiveDependency[] = [];
+  const stack: unknown[] = [namedValueJson];
+
+  while (stack.length > 0) {
+    const value = stack.pop();
+    if (typeof value === 'string') {
+      for (const match of value.matchAll(NAMED_VALUE_PATTERN)) {
+        if (match[1]) {
+          refs.push({
+            type: ResourceType.NamedValue,
+            name: match[1].trim(),
+          });
+        }
+      }
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        stack.push(item);
+      }
+      continue;
+    }
+
+    if (value && typeof value === 'object') {
+      for (const child of Object.values(value as Record<string, unknown>)) {
+        stack.push(child);
+      }
+    }
+  }
+
+  return refs;
 }
