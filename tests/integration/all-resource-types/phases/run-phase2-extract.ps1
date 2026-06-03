@@ -104,11 +104,12 @@ if (-not $extractedFiles -or $extractedFiles.Count -eq 0) {
     exit 2
 }
 
+$resolvedExtractOutputDir = [System.IO.Path]::GetFullPath($ExtractOutputDir)
+
 if ($env:GITHUB_OUTPUT) {
-    $resolvedExtractOutputDir = [System.IO.Path]::GetFullPath($ExtractOutputDir)
     "ExtractOutputDir=$resolvedExtractOutputDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
     "extractOutputDir=$resolvedExtractOutputDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
     Write-Host "📋 Phase 2 output written to GITHUB_OUTPUT (ExtractOutputDir)"
 }
 
-exit 0
+return $resolvedExtractOutputDir
