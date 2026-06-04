@@ -11,6 +11,7 @@ import type { IApimClient } from '../clients/iapim-client.js';
 import type { IArtifactStore } from '../clients/iartifact-store.js';
 import type { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import type { PublishConfig } from '../models/config.js';
+import * as yaml from 'js-yaml';
 import { ResourceType } from '../models/resource-types.js';
 import { publishResource, type ResourcePublishResult } from './resource-publisher.js';
 import { runParallel } from '../lib/parallel-runner.js';
@@ -54,6 +55,15 @@ export async function publishApi(
     const rootResult = await publishRootApi(client, store, context, descriptor, config);
     if (rootResult.status !== 'success') {
       return rootResult;
+    }
+
+    if (rootResult.specImported && rootResult.operationIdsWithNullDescription?.length) {
+      await alignImportedOperationDescriptions(
+        client,
+        context,
+        descriptor,
+        rootResult.operationIdsWithNullDescription
+      );
     }
 
     // Step 2: Find and publish revisions in numeric order
@@ -125,6 +135,7 @@ function getImportFormat(specFormat: string, _apiType?: string): string | undefi
 interface RootApiResult {
   status: 'success' | 'skipped';
   specImported: boolean;
+  operationIdsWithNullDescription?: string[];
   isCurrent?: boolean;
 }
 
@@ -162,6 +173,7 @@ async function publishRootApi(
 
   // Try to read the specification file for this API
   let specImported = false;
+  let operationIdsWithNullDescription: string[] = [];
   const includeSpecification = options?.includeSpecification ?? true;
   const specResult = includeSpecification
     ? await store.readContent(config.sourceDir, descriptor, 'specification')
@@ -197,6 +209,14 @@ async function publishRootApi(
           value: specResult.content,
         },
       };
+
+      if (importFormat === 'openapi' || importFormat === 'openapi+json') {
+        operationIdsWithNullDescription = getOpenApiOperationIdsWithNullDescription(
+          specResult.content,
+          specResult.format
+        );
+      }
+
       specImported = true;
       logger.info(`Including ${specResult.format} specification in API import for "${getNamePart(descriptor.nameParts, 0)}"`);
     }
@@ -210,6 +230,7 @@ async function publishRootApi(
     status: 'success',
     action: 'put',
     specImported,
+    operationIdsWithNullDescription,
     isCurrent,
   };
 }
@@ -446,4 +467,92 @@ function getApiIsCurrent(json: Record<string, unknown>): boolean | undefined {
   const properties = json.properties as Record<string, unknown> | undefined;
   const isCurrent = properties?.isCurrent;
   return typeof isCurrent === 'boolean' ? isCurrent : undefined;
+}
+
+async function alignImportedOperationDescriptions(
+  client: IApimClient,
+  context: ApimServiceContext,
+  apiDescriptor: ResourceDescriptor,
+  operationIdsWithNullDescription: string[]
+): Promise<void> {
+  const apiName = getNamePart(apiDescriptor.nameParts, 0);
+
+  for (const operationName of operationIdsWithNullDescription) {
+    const operationDescriptor: ResourceDescriptor = {
+      type: ResourceType.ApiOperation,
+      nameParts: [apiName, operationName],
+      workspace: apiDescriptor.workspace,
+    };
+
+    const operation = await client.getResource(context, operationDescriptor);
+    if (!operation) {
+      continue;
+    }
+
+    const props = operation.properties as Record<string, unknown> | undefined;
+    if (!props || props.description === null) {
+      continue;
+    }
+
+    await client.putResource(context, operationDescriptor, {
+      ...operation,
+      properties: {
+        ...props,
+        description: null,
+      },
+    });
+  }
+}
+
+function getOpenApiOperationIdsWithNullDescription(
+  specContent: string,
+  specFormat?: string
+): string[] {
+  try {
+    const parsed: unknown =
+      specFormat === 'json'
+        ? JSON.parse(specContent)
+        : yaml.load(specContent);
+
+    if (!parsed || typeof parsed !== 'object') {
+      return [];
+    }
+
+    const parsedRecord = parsed as Record<string, unknown>;
+    const pathsValue = parsedRecord.paths;
+    if (!pathsValue || typeof pathsValue !== 'object') {
+      return [];
+    }
+
+    const paths = pathsValue as Record<string, unknown>;
+
+    const methods = new Set(['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']);
+    const operationIds = new Set<string>();
+
+    for (const pathItem of Object.values(paths)) {
+      if (!pathItem || typeof pathItem !== 'object') {
+        continue;
+      }
+
+      for (const [methodName, operation] of Object.entries(pathItem as Record<string, unknown>)) {
+        if (!methods.has(methodName.toLowerCase()) || !operation || typeof operation !== 'object') {
+          continue;
+        }
+
+        const operationRecord = operation as Record<string, unknown>;
+        const operationId = operationRecord.operationId;
+        if (typeof operationId !== 'string' || operationId.length === 0) {
+          continue;
+        }
+
+        if (!Object.hasOwn(operationRecord, 'description') || operationRecord.description == null) {
+          operationIds.add(operationId);
+        }
+      }
+    }
+
+    return [...operationIds];
+  } catch {
+    return [];
+  }
 }

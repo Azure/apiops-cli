@@ -284,10 +284,12 @@ async function executePuts(
         );
       }
     } else if (tier === 2) {
+      const tier2Descriptors = filterApiRevisionsHandledByRootApis(descriptors);
+
       const { mcpApis, regularTier2 } = await splitMcpApis(
         store,
         config.sourceDir,
-        descriptors
+        tier2Descriptors
       );
 
       await publishAndOutput(client, store, context, config, regularTier2, results);
@@ -472,9 +474,13 @@ async function publishTier(
   const tasks = descriptors.map((descriptor) => async () => {
     try {
       let publishResult: ResourcePublishResult;
+      const apiName = descriptor.type === ResourceType.Api
+        ? getNamePart(descriptor.nameParts, 0)
+        : undefined;
+      const isApiRevision = typeof apiName === 'string' && isApiRevisionName(apiName);
 
       // Use specialized publishers for Api and Product types
-      if (descriptor.type === ResourceType.Api) {
+      if (descriptor.type === ResourceType.Api && !isApiRevision) {
         publishResult = await publishApi(client, store, context, descriptor, config);
       } else if (descriptor.type === ResourceType.Product) {
         publishResult = await publishProduct(client, store, context, descriptor, config);
@@ -522,6 +528,47 @@ async function publishTier(
       };
     }
   });
+}
+
+function filterApiRevisionsHandledByRootApis(
+  descriptors: ResourceDescriptor[]
+): ResourceDescriptor[] {
+  const rootApiNames = new Set<string>();
+  for (const descriptor of descriptors) {
+    if (descriptor.type !== ResourceType.Api) {
+      continue;
+    }
+
+    const apiName = getNamePart(descriptor.nameParts, 0);
+    if (!isApiRevisionName(apiName)) {
+      rootApiNames.add(apiName);
+    }
+  }
+
+  if (rootApiNames.size === 0) {
+    return descriptors;
+  }
+
+  return descriptors.filter((descriptor) => {
+    if (descriptor.type !== ResourceType.Api) {
+      return true;
+    }
+
+    const apiName = getNamePart(descriptor.nameParts, 0);
+    if (!isApiRevisionName(apiName)) {
+      return true;
+    }
+
+    return !rootApiNames.has(getApiRootName(apiName));
+  });
+}
+
+function isApiRevisionName(apiName: string): boolean {
+  return apiName.includes(';rev=');
+}
+
+function getApiRootName(apiName: string): string {
+  return apiName.split(';rev=')[0] ?? apiName;
 }
 
 /**

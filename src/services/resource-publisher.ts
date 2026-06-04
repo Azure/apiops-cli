@@ -112,6 +112,13 @@ export async function publishResource(
     // Apply overrides (deep merge, preserves opaque structure)
     json = applyOverrides(descriptor, json, config.overrides);
 
+    // API operations: enforce explicit empty strings for text fields when omitted.
+    // APIM may synthesize description from displayName when description is absent,
+    // causing extract/publish round-trip drift.
+    if (descriptor.type === ResourceType.ApiOperation) {
+      json = normalizeApiOperationTextFields(json);
+    }
+
     // For KeyVault-backed NamedValues:
     //   1. Strip properties.value — APIM must not receive both keyVault and value
     //      in the same PUT body, as it causes indefinite provisioning or rejection.
@@ -505,6 +512,32 @@ function normalizeMcpToolOperationIds(
       ...props,
       mcpTools: normalizedTools,
     },
+  };
+}
+
+function normalizeApiOperationTextFields(
+  json: Record<string, unknown>
+): Record<string, unknown> {
+  const props = json.properties as Record<string, unknown> | undefined;
+  if (!props) {
+    return json;
+  }
+
+  const normalizedProps: Record<string, unknown> = {
+    ...props,
+  };
+
+  if (normalizedProps.displayName == null) {
+    normalizedProps.displayName = '';
+  }
+
+  if (normalizedProps.description == null) {
+    normalizedProps.description = '';
+  }
+
+  return {
+    ...json,
+    properties: normalizedProps,
   };
 }
 
