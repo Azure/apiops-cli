@@ -166,15 +166,12 @@ function Build-ResourceMap {
         }
     }
 
-    # Sort auto-ID items by their normalised JSON so equivalent schemas/operations
-    # from source and target receive the same positional key ({{auto-id-0}}, etc.)
+    # Sort auto-ID items by canonical normalized resource JSON (same normalization
+    # pipeline used for diffing) so positional keys remain stable across instances.
     if ($autoIdItems.Count -gt 0) {
         $sorted = $autoIdItems | Sort-Object {
-            $normVal = ConvertTo-NormalizedPropertyValue -Value $_ `
-                -SourceName $SourceName -TargetName $TargetName `
-                -SourceSub $SourceSub -TargetSub $TargetSub `
-                -SourceRg $SourceRg -TargetRg $TargetRg
-            $normVal | ConvertTo-Json -Depth 50 -Compress
+            $normResource = ConvertTo-NormalizedResource -Resource $_
+            $normResource | ConvertTo-Json -Depth 50 -Compress
         }
         $i = 0
         foreach ($item in $sorted) {
