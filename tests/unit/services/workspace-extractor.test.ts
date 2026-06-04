@@ -74,7 +74,17 @@ describe('workspace-extractor', () => {
         ResourceType.GlobalSchema,
         ResourceType.Documentation,
       ];
-      expect(seenTypes).toEqual(expectedCallSequence);
+
+      // Keep this test focused on the workspace extractor iteration contract.
+      // Some type extractors may issue additional list calls (for example,
+      // Logger extraction prefetches NamedValues for credential normalization).
+      const firstSeenInOrder = seenTypes.filter((type, index) =>
+        seenTypes.indexOf(type) === index
+      );
+      expect(firstSeenInOrder).toEqual(expectedTypes);
+
+      // Ensure no unexpected resource types are listed for workspace extraction.
+      expect(seenTypes.every((type) => expectedTypes.includes(type))).toBe(true);
     });
 
     it('should skip extraction when no workspace names in filter', async () => {
