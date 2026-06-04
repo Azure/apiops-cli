@@ -57,3 +57,6 @@ tests/integration/all-resource-types/bicep/source-apim-post-activation.bicep
 # Squad: SubSquad activation file (local to this machine)
 .squad-workstream
 *.d.ts.map
+
+# Temporary files created by build process
+src/templates/generated/embedded-markdown.ts
