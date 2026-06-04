@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 const exec = promisify(execFile);
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const currentFileDir = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(currentFileDir, '../..');
+const repoRoot = path.resolve(currentFileDir, '../../..');
 
 type RootPackageJson = {
   bin?: string | Record<string, string>;
