@@ -12,7 +12,6 @@
     "PATH": "${containerEnv:PATH}:${containerWorkspaceFolder}/node_modules/.bin"
   },  
   "postCreateCommand": "npm ci --ignore-scripts",
-  "postAttachCommand": "echo '[apiops-cli] Run npm ci to install dependencies and embed markdown templates.'",
   "customizations": {
     "vscode": {
       "settings": {
