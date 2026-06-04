@@ -18,7 +18,7 @@
   },
   "directories": {
     "namedValues": {
-      "minCount": 3,
+      "minCount": 6,
       "expected": [
         {
           "name": "src-nv-plain",
@@ -56,6 +56,42 @@
             }
           },
           "notes": "KeyVault reference type"
+        },
+        {
+          "name": "src-nv-appinsights-key",
+          "files": ["namedValueInformation.json"],
+          "spotChecks": {
+            "namedValueInformation.json": {
+              "properties.displayName": "src-nv-appinsights-key",
+              "properties.secret": true,
+              "properties.tags": ["all-resources", "logger", "appinsights"]
+            }
+          },
+          "notes": "Logger Application Insights instrumentation key stored as a secret named value"
+        },
+        {
+          "name": "src-nv-eventhub-name",
+          "files": ["namedValueInformation.json"],
+          "spotChecks": {
+            "namedValueInformation.json": {
+              "properties.displayName": "src-nv-eventhub-name",
+              "properties.value": "src-apim-logs",
+              "properties.secret": false,
+              "properties.tags": ["all-resources", "logger", "eventhub"]
+            }
+          }
+        },
+        {
+          "name": "src-nv-eventhub-connection-string",
+          "files": ["namedValueInformation.json"],
+          "spotChecks": {
+            "namedValueInformation.json": {
+              "properties.displayName": "src-nv-eventhub-connection-string",
+              "properties.secret": true,
+              "properties.tags": ["all-resources", "logger", "eventhub"]
+            }
+          },
+          "notes": "Logger Event Hub connection string stored as a secret named value"
         }
       ]
     },
@@ -184,10 +220,10 @@
           "spotChecks": {
             "loggerInformation.json": {
               "properties.loggerType": "applicationInsights",
-              "properties.credentials.instrumentationKey": "exists"
+              "properties.credentials.instrumentationKey": "{{src-nv-appinsights-key}}"
             }
           },
-          "notes": "Instrumentationkey should be redacted"
+          "notes": "Instrumentation key should be referenced via NamedValue"
         },
         {
           "name": "src-logger-eventhub",
@@ -195,10 +231,11 @@
           "spotChecks": {
             "loggerInformation.json": {
               "properties.loggerType": "azureEventHub",
-              "properties.credentials.name": "src-apim-logs"
+              "properties.credentials.name": "{{src-nv-eventhub-name}}",
+              "properties.credentials.connectionString": "{{src-nv-eventhub-connection-string}}"
             }
           },
-          "notes": "Connection string should be redacted"
+          "notes": "Event Hub logger credentials should be referenced via NamedValues"
         }
       ]
     },

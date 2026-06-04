@@ -104,16 +104,16 @@ namedValues:
   src-nv-keyvault:
     keyVault:
       secretIdentifier: "${targetKvUri}secrets/tgt-secret-value"
+  src-nv-appinsights-key:
+    value: "$targetAiKey"
+  src-nv-eventhub-name:
+    value: "tgt-eh-logs"
+  src-nv-eventhub-connection-string:
+    value: "$targetEhConnStr"
 
 loggers:
   src-logger-appinsights:
     resourceId: "$targetAiResourceId"
-    credentials:
-      instrumentationKey: "$targetAiKey"
-  src-logger-eventhub:
-    credentials:
-      name: "tgt-eh-logs"
-      connectionString: "$targetEhConnStr"
 "@
 
 $overrideYaml | Set-Content -Path $overrideFile -Encoding utf8

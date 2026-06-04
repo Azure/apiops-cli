@@ -437,6 +437,38 @@ resource nvKeyVault 'Microsoft.ApiManagement/service/namedValues@2025-09-01-prev
   }
 }
 
+resource nvAppInsightsKey 'Microsoft.ApiManagement/service/namedValues@2025-09-01-preview' = {
+  parent: apim
+  name: 'src-nv-appinsights-key'
+  properties: {
+    displayName: 'src-nv-appinsights-key'
+    value: appInsights.properties.InstrumentationKey
+    secret: true
+    tags: ['all-resources', 'logger', 'appinsights']
+  }
+}
+
+resource nvEventHubName 'Microsoft.ApiManagement/service/namedValues@2025-09-01-preview' = {
+  parent: apim
+  name: 'src-nv-eventhub-name'
+  properties: {
+    displayName: 'src-nv-eventhub-name'
+    value: eventHub.name
+    tags: ['all-resources', 'logger', 'eventhub']
+  }
+}
+
+resource nvEventHubConnectionString 'Microsoft.ApiManagement/service/namedValues@2025-09-01-preview' = {
+  parent: apim
+  name: 'src-nv-eventhub-connection-string'
+  properties: {
+    displayName: 'src-nv-eventhub-connection-string'
+    value: eventHubAuthRule.listKeys().primaryConnectionString
+    secret: true
+    tags: ['all-resources', 'logger', 'eventhub']
+  }
+}
+
 // --- Tags ---
 resource tagEnv 'Microsoft.ApiManagement/service/tags@2025-09-01-preview' = {
   parent: apim
@@ -562,12 +594,13 @@ resource backendPool 'Microsoft.ApiManagement/service/backends@2025-09-01-previe
 resource loggerAppInsights 'Microsoft.ApiManagement/service/loggers@2025-09-01-preview' = {
   parent: apim
   name: 'src-logger-appinsights'
+  dependsOn: [nvAppInsightsKey]
   properties: {
     loggerType: 'applicationInsights'
     description: 'Application Insights logger for BVT'
     resourceId: appInsights.id
     credentials: {
-      instrumentationKey: appInsights.properties.InstrumentationKey
+      instrumentationKey: '{{src-nv-appinsights-key}}'
     }
   }
 }
@@ -575,12 +608,16 @@ resource loggerAppInsights 'Microsoft.ApiManagement/service/loggers@2025-09-01-p
 resource loggerEventHub 'Microsoft.ApiManagement/service/loggers@2025-09-01-preview' = {
   parent: apim
   name: 'src-logger-eventhub'
+  dependsOn: [
+    nvEventHubName
+    nvEventHubConnectionString
+  ]
   properties: {
     loggerType: 'azureEventHub'
     description: 'Event Hub logger for BVT'
     credentials: {
-      name: eventHub.name
-      connectionString: eventHubAuthRule.listKeys().primaryConnectionString
+      name: '{{src-nv-eventhub-name}}'
+      connectionString: '{{src-nv-eventhub-connection-string}}'
     }
   }
 }
