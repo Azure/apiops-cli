@@ -28,8 +28,8 @@ function normalizePath(filePath: string): string {
 async function runNpm(args: string[]): Promise<string> {
   const result = await exec(npmCommand, args, {
     cwd: repoRoot,
-    timeout: 180_000,
-    env: { ...process.env, NODE_ENV: 'test' },
+    timeout: 90_000,
+    env: process.env,
   });
 
   return result.stdout;
@@ -48,8 +48,6 @@ describe('package build integration', () => {
 
     expect(packEntries.length).toBeGreaterThan(0);
     const firstEntry = packEntries[0];
-    expect(firstEntry).toBeDefined();
-
     const packedFilePaths = new Set(firstEntry.files.map((file) => normalizePath(file.path)));
     expect(packedFilePaths.size).toBeGreaterThan(0);
 
