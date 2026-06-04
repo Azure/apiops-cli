@@ -6,12 +6,12 @@
     "ghcr.io/devcontainers/features/azure-cli:1": {
       "installBicep": true
     },
-    "ghcr.io/devcontainers/features/powershell:1": {}
+    "ghcr.io/devcontainers/features/powershell:2.0.2": {}
   },
-  "postCreateCommand": "npm ci --ignore-scripts",
   "remoteEnv": {
     "PATH": "${containerEnv:PATH}:${containerWorkspaceFolder}/node_modules/.bin"
   },
+  "postAttachCommand": "bash -lc 'if [ -f package-lock.json ] && [ ! -d node_modules ]; then echo \"[apiops-cli] Reminder: run 'npm ci' before building or testing.\"; fi'",
   "customizations": {
     "vscode": {
       "settings": {
