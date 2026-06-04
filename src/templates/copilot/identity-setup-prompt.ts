@@ -10,10 +10,11 @@
  */
 
 import {
-  azureDevOpsIdentityGuideTemplate,
+  azureDevOpsIdentitySetupCoreTemplate,
+  copilotAzureDevOpsIdentitySetupPromptTemplate,
   copilotGithubEnvironmentFederatedCredentialTemplate,
   copilotGithubEnvironmentSecretCommandsTemplate,
-  copilotIdentitySetupPromptTemplate,
+  copilotGitHubActionsIdentitySetupPromptTemplate,
 } from '../generated/embedded-markdown.js';
 
 export interface IdentitySetupPromptConfig {
@@ -37,11 +38,15 @@ export function generateIdentitySetupPrompt(config: IdentitySetupPromptConfig): 
       .map((environment) => `"${environment}"`)
       .join(' ');
 
-    return renderTemplate(azureDevOpsIdentityGuideTemplate, {
+    const coreSteps = renderTemplate(azureDevOpsIdentitySetupCoreTemplate, {
       SUBSCRIPTION_ID: '<your-subscription-id>',
       RESOURCE_GROUP: '<your-resource-group>',
       ENVIRONMENTS_ARRAY_POWERSHELL: environmentsArrayPowerShell,
       ENVIRONMENTS_ARRAY_BASH: environmentsArrayBash,
+    });
+
+    return renderTemplate(copilotAzureDevOpsIdentitySetupPromptTemplate, {
+      AZURE_DEVOPS_CORE_STEPS: coreSteps,
     });
   }
 
@@ -98,7 +103,7 @@ az role assignment create \\
 \`\`\``
   ).join('\n\n');
 
-  return renderTemplate(copilotIdentitySetupPromptTemplate, {
+  return renderTemplate(copilotGitHubActionsIdentitySetupPromptTemplate, {
     ENV_SECRETS_REFERENCE: envSecrets,
     ENV_FEDERATED_CREDENTIALS: envFedCreds,
     GH_SECRET_ENV_COMMANDS: ghSecretEnvCmds,

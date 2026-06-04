@@ -59,4 +59,4 @@ tests/integration/all-resource-types/bicep/source-apim-post-activation.bicep
 *.d.ts.map
 
 # Temporary files created by build process
-src/templates/generated/embedded-markdown.ts
+src/templates/generated/

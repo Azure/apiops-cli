@@ -6,8 +6,16 @@ const outputFile = resolve(repoRoot, 'src/templates/generated/embedded-markdown.
 
 const templates = [
   {
-    exportName: 'copilotIdentitySetupPromptTemplate',
-    path: 'src/templates/copilot/identity-setup-prompt.md',
+    exportName: 'copilotGitHubActionsIdentitySetupPromptTemplate',
+    path: 'src/templates/copilot/identity-setup-prompt-github-actions.md',
+  },
+  {
+    exportName: 'copilotAzureDevOpsIdentitySetupPromptTemplate',
+    path: 'src/templates/copilot/identity-setup-prompt-azure-devops.md',
+  },
+  {
+    exportName: 'azureDevOpsIdentitySetupCoreTemplate',
+    path: 'src/templates/shared/identity-setup-azure-devops-core.md',
   },
   {
     exportName: 'githubActionsIdentityGuideTemplate',
@@ -19,11 +27,11 @@ const templates = [
   },
   {
     exportName: 'copilotGithubEnvironmentFederatedCredentialTemplate',
-    path: 'src/templates/copilot/github-environment-federated-credential.md',
+    path: 'src/templates/shared/github-environment-federated-credential.md',
   },
   {
     exportName: 'copilotGithubEnvironmentSecretCommandsTemplate',
-    path: 'src/templates/copilot/github-environment-secret-commands.md',
+    path: 'src/templates/shared/github-environment-secret-commands.md',
   },
 ];
 

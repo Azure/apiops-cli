@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { initService } from '../../../src/services/init-service.js';
 import { InitConfig } from '../../../src/models/config.js';
 import * as fs from 'fs/promises';
+import type { PathLike } from 'node:fs';
 import * as path from 'path';
 
 // Mock the file system
@@ -62,7 +63,7 @@ describe('init-service', () => {
     vi.mocked(fs.copyFile).mockResolvedValue(undefined);
     
     // Mock fs.access: the CLI tarball exists, all other files don't
-    vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
+    vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
       if (filePath.toString() === TEST_CLI_PACKAGE_RESOLVED) {
         return Promise.resolve();
       }
@@ -199,7 +200,7 @@ describe('init-service', () => {
 
     it('should throw when GitHub Actions workflows exist and --force is not set', async () => {
       // Mock file exists for extract workflow and the CLI tarball
-      vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
+      vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
         if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('run-apim-extractor.yml')) {
           return Promise.resolve();
@@ -224,7 +225,7 @@ describe('init-service', () => {
 
     it('should overwrite when GitHub Actions workflows exist and --force is set', async () => {
       // Mock file exists for extract workflow and the CLI tarball
-      vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
+      vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
         if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('run-apim-extractor.yml')) {
           return Promise.resolve();
@@ -248,7 +249,7 @@ describe('init-service', () => {
 
     it('should throw when config files exist and --force is not set', async () => {
       // Mock file exists for filter config and the CLI tarball
-      vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
+      vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
         if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('configuration.extract.yaml')) {
           return Promise.resolve();
@@ -273,7 +274,7 @@ describe('init-service', () => {
 
     it('should overwrite when config files exist and --force is set', async () => {
       // Mock file exists for filter config and the CLI tarball
-      vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
+      vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
         if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('configuration.extract.yaml')) {
           return Promise.resolve();
@@ -375,7 +376,7 @@ describe('init-service', () => {
       );
       expect(promptCalls).toHaveLength(1);
       const content = promptCalls[0][1] as string;
-      expect(content).toContain('Azure DevOps Identity Setup Guide');
+      expect(content).toContain('Setup Azure DevOps Identity for APIOps');
       expect(content).toContain('az devops service-endpoint azurerm create');
     });
 
@@ -489,7 +490,7 @@ describe('init-service', () => {
     it('should throw if CLI package is not a .tgz file', async () => {
       const badPath = '/packages/apiops-0.1.0.zip';
       const badPathResolved = path.resolve(badPath);
-      vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
+      vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         if (filePath.toString() === badPathResolved) {
           return Promise.resolve();
         }
@@ -512,7 +513,7 @@ describe('init-service', () => {
     });
 
     it('should throw when package.json already exists and --force is not set', async () => {
-      vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
+      vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
         if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('package.json')) {
           return Promise.resolve();
@@ -536,7 +537,7 @@ describe('init-service', () => {
     });
 
     it('should overwrite when package.json already exists and --force is set', async () => {
-      vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
+      vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
         if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('package.json')) {
           return Promise.resolve();

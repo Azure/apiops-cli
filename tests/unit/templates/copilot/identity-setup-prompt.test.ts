@@ -159,7 +159,7 @@ describe('copilot/identity-setup-prompt', () => {
         environments: ['dev', 'prod'],
         ciProvider: 'azure-devops',
       });
-      expect(prompt).toContain('# Azure DevOps Identity Setup Guide');
+      expect(prompt).toContain('# Setup Azure DevOps Identity for APIOps');
       expect(prompt).toContain('az devops service-endpoint azurerm create');
       expect(prompt).not.toContain('gh secret set');
     });

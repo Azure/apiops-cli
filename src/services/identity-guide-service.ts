@@ -7,6 +7,7 @@
  */
 
 import {
+  azureDevOpsIdentitySetupCoreTemplate,
   azureDevOpsIdentityGuideTemplate,
   githubActionsIdentityGuideTemplate,
 } from '../templates/generated/embedded-markdown.js';
@@ -69,11 +70,15 @@ class IdentityGuideServiceImpl implements IdentityGuideService {
     const environmentsArrayPowerShell = environments.map((e) => `"${e}"`).join(', ');
     const environmentsArrayBash = environments.map((e) => `"${e}"`).join(' ');
 
-    return this.renderTemplate(azureDevOpsIdentityGuideTemplate, {
+    const coreSteps = this.renderTemplate(azureDevOpsIdentitySetupCoreTemplate, {
       SUBSCRIPTION_ID: subscriptionId,
       RESOURCE_GROUP: resourceGroup,
       ENVIRONMENTS_ARRAY_POWERSHELL: environmentsArrayPowerShell,
       ENVIRONMENTS_ARRAY_BASH: environmentsArrayBash,
+    });
+
+    return this.renderTemplate(azureDevOpsIdentityGuideTemplate, {
+      AZURE_DEVOPS_CORE_STEPS: coreSteps,
     });
   }
 }
