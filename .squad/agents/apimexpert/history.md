@@ -106,3 +106,9 @@ the SDK surface, reference docs, or ad-hoc observation.
 - Classic Developer/Premium SKU only.
 - Docs: <https://learn.microsoft.com/rest/api/apimanagement/policy-restriction> · <https://learn.microsoft.com/azure/templates/microsoft.apimanagement/service/policyrestrictions>
 
+### 2026-06-04: OpenAPI import can synthesize operation descriptions and break null-preserving round-trip
+
+In this artifact format, operation JSON is not persisted for spec-managed APIs, so operation-level normalization in generic resource publishing may never run for those APIs.
+
+For OpenAPI imports, APIM can populate `ApiOperation.properties.description` from operation summary when description is omitted. To preserve source nulls with minimal blast radius, post-import alignment should only patch operations whose OpenAPI `operationId` has missing/null `description`, setting APIM operation `description` back to null via operation-level PUT.
+

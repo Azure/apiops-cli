@@ -172,3 +172,9 @@ Gotchas for future PowerShell work:
 - `$x = if ($cond) { [List[T]]::new() }` assigns `$null` — PowerShell enumerates the empty list. Use `$x = $null; if ($cond) { $x = ... }`.
 - `ProcessStartInfo.StandardOutputEncoding/StandardErrorEncoding` default to OEM on Windows; force UTF-8 or `az --debug` output mangles.
 
+### 2026-06-04: Narrow validation seam for operation-description drift (round-trip)
+
+- The cheapest discriminating seam is unit-level in `publishApi` (no live Azure): spec import + incremental mode + ApiOperation artifact with `properties.description: null`.
+- Existing tests already cover `publishResource` text normalization and incremental operation skipping separately, but not this exact combination that matches the observed diff log.
+- Added a focused `api-publisher` test that asserts no ApiOperation republish tasks are scheduled for that case, isolating the branch that permits APIM-synthesized description drift.
+
