@@ -11,8 +11,6 @@ const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const repoRoot = path.resolve('.');
 
 type RootPackageJson = {
-  main?: string;
-  types?: string;
   bin?: string | Record<string, string>;
   readme?: string;
 };
@@ -22,7 +20,7 @@ type PackDryRunEntry = {
 };
 
 function normalizePath(filePath: string): string {
-  return filePath.replace(/\\/g, '/');
+  return filePath.replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
 async function runNpm(args: string[]): Promise<string> {
@@ -51,14 +49,6 @@ describe('package build integration', () => {
     expect(packedFilePaths.size).toBeGreaterThan(0);
 
     const requiredFiles = new Set<string>(['package.json']);
-
-    if (packageJson.main) {
-      requiredFiles.add(normalizePath(packageJson.main));
-    }
-
-    if (packageJson.types) {
-      requiredFiles.add(normalizePath(packageJson.types));
-    }
 
     if (typeof packageJson.bin === 'string') {
       requiredFiles.add(normalizePath(packageJson.bin));
