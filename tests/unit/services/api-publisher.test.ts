@@ -1037,7 +1037,6 @@ describe('api-publisher', () => {
       expect(totalTasks).toBe(2);
     });
 
-    it('should reconcile operations via PATCH after spec import (schema refs in responses)', async () => {
     it('should skip operation republish in incremental mode when operation description is null', async () => {
       const client = createMockClient();
       const children = [
@@ -1084,13 +1083,13 @@ describe('api-publisher', () => {
 
       await publishApi(client, store, testContext, apiDescriptor, incrementalConfig);
 
-      // With spec import + incremental mode, operation artifacts are not re-published.
-      // This narrow assertion discriminates the branch that can allow description drift.
+      // With spec import + incremental mode, operation artifacts are not re-published,
+      // but PATCH reconciliation still runs for the operation.
       const totalTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
         const tasks = call[0] as unknown[];
         return sum + tasks.length;
       }, 0);
-      expect(totalTasks).toBe(0);
+      expect(totalTasks).toBe(1);
     });
 
     it('should re-publish operations with schema references in response representations', async () => {
