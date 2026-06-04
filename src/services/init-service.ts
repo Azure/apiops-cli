@@ -195,12 +195,6 @@ class InitServiceImpl implements InitService {
       }
     }
 
-    // Check for package.json
-    const packageJsonPath = path.join(config.outputDir, 'package.json');
-    if (await this.fileExists(packageJsonPath)) {
-      conflictingFiles.push(packageJsonPath);
-    }
-
     // Check for config files
     const filterConfig = path.join(
       config.outputDir,
@@ -277,7 +271,7 @@ class InitServiceImpl implements InitService {
     }
 
     const packageJsonPath = path.join(config.outputDir, 'package.json');
-    await fs.writeFile(packageJsonPath, packageJsonContent);
+    await this.writeOrMergePackageJson(packageJsonPath, packageJsonContent);
     generatedFiles.configs.push('package.json');
 
     // Generate pipeline files
@@ -440,6 +434,49 @@ class InitServiceImpl implements InitService {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Write package.json if missing, otherwise merge APIOps dependency into existing content.
+   */
+  private async writeOrMergePackageJson(
+    packageJsonPath: string,
+    generatedPackageJsonContent: string
+  ): Promise<void> {
+    const generatedPkg = JSON.parse(generatedPackageJsonContent) as {
+      dependencies?: Record<string, string>;
+    };
+
+    if (!await this.fileExists(packageJsonPath)) {
+      await fs.writeFile(packageJsonPath, generatedPackageJsonContent);
+      return;
+    }
+
+    const existingRaw = await fs.readFile(packageJsonPath, 'utf8');
+    let existingPkg: Record<string, unknown>;
+    try {
+      existingPkg = JSON.parse(existingRaw) as Record<string, unknown>;
+    } catch {
+      throw new Error(
+        `Existing package.json is not valid JSON: ${packageJsonPath}`
+      );
+    }
+
+    const existingDeps = (
+      typeof existingPkg.dependencies === 'object' &&
+      existingPkg.dependencies !== null
+        ? existingPkg.dependencies
+        : {}
+    ) as Record<string, string>;
+
+    const generatedDeps = generatedPkg.dependencies ?? {};
+
+    existingPkg.dependencies = {
+      ...existingDeps,
+      ...generatedDeps,
+    };
+
+    await fs.writeFile(packageJsonPath, `${JSON.stringify(existingPkg, null, 2)}\n`);
   }
 }
 

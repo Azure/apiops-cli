@@ -512,7 +512,7 @@ describe('init-service', () => {
       );
     });
 
-    it('should throw when package.json already exists and --force is not set', async () => {
+    it('should merge dependency when package.json already exists in local mode', async () => {
       vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
         if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('package.json')) {
@@ -520,6 +520,20 @@ describe('init-service', () => {
         }
         throw new Error('ENOENT');
       });
+
+      vi.mocked(fs.readFile).mockResolvedValue(
+        JSON.stringify(
+          {
+            name: 'existing-repo',
+            version: '2.0.0',
+            private: true,
+            scripts: { lint: 'eslint .' },
+            dependencies: { lodash: '^4.17.21', apiops: 'file:.apiops/old.tgz' },
+          },
+          null,
+          2
+        )
+      );
 
       const config: InitConfig = {
         ciProvider: 'github-actions',
@@ -531,19 +545,41 @@ describe('init-service', () => {
         force: false,
       };
 
-      await expect(initService.run(config)).rejects.toThrow(
-        'Use --force to overwrite existing files'
+      await expect(initService.run(config)).resolves.toBeDefined();
+
+      const pkgCalls = vi.mocked(fs.writeFile).mock.calls.filter(
+        (call) => call[0] === path.join('/test', 'package.json')
       );
+      expect(pkgCalls).toHaveLength(1);
+      const content = pkgCalls[0][1] as string;
+      const pkg = JSON.parse(content);
+      expect(pkg.name).toBe('existing-repo');
+      expect(pkg.scripts).toEqual({ lint: 'eslint .' });
+      expect(pkg.dependencies.lodash).toBe('^4.17.21');
+      expect(pkg.dependencies.apiops).toContain('file:.apiops/apiops-0.1.0.tgz');
     });
 
-    it('should overwrite when package.json already exists and --force is set', async () => {
+    it('should merge dependency when package.json already exists in npm mode', async () => {
       vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
-        if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('package.json')) {
+        if (p.includes('package.json')) {
           return Promise.resolve();
         }
         throw new Error('ENOENT');
       });
+
+      vi.mocked(fs.readFile).mockResolvedValue(
+        JSON.stringify(
+          {
+            name: 'existing-repo',
+            version: '2.0.0',
+            private: true,
+            dependencies: { lodash: '^4.17.21' },
+          },
+          null,
+          2
+        )
+      );
 
       const config: InitConfig = {
         ciProvider: 'github-actions',
@@ -551,12 +587,20 @@ describe('init-service', () => {
         artifactDir: './apim-artifacts',
         environments: ['dev'],
         outputDir: '/test',
-        cliPackage: TEST_CLI_PACKAGE,
-        force: true,
+        // cliPackage is omitted — npm mode
+        force: false,
       };
 
-      // Should not throw, just warn and proceed
       await expect(initService.run(config)).resolves.toBeDefined();
+
+      const pkgCalls = vi.mocked(fs.writeFile).mock.calls.filter(
+        (call) => call[0] === path.join('/test', 'package.json')
+      );
+      expect(pkgCalls).toHaveLength(1);
+      const content = pkgCalls[0][1] as string;
+      const pkg = JSON.parse(content);
+      expect(pkg.dependencies.lodash).toBe('^4.17.21');
+      expect(pkg.dependencies['@peterhauge/apiops-cli']).toBe('latest');
     });
   });
 });
