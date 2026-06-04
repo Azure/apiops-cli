@@ -421,8 +421,9 @@ async function reconcileOperationsAfterSpecImport(
   const tasks = operationDescriptors.map((descriptor) => async () => {
     const json = await store.readResource(config.sourceDir, descriptor);
     if (!json) return;
+    const mergedJson = applyOverrides(descriptor, json, config.overrides);
 
-    const props = json.properties as Record<string, unknown> | undefined;
+    const props = mergedJson.properties as Record<string, unknown> | undefined;
     if (!props) return;
 
     // Build a PATCH body with only allow-listed properties present in the persisted JSON.

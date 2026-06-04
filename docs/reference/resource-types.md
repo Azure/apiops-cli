@@ -90,7 +90,7 @@ Some resource types have a `listOmitsFields` behavior — the LIST endpoint omit
 
 - `{0}` is replaced with the resource's display name (sanitized for filesystem use)
 - `{1}` is replaced with the child resource's display name
-- Resources without an info file (e.g., ApiOperation) are represented only by their child resources (e.g., operation policies)
+- Resources without an info file are represented only by their child resources
 - The `ServicePolicy` info file (`policy.xml`) lives at the artifact root, not in a subdirectory
 
 ### Example Directory Tree
@@ -109,7 +109,8 @@ apim-artifacts/
 │       ├── wiki.md                     # ApiWiki
 │       ├── operations/
 │       │   └── get-pets/
-│       │       └── policy.xml          # ApiOperationPolicy
+│       │       ├── operationInformation.json # ApiOperation
+│       │       └── policy.xml               # ApiOperationPolicy
 │       └── tags/
 │           └── pets/
 │               └── tagInformation.json # ApiTag

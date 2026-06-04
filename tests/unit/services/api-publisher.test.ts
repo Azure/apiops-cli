@@ -10,6 +10,7 @@ import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
 import { LogLevel } from '../../../src/lib/logger.js';
+import { applyOverrides } from '../../../src/services/override-merger.js';
 
 // Mock resource-publisher so we can verify call sequence
 const mockPublishResource = vi.fn();
@@ -77,6 +78,7 @@ const testConfig: PublishConfig = {
 describe('api-publisher', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(applyOverrides).mockImplementation((_descriptor, json) => json);
     mockPublishResource.mockResolvedValue({
       descriptor: { type: ResourceType.Api, nameParts: ['test-api'] },
       status: 'success',
@@ -1186,6 +1188,50 @@ describe('api-publisher', () => {
             // internalId must NOT be included
           },
         }
+      );
+    });
+
+    it('should apply overrides before operation PATCH reconciliation', async () => {
+      mockRunParallel.mockImplementation(async (tasks: Array<() => Promise<unknown>>) => {
+        for (const task of tasks) await task();
+      });
+      vi.mocked(applyOverrides).mockImplementation((descriptor, json) => {
+        if (descriptor.type !== ResourceType.ApiOperation) return json;
+        return {
+          ...json,
+          properties: {
+            ...(json as Record<string, unknown>).properties as Record<string, unknown>,
+            displayName: 'List Pets (overridden)',
+          },
+        };
+      });
+
+      const client = createMockClient();
+      const children = [{ type: ResourceType.ApiOperation, nameParts: ['petstore', 'get-pets'] }];
+      const store = createMockStore(children);
+
+      store.readResource.mockImplementation(async (_dir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.Api) {
+          return { name: 'petstore', properties: { path: 'petstore' } };
+        }
+        if (descriptor.type === ResourceType.ApiOperation) {
+          return { name: 'get-pets', properties: { displayName: 'List Pets', method: 'GET' } };
+        }
+        return null;
+      });
+      store.readContent.mockResolvedValue({ content: 'openapi: "3.0.0"', format: 'yaml' });
+
+      const apiDescriptor: ResourceDescriptor = { type: ResourceType.Api, nameParts: ['petstore'] };
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      expect(client.patchResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({ type: ResourceType.ApiOperation, nameParts: ['petstore', 'get-pets'] }),
+        expect.objectContaining({
+          properties: expect.objectContaining({
+            displayName: 'List Pets (overridden)',
+          }),
+        })
       );
     });
 
