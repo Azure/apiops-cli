@@ -3,12 +3,14 @@
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 
 const exec = promisify(execFile);
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const repoRoot = path.resolve('.');
+const currentFileDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(currentFileDir, '../..');
 
 type RootPackageJson = {
   bin?: string | Record<string, string>;
@@ -43,9 +45,12 @@ describe('package build integration', () => {
 
     const packOutput = await runNpm(['pack', '--json', '--dry-run']);
     const packEntries = JSON.parse(packOutput) as PackDryRunEntry[];
-    const packedFilePaths = new Set(packEntries[0]?.files.map((file) => normalizePath(file.path)));
 
     expect(packEntries.length).toBeGreaterThan(0);
+    const firstEntry = packEntries[0];
+    expect(firstEntry).toBeDefined();
+
+    const packedFilePaths = new Set(firstEntry.files.map((file) => normalizePath(file.path)));
     expect(packedFilePaths.size).toBeGreaterThan(0);
 
     const requiredFiles = new Set<string>(['package.json']);
