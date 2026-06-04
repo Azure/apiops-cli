@@ -247,6 +247,78 @@ describe('publish-service', () => {
       expect(apiCallOrder).toEqual(['src-rest-openapi', 'src-mcp-from-api']);
     });
 
+    it('should not publish revision APIs as standalone resources when root API is in the same batch', async () => {
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.Api, nameParts: ['orders-api;rev=2'] },
+        { type: ResourceType.Api, nameParts: ['orders-api'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+
+      const apiCallOrder: string[] = [];
+      vi.mocked(publishApi).mockImplementation(async (_client, _store, _context, descriptor) => {
+        apiCallOrder.push(descriptor.nameParts[0] ?? '');
+        return {
+          descriptor,
+          status: 'success',
+          action: 'put',
+        };
+      });
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runPublish(client, store, config);
+
+      expect(apiCallOrder).toEqual(['orders-api']);
+      expect(result.totalPuts).toBe(1);
+    });
+
+    it('should publish revision-only API descriptors via generic publisher path', async () => {
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.Api, nameParts: ['orders-api;rev=2'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      vi.mocked(store.readResource).mockResolvedValue({
+        name: 'orders-api;rev=2',
+        properties: {
+          apiRevision: '2',
+          path: 'orders',
+          protocols: ['https'],
+        },
+      });
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runPublish(client, store, config);
+
+      expect(publishApi).not.toHaveBeenCalled();
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        { type: ResourceType.Api, nameParts: ['orders-api;rev=2'] },
+        expect.objectContaining({
+          properties: expect.objectContaining({
+            sourceApiId: expect.stringContaining('/apis/orders-api'),
+          }),
+        })
+      );
+      expect(result.totalPuts).toBe(1);
+    });
+
     it('should call generateDryRunReport in dry-run mode', async () => {
       const resources = [
         { type: ResourceType.Tag, nameParts: ['tag1'] },

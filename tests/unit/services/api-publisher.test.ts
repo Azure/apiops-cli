@@ -810,6 +810,63 @@ describe('api-publisher', () => {
       );
     });
 
+    it('should set imported operation descriptions to null when OpenAPI operation omits description', async () => {
+      const client = createMockClient();
+      const store = createMockStore([]);
+      store.readResource.mockResolvedValue({
+        name: 'petstore',
+        properties: { path: 'petstore' },
+      });
+      store.readContent.mockResolvedValue({
+        content: [
+          'openapi: 3.0.1',
+          'paths:',
+          '  /agent-card:',
+          '    get:',
+          '      operationId: get-agent-card',
+          '      summary: Get agent card',
+        ].join('\n'),
+        format: 'yaml',
+      });
+      client.getResource.mockResolvedValue({
+        name: 'petstore/get-agent-card',
+        properties: {
+          displayName: 'get-agent-card',
+          description: 'Get agent card',
+          method: 'GET',
+          urlTemplate: '/agent-card',
+        },
+      });
+
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['petstore'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      expect(client.getResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({
+          type: ResourceType.ApiOperation,
+          nameParts: ['petstore', 'get-agent-card'],
+        })
+      );
+
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({
+          type: ResourceType.ApiOperation,
+          nameParts: ['petstore', 'get-agent-card'],
+        }),
+        expect.objectContaining({
+          properties: expect.objectContaining({
+            description: null,
+          }),
+        })
+      );
+    });
+
     it('should skip ApiSchema and ApiOperation children when spec was imported', async () => {
       const client = createMockClient();
       // Use auto-generated 24-char hex schema ID - these are skipped during spec import
@@ -979,6 +1036,61 @@ describe('api-publisher', () => {
         return sum + tasks.length;
       }, 0);
       expect(totalTasks).toBe(1);
+    });
+
+    it('should skip operation republish in incremental mode when operation description is null', async () => {
+      const client = createMockClient();
+      const children = [
+        { type: ResourceType.ApiOperation, nameParts: ['src-a2a-runtime-mock', 'get-agent-card'] },
+      ];
+      const store = createMockStore(children);
+
+      store.readResource.mockImplementation(async (_dir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.Api) {
+          return { name: 'src-a2a-runtime-mock', properties: { path: 'a2a/mock' } };
+        }
+        if (
+          descriptor.type === ResourceType.ApiOperation &&
+          (descriptor.nameParts[1] ?? '') === 'get-agent-card'
+        ) {
+          return {
+            name: 'get-agent-card',
+            properties: {
+              displayName: 'Get agent card',
+              description: null,
+              method: 'GET',
+              urlTemplate: '/agent/card',
+              responses: [],
+            },
+          };
+        }
+        return null;
+      });
+
+      store.readContent.mockResolvedValue({
+        content: 'openapi: "3.0.0"',
+        format: 'yaml',
+      });
+
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['src-a2a-runtime-mock'],
+      };
+
+      const incrementalConfig: PublishConfig = {
+        ...testConfig,
+        commitId: 'abc123',
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, incrementalConfig);
+
+      // With spec import + incremental mode, operation artifacts are not re-published.
+      // This narrow assertion discriminates the branch that can allow description drift.
+      const totalTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
+        const tasks = call[0] as unknown[];
+        return sum + tasks.length;
+      }, 0);
+      expect(totalTasks).toBe(0);
     });
 
     it('should re-publish operations with schema references in response representations', async () => {
