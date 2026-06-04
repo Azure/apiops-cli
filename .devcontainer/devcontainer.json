@@ -10,8 +10,9 @@
   },
   "remoteEnv": {
     "PATH": "${containerEnv:PATH}:${containerWorkspaceFolder}/node_modules/.bin"
-  },
-  "postAttachCommand": "bash -lc 'if [ -f package-lock.json ] && [ ! -d node_modules ]; then echo \"[apiops-cli] Reminder: run 'npm ci' before building or testing.\"; fi'",
+  },  
+  "postCreateCommand": "npm ci --ignore-scripts",
+  "postAttachCommand": "echo '[apiops-cli] Run npm ci to install dependencies and embed markdown templates.'",
   "customizations": {
     "vscode": {
       "settings": {
