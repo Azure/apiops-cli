@@ -454,6 +454,7 @@ resource nvEventHubName 'Microsoft.ApiManagement/service/namedValues@2025-09-01-
   properties: {
     displayName: 'src-nv-eventhub-name'
     value: eventHub.name
+    secret: false
     tags: ['all-resources', 'logger', 'eventhub']
   }
 }
