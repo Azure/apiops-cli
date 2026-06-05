@@ -261,20 +261,36 @@ function Invoke-MaskedProcess {
     )
 
     $exe = Resolve-NativeExecutable -Name $FilePath
-    $finalArgs = @() + $exe.Prefix + $Arguments
 
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
     $psi.FileName               = $exe.FilePath
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
-    $psi.RedirectStandardInput  = $false
+    $psi.RedirectStandardInput  = $true
     $psi.UseShellExecute        = $false
     $psi.CreateNoWindow         = $true
     $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
     $psi.StandardErrorEncoding  = [System.Text.Encoding]::UTF8
 
-    foreach ($a in $finalArgs) {
-        [void]$psi.ArgumentList.Add([string]$a)
+    if ($exe.Prefix.Count -ge 2 -and $exe.Prefix[0] -eq '/c') {
+        # cmd.exe /c has special quoting rules that conflict with ArgumentList.
+        # Use the Arguments string property with double-quote wrapping so cmd.exe
+        # preserves the inner quotes around paths that contain spaces.
+        $cmdTarget = $exe.Prefix[1]
+        $quotedParts = @("`"$cmdTarget`"")
+        foreach ($a in $Arguments) {
+            $s = [string]$a
+            # Quote every argument individually so cmd.exe treats all content
+            # (including metacharacters like parentheses) as literals.
+            $escaped = $s -replace '"', '\"'
+            $quotedParts += "`"$escaped`""
+        }
+        $psi.Arguments = "/c `"$($quotedParts -join ' ')`""
+    } else {
+        $finalArgs = @() + $exe.Prefix + $Arguments
+        foreach ($a in $finalArgs) {
+            [void]$psi.ArgumentList.Add([string]$a)
+        }
     }
 
     $stdoutQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
@@ -305,6 +321,7 @@ function Invoke-MaskedProcess {
 
     try {
         [void]$proc.Start()
+        $proc.StandardInput.Close()
 
         $outJob = Start-ThreadJob -ScriptBlock $readerScript -ArgumentList $proc.StandardOutput, $stdoutQueue
         $errJob = Start-ThreadJob -ScriptBlock $readerScript -ArgumentList $proc.StandardError,  $stderrQueue
