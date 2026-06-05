@@ -434,7 +434,7 @@ async function reconcileOperationsAfterSpecImport(
       }
     }
 
-    // Drop source schema refs; APIM rebinds these on spec import.
+    // Strip source schema refs; APIM rebinds on import and drops stale IDs.
     stripRepresentationSchemaRefs(patchProps);
 
     if (Object.keys(patchProps).length === 0) return;
@@ -459,7 +459,7 @@ async function reconcileOperationsAfterSpecImport(
   }
 }
 
-/** Remove schema refs from request/response representations before PATCH. */
+/** Strip source schema refs from request/response representations before PATCH. */
 function stripRepresentationSchemaRefs(patchProps: Record<string, unknown>): void {
   const SCHEMA_REF_FIELDS = ['schemaId', 'typeName'];
 
@@ -474,14 +474,14 @@ function stripRepresentationSchemaRefs(patchProps: Record<string, unknown>): voi
     }
   }
 
-  // request.representations
+  // Strip schema refs from request.representations.
   const request = patchProps.request;
   if (request && typeof request === 'object') {
     const req = request as Record<string, unknown>;
     stripFromRepresentations(req.representations);
   }
 
-  // responses[].representations
+  // Strip schema refs from responses[].representations.
   const responses = patchProps.responses;
   if (Array.isArray(responses)) {
     for (const response of responses) {
