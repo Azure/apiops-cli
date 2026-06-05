@@ -2,6 +2,12 @@
 
 ## Active Decisions
 
+### 2026-06-05T23:40:00Z: Operation reconciliation PATCH strips schema refs
+**By:** ApimExpert + TypeScriptDev  
+**Status:** Implemented  
+**What:** `reconcileOperationsAfterSpecImport` removes `schemaId` and `typeName` from operation `request.representations` and `responses[].representations` before PATCH.
+**Why:** Those IDs are source-instance specific. After target spec import, APIM assigns its own schema IDs; sending stale source IDs causes APIM to drop schema refs.
+
 ### 2026-05-28T23:06:01Z: Team-Wide Evidence Standard
 **By:** User directive (anonymized)  
 **Status:** Active directive  
