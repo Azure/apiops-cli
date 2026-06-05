@@ -188,7 +188,7 @@ function Resolve-NativeExecutable {
     $prefix  = @()
 
     if ($IsWindows -and ($exePath -like '*.cmd' -or $exePath -like '*.bat')) {
-        $prefix  = @('/c', $exePath)
+        $prefix  = @('/d', '/s', '/c', "`"$exePath`"")
         $exePath = $env:ComSpec
     }
 
