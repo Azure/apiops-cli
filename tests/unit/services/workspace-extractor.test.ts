@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import { IApimClient } from '../../../src/clients/iapim-client.js';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext } from '../../../src/models/types.js';
 import { FilterConfig } from '../../../src/models/config.js';
@@ -18,14 +19,20 @@ const testContext: ApimServiceContext = {
   baseUrl: 'https://management.azure.com/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1',
 };
 
-function createMockClient() {
+async function* emptyAsyncGenerator<T>(): AsyncGenerator<T> {
+  yield* [];
+}
+
+function createMockClient(): IApimClient {
   return {
-    listResources: async function* () {},
+    listResources: () => emptyAsyncGenerator<Record<string, unknown>>(),
     getResource: vi.fn().mockResolvedValue(undefined),
-    putResource: vi.fn(),
-    deleteResource: vi.fn(),
-    listApiRevisions: async function* () {},
+    putResource: vi.fn().mockResolvedValue({}),
+    patchResource: vi.fn().mockResolvedValue({}),
+    deleteResource: vi.fn().mockResolvedValue(true),
+    listApiRevisions: () => emptyAsyncGenerator<Record<string, unknown>>(),
     getApiSpecification: vi.fn().mockResolvedValue(undefined),
+    validatePreFlight: vi.fn().mockResolvedValue(undefined),
   };
 }
 
