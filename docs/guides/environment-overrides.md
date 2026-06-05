@@ -25,9 +25,10 @@ apiops publish \
 
 ## Override file format (APIOps Toolkit-compatible)
 
-`apiops-cli` uses the APIOps Toolkit override layout:
+`apiops-cli` uses the [APIOps Toolkit](https://github.com/Azure/apiops) override layout:
 
 - Top-level resource sections: `namedValues`, `backends`, `apis`, `diagnostics`, `loggers`
+  > **Note:** Gateway and subscription overrides are not currently supported.
 - Each section is a list
 - Each list item contains `name` and `properties`
 

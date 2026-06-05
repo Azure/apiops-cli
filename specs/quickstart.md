@@ -44,7 +44,7 @@ Referenced backends, named values, and policy fragments are included automatical
 
 ## Publish to a target environment
 
-Create `overrides.prod.yaml` for environment-specific values:
+Create `configuration.prod.yaml` for environment-specific values:
 
 ```yaml
 namedValues:
@@ -62,7 +62,7 @@ apiops publish \
   --resource-group prod-rg \
   --service-name prod-apim \
   --source ./apim-artifacts \
-  --overrides overrides.prod.yaml
+  --overrides configuration.prod.yaml
 ```
 
 ## Preview changes before publishing

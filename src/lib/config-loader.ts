@@ -110,6 +110,12 @@ export async function loadOverrideConfig(filePath: string): Promise<OverrideConf
   try {
     const content = await fs.readFile(filePath, 'utf-8');
     const loaded = yaml.load(content);
+    if (loaded !== null && loaded !== undefined && !isPlainObject(loaded)) {
+      throw new Error(
+        `Override file at ${filePath} must be a YAML mapping (key: value pairs) at the top level, ` +
+        `but got ${Array.isArray(loaded) ? 'an array' : typeof loaded}.`
+      );
+    }
     const parsed = isPlainObject(loaded) ? loaded : {};
     const normalized = normalizeOverrideConfig(parsed);
     
