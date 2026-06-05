@@ -153,10 +153,37 @@ loggers:
 
 ## Override rules
 
-- `name` should correspond to the resource name in extracted artifacts.
+### Names must be consistent
+
+Resource **names** must be the same across all environments. You cannot rename a backend or named value per environment.
+
+```yaml
+# ✅ Correct — same backend name, different URL
+backends:
+  - name: petstore-backend
+    properties:
+      url: "https://petstore-prod.contoso.com"
+
+# ❌ Wrong — you can't rename the backend per environment
+backends:
+  - name: petstore-backend-prod    # This name doesn't exist in artifacts
+    properties:
+      url: "https://petstore-prod.contoso.com"
+```
+
+### Properties can differ
+
+Environment-specific **properties** (URLs, secrets, credentials, resource IDs) are exactly what overrides are for:
+
+- Backend URLs → different per environment
+- Named value secrets → different Key Vault references per environment
+- Logger resource IDs → different Application Insights instances per environment
+- API service URLs → different backend endpoints per environment
+
+### Additional rules
+
 - Name matching is case-insensitive during override apply.
 - Unmatched names are ignored (they do not fail publish).
-- Overrides change resource properties, not resource names.
 - Override files are optional when publishing back to the same environment.
 
 ## Multi-environment setup
@@ -238,15 +265,21 @@ Requirements:
 - A managed identity with `Key Vault Secrets User` access to the vault.
 - `identityClientId` must reference an identity accessible to the APIM instance.
 
+> **Tip:** Use the same secret **name** across all Key Vaults (e.g., `db-conn`). Only the vault URL changes per environment.
+
 ## Common patterns and gotchas
 
-### Missing override entries
+### Pattern: Shared base with environment differences
 
-If a new environment-sensitive resource is added in source artifacts but not added to target override files, source-environment values can be published into other environments.
+Extract from dev (your baseline environment), then override only what differs in staging and prod. Most APIM configuration (policies, operations, products) stays the same — only URLs and credentials change.
 
-### Key Vault permissions
+### Gotcha: Missing override entries
 
-A common failure mode is valid Key Vault references with missing identity permissions on the target vault.
+If you add a new backend in dev but forget to add it to your override files, publish will use the dev URL in production. **Always update all override files when adding new environment-sensitive resources.**
+
+### Gotcha: Key Vault permissions
+
+When using Key Vault references, the APIM managed identity needs access to the Key Vault. A common failure mode: overrides reference a Key Vault but APIM lacks the `Key Vault Secrets User` role on that vault.
 
 ### Dry-run validation
 

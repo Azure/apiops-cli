@@ -110,7 +110,7 @@ apiops publish \
   --resource-group prod-rg \
   --service-name prod-apim \
   --source ./apim-artifacts \
-  --overrides overrides.prod.yaml \
+  --overrides configuration.prod.yaml \
   --dry-run
 ```
 
