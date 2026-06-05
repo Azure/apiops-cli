@@ -735,6 +735,62 @@ describe('resource-publisher', () => {
       expect(client.putResource).toHaveBeenCalledTimes(1);
     });
 
+    describe('ApiOperation text normalization', () => {
+      it('sets displayName and description to empty string when omitted', async () => {
+        const client = createMockClient();
+        const store = createMockStore();
+        store.readResource.mockResolvedValue({
+          name: 'get-orders',
+          properties: {
+            method: 'GET',
+            urlTemplate: '/orders',
+            responses: [],
+          },
+        });
+
+        const descriptor: ResourceDescriptor = {
+          type: ResourceType.ApiOperation,
+          nameParts: ['orders-api', 'get-orders'],
+        };
+
+        await publishResource(client, store, testContext, descriptor, testConfig);
+
+        const putCall = client.putResource.mock.calls[0];
+        const putJson = putCall[2] as Record<string, unknown>;
+        const props = putJson.properties as Record<string, unknown>;
+        expect(props.displayName).toBe('');
+        expect(props.description).toBe('');
+      });
+
+      it('preserves displayName and description when present', async () => {
+        const client = createMockClient();
+        const store = createMockStore();
+        store.readResource.mockResolvedValue({
+          name: 'get-orders',
+          properties: {
+            displayName: 'Get orders',
+            description: 'Returns orders',
+            method: 'GET',
+            urlTemplate: '/orders',
+            responses: [],
+          },
+        });
+
+        const descriptor: ResourceDescriptor = {
+          type: ResourceType.ApiOperation,
+          nameParts: ['orders-api', 'get-orders'],
+        };
+
+        await publishResource(client, store, testContext, descriptor, testConfig);
+
+        const putCall = client.putResource.mock.calls[0];
+        const putJson = putCall[2] as Record<string, unknown>;
+        const props = putJson.properties as Record<string, unknown>;
+        expect(props.displayName).toBe('Get orders');
+        expect(props.description).toBe('Returns orders');
+      });
+    });
+
     describe('API revision handling', () => {
       it('injects sourceApiId for revision APIs', async () => {
         const client = createMockClient();

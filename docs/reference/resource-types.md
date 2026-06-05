@@ -59,7 +59,7 @@ Resources scoped to a specific API.
 | ApiPolicy | `/apis/{name}/policies/policy` | `apis/{0}` | `policy.xml` | Policy applied to all operations in an API |
 | ApiTag | `/apis/{name}/tags/{tag}` | `apis/{0}/tags/{1}` | `tagInformation.json` | Tag applied to an API |
 | ApiDiagnostic | `/apis/{name}/diagnostics/{diag}` | `apis/{0}/diagnostics/{1}` | `diagnosticInformation.json` | Diagnostic settings scoped to an API |
-| ApiOperation | `/apis/{name}/operations/{op}` | `apis/{0}/operations/{1}` | *(none)* | Individual API operation (GET /users, POST /orders, etc.) |
+| ApiOperation | `/apis/{name}/operations/{op}` | `apis/{0}/operations/{1}` | `operationInformation.json` | Individual API operation (GET /users, POST /orders, etc.) |
 | ApiOperationPolicy | `/apis/{name}/operations/{op}/policies/policy` | `apis/{0}/operations/{1}` | `policy.xml` | Policy applied to a specific API operation |
 | ApiSchema | `/apis/{name}/schemas/{schema}` | `apis/{0}/schemas/{1}` | `schemaInformation.json` | Schema definition for request/response validation |
 | ApiRelease | `/apis/{name}/releases/{release}` | `apis/{0}/releases/{1}` | `releaseInformation.json` | API release record (makes a revision current) |
@@ -90,7 +90,7 @@ Some resource types have a `listOmitsFields` behavior — the LIST endpoint omit
 
 - `{0}` is replaced with the resource's display name (sanitized for filesystem use)
 - `{1}` is replaced with the child resource's display name
-- Resources without an info file (e.g., ApiOperation) are represented only by their child resources (e.g., operation policies)
+- Resources without an info file are represented only by their child resources
 - The `ServicePolicy` info file (`policy.xml`) lives at the artifact root, not in a subdirectory
 
 ### Example Directory Tree
@@ -109,7 +109,8 @@ apim-artifacts/
 │       ├── wiki.md                     # ApiWiki
 │       ├── operations/
 │       │   └── get-pets/
-│       │       └── policy.xml          # ApiOperationPolicy
+│       │       ├── operationInformation.json # ApiOperation
+│       │       └── policy.xml               # ApiOperationPolicy
 │       └── tags/
 │           └── pets/
 │               └── tagInformation.json # ApiTag

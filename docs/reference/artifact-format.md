@@ -143,7 +143,7 @@ All 34 APIM resource types and their artifact mappings:
 | ApiPolicy | `apis/{api}` | `policy.xml` |
 | ApiTag | `apis/{api}/tags/{tag}` | `tagInformation.json` |
 | ApiDiagnostic | `apis/{api}/diagnostics/{diagnostic}` | `diagnosticInformation.json` |
-| ApiOperation | `apis/{api}/operations/{operation}` | _(none)_ |
+| ApiOperation | `apis/{api}/operations/{operation}` | `operationInformation.json` |
 | ApiOperationPolicy | `apis/{api}/operations/{operation}` | `policy.xml` |
 | ApiSchema | `apis/{api}/schemas/{schema}` | `schemaInformation.json` |
 | ApiRelease | `apis/{api}/releases/{release}` | `releaseInformation.json` |

@@ -40,6 +40,17 @@ export interface IApimClient {
   ): Promise<Record<string, unknown>>;
 
   /**
+   * Partially update a resource (PATCH).
+   * Only the properties present in the payload are updated.
+   * Returns the response JSON body.
+   */
+  patchResource(
+    context: ApimServiceContext,
+    descriptor: ResourceDescriptor,
+    payload: Record<string, unknown>
+  ): Promise<Record<string, unknown>>;
+
+  /**
    * Delete a resource (DELETE).
    * Returns true if deleted, false if already absent (404).
    * Polls provisioningState for long-running operations.
