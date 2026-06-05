@@ -434,11 +434,7 @@ async function reconcileOperationsAfterSpecImport(
       }
     }
 
-    // Strip schemaId/typeName from representations in request/responses.
-    // These reference source-specific auto-generated schema IDs that won't exist
-    // on the target after a fresh spec import. APIM re-links representations to
-    // its own schema IDs during import, so sending stale source IDs causes APIM
-    // to silently drop the fields.
+    // Drop source schema refs; APIM rebinds these on spec import.
     stripRepresentationSchemaRefs(patchProps);
 
     if (Object.keys(patchProps).length === 0) return;
@@ -463,15 +459,7 @@ async function reconcileOperationsAfterSpecImport(
   }
 }
 
-/**
- * Strip schemaId and typeName from all representations in request/responses.
- * After a spec import, APIM assigns its own auto-generated schema IDs to
- * operation representations. The persisted JSON references the *source* instance's
- * schema IDs, which don't exist on the target. Sending them in a PATCH causes APIM
- * to silently drop the fields. By stripping them, we let APIM keep its own
- * freshly-assigned schema references intact while still reconciling other metadata
- * (displayName, description, templateParameters, etc.).
- */
+/** Remove schema refs from request/response representations before PATCH. */
 function stripRepresentationSchemaRefs(patchProps: Record<string, unknown>): void {
   const SCHEMA_REF_FIELDS = ['schemaId', 'typeName'];
 
@@ -486,14 +474,14 @@ function stripRepresentationSchemaRefs(patchProps: Record<string, unknown>): voi
     }
   }
 
-  // Strip from request.representations
+  // request.representations
   const request = patchProps.request;
   if (request && typeof request === 'object') {
     const req = request as Record<string, unknown>;
     stripFromRepresentations(req.representations);
   }
 
-  // Strip from responses[].representations
+  // responses[].representations
   const responses = patchProps.responses;
   if (Array.isArray(responses)) {
     for (const response of responses) {
