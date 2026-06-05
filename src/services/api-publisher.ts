@@ -434,6 +434,13 @@ async function reconcileOperationsAfterSpecImport(
       }
     }
 
+    // Strip schemaId/typeName from representations in request/responses.
+    // These reference source-specific auto-generated schema IDs that won't exist
+    // on the target after a fresh spec import. APIM re-links representations to
+    // its own schema IDs during import, so sending stale source IDs causes APIM
+    // to silently drop the fields.
+    stripRepresentationSchemaRefs(patchProps);
+
     if (Object.keys(patchProps).length === 0) return;
 
     const patchBody: Record<string, unknown> = { properties: patchProps };
@@ -453,6 +460,47 @@ async function reconcileOperationsAfterSpecImport(
       `Reconciling ${tasks.length} operation(s) after spec import for "${getNamePart(apiDescriptor.nameParts, 0)}"`
     );
     await runParallel(tasks, 5);
+  }
+}
+
+/**
+ * Strip schemaId and typeName from all representations in request/responses.
+ * After a spec import, APIM assigns its own auto-generated schema IDs to
+ * operation representations. The persisted JSON references the *source* instance's
+ * schema IDs, which don't exist on the target. Sending them in a PATCH causes APIM
+ * to silently drop the fields. By stripping them, we let APIM keep its own
+ * freshly-assigned schema references intact while still reconciling other metadata
+ * (displayName, description, templateParameters, etc.).
+ */
+function stripRepresentationSchemaRefs(patchProps: Record<string, unknown>): void {
+  const SCHEMA_REF_FIELDS = ['schemaId', 'typeName'];
+
+  function stripFromRepresentations(representations: unknown): void {
+    if (!Array.isArray(representations)) return;
+    for (const rep of representations) {
+      if (rep && typeof rep === 'object') {
+        for (const field of SCHEMA_REF_FIELDS) {
+          delete (rep as Record<string, unknown>)[field];
+        }
+      }
+    }
+  }
+
+  // Strip from request.representations
+  const request = patchProps.request;
+  if (request && typeof request === 'object') {
+    const req = request as Record<string, unknown>;
+    stripFromRepresentations(req.representations);
+  }
+
+  // Strip from responses[].representations
+  const responses = patchProps.responses;
+  if (Array.isArray(responses)) {
+    for (const response of responses) {
+      if (response && typeof response === 'object') {
+        stripFromRepresentations((response as Record<string, unknown>).representations);
+      }
+    }
   }
 }
 
