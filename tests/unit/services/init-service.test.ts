@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { initService } from '../../../src/services/init-service.js';
 import { InitConfig } from '../../../src/models/config.js';
 import * as fs from 'fs/promises';
+import type { PathLike } from 'node:fs';
 import * as path from 'path';
 
 // Mock the file system
@@ -62,7 +63,7 @@ describe('init-service', () => {
     vi.mocked(fs.copyFile).mockResolvedValue(undefined);
     
     // Mock fs.access: the CLI tarball exists, all other files don't
-    vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
+    vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
       if (filePath.toString() === TEST_CLI_PACKAGE_RESOLVED) {
         return Promise.resolve();
       }
@@ -199,7 +200,7 @@ describe('init-service', () => {
 
     it('should throw when GitHub Actions workflows exist and --force is not set', async () => {
       // Mock file exists for extract workflow and the CLI tarball
-      vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
+      vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
         if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('run-apim-extractor.yml')) {
           return Promise.resolve();
@@ -224,7 +225,7 @@ describe('init-service', () => {
 
     it('should overwrite when GitHub Actions workflows exist and --force is set', async () => {
       // Mock file exists for extract workflow and the CLI tarball
-      vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
+      vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
         if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('run-apim-extractor.yml')) {
           return Promise.resolve();
@@ -248,7 +249,7 @@ describe('init-service', () => {
 
     it('should throw when config files exist and --force is not set', async () => {
       // Mock file exists for filter config and the CLI tarball
-      vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
+      vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
         if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('configuration.extract.yaml')) {
           return Promise.resolve();
@@ -273,7 +274,7 @@ describe('init-service', () => {
 
     it('should overwrite when config files exist and --force is set', async () => {
       // Mock file exists for filter config and the CLI tarball
-      vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
+      vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
         if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('configuration.extract.yaml')) {
           return Promise.resolve();
@@ -354,6 +355,29 @@ describe('init-service', () => {
       const content = promptCalls[0][1] as string;
       expect(content).toContain('Setup GitHub Actions Identity');
       expect(content).toContain('gh secret set');
+    });
+
+    it('should generate Copilot identity setup prompt for Azure DevOps', async () => {
+      const config: InitConfig = {
+        ciProvider: 'azure-devops',
+        nonInteractive: true,
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+        outputDir: '/test',
+        cliPackage: TEST_CLI_PACKAGE,
+        force: false,
+      };
+
+      const result = await initService.run(config);
+
+      expect(result.configs).toContain('.github/prompts/apiops-setup-identity.prompt.md');
+      const promptCalls = vi.mocked(fs.writeFile).mock.calls.filter(
+        (call) => call[0] === path.join('/test', '.github/prompts/apiops-setup-identity.prompt.md')
+      );
+      expect(promptCalls).toHaveLength(1);
+      const content = promptCalls[0][1] as string;
+      expect(content).toContain('Setup Azure DevOps Identity for APIOps');
+      expect(content).toContain('az devops service-endpoint azurerm create');
     });
 
     it('should copy CLI tarball into .apiops directory', async () => {
@@ -466,7 +490,7 @@ describe('init-service', () => {
     it('should throw if CLI package is not a .tgz file', async () => {
       const badPath = '/packages/apiops-0.1.0.zip';
       const badPathResolved = path.resolve(badPath);
-      vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
+      vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         if (filePath.toString() === badPathResolved) {
           return Promise.resolve();
         }
@@ -488,14 +512,28 @@ describe('init-service', () => {
       );
     });
 
-    it('should throw when package.json already exists and --force is not set', async () => {
-      vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
+    it('should merge dependency when package.json already exists in local mode', async () => {
+      vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
         if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('package.json')) {
           return Promise.resolve();
         }
         throw new Error('ENOENT');
       });
+
+      vi.mocked(fs.readFile).mockResolvedValue(
+        JSON.stringify(
+          {
+            name: 'existing-repo',
+            version: '2.0.0',
+            private: true,
+            scripts: { lint: 'eslint .' },
+            dependencies: { lodash: '^4.17.21', apiops: 'file:.apiops/old.tgz' },
+          },
+          null,
+          2
+        )
+      );
 
       const config: InitConfig = {
         ciProvider: 'github-actions',
@@ -507,19 +545,41 @@ describe('init-service', () => {
         force: false,
       };
 
-      await expect(initService.run(config)).rejects.toThrow(
-        'Use --force to overwrite existing files'
+      await expect(initService.run(config)).resolves.toBeDefined();
+
+      const pkgCalls = vi.mocked(fs.writeFile).mock.calls.filter(
+        (call) => call[0] === path.join('/test', 'package.json')
       );
+      expect(pkgCalls).toHaveLength(1);
+      const content = pkgCalls[0][1] as string;
+      const pkg = JSON.parse(content);
+      expect(pkg.name).toBe('existing-repo');
+      expect(pkg.scripts).toEqual({ lint: 'eslint .' });
+      expect(pkg.dependencies.lodash).toBe('^4.17.21');
+      expect(pkg.dependencies.apiops).toContain('file:.apiops/apiops-0.1.0.tgz');
     });
 
-    it('should overwrite when package.json already exists and --force is set', async () => {
-      vi.mocked(fs.access).mockImplementation(async (filePath: fs.PathLike) => {
+    it('should merge dependency when package.json already exists in npm mode', async () => {
+      vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
-        if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('package.json')) {
+        if (p.includes('package.json')) {
           return Promise.resolve();
         }
         throw new Error('ENOENT');
       });
+
+      vi.mocked(fs.readFile).mockResolvedValue(
+        JSON.stringify(
+          {
+            name: 'existing-repo',
+            version: '2.0.0',
+            private: true,
+            dependencies: { lodash: '^4.17.21' },
+          },
+          null,
+          2
+        )
+      );
 
       const config: InitConfig = {
         ciProvider: 'github-actions',
@@ -527,12 +587,20 @@ describe('init-service', () => {
         artifactDir: './apim-artifacts',
         environments: ['dev'],
         outputDir: '/test',
-        cliPackage: TEST_CLI_PACKAGE,
-        force: true,
+        // cliPackage is omitted — npm mode
+        force: false,
       };
 
-      // Should not throw, just warn and proceed
       await expect(initService.run(config)).resolves.toBeDefined();
+
+      const pkgCalls = vi.mocked(fs.writeFile).mock.calls.filter(
+        (call) => call[0] === path.join('/test', 'package.json')
+      );
+      expect(pkgCalls).toHaveLength(1);
+      const content = pkgCalls[0][1] as string;
+      const pkg = JSON.parse(content);
+      expect(pkg.dependencies.lodash).toBe('^4.17.21');
+      expect(pkg.dependencies['@peterhauge/apiops-cli']).toBe('latest');
     });
   });
 });

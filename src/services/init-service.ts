@@ -176,6 +176,10 @@ class InitServiceImpl implements InitService {
         config.outputDir,
         'IDENTITY-SETUP-AZDO.md'
       );
+      const promptFile = path.join(
+        config.outputDir,
+        '.github/prompts/apiops-setup-identity.prompt.md'
+      );
 
       if (await this.fileExists(extractPipeline)) {
         conflictingFiles.push(extractPipeline);
@@ -186,12 +190,9 @@ class InitServiceImpl implements InitService {
       if (await this.fileExists(identityGuide)) {
         conflictingFiles.push(identityGuide);
       }
-    }
-
-    // Check for package.json
-    const packageJsonPath = path.join(config.outputDir, 'package.json');
-    if (await this.fileExists(packageJsonPath)) {
-      conflictingFiles.push(packageJsonPath);
+      if (await this.fileExists(promptFile)) {
+        conflictingFiles.push(promptFile);
+      }
     }
 
     // Check for config files
@@ -270,7 +271,7 @@ class InitServiceImpl implements InitService {
     }
 
     const packageJsonPath = path.join(config.outputDir, 'package.json');
-    await fs.writeFile(packageJsonPath, packageJsonContent);
+    await this.writeOrMergePackageJson(packageJsonPath, packageJsonContent);
     generatedFiles.configs.push('package.json');
 
     // Generate pipeline files
@@ -315,15 +316,7 @@ class InitServiceImpl implements InitService {
     await fs.writeFile(publishPath, publishContent);
     generatedFiles.pipelines.push('.github/workflows/run-apim-publisher.yml');
 
-    // Copilot identity setup prompt — goes in .github/prompts/
-    const promptContent = generateIdentitySetupPrompt({
-      environments: config.environments,
-    });
-    const promptsDir = path.join(config.outputDir, '.github/prompts');
-    await fs.mkdir(promptsDir, { recursive: true });
-    const promptPath = path.join(promptsDir, 'apiops-setup-identity.prompt.md');
-    await fs.writeFile(promptPath, promptContent);
-    generatedFiles.configs.push('.github/prompts/apiops-setup-identity.prompt.md');
+    await this.generateCopilotIdentitySetupPrompt(config, generatedFiles);
   }
 
   /**
@@ -354,6 +347,23 @@ class InitServiceImpl implements InitService {
     const publishPath = path.join(pipelinesDir, 'run-apim-publisher.yml');
     await fs.writeFile(publishPath, publishContent);
     generatedFiles.pipelines.push('.azdo/pipelines/run-apim-publisher.yml');
+
+    await this.generateCopilotIdentitySetupPrompt(config, generatedFiles);
+  }
+
+  private async generateCopilotIdentitySetupPrompt(
+    config: InitConfig,
+    generatedFiles: GeneratedFiles
+  ): Promise<void> {
+    const promptContent = generateIdentitySetupPrompt({
+      environments: config.environments,
+      ciProvider: config.ciProvider,
+    });
+    const promptsDir = path.join(config.outputDir, '.github/prompts');
+    await fs.mkdir(promptsDir, { recursive: true });
+    const promptPath = path.join(promptsDir, 'apiops-setup-identity.prompt.md');
+    await fs.writeFile(promptPath, promptContent);
+    generatedFiles.configs.push('.github/prompts/apiops-setup-identity.prompt.md');
   }
 
   /**
@@ -424,6 +434,49 @@ class InitServiceImpl implements InitService {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Write package.json if missing, otherwise merge APIOps dependency into existing content.
+   */
+  private async writeOrMergePackageJson(
+    packageJsonPath: string,
+    generatedPackageJsonContent: string
+  ): Promise<void> {
+    const generatedPkg = JSON.parse(generatedPackageJsonContent) as {
+      dependencies?: Record<string, string>;
+    };
+
+    if (!await this.fileExists(packageJsonPath)) {
+      await fs.writeFile(packageJsonPath, generatedPackageJsonContent);
+      return;
+    }
+
+    const existingRaw = await fs.readFile(packageJsonPath, 'utf8');
+    let existingPkg: Record<string, unknown>;
+    try {
+      existingPkg = JSON.parse(existingRaw) as Record<string, unknown>;
+    } catch {
+      throw new Error(
+        `Existing package.json is not valid JSON: ${packageJsonPath}`
+      );
+    }
+
+    const existingDeps = (
+      typeof existingPkg.dependencies === 'object' &&
+      existingPkg.dependencies !== null
+        ? existingPkg.dependencies
+        : {}
+    ) as Record<string, string>;
+
+    const generatedDeps = generatedPkg.dependencies ?? {};
+
+    existingPkg.dependencies = {
+      ...existingDeps,
+      ...generatedDeps,
+    };
+
+    await fs.writeFile(packageJsonPath, `${JSON.stringify(existingPkg, null, 2)}\n`);
   }
 }
 

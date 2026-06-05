@@ -14,6 +14,9 @@
   ],
   "readme": "README.md",
   "scripts": {
+    "prelint": "node scripts/embed-markdown-templates.mjs",
+    "prebuild": "node scripts/embed-markdown-templates.mjs",
+    "pretest": "node scripts/embed-markdown-templates.mjs",
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
