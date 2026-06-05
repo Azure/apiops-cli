@@ -119,13 +119,6 @@ export async function publishResource(
       json = normalizeApiOperationTextFields(json);
     }
 
-    // API operations: enforce explicit empty strings for text fields when omitted.
-    // APIM may synthesize description from displayName when description is absent,
-    // causing extract/publish round-trip drift.
-    if (descriptor.type === ResourceType.ApiOperation) {
-      json = normalizeApiOperationTextFields(json);
-    }
-
     // APIM resource payloads can reference NamedValues using {{name}} syntax.
     // Logger credentials, Backend credentials, and other properties support this.
     // Canonicalize all {{token}} casing to actual NamedValue artifact names so
