@@ -1,23 +1,23 @@
-# Migration from v1 Toolkit
+# Migration from APIOps Toolkit
 
-Migrate from the [Azure/apiops](https://github.com/Azure/apiops) toolkit (v1) to apiops-cli (v2) — same concepts, simpler tooling, more features.
+Migrate from the [APIOps Toolkit](https://github.com/Azure/apiops) to apiops-cli — same concepts, simpler tooling, more features.
 
 ## Why Migrate?
 
-The v1 toolkit uses separate Extractor and Publisher binaries orchestrated by pipeline templates. It works, but:
+The APIOps Toolkit uses separate Extractor and Publisher binaries orchestrated by pipeline templates. It works, but:
 
 - Requires Docker or the .NET SDK to run
 - Uses two separate configuration files and complex pipeline YAML
 - Supports ~20 resource types
 - Has no built-in dry-run, incremental publish, or scaffolding command
 
-apiops-cli (v2) is a single Node.js CLI that covers the full workflow with less setup.
+apiops-cli is a single Node.js CLI that covers the full workflow with less setup.
 
 ---
 
 ## Key Differences
 
-| Feature | v1 (Azure/apiops) | v2 (apiops-cli) |
+| Feature | APIOps Toolkit | apiops-cli |
 |---------|-------------------|-----------------|
 | **Runtime** | .NET SDK or Docker | Node.js 22+ |
 | **CLI** | Separate Extractor/Publisher binaries | Single `apiops` CLI |
@@ -33,9 +33,9 @@ apiops-cli (v2) is a single Node.js CLI that covers the full workflow with less 
 | **Resource types** | ~20 | 34 (see below) |
 | **Pipeline targets** | GitHub Actions, Azure DevOps | GitHub Actions, Azure DevOps |
 
-### Additional resource types in v2
+### Additional resource types in apiops-cli
 
-v2 supports all v1 resource types plus: `GlobalSchema`, `PolicyRestriction`, `Documentation`, `ApiSchema`, `ApiRelease`, `ApiTagDescription`, `ApiWiki`, `ProductWiki`, `GraphQLResolver`, `McpServer`, and more.
+apiops-cli supports all APIOps Toolkit resource types plus: `GlobalSchema`, `PolicyRestriction`, `Documentation`, `ApiSchema`, `ApiRelease`, `ApiTagDescription`, `ApiWiki`, `ProductWiki`, `GraphQLResolver`, `McpServer`, and more.
 
 ---
 
@@ -70,7 +70,7 @@ This creates:
 
 ### 3. Verify artifact compatibility
 
-**Your existing extracted artifacts should work as-is with v2.** The artifact format is backward compatible — v2 reads the same `apiInformation.json`, `backendInformation.json`, `policy.xml`, and other files that v1 produces.
+**Your existing extracted artifacts should work as-is with apiops-cli.** The artifact format is backward compatible — apiops-cli reads the same `apiInformation.json`, `backendInformation.json`, `policy.xml`, and other files that the APIOps Toolkit produces.
 
 Test by running a dry-run against your existing artifacts:
 
@@ -86,11 +86,11 @@ If the dry-run shows the expected resources, your artifacts are compatible.
 
 ### 4. Update pipeline YAML
 
-Replace the v1 pipeline tasks/actions with v2 CLI commands.
+Replace the APIOps Toolkit pipeline tasks/actions with apiops-cli commands.
 
 #### GitHub Actions
 
-**v1 (before):**
+**APIOps Toolkit (before):**
 
 ```yaml
 - name: Run Publisher
@@ -102,7 +102,7 @@ Replace the v1 pipeline tasks/actions with v2 CLI commands.
     CONFIGURATION_YAML_PATH: configuration.publisher.yaml
 ```
 
-**v2 (after):**
+**apiops-cli (after):**
 
 ```yaml
 - name: Publish APIs
@@ -116,7 +116,7 @@ Replace the v1 pipeline tasks/actions with v2 CLI commands.
 
 #### Azure DevOps
 
-**v1 (before):**
+**APIOps Toolkit (before):**
 
 ```yaml
 - task: AzureCLI@2
@@ -126,7 +126,7 @@ Replace the v1 pipeline tasks/actions with v2 CLI commands.
         --configuration-yaml-path configuration.publisher.yaml
 ```
 
-**v2 (after):**
+**apiops-cli (after):**
 
 ```yaml
 - task: AzureCLI@2
@@ -145,7 +145,7 @@ Replace the v1 pipeline tasks/actions with v2 CLI commands.
 
 #### Extractor configuration
 
-**v1** (`configuration.extractor.yaml`):
+**APIOps Toolkit** (`configuration.extractor.yaml`):
 
 ```yaml
 apis:
@@ -153,7 +153,7 @@ apis:
   - orders-api
 ```
 
-**v2** (`configuration.extractor.yaml` — same format and file name):
+**apiops-cli** (`configuration.extractor.yaml` — same format and file name):
 
 ```yaml
 apis:
@@ -161,7 +161,7 @@ apis:
   - orders-api
 ```
 
-The filter YAML format is fully compatible with v1. You can use your existing `configuration.extractor.yaml` as-is with the `--filter` flag:
+The filter YAML format is fully compatible with the APIOps Toolkit. You can use your existing `configuration.extractor.yaml` as-is with the `--filter` flag:
 
 ```bash
 apiops extract \
@@ -172,9 +172,9 @@ apiops extract \
 
 #### Publisher configuration
 
-v1's `configuration.publisher.yaml` maps directly to v2's override files. The structure is the same:
+The APIOps Toolkit's `configuration.publisher.yaml` maps directly to apiops-cli's override files. The structure is the same:
 
-**v1:**
+**APIOps Toolkit:**
 
 ```yaml
 namedValues:
@@ -183,7 +183,7 @@ namedValues:
       value: "prod-value"
 ```
 
-**v2** (`overrides.prod.yaml` — same structure):
+**apiops-cli** (`overrides.prod.yaml` — same structure):
 
 ```yaml
 namedValues:
@@ -203,7 +203,7 @@ apiops publish \
 
 ### 6. Test with dry-run
 
-Before your first real publish with v2, always preview:
+Before your first real publish with apiops-cli, always preview:
 
 ```bash
 apiops publish \
@@ -220,7 +220,7 @@ Review the output to confirm the correct resources would be created, updated, or
 
 ## New Features to Adopt
 
-After migration, take advantage of v2-only capabilities:
+After migration, take advantage of apiops-cli capabilities:
 
 ### Incremental publish
 
@@ -252,7 +252,7 @@ apiops publish --format json ... | jq '.summary'
 
 ### Transitive dependency filtering
 
-v2 automatically includes resources that your filtered APIs depend on (backends, named values, policy fragments). No need to manually list every dependency.
+apiops-cli automatically includes resources that your filtered APIs depend on (backends, named values, policy fragments). No need to manually list every dependency.
 
 ```bash
 apiops extract --filter filter.yaml  # includes deps by default
@@ -276,10 +276,10 @@ apiops extract --cloud usgov ...
 |-------|-------|-----|
 | `apiops: command not found` | CLI not installed globally | Run `npm install -g @peterhauge/apiops-cli` |
 | Artifacts not recognized | Unexpected directory structure | Verify your artifacts follow the standard layout (`apis/{name}/apiInformation.json`, etc.) |
-| Authentication fails in pipeline | v1 used service connection env vars; v2 uses `DefaultAzureCredential` | See [Authentication Guide](./authentication.md). For GitHub Actions, use `azure/login` with OIDC. For Azure DevOps, use `AzureCLI@2` task. |
-| Override values not applied | Wrong override file format or path | Check YAML structure matches v2 format. Pass with `--overrides <path>`. |
-| Extra resources published | v2 supports more resource types than v1 | This is expected. v2 extracts additional resource types (e.g., `GlobalSchema`, `ApiWiki`). Review with `--dry-run`. |
-| `--delete-unmatched` removes unexpected resources | v2 sees more resource types | Run `--dry-run --delete-unmatched` first. Consider using `--commit-id` for safer incremental deploys. |
+| Authentication fails in pipeline | APIOps Toolkit used service connection env vars; apiops-cli uses `DefaultAzureCredential` | See [Authentication Guide](./authentication.md). For GitHub Actions, use `azure/login` with OIDC. For Azure DevOps, use `AzureCLI@2` task. |
+| Override values not applied | Wrong override file format or path | Check YAML structure matches apiops-cli format. Pass with `--overrides <path>`. |
+| Extra resources published | apiops-cli supports more resource types than the APIOps Toolkit | This is expected. apiops-cli extracts additional resource types (e.g., `GlobalSchema`, `ApiWiki`). Review with `--dry-run`. |
+| `--delete-unmatched` removes unexpected resources | apiops-cli sees more resource types | Run `--dry-run --delete-unmatched` first. Consider using `--commit-id` for safer incremental deploys. |
 
 ---
 
