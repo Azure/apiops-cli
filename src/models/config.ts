@@ -19,22 +19,22 @@ export interface ExtractConfig {
 }
 
 export interface FilterConfig {
-  apiNames?: string[];
-  backendNames?: string[];
-  productNames?: string[];
-  namedValueNames?: string[];
-  loggerNames?: string[];
-  diagnosticNames?: string[];
-  tagNames?: string[];
-  policyFragmentNames?: string[];
-  gatewayNames?: string[];
-  versionSetNames?: string[];
-  groupNames?: string[];
-  subscriptionNames?: string[];
-  schemaNames?: string[];
-  policyRestrictionNames?: string[];
-  documentationNames?: string[];
-  workspaceNames?: string[];
+  apis?: string[];
+  backends?: string[];
+  products?: string[];
+  namedValues?: string[];
+  loggers?: string[];
+  diagnostics?: string[];
+  tags?: string[];
+  policyFragments?: string[];
+  gateways?: string[];
+  versionSets?: string[];
+  groups?: string[];
+  subscriptions?: string[];
+  schemas?: string[];
+  policyRestrictions?: string[];
+  documentations?: string[];
+  workspaces?: string[];
 }
 
 export interface PublishConfig {

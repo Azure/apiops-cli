@@ -42,53 +42,53 @@ export async function loadFilterConfig(filePath: string): Promise<FilterConfig |
     // Validate structure — each field must be an array of strings
     const config: FilterConfig = {};
 
-    if (parsed.apiNames !== undefined) {
-      config.apiNames = assertStringArray(parsed.apiNames, 'apiNames');
+    if (parsed.apis !== undefined) {
+      config.apis = assertStringArray(parsed.apis, 'apis');
     }
-    if (parsed.backendNames !== undefined) {
-      config.backendNames = assertStringArray(parsed.backendNames, 'backendNames');
+    if (parsed.backends !== undefined) {
+      config.backends = assertStringArray(parsed.backends, 'backends');
     }
-    if (parsed.productNames !== undefined) {
-      config.productNames = assertStringArray(parsed.productNames, 'productNames');
+    if (parsed.products !== undefined) {
+      config.products = assertStringArray(parsed.products, 'products');
     }
-    if (parsed.namedValueNames !== undefined) {
-      config.namedValueNames = assertStringArray(parsed.namedValueNames, 'namedValueNames');
+    if (parsed.namedValues !== undefined) {
+      config.namedValues = assertStringArray(parsed.namedValues, 'namedValues');
     }
-    if (parsed.loggerNames !== undefined) {
-      config.loggerNames = assertStringArray(parsed.loggerNames, 'loggerNames');
+    if (parsed.loggers !== undefined) {
+      config.loggers = assertStringArray(parsed.loggers, 'loggers');
     }
-    if (parsed.diagnosticNames !== undefined) {
-      config.diagnosticNames = assertStringArray(parsed.diagnosticNames, 'diagnosticNames');
+    if (parsed.diagnostics !== undefined) {
+      config.diagnostics = assertStringArray(parsed.diagnostics, 'diagnostics');
     }
-    if (parsed.tagNames !== undefined) {
-      config.tagNames = assertStringArray(parsed.tagNames, 'tagNames');
+    if (parsed.tags !== undefined) {
+      config.tags = assertStringArray(parsed.tags, 'tags');
     }
-    if (parsed.policyFragmentNames !== undefined) {
-      config.policyFragmentNames = assertStringArray(parsed.policyFragmentNames, 'policyFragmentNames');
+    if (parsed.policyFragments !== undefined) {
+      config.policyFragments = assertStringArray(parsed.policyFragments, 'policyFragments');
     }
-    if (parsed.gatewayNames !== undefined) {
-      config.gatewayNames = assertStringArray(parsed.gatewayNames, 'gatewayNames');
+    if (parsed.gateways !== undefined) {
+      config.gateways = assertStringArray(parsed.gateways, 'gateways');
     }
-    if (parsed.versionSetNames !== undefined) {
-      config.versionSetNames = assertStringArray(parsed.versionSetNames, 'versionSetNames');
+    if (parsed.versionSets !== undefined) {
+      config.versionSets = assertStringArray(parsed.versionSets, 'versionSets');
     }
-    if (parsed.groupNames !== undefined) {
-      config.groupNames = assertStringArray(parsed.groupNames, 'groupNames');
+    if (parsed.groups !== undefined) {
+      config.groups = assertStringArray(parsed.groups, 'groups');
     }
-    if (parsed.subscriptionNames !== undefined) {
-      config.subscriptionNames = assertStringArray(parsed.subscriptionNames, 'subscriptionNames');
+    if (parsed.subscriptions !== undefined) {
+      config.subscriptions = assertStringArray(parsed.subscriptions, 'subscriptions');
     }
-    if (parsed.schemaNames !== undefined) {
-      config.schemaNames = assertStringArray(parsed.schemaNames, 'schemaNames');
+    if (parsed.schemas !== undefined) {
+      config.schemas = assertStringArray(parsed.schemas, 'schemas');
     }
-    if (parsed.policyRestrictionNames !== undefined) {
-      config.policyRestrictionNames = assertStringArray(parsed.policyRestrictionNames, 'policyRestrictionNames');
+    if (parsed.policyRestrictions !== undefined) {
+      config.policyRestrictions = assertStringArray(parsed.policyRestrictions, 'policyRestrictions');
     }
-    if (parsed.documentationNames !== undefined) {
-      config.documentationNames = assertStringArray(parsed.documentationNames, 'documentationNames');
+    if (parsed.documentations !== undefined) {
+      config.documentations = assertStringArray(parsed.documentations, 'documentations');
     }
-    if (parsed.workspaceNames !== undefined) {
-      config.workspaceNames = assertStringArray(parsed.workspaceNames, 'workspaceNames');
+    if (parsed.workspaces !== undefined) {
+      config.workspaces = assertStringArray(parsed.workspaces, 'workspaces');
     }
     
     logger.debug(`Loaded filter config from ${filePath}`);
@@ -132,9 +132,22 @@ export async function loadOverrideConfig(filePath: string): Promise<OverrideConf
 
 /**
  * Normalize toolkit-format override sections into the internal keyed-map shape.
+ * Ignores `apimServiceName` (Toolkit uses it for target APIM instance; CLI uses --service-name flag instead).
  */
 function normalizeOverrideConfig(parsed: Record<string, unknown>): OverrideConfig {
   const normalized: OverrideConfig = {};
+
+  // Log and ignore apimServiceName — Toolkit uses this for target APIM instance,
+  // but CLI uses --service-name flag instead.
+  if (parsed.apimServiceName !== undefined) {
+    const serviceName = typeof parsed.apimServiceName === 'string'
+      ? parsed.apimServiceName
+      : JSON.stringify(parsed.apimServiceName);
+    logger.info(
+      `Override config contains 'apimServiceName' ("${serviceName}"). ` +
+      `The CLI uses --service-name instead; this field will be ignored.`
+    );
+  }
 
   const namedValues = normalizeOverrideSection(parsed.namedValues, 'namedValues');
   const backends = normalizeOverrideSection(parsed.backends, 'backends');

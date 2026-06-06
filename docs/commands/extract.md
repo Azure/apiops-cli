@@ -34,7 +34,7 @@ apiops extract \
   --subscription-id 00000000-0000-0000-0000-000000000000 \
   --resource-group my-rg \
   --service-name my-apim \
-  --filter ./configuration.extract.yaml
+  --filter ./configuration.extractor.yaml
 ```
 
 ### Extract without transitive dependencies
@@ -98,23 +98,23 @@ By default, `apiops extract` exports **all** resources from the APIM instance (3
 To extract only specific resources, pass a YAML filter file with `--filter`:
 
 ```yaml
-# configuration.extract.yaml
-apiNames:
+# configuration.extractor.yaml
+apis:
   - echo-api
   - petstore-api
-productNames:
+products:
   - starter
-backendNames:
+backends:
   - backend-api
-namedValueNames:
+namedValues:
   - api-key
-tagNames:
+tags:
   - production
-policyFragmentNames:
+policyFragments:
   - rate-limit-fragment
-loggerNames:
+loggers:
   - appinsights-logger
-diagnosticNames:
+diagnostics:
   - applicationinsights
 ```
 
@@ -124,22 +124,22 @@ All 16 supported filter keys:
 
 | Filter key | Resource type |
 |------------|---------------|
-| `apiNames` | APIs |
-| `backendNames` | Backends |
-| `productNames` | Products |
-| `namedValueNames` | Named values |
-| `loggerNames` | Loggers |
-| `diagnosticNames` | Diagnostics |
-| `tagNames` | Tags |
-| `policyFragmentNames` | Policy fragments |
-| `gatewayNames` | Gateways |
-| `versionSetNames` | API version sets |
-| `groupNames` | Groups |
-| `subscriptionNames` | Subscriptions |
-| `schemaNames` | Schemas |
-| `policyRestrictionNames` | Policy restrictions |
-| `documentationNames` | Documentation resources |
-| `workspaceNames` | Workspaces |
+| `apis` | APIs |
+| `backends` | Backends |
+| `products` | Products |
+| `namedValues` | Named values |
+| `loggers` | Loggers |
+| `diagnostics` | Diagnostics |
+| `tags` | Tags |
+| `policyFragments` | Policy fragments |
+| `gateways` | Gateways |
+| `versionSets` | API version sets |
+| `groups` | Groups |
+| `subscriptions` | Subscriptions |
+| `schemas` | Schemas |
+| `policyRestrictions` | Policy restrictions |
+| `documentations` | Documentation resources |
+| `workspaces` | Workspaces |
 
 ### Transitive dependencies
 

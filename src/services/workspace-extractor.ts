@@ -49,8 +49,8 @@ export async function extractWorkspaces(
 ): Promise<WorkspaceExtractionResult[]> {
   const results: WorkspaceExtractionResult[] = [];
   let workspaceNames: string[];
-  if (filter?.workspaceNames && filter.workspaceNames.length > 0) {
-    workspaceNames = filter.workspaceNames;
+  if (filter?.workspaces && filter.workspaces.length > 0) {
+    workspaceNames = filter.workspaces;
   } else {
     const discovered: string[] = [];
     for await (const item of client.listResources(context, ResourceType.Workspace)) {

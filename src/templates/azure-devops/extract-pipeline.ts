@@ -21,7 +21,7 @@ parameters:
     default: 'Extract All APIs'
     values:
       - 'Extract All APIs'
-      - 'configuration.extract.yaml'
+      - 'configuration.extractor.yaml'
   - name: resourceGroup
     type: string
     displayName: 'Azure Resource Group'
@@ -72,7 +72,7 @@ steps:
           --resource-group \${{ parameters.resourceGroup }} \\
           --service-name \${{ parameters.serviceName }} \\
           --output ${config.artifactDir} \\
-          --filter configuration.extract.yaml \\
+          --filter configuration.extractor.yaml \\
           --subscription-id $(AZURE_SUBSCRIPTION_ID)
 
   - task: PublishPipelineArtifact@1

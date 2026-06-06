@@ -17,7 +17,7 @@ flowchart TD
 |----------|--------|---------|
 | **1 (highest)** | CLI flags | `--resource-group my-rg` |
 | **2** | Environment variables | `AZURE_SUBSCRIPTION_ID=...` |
-| **3** | YAML config files | `configuration.extract.yaml`, `configuration.dev.yaml` |
+| **3** | YAML config files | `configuration.extractor.yaml`, `configuration.dev.yaml` |
 | **4 (lowest)** | Default values | `--output ./apim-artifacts` |
 
 For example, if `AZURE_SUBSCRIPTION_ID` is set as an environment variable but `--subscription-id` is also passed on the command line, the CLI flag wins.
@@ -109,16 +109,16 @@ See [Authentication Guide](../guides/authentication.md) for details on each auth
 
 ### Filter Configuration
 
-**File:** `configuration.extract.yaml` (or any path passed to `--filter`)
+**File:** `configuration.extractor.yaml` (or any path passed to `--filter`)
 
 Controls which resources are extracted. See [Filtering Resources](../guides/filtering-resources.md) for the full reference.
 
 ```yaml
-# configuration.extract.yaml
-apiNames:
+# configuration.extractor.yaml
+apis:
   - petstore-api
   - orders-api
-backendNames:
+backends:
   - petstore-backend
 ```
 

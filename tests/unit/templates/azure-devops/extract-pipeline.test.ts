@@ -25,7 +25,7 @@ describe('azure-devops/extract-pipeline', () => {
       const pipeline = generateExtractPipeline({ artifactDir: './apim-artifacts' });
       expect(pipeline).toContain('name: CONFIGURATION_YAML_PATH');
       expect(pipeline).toContain("'Extract All APIs'");
-      expect(pipeline).toContain("'configuration.extract.yaml'");
+      expect(pipeline).toContain("'configuration.extractor.yaml'");
     });
 
     it('should include runtime parameters for resource group and service name', () => {

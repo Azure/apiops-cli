@@ -97,7 +97,7 @@ Initialize repository structure and CI/CD pipeline configuration.
 - `.github/workflows/extract.yml` and `publish.yml` (for `github-actions`)
 - `.azdo/pipelines/extract.yml` and `publish.yml` (for `azure-devops`)
 - `apim-artifacts/` directory (empty, with `.gitkeep`)
-- `configuration.extract.yaml` (sample filter file)
+- `configuration.extractor.yaml` (sample filter file)
 - `configuration.{env}.yaml` (sample override files)
 
 ---

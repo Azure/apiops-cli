@@ -26,7 +26,7 @@ describe('filter-service', () => {
     });
 
     it('should include resources when filter field is undefined', () => {
-      const filter: FilterConfig = { productNames: ['my-product'] };
+      const filter: FilterConfig = { products: ['my-product'] };
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Api,
         nameParts: ['my-api'],
@@ -35,7 +35,7 @@ describe('filter-service', () => {
     });
 
     it('should exclude all resources when filter field is empty array', () => {
-      const filter: FilterConfig = { apiNames: [] };
+      const filter: FilterConfig = { apis: [] };
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Api,
         nameParts: ['my-api'],
@@ -44,7 +44,7 @@ describe('filter-service', () => {
     });
 
     it('should include matching resources (case-insensitive)', () => {
-      const filter: FilterConfig = { apiNames: ['My-Api'] };
+      const filter: FilterConfig = { apis: ['My-Api'] };
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Api,
         nameParts: ['my-api'],
@@ -53,7 +53,7 @@ describe('filter-service', () => {
     });
 
     it('should exclude non-matching resources', () => {
-      const filter: FilterConfig = { apiNames: ['other-api'] };
+      const filter: FilterConfig = { apis: ['other-api'] };
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Api,
         nameParts: ['my-api'],
@@ -62,7 +62,7 @@ describe('filter-service', () => {
     });
 
     it('should match API revisions by root name', () => {
-      const filter: FilterConfig = { apiNames: ['my-api'] };
+      const filter: FilterConfig = { apis: ['my-api'] };
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Api,
         nameParts: ['my-api;rev=2'],
@@ -71,7 +71,7 @@ describe('filter-service', () => {
     });
 
     it('should filter child resources by parent name', () => {
-      const filter: FilterConfig = { apiNames: ['my-api'] };
+      const filter: FilterConfig = { apis: ['my-api'] };
 
       // ApiPolicy child — nameParts: [apiName]
       const policyDescriptor: ResourceDescriptor = {
@@ -89,7 +89,7 @@ describe('filter-service', () => {
     });
 
     it('should filter grandchild resources by grandparent name', () => {
-      const filter: FilterConfig = { apiNames: ['my-api'] };
+      const filter: FilterConfig = { apis: ['my-api'] };
 
       // ApiOperationPolicy — nameParts: [apiName, opName], filter checks nameParts[0]
       const opPolicy: ResourceDescriptor = {
@@ -106,7 +106,7 @@ describe('filter-service', () => {
     });
 
     it('should filter product children by product name', () => {
-      const filter: FilterConfig = { productNames: ['starter'] };
+      const filter: FilterConfig = { products: ['starter'] };
 
       // ProductPolicy — nameParts: [productName]
       const productPolicy: ResourceDescriptor = {
@@ -124,7 +124,7 @@ describe('filter-service', () => {
 
     it('should filter product children by parent name, not by child name (ProductApi)', () => {
       // nameParts[0] = productName for ProductApi
-      const filter: FilterConfig = { productNames: ['starter'] };
+      const filter: FilterConfig = { products: ['starter'] };
 
       // ProductApi with product='premium' should NOT match filter for 'starter'
       const productApi: ResourceDescriptor = {
@@ -135,7 +135,7 @@ describe('filter-service', () => {
     });
 
     it('should always include ServicePolicy', () => {
-      const filter: FilterConfig = { apiNames: [] };
+      const filter: FilterConfig = { apis: [] };
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ServicePolicy,
         nameParts: [],
@@ -144,7 +144,7 @@ describe('filter-service', () => {
     });
 
     it('should filter named values', () => {
-      const filter: FilterConfig = { namedValueNames: ['my-secret'] };
+      const filter: FilterConfig = { namedValues: ['my-secret'] };
       const included: ResourceDescriptor = {
         type: ResourceType.NamedValue,
         nameParts: ['my-secret'],
@@ -158,7 +158,7 @@ describe('filter-service', () => {
     });
 
     it('should filter backends', () => {
-      const filter: FilterConfig = { backendNames: ['my-backend'] };
+      const filter: FilterConfig = { backends: ['my-backend'] };
       const included: ResourceDescriptor = {
         type: ResourceType.Backend,
         nameParts: ['my-backend'],
@@ -167,7 +167,7 @@ describe('filter-service', () => {
     });
 
     it('should filter gateways', () => {
-      const filter: FilterConfig = { gatewayNames: ['gw-1'] };
+      const filter: FilterConfig = { gateways: ['gw-1'] };
       const included: ResourceDescriptor = {
         type: ResourceType.Gateway,
         nameParts: ['gw-1'],
@@ -176,7 +176,7 @@ describe('filter-service', () => {
     });
 
     it('should filter gateway children by gateway name', () => {
-      const filter: FilterConfig = { gatewayNames: ['gw-1'] };
+      const filter: FilterConfig = { gateways: ['gw-1'] };
       const gwApi: ResourceDescriptor = {
         type: ResourceType.GatewayApi,
         nameParts: ['gw-1', 'my-api'], // nameParts[0]=gatewayName, nameParts[1]=apiName
@@ -201,7 +201,7 @@ describe('filter-service', () => {
     });
 
     it('should filter resources based on config', () => {
-      const filter: FilterConfig = { apiNames: ['api-1'] };
+      const filter: FilterConfig = { apis: ['api-1'] };
       const descriptors: ResourceDescriptor[] = [
         { type: ResourceType.Api, nameParts: ['api-1'] },
         { type: ResourceType.Api, nameParts: ['api-2'] },

@@ -20,12 +20,12 @@ describe('config-loader', () => {
   describe('loadFilterConfig', () => {
     it('should load a valid filter YAML file', async () => {
       const content = `
-apiNames:
+apis:
   - api1
   - api2
-productNames:
+products:
   - starter
-tagNames:
+tags:
   - v1
 `;
       const filePath = path.join(tmpDir, 'filter.yaml');
@@ -33,9 +33,9 @@ tagNames:
 
       const config = await loadFilterConfig(filePath);
       expect(config).toBeDefined();
-      expect(config!.apiNames).toEqual(['api1', 'api2']);
-      expect(config!.productNames).toEqual(['starter']);
-      expect(config!.tagNames).toEqual(['v1']);
+      expect(config!.apis).toEqual(['api1', 'api2']);
+      expect(config!.products).toEqual(['starter']);
+      expect(config!.tags).toEqual(['v1']);
     });
 
     it('should return undefined for missing file', async () => {
@@ -71,7 +71,7 @@ tagNames:
 
     it('should throw for invalid type (non-array field)', async () => {
       const content = `
-apiNames: "not-an-array"
+apis: "not-an-array"
 `;
       const filePath = path.join(tmpDir, 'bad.yaml');
       await fs.writeFile(filePath, content, 'utf-8');
@@ -81,7 +81,7 @@ apiNames: "not-an-array"
 
     it('should throw for array containing non-strings', async () => {
       const content = `
-apiNames:
+apis:
   - 123
   - true
 `;
@@ -93,30 +93,30 @@ apiNames:
 
     it('should handle all filter fields', async () => {
       const content = `
-apiNames: [a]
-backendNames: [b]
-productNames: [c]
-namedValueNames: [d]
-loggerNames: [e]
-diagnosticNames: [f]
-tagNames: [g]
-policyFragmentNames: [h]
-gatewayNames: [i]
-versionSetNames: [j]
-groupNames: [k]
-subscriptionNames: [l]
-schemaNames: [m]
-policyRestrictionNames: [n]
-documentationNames: [o]
-workspaceNames: [p]
+apis: [a]
+backends: [b]
+products: [c]
+namedValues: [d]
+loggers: [e]
+diagnostics: [f]
+tags: [g]
+policyFragments: [h]
+gateways: [i]
+versionSets: [j]
+groups: [k]
+subscriptions: [l]
+schemas: [m]
+policyRestrictions: [n]
+documentations: [o]
+workspaces: [p]
 `;
       const filePath = path.join(tmpDir, 'all-fields.yaml');
       await fs.writeFile(filePath, content, 'utf-8');
 
       const config = await loadFilterConfig(filePath);
       expect(config).toBeDefined();
-      expect(config!.apiNames).toEqual(['a']);
-      expect(config!.workspaceNames).toEqual(['p']);
+      expect(config!.apis).toEqual(['a']);
+      expect(config!.workspaces).toEqual(['p']);
     });
   });
 

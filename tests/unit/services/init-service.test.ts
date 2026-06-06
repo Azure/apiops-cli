@@ -138,7 +138,7 @@ describe('init-service', () => {
 
       const result = await initService.run(config);
 
-      expect(result.configs).toContain('configuration.extract.yaml');
+      expect(result.configs).toContain('configuration.extractor.yaml');
     });
 
     it('should generate override configuration for each environment', async () => {
@@ -251,7 +251,7 @@ describe('init-service', () => {
       // Mock file exists for filter config and the CLI tarball
       vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
-        if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('configuration.extract.yaml')) {
+        if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('configuration.extractor.yaml')) {
           return Promise.resolve();
         }
         throw new Error('ENOENT');
@@ -276,7 +276,7 @@ describe('init-service', () => {
       // Mock file exists for filter config and the CLI tarball
       vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
-        if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('configuration.extract.yaml')) {
+        if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('configuration.extractor.yaml')) {
           return Promise.resolve();
         }
         throw new Error('ENOENT');

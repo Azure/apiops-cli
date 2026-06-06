@@ -160,10 +160,10 @@ function addToFilter(
   dep: TransitiveDependency
 ): boolean {
   const fieldMap: Partial<Record<ResourceType, keyof FilterConfig>> = {
-    [ResourceType.NamedValue]: 'namedValueNames',
-    [ResourceType.Backend]: 'backendNames',
-    [ResourceType.PolicyFragment]: 'policyFragmentNames',
-    [ResourceType.VersionSet]: 'versionSetNames',
+    [ResourceType.NamedValue]: 'namedValues',
+    [ResourceType.Backend]: 'backends',
+    [ResourceType.PolicyFragment]: 'policyFragments',
+    [ResourceType.VersionSet]: 'versionSets',
   };
 
   const field = fieldMap[dep.type];

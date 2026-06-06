@@ -43,7 +43,7 @@ The extract pipeline pulls configuration from your APIM instance, publishes the 
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `CONFIGURATION_YAML_PATH` | string | `Extract All APIs` | Choose `Extract All APIs` for a full extract, or `configuration.extract.yaml` to use a [filter file](../guides/filtering-resources.md) |
+| `CONFIGURATION_YAML_PATH` | string | `Extract All APIs` | Choose `Extract All APIs` for a full extract, or `configuration.extractor.yaml` to use a [filter file](../guides/filtering-resources.md) |
 | `resourceGroup` | string | `$(APIM_RESOURCE_GROUP)` | Azure resource group containing your APIM instance |
 | `serviceName` | string | `$(APIM_SERVICE_NAME)` | Name of the APIM service instance |
 
@@ -55,7 +55,7 @@ flowchart TD
     B --> C[npm ci]
     C --> D{Configuration choice?}
     D -->|Extract All APIs| E[apiops extract --resource-group ... --service-name ...]
-    D -->|configuration.extract.yaml| F[apiops extract ... --filter configuration.extract.yaml]
+    D -->|configuration.extractor.yaml| F[apiops extract ... --filter configuration.extractor.yaml]
     E --> G[Publish pipeline artifact]
     F --> G
     G --> H[Create branch apim-extract-BuildId]
@@ -92,7 +92,7 @@ The key task is `AzureCLI@2`, which authenticates using your service connection:
         --subscription-id $(AZURE_SUBSCRIPTION_ID)
 ```
 
-When the filter option is selected, `--filter configuration.extract.yaml` is added to the command.
+When the filter option is selected, `--filter configuration.extractor.yaml` is added to the command.
 
 > **Why AzureCLI@2?** This task injects Azure credentials into the shell environment, allowing `apiops extract` to authenticate via `DefaultAzureCredential`. See [Authentication Guide](../guides/authentication.md).
 

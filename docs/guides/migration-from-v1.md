@@ -148,20 +148,20 @@ Replace the v1 pipeline tasks/actions with v2 CLI commands.
 **v1** (`configuration.extractor.yaml`):
 
 ```yaml
-apiNames:
+apis:
   - payments-api
   - orders-api
 ```
 
-**v2** (filter YAML — same format, different file name convention):
+**v2** (`configuration.extractor.yaml` — same format and file name):
 
 ```yaml
-apiNames:
+apis:
   - payments-api
   - orders-api
 ```
 
-The filter YAML format is compatible. Rename the file if you prefer the v2 convention, and pass it with `--filter`:
+The filter YAML format is fully compatible with v1. You can use your existing `configuration.extractor.yaml` as-is with the `--filter` flag:
 
 ```bash
 apiops extract \

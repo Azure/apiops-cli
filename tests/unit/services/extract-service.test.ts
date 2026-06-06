@@ -105,7 +105,7 @@ describe('extract-service', () => {
       });
       const store = createMockStore();
 
-      const filter: FilterConfig = { namedValueNames: ['nv-keep'] };
+      const filter: FilterConfig = { namedValues: ['nv-keep'] };
       const config: ExtractConfig = {
         service: testContext,
         outputDir: '/output',
@@ -381,7 +381,7 @@ describe('extract-service', () => {
         service: testContext,
         outputDir: '/output',
         includeTransitive: true,
-        filter: { apiNames: [] }, // Trigger transitive resolution
+        filter: { apis: [] }, // Trigger transitive resolution
         logLevel: LogLevel.INFO,
       };
 
@@ -404,7 +404,7 @@ describe('extract-service', () => {
         service: testContext,
         outputDir: '/output',
         includeTransitive: true,
-        filter: { apiNames: [] },
+        filter: { apis: [] },
         logLevel: LogLevel.INFO,
       };
 

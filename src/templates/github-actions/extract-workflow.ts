@@ -29,7 +29,7 @@ on:
         type: choice
         options:
           - Extract All APIs
-          - configuration.extract.yaml
+          - configuration.extractor.yaml
 
 permissions:
   id-token: write
@@ -96,7 +96,7 @@ jobs:
             --resource-group \${{ env.APIM_RESOURCE_GROUP }} \\
             --service-name \${{ env.APIM_SERVICE_NAME }} \\
             --output ${config.artifactDir} \\
-            --filter configuration.extract.yaml
+            --filter configuration.extractor.yaml
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

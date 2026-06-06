@@ -80,7 +80,7 @@ In interactive mode (the default when running in a terminal), `apiops init` prom
 |------|---------|
 | `.github/workflows/extract.yaml` | Pipeline to extract APIM artifacts |
 | `.github/workflows/publish.yaml` | Pipeline to publish artifacts to APIM |
-| `configuration.extract.yaml` | Sample filter configuration for extraction |
+| `configuration.extractor.yaml` | Sample filter configuration for extraction |
 | `configuration.{env}.yaml` | Override templates per environment (e.g., `configuration.dev.yaml`, `configuration.prod.yaml`) |
 | `IDENTITY-SETUP-GITHUB.md` | Step-by-step guide for configuring federated credentials |
 
@@ -90,9 +90,7 @@ In interactive mode (the default when running in a terminal), `apiops init` prom
 |------|---------|
 | `pipelines/extract.yaml` | Pipeline to extract APIM artifacts |
 | `pipelines/publish.yaml` | Pipeline to publish artifacts to APIM |
-| `configuration.extract.yaml` | Sample filter configuration for extraction |
-| `configuration.{env}.yaml` | Override templates per environment |
-| `IDENTITY-SETUP-AZDO.md` | Step-by-step guide for configuring service connections |
+| `configuration.extractor.yaml` | Sample filter configuration for extraction |
 
 ### Both platforms
 

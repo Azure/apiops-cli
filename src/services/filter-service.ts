@@ -16,21 +16,21 @@ import { getNamePart } from '../lib/resource-path.js';
  * Map resource types to their corresponding FilterConfig field names.
  */
 const FILTER_FIELD_MAP: Partial<Record<ResourceType, keyof FilterConfig>> = {
-  [ResourceType.Api]: 'apiNames',
-  [ResourceType.Backend]: 'backendNames',
-  [ResourceType.Product]: 'productNames',
-  [ResourceType.NamedValue]: 'namedValueNames',
-  [ResourceType.Logger]: 'loggerNames',
-  [ResourceType.Diagnostic]: 'diagnosticNames',
-  [ResourceType.Tag]: 'tagNames',
-  [ResourceType.PolicyFragment]: 'policyFragmentNames',
-  [ResourceType.Gateway]: 'gatewayNames',
-  [ResourceType.VersionSet]: 'versionSetNames',
-  [ResourceType.Group]: 'groupNames',
-  [ResourceType.Subscription]: 'subscriptionNames',
-  [ResourceType.GlobalSchema]: 'schemaNames',
-  [ResourceType.PolicyRestriction]: 'policyRestrictionNames',
-  [ResourceType.Documentation]: 'documentationNames',
+  [ResourceType.Api]: 'apis',
+  [ResourceType.Backend]: 'backends',
+  [ResourceType.Product]: 'products',
+  [ResourceType.NamedValue]: 'namedValues',
+  [ResourceType.Logger]: 'loggers',
+  [ResourceType.Diagnostic]: 'diagnostics',
+  [ResourceType.Tag]: 'tags',
+  [ResourceType.PolicyFragment]: 'policyFragments',
+  [ResourceType.Gateway]: 'gateways',
+  [ResourceType.VersionSet]: 'versionSets',
+  [ResourceType.Group]: 'groups',
+  [ResourceType.Subscription]: 'subscriptions',
+  [ResourceType.GlobalSchema]: 'schemas',
+  [ResourceType.PolicyRestriction]: 'policyRestrictions',
+  [ResourceType.Documentation]: 'documentations',
 };
 
 /**
@@ -38,23 +38,23 @@ const FILTER_FIELD_MAP: Partial<Record<ResourceType, keyof FilterConfig>> = {
  * If the parent (e.g., Api or Product) passes the filter, all children are included.
  */
 const PARENT_FILTER_MAP: Partial<Record<ResourceType, keyof FilterConfig>> = {
-  [ResourceType.ApiPolicy]: 'apiNames',
-  [ResourceType.ApiTag]: 'apiNames',
-  [ResourceType.ApiDiagnostic]: 'apiNames',
-  [ResourceType.ApiOperation]: 'apiNames',
-  [ResourceType.ApiOperationPolicy]: 'apiNames',
-  [ResourceType.ApiSchema]: 'apiNames',
-  [ResourceType.ApiRelease]: 'apiNames',
-  [ResourceType.ApiTagDescription]: 'apiNames',
-  [ResourceType.ApiWiki]: 'apiNames',
-  [ResourceType.GraphQLResolver]: 'apiNames',
-  [ResourceType.GraphQLResolverPolicy]: 'apiNames',
-  [ResourceType.ProductPolicy]: 'productNames',
-  [ResourceType.ProductApi]: 'productNames',
-  [ResourceType.ProductGroup]: 'productNames',
-  [ResourceType.ProductTag]: 'productNames',
-  [ResourceType.ProductWiki]: 'productNames',
-  [ResourceType.GatewayApi]: 'gatewayNames',
+  [ResourceType.ApiPolicy]: 'apis',
+  [ResourceType.ApiTag]: 'apis',
+  [ResourceType.ApiDiagnostic]: 'apis',
+  [ResourceType.ApiOperation]: 'apis',
+  [ResourceType.ApiOperationPolicy]: 'apis',
+  [ResourceType.ApiSchema]: 'apis',
+  [ResourceType.ApiRelease]: 'apis',
+  [ResourceType.ApiTagDescription]: 'apis',
+  [ResourceType.ApiWiki]: 'apis',
+  [ResourceType.GraphQLResolver]: 'apis',
+  [ResourceType.GraphQLResolverPolicy]: 'apis',
+  [ResourceType.ProductPolicy]: 'products',
+  [ResourceType.ProductApi]: 'products',
+  [ResourceType.ProductGroup]: 'products',
+  [ResourceType.ProductTag]: 'products',
+  [ResourceType.ProductWiki]: 'products',
+  [ResourceType.GatewayApi]: 'gateways',
 };
 
 /**
@@ -108,7 +108,7 @@ export function shouldIncludeResource(
 function getParentNameForFilter(descriptor: ResourceDescriptor): string | undefined {
   const parentName = getNamePart(descriptor.nameParts, 0);
   // API children need revision suffix stripped (e.g. "my-api;rev=2" → "my-api")
-  return PARENT_FILTER_MAP[descriptor.type] === 'apiNames'
+  return PARENT_FILTER_MAP[descriptor.type] === 'apis'
     ? extractRootApiName(parentName)
     : parentName;
 }

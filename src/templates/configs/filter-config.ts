@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 /**
  * T047: Sample filter configuration template
- * Generates a sample configuration.extract.yaml file
+ * Generates a sample configuration.extractor.yaml file
  */
 
 export function generateFilterConfig(): string {
@@ -10,81 +10,81 @@ export function generateFilterConfig(): string {
 # Customize this file to control which resources are extracted
 
 # Extract only specific APIs by name
-# apiNames:
+# apis:
 #   - echo-api
 #   - petstore-api
 
 # Extract only specific products
-# productNames:
+# products:
 #   - starter
 #   - unlimited
 
 # Extract only specific backends
-# backendNames:
+# backends:
 #   - backend-api
 #   - legacy-backend
 
 # Extract only specific named values
-# namedValueNames:
+# namedValues:
 #   - api-key
 #   - connection-string
 
 # Extract only specific loggers
-# loggerNames:
+# loggers:
 #   - appinsights-logger
 
 # Extract only specific diagnostics
-# diagnosticNames:
+# diagnostics:
 #   - applicationinsights
 
 # Extract only specific tags
-# tagNames:
+# tags:
 #   - production
 #   - external
 
 # Extract only specific policy fragments
-# policyFragmentNames:
+# policyFragments:
 #   - rate-limit-fragment
 #   - cors-fragment
 
 # Extract only specific gateways
-# gatewayNames:
+# gateways:
 #   - default
 #   - internal-gateway
 
 # Extract only specific version sets
-# versionSetNames:
+# versionSets:
 #   - payments-v1
 
 # Extract only specific groups
-# groupNames:
+# groups:
 #   - administrators
 
 # Extract only specific subscriptions
-# subscriptionNames:
+# subscriptions:
 #   - starter-subscription
 
 # Extract only specific schemas
-# schemaNames:
+# schemas:
 #   - pet-schema
 
 # Extract only specific policy restrictions
-# policyRestrictionNames:
+# policyRestrictions:
 #   - global-policy-restriction
 
 # Extract only specific documentations
-# documentationNames:
+# documentations:
 #   - getting-started
 
 # Extract only specific workspaces
-# workspaceNames:
+# workspaces:
 #   - dev-workspace
 
 # Filter behavior:
 # - Leave a section commented out to include ALL resources of that type
 # - Set a section to an empty array ([]) to exclude ALL resources of that type
 #   Example:
-#   gatewayNames: []
-#   subscriptionNames: []
+#   gateways: []
+#   subscriptions: []
 `;
 }

@@ -52,7 +52,7 @@ describe('workspace-extractor', () => {
         seenTypes.push(type);
       };
       const store = createMockStore();
-      const filter: FilterConfig = { workspaceNames: ['ws-1'] };
+      const filter: FilterConfig = { workspaces: ['ws-1'] };
 
       await extractWorkspaces(
         client, store, testContext, '/output', filter
@@ -99,7 +99,7 @@ describe('workspace-extractor', () => {
     it('should skip extraction when workspace names array is empty', async () => {
       const client = createMockClient();
       const store = createMockStore();
-      const filter: FilterConfig = { workspaceNames: [] };
+      const filter: FilterConfig = { workspaces: [] };
 
       const results = await extractWorkspaces(
         client, store, testContext, '/output', filter
@@ -117,7 +117,7 @@ describe('workspace-extractor', () => {
         }
       };
       const store = createMockStore();
-      const filter: FilterConfig = { workspaceNames: ['ws-1'] };
+      const filter: FilterConfig = { workspaces: ['ws-1'] };
 
       const results = await extractWorkspaces(
         client, store, testContext, '/output', filter
@@ -132,7 +132,7 @@ describe('workspace-extractor', () => {
       const client = createMockClient();
       client.listResources = async function* () {};
       const store = createMockStore();
-      const filter: FilterConfig = { workspaceNames: ['ws-1', 'ws-2'] };
+      const filter: FilterConfig = { workspaces: ['ws-1', 'ws-2'] };
 
       const results = await extractWorkspaces(
         client, store, testContext, '/output', filter
@@ -150,7 +150,7 @@ describe('workspace-extractor', () => {
         throw new Error('Workspace not found');
       };
       const store = createMockStore();
-      const filter: FilterConfig = { workspaceNames: ['bad-ws'] };
+      const filter: FilterConfig = { workspaces: ['bad-ws'] };
 
       const results = await extractWorkspaces(
         client, store, testContext, '/output', filter
@@ -170,7 +170,7 @@ describe('workspace-extractor', () => {
       };
       client.getResource = vi.fn().mockResolvedValue(undefined);
       const store = createMockStore();
-      const filter: FilterConfig = { workspaceNames: ['ws-1'] };
+      const filter: FilterConfig = { workspaces: ['ws-1'] };
 
       const results = await extractWorkspaces(
         client, store, testContext, '/output', filter
@@ -191,7 +191,7 @@ describe('workspace-extractor', () => {
       };
       client.getResource = vi.fn().mockResolvedValue(undefined);
       const store = createMockStore();
-      const filter: FilterConfig = { workspaceNames: ['ws-1'] };
+      const filter: FilterConfig = { workspaces: ['ws-1'] };
 
       const results = await extractWorkspaces(
         client, store, testContext, '/output', filter

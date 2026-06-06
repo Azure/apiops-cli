@@ -26,7 +26,7 @@ describe('github-actions/extract-workflow', () => {
       expect(workflow).toContain('CONFIGURATION_YAML_PATH:');
       expect(workflow).toContain('type: choice');
       expect(workflow).toContain('Extract All APIs');
-      expect(workflow).toContain('configuration.extract.yaml');
+      expect(workflow).toContain('configuration.extractor.yaml');
     });
 
     it('should include ENVIRONMENT choice input', () => {
@@ -68,7 +68,7 @@ describe('github-actions/extract-workflow', () => {
       const lines = workflow.split('\n');
       const withConfigStart = lines.findIndex((l) => l.includes('Run APIM Extract (With Configuration)'));
       const withConfigSection = lines.slice(withConfigStart).join('\n');
-      expect(withConfigSection).toContain('--filter configuration.extract.yaml');
+      expect(withConfigSection).toContain('--filter configuration.extractor.yaml');
     });
 
     it('should use custom artifact directory in extract command', () => {

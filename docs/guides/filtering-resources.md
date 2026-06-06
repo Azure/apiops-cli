@@ -16,8 +16,8 @@ By default, `apiops extract` pulls every resource from your APIM instance. For l
 1. Create a filter file:
 
 ```yaml
-# configuration.extract.yaml
-apiNames:
+# configuration.extractor.yaml
+apis:
   - petstore-api
   - orders-api
 ```
@@ -29,7 +29,7 @@ apiops extract \
   --resource-group my-rg \
   --service-name my-apim \
   --subscription-id 00000000-0000-0000-0000-000000000000 \
-  --filter configuration.extract.yaml
+  --filter configuration.extractor.yaml
 ```
 
 Only `petstore-api`, `orders-api`, and their transitive dependencies are extracted.
@@ -41,29 +41,29 @@ Only `petstore-api`, `orders-api`, and their transitive dependencies are extract
 The filter file is a YAML document where each key is a resource type and the value is an array of resource names:
 
 ```yaml
-# configuration.extract.yaml
+# configuration.extractor.yaml
 
 # APIs to extract (by display name or API ID)
-apiNames:
+apis:
   - petstore-api
   - orders-api
 
 # Backends to include
-backendNames:
+backends:
   - orders-backend
 
 # Products to include
-productNames:
+products:
   - starter
   - enterprise
 
 # Named values to include
-namedValueNames:
+namedValues:
   - api-key
   - connection-string
 
 # Leave sections out (or comment them) to extract ALL of that type
-# loggerNames:
+# loggers:
 #   - appinsights
 ```
 
@@ -79,22 +79,22 @@ namedValueNames:
 
 | Filter Field | APIM Resource | Example Values |
 |-------------|---------------|----------------|
-| `apiNames` | APIs | `petstore-api`, `orders-v2` |
-| `backendNames` | Backends | `orders-backend`, `payment-service` |
-| `productNames` | Products | `starter`, `enterprise`, `internal` |
-| `namedValueNames` | Named Values | `api-key`, `db-connection-string` |
-| `loggerNames` | Loggers | `appinsights-logger`, `eventhub-logger` |
-| `diagnosticNames` | Diagnostics | `applicationinsights`, `azuremonitor` |
-| `tagNames` | Tags | `production`, `beta`, `internal` |
-| `policyFragmentNames` | Policy Fragments | `rate-limit-fragment`, `cors-policy` |
-| `gatewayNames` | Self-hosted Gateways | `on-prem-gateway`, `edge-gateway` |
-| `versionSetNames` | API Version Sets | `orders-version-set` |
-| `groupNames` | Groups | `developers`, `partners`, `admins` |
-| `subscriptionNames` | Subscriptions | `team-a-subscription` |
-| `schemaNames` | Global Schemas | `shared-error-schema` |
-| `policyRestrictionNames` | Policy Restrictions | `no-external-calls` |
-| `documentationNames` | Documentation | `getting-started`, `changelog` |
-| `workspaceNames` | Workspaces | `team-a-workspace`, `team-b-workspace` |
+| `apis` | APIs | `petstore-api`, `orders-v2` |
+| `backends` | Backends | `orders-backend`, `payment-service` |
+| `products` | Products | `starter`, `enterprise`, `internal` |
+| `namedValues` | Named Values | `api-key`, `db-connection-string` |
+| `loggers` | Loggers | `appinsights-logger`, `eventhub-logger` |
+| `diagnostics` | Diagnostics | `applicationinsights`, `azuremonitor` |
+| `tags` | Tags | `production`, `beta`, `internal` |
+| `policyFragments` | Policy Fragments | `rate-limit-fragment`, `cors-policy` |
+| `gateways` | Self-hosted Gateways | `on-prem-gateway`, `edge-gateway` |
+| `versionSets` | API Version Sets | `orders-version-set` |
+| `groups` | Groups | `developers`, `partners`, `admins` |
+| `subscriptions` | Subscriptions | `team-a-subscription` |
+| `schemas` | Global Schemas | `shared-error-schema` |
+| `policyRestrictions` | Policy Restrictions | `no-external-calls` |
+| `documentations` | Documentation | `getting-started`, `changelog` |
+| `workspaces` | Workspaces | `team-a-workspace`, `team-b-workspace` |
 
 ---
 
@@ -120,7 +120,7 @@ flowchart TD
 Given this filter:
 
 ```yaml
-apiNames:
+apis:
   - petstore-api
 ```
 
@@ -150,7 +150,7 @@ apiops extract \
   --resource-group my-rg \
   --service-name my-apim \
   --subscription-id 00000000-0000-0000-0000-000000000000 \
-  --filter configuration.extract.yaml \
+  --filter configuration.extractor.yaml \
   --no-transitive
 ```
 
@@ -170,8 +170,8 @@ apiops extract \
 A team that owns one or two APIs:
 
 ```yaml
-# configuration.extract.yaml
-apiNames:
+# configuration.extractor.yaml
+apis:
   - orders-api
   - orders-admin-api
 ```
@@ -183,33 +183,33 @@ Transitive dependencies (backends, named values, policy fragments) are auto-incl
 Extract everything associated with a product:
 
 ```yaml
-# configuration.extract.yaml
-productNames:
+# configuration.extractor.yaml
+products:
   - enterprise
 ```
 
-> **Note:** Filtering by `productNames` extracts the product definition and its associations, but does **not** transitively include the APIs in that product. To include the APIs, add them to `apiNames` as well.
+> **Note:** Filtering by `products` extracts the product definition and its associations, but does **not** transitively include the APIs in that product. To include the APIs, add them to `apis` as well.
 
 ### Shared Infrastructure Team
 
 A platform team managing cross-cutting resources:
 
 ```yaml
-# configuration.extract.yaml
-namedValueNames:
+# configuration.extractor.yaml
+namedValues:
   - global-api-key
   - rate-limit-threshold
   - cors-allowed-origins
 
-policyFragmentNames:
+policyFragments:
   - standard-rate-limit
   - cors-policy
   - auth-validation
 
-loggerNames:
+loggers:
   - appinsights-logger
 
-backendNames:
+backends:
   - identity-service
 ```
 
@@ -222,7 +222,7 @@ There is no "exclude" syntax. To extract everything except certain resources, li
 ## Tips
 
 - **Start broad, narrow later** — Begin with no filter to see what's in your APIM instance, then create a filter for your team's slice
-- **One filter per team** — In multi-team setups, each team maintains its own `configuration.extract.yaml`
+- **One filter per team** — In multi-team setups, each team maintains its own `configuration.extractor.yaml`
 - **Commit the filter file** — Keep it in version control alongside your artifacts so CI/CD pipelines can use it
 - **Case-sensitive names** — Filter values must match APIM resource names exactly (usually lowercase with hyphens)
 - **Validate early** — The config loader validates that each filter field is an array of strings and will throw `Failed to load filter config` on invalid YAML
