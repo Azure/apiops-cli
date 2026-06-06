@@ -200,13 +200,16 @@ async function publishRootApi(
         cleanProps.apiType = apiType;
       }
 
+      // Sanitize the spec before import (e.g. inject missing path parameters)
+      const sanitizedContent = sanitizeOpenApiSpec(specResult.content, specResult.format, descriptor);
+
       // Inject the spec into the PUT body for APIM to import
       json = {
         ...json,
         properties: {
           ...cleanProps,
           format: importFormat,
-          value: specResult.content,
+          value: sanitizedContent,
         },
       };
 
@@ -556,4 +559,85 @@ function getOpenApiOperationIdsWithNullDescription(
   } catch {
     return [];
   }
+}
+
+/**
+ * Sanitize an OpenAPI spec before importing into APIM.
+ * Currently handles:
+ *  - Missing path parameter declarations: APIM rejects specs where a URL
+ *    template contains `{param}` placeholders that are not declared in the
+ *    operation's `parameters` array.  We auto-inject the missing declarations
+ *    as `{ name, in: "path", required: true, schema: { type: "string" } }`
+ *    and log a warning for each one.
+ */
+function sanitizeOpenApiSpec(
+  content: string,
+  format: string | undefined,
+  descriptor: ResourceDescriptor
+): string {
+  // Only process JSON-based OpenAPI specs (openapi+json, json)
+  const isJson =
+    !format ||
+    format.toLowerCase().includes('json') ||
+    content.trimStart().startsWith('{');
+  if (!isJson) return content;
+
+  let spec: Record<string, unknown>;
+  try {
+    spec = JSON.parse(content) as Record<string, unknown>;
+  } catch {
+    return content; // Not valid JSON — return as-is
+  }
+
+  const paths = spec.paths as Record<string, Record<string, unknown>> | undefined;
+  if (!paths) return content;
+
+  const apiLabel = getNamePart(descriptor.nameParts, 0);
+  let modified = false;
+
+  for (const [pathTemplate, pathItem] of Object.entries(paths)) {
+    // Extract placeholders from the path template
+    const placeholders = pathTemplate.match(/\{([^}]+)\}/g);
+    if (!placeholders) continue;
+    const placeholderNames = placeholders.map((p) => p.slice(1, -1));
+
+    for (const [method, operation] of Object.entries(pathItem)) {
+      // Skip non-operation keys (e.g. "summary", "parameters", "servers")
+      if (typeof operation !== 'object' || operation === null) continue;
+      if (!['get', 'put', 'post', 'delete', 'patch', 'head', 'options', 'trace'].includes(method)) continue;
+
+      const op = operation as Record<string, unknown>;
+      const params = (op.parameters ?? []) as Array<Record<string, unknown>>;
+      const declaredPathParams = new Set(
+        params
+          .filter((p) => p.in === 'path')
+          .map((p) => p.name as string)
+      );
+
+      for (const name of placeholderNames) {
+        if (!declaredPathParams.has(name)) {
+          // Inject the missing parameter declaration
+          const newParam: Record<string, unknown> = {
+            name,
+            in: 'path',
+            required: true,
+            schema: { type: 'string' },
+          };
+          const updatedParams = [...params, newParam];
+          op.parameters = updatedParams;
+          // Update params reference for subsequent placeholder checks on this operation
+          params.push(newParam);
+          declaredPathParams.add(name);
+          modified = true;
+
+          const opSummary = (op.summary ?? op.operationId ?? `${method.toUpperCase()} ${pathTemplate}`) as string;
+          logger.warn(
+            `API "${apiLabel}": auto-injected missing path parameter "{${name}}" for operation "${opSummary}"`
+          );
+        }
+      }
+    }
+  }
+
+  return modified ? JSON.stringify(spec) : content;
 }

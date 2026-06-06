@@ -42,6 +42,17 @@ export class ApimClient implements IApimClient {
   private static readonly MAX_DELAY_MS = 30000;
   private static readonly MAX_POLLING_ATTEMPTS = 30;
   private static readonly POLL_INTERVAL_MS = 2000;
+  /** Deadline for async (LRO) operation polling — 7.5 minutes. */
+  private static readonly ASYNC_POLL_TIMEOUT_MS = 7.5 * 60 * 1000;
+  /** Default interval between async operation polls when no Retry-After header. */
+  private static readonly ASYNC_POLL_INTERVAL_MS = 5000;
+  /** Known ARM management plane host suffixes for URL validation. */
+  private static readonly ARM_HOSTS = [
+    'management.azure.com',
+    'management.chinacloudapi.cn',
+    'management.usgovcloudapi.net',
+    'management.microsoftazure.de',
+  ];
   /** Stable ARM API version for Resource Group existence checks */
   private static readonly RESOURCE_GROUP_API_VERSION = '2021-04-01';
 
@@ -291,6 +302,14 @@ export class ApimClient implements IApimClient {
     context: ApimServiceContext,
     descriptor: ResourceDescriptor
   ): Promise<Record<string, unknown> | undefined> {
+    // Some association resources (ProductGroup, ProductApi, GatewayApi) only
+    // support PUT/DELETE. Short-circuit before making a network call.
+    const metadata = RESOURCE_TYPE_METADATA[descriptor.type];
+    if (!metadata.supportsGet) {
+      logger.debug(`Resource type ${descriptor.type} does not support GET, returning undefined`);
+      return undefined;
+    }
+
     const url = buildArmUri(context, descriptor);
     // Azure APIM returns HTTP 500 (not 404) when an API or product has no wiki.
     // Suppress retries for wiki types so the extractor silently skips them.
@@ -353,6 +372,15 @@ export class ApimClient implements IApimClient {
         logger.debug(`Skipping provisioning poll for association resource: ${buildResourceLabel(descriptor)}`);
         return {};
       }
+
+      // Prefer ARM async operation polling when the service provides an
+      // Azure-AsyncOperation or Location header — these long-running operations
+      // (e.g. large API spec imports) may take minutes to complete.
+      const asyncUrl = this.extractAsyncOperationUrl(response);
+      if (asyncUrl) {
+        return await this.pollAsyncOperation(asyncUrl, context, descriptor);
+      }
+
       return await this.pollProvisioningState(context, descriptor);
     }
 
@@ -414,9 +442,14 @@ export class ApimClient implements IApimClient {
 
       // Poll for long-running operations
       if (response.status === 202) {
-        await this.pollProvisioningState(context, descriptor, {
-          treatMissingAsSuccess: true,
-        });
+        const asyncUrl = this.extractAsyncOperationUrl(response);
+        if (asyncUrl) {
+          await this.pollAsyncOperation(asyncUrl, context, descriptor, { treatMissingAsSuccess: true });
+        } else {
+          await this.pollProvisioningState(context, descriptor, {
+            treatMissingAsSuccess: true,
+          });
+        }
       }
 
       return true;
@@ -717,6 +750,132 @@ export class ApimClient implements IApimClient {
     
     // Default to YAML for OpenAPI
     return 'yaml';
+  }
+
+  /**
+   * Extract the async operation URL from ARM LRO response headers.
+   * Prefers Azure-AsyncOperation over Location.
+   * Validates the URL points to a known ARM management endpoint to prevent
+   * leaking the bearer token to an unexpected host.
+   */
+  private extractAsyncOperationUrl(response: Response): string | undefined {
+    const asyncOpUrl = response.headers.get('Azure-AsyncOperation')
+      ?? response.headers.get('Operation-Location')
+      ?? response.headers.get('Location');
+
+    if (!asyncOpUrl) return undefined;
+
+    // Validate URL host is a known ARM management endpoint
+    try {
+      const parsed = new URL(asyncOpUrl);
+      const isArmHost = ApimClient.ARM_HOSTS.some(
+        (host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`)
+      );
+      if (!isArmHost) {
+        logger.warn(
+          `Ignoring async operation URL with unexpected host: ${parsed.hostname}`
+        );
+        return undefined;
+      }
+    } catch {
+      logger.warn(`Ignoring malformed async operation URL: ${asyncOpUrl}`);
+      return undefined;
+    }
+
+    return asyncOpUrl;
+  }
+
+  /**
+   * Poll an ARM async operation URL until terminal state.
+   * Used for long-running operations like large API spec imports.
+   *
+   * The operation status endpoint returns:
+   *   { "status": "InProgress" | "Succeeded" | "Failed" | "Canceled", ... }
+   *
+   * On success, GETs the original resource to return the final state.
+   */
+  private async pollAsyncOperation(
+    operationUrl: string,
+    context: ApimServiceContext,
+    descriptor: ResourceDescriptor,
+    options: { treatMissingAsSuccess?: boolean } = {}
+  ): Promise<Record<string, unknown>> {
+    const { treatMissingAsSuccess = false } = options;
+    const label = buildResourceLabel(descriptor);
+    const deadline = Date.now() + ApimClient.ASYNC_POLL_TIMEOUT_MS;
+    let pollInterval = ApimClient.ASYNC_POLL_INTERVAL_MS;
+
+    logger.debug(`Polling async operation for ${label}: ${operationUrl}`);
+
+    while (Date.now() < deadline) {
+      await this.delay(pollInterval);
+
+      const response = await this.request(operationUrl);
+
+      // Honour Retry-After if the service provides it
+      const retryAfter = response.headers.get('Retry-After');
+      if (retryAfter) {
+        const parsed = parseInt(retryAfter, 10);
+        if (!isNaN(parsed) && parsed > 0) {
+          pollInterval = parsed * 1000;
+        }
+      }
+
+      // Some Location-style polls respond with 202 (still in progress)
+      // and may not have a JSON body — keep polling.
+      if (response.status === 202) {
+        logger.debug(`Async operation still in progress (HTTP 202) for ${label}`);
+        continue;
+      }
+
+      // Try to parse the status body
+      const text = await response.text();
+      if (!text.trim()) {
+        // Empty body on 200/204 — treat as complete
+        if (response.ok) {
+          return treatMissingAsSuccess
+            ? {}
+            : await this.getResource(context, descriptor) ?? {};
+        }
+        throw new Error(`Async operation returned empty body with status ${response.status} for ${label}`);
+      }
+
+      let body: Record<string, unknown>;
+      try {
+        body = JSON.parse(text) as Record<string, unknown>;
+      } catch {
+        // Non-JSON on an OK status — treat as complete
+        if (response.ok) {
+          return treatMissingAsSuccess
+            ? {}
+            : await this.getResource(context, descriptor) ?? {};
+        }
+        throw new Error(`Async operation returned non-JSON with status ${response.status} for ${label}`);
+      }
+
+      const status = (body.status as string | undefined)?.toLowerCase();
+
+      if (status === 'succeeded') {
+        logger.debug(`Async operation succeeded for ${label}`);
+        if (treatMissingAsSuccess) return {};
+        // GET the final resource state
+        return await this.getResource(context, descriptor) ?? {};
+      }
+
+      if (status === 'failed' || status === 'canceled' || status === 'cancelled') {
+        const error = body.error as Record<string, unknown> | undefined;
+        const code = (error?.code as string) ?? 'UnknownError';
+        const message = (error?.message as string) ?? JSON.stringify(body);
+        throw new Error(`Async operation ${status} for ${label}: [${code}] ${message}`);
+      }
+
+      // InProgress or other intermediate status — keep polling
+      logger.debug(`Async operation status: ${status ?? 'unknown'} for ${label}`);
+    }
+
+    throw new Error(
+      `Async operation polling timed out after ${ApimClient.ASYNC_POLL_TIMEOUT_MS / 1000}s for ${label}`
+    );
   }
 
   private async pollProvisioningState(
