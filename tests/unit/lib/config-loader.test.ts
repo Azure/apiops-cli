@@ -118,6 +118,63 @@ workspaces: [p]
       expect(config!.apis).toEqual(['a']);
       expect(config!.workspaces).toEqual(['p']);
     });
+
+    it('should accept legacy *Names keys as aliases', async () => {
+      const content = `
+apiNames:
+  - api1
+  - api2
+productNames:
+  - starter
+backendNames:
+  - backend1
+versionSetNames:
+  - vs1
+`;
+      const filePath = path.join(tmpDir, 'legacy.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.apis).toEqual(['api1', 'api2']);
+      expect(config!.products).toEqual(['starter']);
+      expect(config!.backends).toEqual(['backend1']);
+      expect(config!.versionSets).toEqual(['vs1']);
+    });
+
+    it('should throw when both Toolkit and legacy keys are used for the same field', async () => {
+      const content = `
+apis:
+  - api1
+apiNames:
+  - api2
+`;
+      const filePath = path.join(tmpDir, 'conflict.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      await expect(loadFilterConfig(filePath)).rejects.toThrow(
+        "contains both 'apis' and 'apiNames'"
+      );
+    });
+
+    it('should accept a mix of Toolkit and legacy keys for different fields', async () => {
+      const content = `
+apis:
+  - api1
+backendNames:
+  - backend1
+versionSets:
+  - vs1
+`;
+      const filePath = path.join(tmpDir, 'mixed.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.apis).toEqual(['api1']);
+      expect(config!.backends).toEqual(['backend1']);
+      expect(config!.versionSets).toEqual(['vs1']);
+    });
   });
 
   describe('loadOverrideConfig', () => {

@@ -34,61 +34,59 @@ function assertStringArray(value: unknown, fieldName: string): string[] {
  * Load and parse a filter configuration YAML file.
  * Returns undefined if file doesn't exist.
  */
+/**
+ * Mapping from FilterConfig field to its legacy alias (the old *Names key).
+ * Both the Toolkit-style key and the legacy alias are accepted during parsing.
+ */
+const FILTER_KEY_ALIASES: Record<keyof FilterConfig, string> = {
+  apis: 'apiNames',
+  backends: 'backendNames',
+  products: 'productNames',
+  namedValues: 'namedValueNames',
+  loggers: 'loggerNames',
+  diagnostics: 'diagnosticNames',
+  tags: 'tagNames',
+  policyFragments: 'policyFragmentNames',
+  gateways: 'gatewayNames',
+  versionSets: 'versionSetNames',
+  groups: 'groupNames',
+  subscriptions: 'subscriptionNames',
+  schemas: 'schemaNames',
+  policyRestrictions: 'policyRestrictionNames',
+  documentations: 'documentationNames',
+  workspaces: 'workspaceNames',
+};
+
 export async function loadFilterConfig(filePath: string): Promise<FilterConfig | undefined> {
   try {
     const content = await fs.readFile(filePath, 'utf-8');
     const parsed = (yaml.load(content) ?? {}) as Record<string, unknown>;
     
-    // Validate structure — each field must be an array of strings
+    // Validate structure — each field must be an array of strings.
+    // Accept both Toolkit-style keys (e.g. "apis") and legacy aliases (e.g. "apiNames").
     const config: FilterConfig = {};
 
-    if (parsed.apis !== undefined) {
-      config.apis = assertStringArray(parsed.apis, 'apis');
-    }
-    if (parsed.backends !== undefined) {
-      config.backends = assertStringArray(parsed.backends, 'backends');
-    }
-    if (parsed.products !== undefined) {
-      config.products = assertStringArray(parsed.products, 'products');
-    }
-    if (parsed.namedValues !== undefined) {
-      config.namedValues = assertStringArray(parsed.namedValues, 'namedValues');
-    }
-    if (parsed.loggers !== undefined) {
-      config.loggers = assertStringArray(parsed.loggers, 'loggers');
-    }
-    if (parsed.diagnostics !== undefined) {
-      config.diagnostics = assertStringArray(parsed.diagnostics, 'diagnostics');
-    }
-    if (parsed.tags !== undefined) {
-      config.tags = assertStringArray(parsed.tags, 'tags');
-    }
-    if (parsed.policyFragments !== undefined) {
-      config.policyFragments = assertStringArray(parsed.policyFragments, 'policyFragments');
-    }
-    if (parsed.gateways !== undefined) {
-      config.gateways = assertStringArray(parsed.gateways, 'gateways');
-    }
-    if (parsed.versionSets !== undefined) {
-      config.versionSets = assertStringArray(parsed.versionSets, 'versionSets');
-    }
-    if (parsed.groups !== undefined) {
-      config.groups = assertStringArray(parsed.groups, 'groups');
-    }
-    if (parsed.subscriptions !== undefined) {
-      config.subscriptions = assertStringArray(parsed.subscriptions, 'subscriptions');
-    }
-    if (parsed.schemas !== undefined) {
-      config.schemas = assertStringArray(parsed.schemas, 'schemas');
-    }
-    if (parsed.policyRestrictions !== undefined) {
-      config.policyRestrictions = assertStringArray(parsed.policyRestrictions, 'policyRestrictions');
-    }
-    if (parsed.documentations !== undefined) {
-      config.documentations = assertStringArray(parsed.documentations, 'documentations');
-    }
-    if (parsed.workspaces !== undefined) {
-      config.workspaces = assertStringArray(parsed.workspaces, 'workspaces');
+    for (const [field, legacyAlias] of Object.entries(FILTER_KEY_ALIASES)) {
+      const key = field as keyof FilterConfig;
+      const toolkitValue = parsed[field];
+      const legacyValue = parsed[legacyAlias];
+
+      if (toolkitValue !== undefined && legacyValue !== undefined) {
+        throw new Error(
+          `Filter config contains both '${field}' and '${legacyAlias}'. ` +
+          `Use '${field}' (the APIOps Toolkit format).`
+        );
+      }
+
+      if (toolkitValue !== undefined) {
+        config[key] = assertStringArray(toolkitValue, field);
+      } else if (legacyValue !== undefined) {
+        logger.warn(
+          `Filter key '${legacyAlias}' is deprecated; use '${field}' instead ` +
+          `(APIOps Toolkit format).`
+        );
+        config[key] = assertStringArray(legacyValue, legacyAlias);
+      }
     }
     
     logger.debug(`Loaded filter config from ${filePath}`);
