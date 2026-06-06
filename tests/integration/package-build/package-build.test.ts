@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 /// <reference types="node" />
 
-import { execFile } from 'node:child_process';
+import { exec as execCb } from 'node:child_process';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -10,8 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { describe, expect, it } from 'vitest';
 
-const exec = promisify(execFile);
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const exec = promisify(execCb);
 const currentFileDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(currentFileDir, '../../..');
 
@@ -33,10 +32,14 @@ function normalizePath(filePath: string): string {
 }
 
 async function runNpm(args: string[]): Promise<string> {
-  const result = await exec(npmCommand, args, {
+  // Use 'npm' with shell so .cmd resolution works on Windows and
+  // plain 'npm' works on Linux/macOS.  Pass args as a single joined string
+  // to avoid the Node.js v24 DEP0190 deprecation warning about passing
+  // array args with shell option.
+  const command = `npm ${args.join(' ')}`;
+  const result = await exec(command, {
     cwd: repoRoot,
     timeout: 90_000,
-    env: process.env,
   });
 
   return result.stdout;
