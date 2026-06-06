@@ -58,12 +58,10 @@ describe('workspace-extractor', () => {
         client, store, testContext, '/output', filter
       );
 
-      const expectedCallSequence = [
+      const expectedTypes = [
         ResourceType.NamedValue,
         ResourceType.Tag,
         ResourceType.Backend,
-        // Logger extraction preloads NamedValue display names for placeholder normalization.
-        ResourceType.NamedValue,
         ResourceType.Logger,
         ResourceType.Group,
         ResourceType.Diagnostic,
