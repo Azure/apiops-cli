@@ -172,7 +172,7 @@ apiops extract \
 
 #### Publisher configuration
 
-v1's `configuration.publisher.yaml` maps to v2's override files. The format differs:
+v1's `configuration.publisher.yaml` maps directly to v2's override files. The structure is the same:
 
 **v1:**
 
