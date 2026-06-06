@@ -51,6 +51,8 @@ Always include `Closes #N` or `Fixes #N` in commit messages when the change reso
 
 When opening a PR:
 - **Title and description must summarize ALL changes in the branch**, not just the last commit. Use `git log main..HEAD --oneline` (or the appropriate base branch) to review all commits and write a comprehensive PR title and description.
+- Once a PR already exists, **do not change its title or description unless the user explicitly asks you to do so**.
+- If the user does ask for an update, preserve the full-branch summary instead of rewriting the PR around only the most recent iteration.
 - Reference the issue in **both** the commit message AND the PR body: `Closes #{issue-number}`. The PR body is a redundant safety net if commit message formatting fails.
 - If the issue had a `squad:{member}` label, mention the member: `Working as {member} ({role})`
 - If this is a 🟡 needs-review task, add to the PR description: `⚠️ This task was flagged as "needs review" — please have a squad member review before merging.`

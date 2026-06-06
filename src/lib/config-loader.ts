@@ -10,6 +10,9 @@ import * as yaml from 'js-yaml';
 import { FilterConfig, OverrideConfig } from '../models/config.js';
 import { logger } from './logger.js';
 
+/** Internal normalized override shape keyed by resource name. */
+type OverrideSection = Record<string, Record<string, unknown>>;
+
 /**
  * Assert that a value is an array of strings. Throws on type mismatch.
  */
@@ -106,10 +109,18 @@ export async function loadFilterConfig(filePath: string): Promise<FilterConfig |
 export async function loadOverrideConfig(filePath: string): Promise<OverrideConfig | undefined> {
   try {
     const content = await fs.readFile(filePath, 'utf-8');
-    const parsed = (yaml.load(content) ?? {}) as OverrideConfig;
+    const loaded = yaml.load(content);
+    if (loaded !== null && loaded !== undefined && !isPlainObject(loaded)) {
+      throw new Error(
+        `Override file at ${filePath} must be a YAML mapping (key: value pairs) at the top level, ` +
+        `but got ${Array.isArray(loaded) ? 'an array' : typeof loaded}.`
+      );
+    }
+    const parsed = isPlainObject(loaded) ? loaded : {};
+    const normalized = normalizeOverrideConfig(parsed);
     
     logger.debug(`Loaded override config from ${filePath}`);
-    return parsed;
+    return normalized;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       logger.debug(`Override config file not found: ${filePath}`);
@@ -117,6 +128,93 @@ export async function loadOverrideConfig(filePath: string): Promise<OverrideConf
     }
     throw new Error(`Failed to load override config from ${filePath}: ${(error as Error).message}`, { cause: error });
   }
+}
+
+/**
+ * Normalize toolkit-format override sections into the internal keyed-map shape.
+ */
+function normalizeOverrideConfig(parsed: Record<string, unknown>): OverrideConfig {
+  const normalized: OverrideConfig = {};
+
+  const namedValues = normalizeOverrideSection(parsed.namedValues, 'namedValues');
+  const backends = normalizeOverrideSection(parsed.backends, 'backends');
+  const apis = normalizeOverrideSection(parsed.apis, 'apis');
+  const diagnostics = normalizeOverrideSection(parsed.diagnostics, 'diagnostics');
+  const loggers = normalizeOverrideSection(parsed.loggers, 'loggers');
+
+  if (namedValues !== undefined) normalized.namedValues = namedValues;
+  if (backends !== undefined) normalized.backends = backends;
+  if (apis !== undefined) normalized.apis = apis;
+  if (diagnostics !== undefined) normalized.diagnostics = diagnostics;
+  if (loggers !== undefined) normalized.loggers = loggers;
+
+  return normalized;
+}
+
+/**
+ * Normalize one override section into keyed-map format.
+ * Supports toolkit list format only:
+ * - `{ backends: [{ name: myBackend, properties: { url: ... } }] }`
+ */
+function normalizeOverrideSection(
+  section: unknown,
+  sectionName: string
+): OverrideSection | undefined {
+  if (section === undefined || section === null) {
+    return undefined;
+  }
+
+  if (!Array.isArray(section)) {
+    throw new Error(
+      `Invalid overrides.${sectionName}: expected an array in toolkit format ` +
+      `([ { name, properties } ]), got ${typeof section}.`
+    );
+  }
+
+  const normalized: OverrideSection = {};
+
+  for (const item of section) {
+    if (!isPlainObject(item)) {
+      logger.warn(`Ignoring invalid item in overrides.${sectionName}; expected object.`);
+      continue;
+    }
+
+    const name = item.name;
+    if (typeof name !== 'string' || name.trim().length === 0) {
+      logger.warn(`Ignoring item in overrides.${sectionName}; "name" is required.`);
+      continue;
+    }
+
+    if (isPlainObject(item.properties)) {
+      normalized[name] = item.properties;
+      continue;
+    }
+
+    logger.debug(
+      `Item in overrides.${sectionName} is missing a 'properties' object; using fields directly.`,
+      { name }
+    );
+    const fallbackFields = Object.fromEntries(
+      Object.entries(item).filter(([key]) => key !== 'name' && key !== 'properties')
+    );
+    if (Object.keys(fallbackFields).length === 0) {
+      logger.warn(`Ignoring item in overrides.${sectionName}; no override fields were provided.`, { name });
+      continue;
+    }
+
+    normalized[name] = fallbackFields;
+  }
+
+  return normalized;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.prototype.toString.call(value) === '[object Object]'
+  );
 }
 
 /**

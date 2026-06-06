@@ -11,37 +11,46 @@ export function generateOverrideConfig(environment: string): string {
 
 # Override named values (e.g., API keys, connection strings)
 # namedValues:
-#   api-key:
-#     value: "${environment}-api-key-value"
-#   connection-string:
-#     value: "Server=${environment}-db.example.com;Database=mydb"
-#   secret-from-keyvault:
-#     keyVault:
-#       secretIdentifier: "https://${environment}-kv.vault.azure.net/secrets/my-secret"
-#       identityClientId: "00000000-0000-0000-0000-000000000000"
+#   - name: api-key
+#     properties:
+#       value: "${environment}-api-key-value"
+#   - name: connection-string
+#     properties:
+#       value: "Server=${environment}-db.example.com;Database=mydb"
+#   - name: secret-from-keyvault
+#     properties:
+#       keyVault:
+#         secretIdentifier: "https://${environment}-kv.vault.azure.net/secrets/my-secret"
+#         identityClientId: "00000000-0000-0000-0000-000000000000"
 
 # Override backend URLs per environment
 # backends:
-#   backend-api:
-#     url: "https://${environment}-api.example.com"
-#   legacy-backend:
-#     url: "https://${environment}-legacy.example.com"
+#   - name: backend-api
+#     properties:
+#       url: "https://${environment}-api.example.com"
+#   - name: legacy-backend
+#     properties:
+#       url: "https://${environment}-legacy.example.com"
 
 # Override API service URLs
 # apis:
-#   echo-api:
-#     serviceUrl: "https://${environment}-echo.example.com"
-#   petstore-api:
-#     serviceUrl: "https://${environment}-petstore.example.com"
+#   - name: echo-api
+#     properties:
+#       serviceUrl: "https://${environment}-echo.example.com"
+#   - name: petstore-api
+#     properties:
+#       serviceUrl: "https://${environment}-petstore.example.com"
 
 # Override diagnostic logger references
 # diagnostics:
-#   applicationinsights:
-#     loggerId: "appinsights-logger-${environment}"
+#   - name: applicationinsights
+#     properties:
+#       loggerId: "appinsights-logger-${environment}"
 
 # Override logger credentials or resource IDs
 # loggers:
-#   appinsights-logger:
-#     resourceId: "/subscriptions/xxxxx/resourceGroups/${environment}-rg/providers/microsoft.insights/components/${environment}-appinsights"
+#   - name: appinsights-logger
+#     properties:
+#       resourceId: "/subscriptions/xxxxx/resourceGroups/${environment}-rg/providers/microsoft.insights/components/${environment}-appinsights"
 `;
 }

@@ -111,28 +111,34 @@ Pass an override YAML file with `--overrides`:
 ```yaml
 # configuration.prod.yaml
 namedValues:
-  api-key:
-    value: "prod-api-key-value"
-  secret-from-keyvault:
-    keyVault:
-      secretIdentifier: "https://prod-kv.vault.azure.net/secrets/my-secret"
-      identityClientId: "00000000-0000-0000-0000-000000000000"
+  - name: api-key
+    properties:
+      value: "prod-api-key-value"
+  - name: secret-from-keyvault
+    properties:
+      keyVault:
+        secretIdentifier: "https://prod-kv.vault.azure.net/secrets/my-secret"
+        identityClientId: "00000000-0000-0000-0000-000000000000"
 
 backends:
-  backend-api:
-    url: "https://prod-api.example.com"
+  - name: backend-api
+    properties:
+      url: "https://prod-api.example.com"
 
 apis:
-  echo-api:
-    serviceUrl: "https://prod-echo.example.com"
+  - name: echo-api
+    properties:
+      serviceUrl: "https://prod-echo.example.com"
 
 diagnostics:
-  applicationinsights:
-    loggerId: "appinsights-logger-prod"
+  - name: applicationinsights
+    properties:
+      loggerId: "appinsights-logger-prod"
 
 loggers:
-  appinsights-logger:
-    resourceId: "/subscriptions/xxx/resourceGroups/prod-rg/providers/microsoft.insights/components/prod-appinsights"
+  - name: appinsights-logger
+    properties:
+      resourceId: "/subscriptions/xxx/resourceGroups/prod-rg/providers/microsoft.insights/components/prod-appinsights"
 ```
 
 ### Overridable resource types
@@ -145,7 +151,7 @@ loggers:
 | `diagnostics` | `loggerId` |
 | `loggers` | `resourceId` |
 
-Resource **names** must match across environments — only **properties** are overridden.
+Resource names are matched by each list item's `name`. Only values in `properties` are overridden.
 
 ## Dependency ordering
 
