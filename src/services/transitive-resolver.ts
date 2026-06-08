@@ -159,11 +159,12 @@ function addToFilter(
   filter: FilterConfig,
   dep: TransitiveDependency
 ): boolean {
-  const fieldMap: Partial<Record<ResourceType, keyof FilterConfig>> = {
-    [ResourceType.NamedValue]: 'namedValueNames',
-    [ResourceType.Backend]: 'backendNames',
-    [ResourceType.PolicyFragment]: 'policyFragmentNames',
-    [ResourceType.VersionSet]: 'versionSetNames',
+  type StringArrayField = 'namedValues' | 'backends' | 'policyFragments' | 'versionSets';
+  const fieldMap: Partial<Record<ResourceType, StringArrayField>> = {
+    [ResourceType.NamedValue]: 'namedValues',
+    [ResourceType.Backend]: 'backends',
+    [ResourceType.PolicyFragment]: 'policyFragments',
+    [ResourceType.VersionSet]: 'versionSets',
   };
 
   const field = fieldMap[dep.type];
@@ -179,7 +180,7 @@ function addToFilter(
 
   // Check if already included (case-insensitive)
   const lowerName = dep.name.toLowerCase();
-  if (current.some((n) => n.toLowerCase() === lowerName)) {
+  if (current.some((n: string) => n.toLowerCase() === lowerName)) {
     return false;
   }
 

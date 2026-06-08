@@ -93,7 +93,7 @@ describe('resource-extractor', () => {
         { name: 'nv-2', properties: {} },
       ]);
       const store = createMockStore();
-      const filter: FilterConfig = { namedValueNames: ['nv-1'] };
+      const filter: FilterConfig = { namedValues: ['nv-1'] };
 
       const result = await extractResourceType(
         client, store, testContext,

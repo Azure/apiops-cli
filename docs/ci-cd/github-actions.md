@@ -44,7 +44,7 @@ The extract workflow pulls configuration from your APIM instance and creates a P
 | Input | Description | Options |
 |-------|-------------|---------|
 | `ENVIRONMENT` | Which APIM instance to extract from | `dev`, `prod` |
-| `CONFIGURATION_YAML_PATH` | Extract all APIs or use a filter file | `Extract All APIs`, `configuration.extract.yaml` |
+| `CONFIGURATION_YAML_PATH` | Extract all APIs or use a filter file | `Extract All APIs`, `configuration.extractor.yaml` |
 
 ### What It Does
 

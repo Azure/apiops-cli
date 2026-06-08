@@ -727,8 +727,8 @@ describe('api-extractor', () => {
       );
     });
 
-    it('should skip revision that does not match filter apiNames', async () => {
-      const filter: FilterConfig = { apiNames: ['other-api'] };
+    it('should skip revision that does not match filter apis', async () => {
+      const filter: FilterConfig = { apis: ['other-api'] };
       const client = createMockClient({
         listApiRevisions: async function* () {
           yield { apiRevision: '2' };

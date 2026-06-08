@@ -114,11 +114,11 @@ describe('delete-unmatched-service', () => {
 
       const result = await computeDeleteActions(client, store, testContext, testConfig);
 
-      const groupNames = result.filter((d) => d.type === ResourceType.Group).map((d) => d.nameParts[0]);
-      expect(groupNames).not.toContain('administrators');
-      expect(groupNames).not.toContain('developers');
-      expect(groupNames).not.toContain('guests');
-      expect(groupNames).toContain('custom-group');
+      const groups = result.filter((d) => d.type === ResourceType.Group).map((d) => d.nameParts[0]);
+      expect(groups).not.toContain('administrators');
+      expect(groups).not.toContain('developers');
+      expect(groups).not.toContain('guests');
+      expect(groups).toContain('custom-group');
     });
 
     it('should skip system products', async () => {
@@ -136,11 +136,11 @@ describe('delete-unmatched-service', () => {
 
       const result = await computeDeleteActions(client, store, testContext, testConfig);
 
-      const productNames = result.filter((d) => d.type === ResourceType.Product).map((d) => d.nameParts[0]);
-      expect(productNames).not.toContain('master');
-      expect(productNames).not.toContain('unlimited');
-      expect(productNames).not.toContain('starter');
-      expect(productNames).toContain('custom-product');
+      const products = result.filter((d) => d.type === ResourceType.Product).map((d) => d.nameParts[0]);
+      expect(products).not.toContain('master');
+      expect(products).not.toContain('unlimited');
+      expect(products).not.toContain('starter');
+      expect(products).toContain('custom-product');
     });
 
     it('should skip echo-api system API', async () => {
@@ -156,9 +156,9 @@ describe('delete-unmatched-service', () => {
 
       const result = await computeDeleteActions(client, store, testContext, testConfig);
 
-      const apiNames = result.filter((d) => d.type === ResourceType.Api).map((d) => d.nameParts[0]);
-      expect(apiNames).not.toContain('echo-api');
-      expect(apiNames).toContain('custom-api');
+      const apis = result.filter((d) => d.type === ResourceType.Api).map((d) => d.nameParts[0]);
+      expect(apis).not.toContain('echo-api');
+      expect(apis).toContain('custom-api');
     });
 
     it('should handle empty artifact store (nothing to delete)', async () => {

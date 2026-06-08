@@ -1,7 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { loadFilterConfig, loadOverrideConfig, loadOTelConfig } from '../../../src/lib/config-loader.js';
+import { logger } from '../../../src/lib/logger.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -14,18 +15,19 @@ describe('config-loader', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   describe('loadFilterConfig', () => {
     it('should load a valid filter YAML file', async () => {
       const content = `
-apiNames:
+apis:
   - api1
   - api2
-productNames:
+products:
   - starter
-tagNames:
+tags:
   - v1
 `;
       const filePath = path.join(tmpDir, 'filter.yaml');
@@ -33,9 +35,9 @@ tagNames:
 
       const config = await loadFilterConfig(filePath);
       expect(config).toBeDefined();
-      expect(config!.apiNames).toEqual(['api1', 'api2']);
-      expect(config!.productNames).toEqual(['starter']);
-      expect(config!.tagNames).toEqual(['v1']);
+      expect(config!.apis).toEqual(['api1', 'api2']);
+      expect(config!.products).toEqual(['starter']);
+      expect(config!.tags).toEqual(['v1']);
     });
 
     it('should return undefined for missing file', async () => {
@@ -71,7 +73,7 @@ tagNames:
 
     it('should throw for invalid type (non-array field)', async () => {
       const content = `
-apiNames: "not-an-array"
+apis: "not-an-array"
 `;
       const filePath = path.join(tmpDir, 'bad.yaml');
       await fs.writeFile(filePath, content, 'utf-8');
@@ -81,7 +83,7 @@ apiNames: "not-an-array"
 
     it('should throw for array containing non-strings', async () => {
       const content = `
-apiNames:
+apis:
   - 123
   - true
 `;
@@ -93,30 +95,149 @@ apiNames:
 
     it('should handle all filter fields', async () => {
       const content = `
-apiNames: [a]
-backendNames: [b]
-productNames: [c]
-namedValueNames: [d]
-loggerNames: [e]
-diagnosticNames: [f]
-tagNames: [g]
-policyFragmentNames: [h]
-gatewayNames: [i]
-versionSetNames: [j]
-groupNames: [k]
-subscriptionNames: [l]
-schemaNames: [m]
-policyRestrictionNames: [n]
-documentationNames: [o]
-workspaceNames: [p]
+apis: [a]
+backends: [b]
+products: [c]
+namedValues: [d]
+loggers: [e]
+diagnostics: [f]
+tags: [g]
+policyFragments: [h]
+gateways: [i]
+versionSets: [j]
+groups: [k]
+subscriptions: [l]
+schemas: [m]
+policyRestrictions: [n]
+documentations: [o]
+workspaces: [p]
 `;
       const filePath = path.join(tmpDir, 'all-fields.yaml');
       await fs.writeFile(filePath, content, 'utf-8');
 
       const config = await loadFilterConfig(filePath);
       expect(config).toBeDefined();
-      expect(config!.apiNames).toEqual(['a']);
-      expect(config!.workspaceNames).toEqual(['p']);
+      expect(config!.apis).toEqual(['a']);
+      expect(config!.workspaces).toEqual(['p']);
+    });
+
+    it('should accept legacy *Names keys as aliases', async () => {
+      const content = `
+apiNames:
+  - api1
+  - api2
+productNames:
+  - starter
+backendNames:
+  - backend1
+versionSetNames:
+  - vs1
+`;
+      const filePath = path.join(tmpDir, 'legacy.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.apis).toEqual(['api1', 'api2']);
+      expect(config!.products).toEqual(['starter']);
+      expect(config!.backends).toEqual(['backend1']);
+      expect(config!.versionSets).toEqual(['vs1']);
+    });
+
+    it('should throw when both Toolkit and legacy keys are used for the same field', async () => {
+      const content = `
+apis:
+  - api1
+apiNames:
+  - api2
+`;
+      const filePath = path.join(tmpDir, 'conflict.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      await expect(loadFilterConfig(filePath)).rejects.toThrow(
+        "contains both 'apis' and 'apiNames'"
+      );
+    });
+
+    it('should accept a mix of Toolkit and legacy keys for different fields', async () => {
+      const content = `
+apis:
+  - api1
+backendNames:
+  - backend1
+versionSets:
+  - vs1
+`;
+      const filePath = path.join(tmpDir, 'mixed.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.apis).toEqual(['api1']);
+      expect(config!.backends).toEqual(['backend1']);
+      expect(config!.versionSets).toEqual(['vs1']);
+    });
+
+    it('should load nested API filter entries', async () => {
+      const content = `
+apis:
+  - simple-api
+  - complex-api:
+      operations:
+        - get-pets
+      diagnostics: []
+`;
+      const filePath = path.join(tmpDir, 'nested-api-filter.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.apis).toEqual(['simple-api', 'complex-api']);
+      expect(config!.apiSubFilters).toEqual({
+        'complex-api': {
+          operations: ['get-pets'],
+          diagnostics: [],
+        },
+      });
+    });
+
+    it('should load nested workspace filter entries', async () => {
+      const content = `
+workspaces:
+  - ws-simple
+  - ws-complex:
+      apis:
+        - api-a
+      diagnostics: []
+`;
+      const filePath = path.join(tmpDir, 'nested-workspace-filter.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.workspaces).toEqual(['ws-simple', 'ws-complex']);
+      expect(config!.workspaceSubFilters).toEqual({
+        'ws-complex': {
+          apis: ['api-a'],
+          diagnostics: [],
+        },
+      });
+    });
+
+    it('should warn about unknown top-level filter keys', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const content = `
+apis:
+  - api1
+mystery:
+  - value
+`;
+      const filePath = path.join(tmpDir, 'unknown-filter-key.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+      expect(config!.apis).toEqual(['api1']);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Unknown filter config key 'mystery'"));
     });
   });
 
@@ -182,12 +303,16 @@ backends:
       expect(config).toBeDefined();
       expect(config!.namedValues).toEqual({
         nv1: {
-          value: 'overridden',
+          properties: {
+            value: 'overridden',
+          },
         },
       });
       expect(config!.backends).toEqual({
         be1: {
-          url: 'https://new-backend.com',
+          properties: {
+            url: 'https://new-backend.com',
+          },
         },
       });
     });
@@ -240,7 +365,9 @@ namedValues:
       expect(config).toBeDefined();
       expect(config!.namedValues).toEqual({
         nv1: {
-          value: 'inline-value',
+          properties: {
+            value: 'inline-value',
+          },
         },
       });
     });
@@ -280,14 +407,155 @@ backends:
       expect(config).toBeDefined();
       expect(config!.namedValues).toEqual({
         nv1: {
-          value: 'valid',
+          properties: {
+            value: 'valid',
+          },
         },
       });
       expect(config!.backends).toEqual({
         be1: {
-          url: 'https://valid.example.com',
+          properties: {
+            url: 'https://valid.example.com',
+          },
         },
       });
+    });
+
+    it('should load override sections beyond the original core set', async () => {
+      const content = `
+products:
+  - name: starter
+    properties:
+      displayName: "Starter Plus"
+gateways:
+  - name: gw-1
+    properties:
+      description: "Gateway 1"
+tags:
+  - name: tag-a
+    properties:
+      displayName: "Tag A"
+policies:
+  - name: policy
+    properties:
+      format: "rawxml"
+policyFragments:
+  - name: fragment-a
+    properties:
+      format: "rawxml"
+`;
+      const filePath = path.join(tmpDir, 'override-all-sections.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadOverrideConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.products).toEqual({
+        starter: {
+          properties: {
+            displayName: 'Starter Plus',
+          },
+        },
+      });
+      expect(config!.gateways).toEqual({
+        'gw-1': {
+          properties: {
+            description: 'Gateway 1',
+          },
+        },
+      });
+      expect(config!.tags).toEqual({
+        'tag-a': {
+          properties: {
+            displayName: 'Tag A',
+          },
+        },
+      });
+      expect(config!.policies).toEqual({
+        policy: {
+          properties: {
+            format: 'rawxml',
+          },
+        },
+      });
+      expect(config!.policyFragments).toEqual({
+        'fragment-a': {
+          properties: {
+            format: 'rawxml',
+          },
+        },
+      });
+    });
+
+    it('should load nested API overrides with child sections', async () => {
+      const content = `
+apis:
+  - name: my-api
+    properties:
+      serviceUrl: "https://prod.example.com"
+    diagnostics:
+      - name: applicationinsights
+        properties:
+          loggerId: "/new-logger"
+    operations:
+      - name: get-pets
+        properties:
+          method: "GET"
+`;
+      const filePath = path.join(tmpDir, 'override-nested-api.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadOverrideConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.apis).toEqual({
+        'my-api': {
+          properties: {
+            serviceUrl: 'https://prod.example.com',
+          },
+          children: {
+            diagnostics: {
+              applicationinsights: {
+                properties: {
+                  loggerId: '/new-logger',
+                },
+              },
+            },
+            operations: {
+              'get-pets': {
+                properties: {
+                  method: 'GET',
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    it('should warn when an override section contains duplicate names', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const content = `
+namedValues:
+  - name: nv1
+    properties:
+      value: "first"
+  - name: nv1
+    properties:
+      value: "second"
+`;
+      const filePath = path.join(tmpDir, 'override-duplicate-names.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadOverrideConfig(filePath);
+      expect(config!.namedValues).toEqual({
+        nv1: {
+          properties: {
+            value: 'second',
+          },
+        },
+      });
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Duplicate name 'nv1' in overrides.namedValues")
+      );
     });
   });
 

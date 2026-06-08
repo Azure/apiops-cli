@@ -15,42 +15,42 @@ describe('configs/filter-config', () => {
       expect(config).toContain('# APIM Extract Filter Configuration');
     });
 
-    it('should include commented examples for apiNames', () => {
+    it('should include commented examples for apis', () => {
       const config = generateFilterConfig();
-      expect(config).toContain('# apiNames:');
+      expect(config).toContain('# apis:');
     });
 
-    it('should include commented examples for productNames', () => {
+    it('should include commented examples for products', () => {
       const config = generateFilterConfig();
-      expect(config).toContain('# productNames:');
+      expect(config).toContain('# products:');
     });
 
-    it('should include commented examples for backendNames', () => {
+    it('should include commented examples for backends', () => {
       const config = generateFilterConfig();
-      expect(config).toContain('# backendNames:');
+      expect(config).toContain('# backends:');
     });
 
-    it('should include commented examples for namedValueNames', () => {
+    it('should include commented examples for namedValues', () => {
       const config = generateFilterConfig();
-      expect(config).toContain('# namedValueNames:');
+      expect(config).toContain('# namedValues:');
     });
 
-    it('should include commented examples for policyFragmentNames', () => {
+    it('should include commented examples for policyFragments', () => {
       const config = generateFilterConfig();
-      expect(config).toContain('# policyFragmentNames:');
+      expect(config).toContain('# policyFragments:');
     });
 
     it('should include commented examples for all supported filter fields', () => {
       const config = generateFilterConfig();
       const fields = [
-        'gatewayNames',
-        'versionSetNames',
-        'groupNames',
-        'subscriptionNames',
-        'schemaNames',
-        'policyRestrictionNames',
-        'documentationNames',
-        'workspaceNames',
+        'gateways',
+        'versionSets',
+        'groups',
+        'subscriptions',
+        'schemas',
+        'policyRestrictions',
+        'documentations',
+        'workspaces',
       ];
       fields.forEach((field) => {
         expect(config).toContain(`# ${field}:`);
@@ -60,8 +60,8 @@ describe('configs/filter-config', () => {
     it('should document empty arrays as exclude-all behavior', () => {
       const config = generateFilterConfig();
       expect(config).toContain('# - Set a section to an empty array ([]) to exclude ALL resources of that type');
-      expect(config).toContain('#   gatewayNames: []');
-      expect(config).toContain('#   subscriptionNames: []');
+      expect(config).toContain('#   gateways: []');
+      expect(config).toContain('#   subscriptions: []');
     });
 
     it('should not have any uncommented configuration by default', () => {

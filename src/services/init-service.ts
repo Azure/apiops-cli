@@ -198,7 +198,7 @@ class InitServiceImpl implements InitService {
     // Check for config files
     const filterConfig = path.join(
       config.outputDir,
-      'configuration.extract.yaml'
+      'configuration.extractor.yaml'
     );
     if (await this.fileExists(filterConfig)) {
       conflictingFiles.push(filterConfig);
@@ -375,9 +375,9 @@ class InitServiceImpl implements InitService {
   ): Promise<void> {
     // Filter config
     const filterContent = generateFilterConfig();
-    const filterPath = path.join(config.outputDir, 'configuration.extract.yaml');
+    const filterPath = path.join(config.outputDir, 'configuration.extractor.yaml');
     await fs.writeFile(filterPath, filterContent);
-    generatedFiles.configs.push('configuration.extract.yaml');
+    generatedFiles.configs.push('configuration.extractor.yaml');
 
     // Override configs for each environment
     for (const env of config.environments) {

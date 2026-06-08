@@ -275,17 +275,17 @@ describe('ArtifactStore', () => {
       const result = await store.listResources(tmpDir);
       expect(result.length).toBeGreaterThanOrEqual(3);
 
-      const apiNames = result
+      const apis = result
         .filter((d) => d.type === ResourceType.Api)
         .map((d) => d.nameParts[0])
         .sort();
-      expect(apiNames).toContain('api1');
-      expect(apiNames).toContain('api2');
+      expect(apis).toContain('api1');
+      expect(apis).toContain('api2');
 
-      const productNames = result
+      const products = result
         .filter((d) => d.type === ResourceType.Product)
         .map((d) => d.nameParts[0]);
-      expect(productNames).toContain('prod1');
+      expect(products).toContain('prod1');
     });
   });
 

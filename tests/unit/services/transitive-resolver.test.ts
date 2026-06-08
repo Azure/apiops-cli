@@ -115,12 +115,12 @@ describe('transitive-resolver', () => {
       const apis = new Map<string, Record<string, unknown>>();
 
       const filter: FilterConfig = {
-        apiNames: ['my-api'],
-        namedValueNames: [], // Start with empty — should be expanded
+        apis: ['my-api'],
+        namedValues: [], // Start with empty — should be expanded
       };
 
       const expanded = resolveTransitiveDependencies(policies, apis, filter);
-      expect(expanded.namedValueNames).toContain('my-secret');
+      expect(expanded.namedValues).toContain('my-secret');
     });
 
     it('should not add to undefined filter fields (unfiltered types)', () => {
@@ -129,14 +129,14 @@ describe('transitive-resolver', () => {
 
       const apis = new Map<string, Record<string, unknown>>();
 
-      // namedValueNames is undefined = all named values included
+      // namedValues is undefined = all named values included
       const filter: FilterConfig = {
-        apiNames: ['my-api'],
+        apis: ['my-api'],
       };
 
       const expanded = resolveTransitiveDependencies(policies, apis, filter);
       // Should remain undefined (no need to add — all are already included)
-      expect(expanded.namedValueNames).toBeUndefined();
+      expect(expanded.namedValues).toBeUndefined();
     });
 
     it('should not duplicate existing entries', () => {
@@ -146,11 +146,11 @@ describe('transitive-resolver', () => {
       const apis = new Map<string, Record<string, unknown>>();
 
       const filter: FilterConfig = {
-        namedValueNames: ['existing-secret'],
+        namedValues: ['existing-secret'],
       };
 
       const expanded = resolveTransitiveDependencies(policies, apis, filter);
-      expect(expanded.namedValueNames).toEqual(['existing-secret']);
+      expect(expanded.namedValues).toEqual(['existing-secret']);
     });
   });
 

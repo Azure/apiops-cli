@@ -78,9 +78,9 @@ In interactive mode (the default when running in a terminal), `apiops init` prom
 
 | File | Purpose |
 |------|---------|
-| `.github/workflows/extract.yaml` | Pipeline to extract APIM artifacts |
-| `.github/workflows/publish.yaml` | Pipeline to publish artifacts to APIM |
-| `configuration.extract.yaml` | Sample filter configuration for extraction |
+| `.github/workflows/run-apim-extractor.yml` | Workflow to extract APIM artifacts |
+| `.github/workflows/run-apim-publisher.yml` | Workflow to publish artifacts to APIM |
+| `configuration.extractor.yaml` | Sample filter configuration for extraction |
 | `configuration.{env}.yaml` | Override templates per environment (e.g., `configuration.dev.yaml`, `configuration.prod.yaml`) |
 | `IDENTITY-SETUP-GITHUB.md` | Step-by-step guide for configuring federated credentials |
 
@@ -88,9 +88,9 @@ In interactive mode (the default when running in a terminal), `apiops init` prom
 
 | File | Purpose |
 |------|---------|
-| `pipelines/extract.yaml` | Pipeline to extract APIM artifacts |
-| `pipelines/publish.yaml` | Pipeline to publish artifacts to APIM |
-| `configuration.extract.yaml` | Sample filter configuration for extraction |
+| `.azdo/pipelines/run-apim-extractor.yml` | Pipeline to extract APIM artifacts |
+| `.azdo/pipelines/run-apim-publisher.yml` | Pipeline to publish artifacts to APIM |
+| `configuration.extractor.yaml` | Sample filter configuration for extraction |
 | `configuration.{env}.yaml` | Override templates per environment |
 | `IDENTITY-SETUP-AZDO.md` | Step-by-step guide for configuring service connections |
 
@@ -98,6 +98,7 @@ In interactive mode (the default when running in a terminal), `apiops init` prom
 
 | File | Purpose |
 |------|---------|
+| `.github/prompts/apiops-setup-identity.prompt.md` | Copilot prompt for identity setup |
 | `<artifact-dir>/` | Empty artifact directory (default: `./apim-artifacts`) |
 
 ## Package consumption modes

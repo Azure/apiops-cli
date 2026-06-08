@@ -27,8 +27,7 @@ apiops publish \
 
 `apiops-cli` uses the [APIOps Toolkit](https://github.com/Azure/apiops) override layout:
 
-- Top-level resource sections: `namedValues`, `backends`, `apis`, `diagnostics`, `loggers`
-  > **Note:** Gateway and subscription overrides are not currently supported.
+- Top-level resource sections: `namedValues`, `backends`, `apis`, `diagnostics`, `loggers`, `policies`, `gateways`, `versionSets`, `groups`, `subscriptions`, `products`, `tags`, `policyFragments`, `workspaces`
 - Each section is a list
 - Each list item contains `name` and `properties`
 
@@ -53,6 +52,14 @@ apis:
   - name: petstore-api
     properties:
       serviceUrl: "https://petstore.contoso.com/v1"
+    diagnostics:
+      - name: applicationinsights
+        properties:
+          loggerId: "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.ApiManagement/service/<apim>/loggers/prod-appinsights"
+    policies:
+      - name: policy
+        properties:
+          format: rawxml
 
 diagnostics:
   - name: applicationinsights
@@ -65,9 +72,46 @@ loggers:
       resourceId: "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/microsoft.insights/components/prod-appinsights"
       credentials:
         instrumentationKey: "prod-key"
+
+# Additional override sections (all APIOps Toolkit sections are supported):
+# policies:
+#   - name: policy
+#     properties:
+#       format: rawxml
+# gateways:
+#   - name: my-gateway
+#     properties:
+#       locationData:
+#         name: "gateway location"
+# versionSets:
+#   - name: my-version-set
+#     properties:
+#       displayName: "My Version Set"
+# groups:
+#   - name: my-group
+#     properties:
+#       displayName: "My Group"
+# subscriptions:
+#   - name: my-subscription
+#     properties:
+#       displayName: "My Subscription"
+# products:
+#   - name: my-product
+#     properties:
+#       displayName: "My Product"
+# tags:
+#   - name: my-tag
+#     properties:
+#       displayName: "My Tag"
+# policyFragments:
+#   - name: my-fragment
+#     properties:
+#       description: "My Policy Fragment"
 ```
 
 ## Override capabilities by resource type
+
+Override properties are generic — any ARM resource property can be overridden. The examples below show common use cases per resource type, but you're not limited to these properties.
 
 ### Named values
 
@@ -83,14 +127,6 @@ namedValues:
         identityClientId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 ```
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `value` | `string` | Plain-text value |
-| `displayName` | `string` | Display name in the portal |
-| `tags` | `string[]` | Resource tags |
-| `keyVault.secretIdentifier` | `string` | Key Vault secret URI |
-| `keyVault.identityClientId` | `string` | Managed identity client ID for Key Vault access |
-
 ### Backends
 
 ```yaml
@@ -98,16 +134,12 @@ backends:
   - name: petstore-backend
     properties:
       url: "https://petstore-prod.contoso.com"
+      resourceId: "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.Web/sites/prod-backend"
       credentials:
         header:
           x-api-key:
             - "prod-backend-key"
 ```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `url` | `string` | Backend service URL |
-| `credentials` | `object` | Authentication credentials (headers, query params, certificates) |
 
 ### APIs
 
@@ -116,24 +148,48 @@ apis:
   - name: petstore-api
     properties:
       serviceUrl: "https://petstore-prod.contoso.com/v1"
+      displayName: "Petstore API (Production)"
 ```
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `serviceUrl` | `string` | Backend service URL for the API |
+### APIs with nested sub-resource overrides
 
-### Diagnostics
+API entries support nested sub-resource overrides for diagnostics, operations, policies, and releases:
+
+```yaml
+apis:
+  - name: petstore-api
+    properties:
+      serviceUrl: "https://petstore-prod.contoso.com/v1"
+    diagnostics:
+      - name: applicationinsights
+        properties:
+          loggerId: "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.ApiManagement/service/<apim>/loggers/prod-appinsights"
+          verbosity: Error
+    operations:
+      - name: get-pets
+        policies:
+          - name: policy
+            properties:
+              format: rawxml
+    policies:
+      - name: policy
+        properties:
+          format: rawxml
+    releases:
+      - name: v1-release
+        properties:
+          notes: "Production release"
+```
+
+### Diagnostics (service-level)
 
 ```yaml
 diagnostics:
   - name: applicationinsights
     properties:
       loggerId: "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/Microsoft.ApiManagement/service/<apim>/loggers/prod-appinsights"
+      verbosity: Error
 ```
-
-| Property | Type | Description |
-|----------|------|-------------|
-| `loggerId` | `string` | Full resource ID of the target logger |
 
 ### Loggers
 
@@ -141,15 +197,38 @@ diagnostics:
 loggers:
   - name: appinsights-logger
     properties:
+      loggerType: applicationInsights
       resourceId: "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/microsoft.insights/components/prod-appinsights"
       credentials:
         instrumentationKey: "prod-instrumentation-key"
+      isBuffered: true
 ```
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `resourceId` | `string` | Azure resource ID of the logging target (for example, Application Insights) |
-| `credentials` | `object` | Credentials for the logging service |
+### Service-level policies
+
+```yaml
+policies:
+  - name: policy
+    properties:
+      format: rawxml
+```
+
+### All other resource types
+
+Overrides are also supported for: `gateways`, `versionSets`, `groups`, `subscriptions`, `products`, `tags`, `policyFragments`, and `workspaces`. Each uses the same `name` + `properties` format:
+
+```yaml
+gateways:
+  - name: on-prem-gateway
+    properties:
+      locationData:
+        name: "On-premises datacenter"
+
+products:
+  - name: starter-product
+    properties:
+      displayName: "Starter (Production)"
+```
 
 ## Override rules
 

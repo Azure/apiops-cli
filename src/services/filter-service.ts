@@ -6,8 +6,8 @@
  * case-insensitive matching, API root-name matching for revisions.
  */
 
-import { FilterConfig } from '../models/config.js';
-import { ResourceType } from '../models/resource-types.js';
+import { FilterConfig, ApiSubFilter } from '../models/config.js';
+import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { ResourceDescriptor } from '../models/types.js';
 import { logger } from '../lib/logger.js';
 import { getNamePart } from '../lib/resource-path.js';
@@ -16,21 +16,23 @@ import { getNamePart } from '../lib/resource-path.js';
  * Map resource types to their corresponding FilterConfig field names.
  */
 const FILTER_FIELD_MAP: Partial<Record<ResourceType, keyof FilterConfig>> = {
-  [ResourceType.Api]: 'apiNames',
-  [ResourceType.Backend]: 'backendNames',
-  [ResourceType.Product]: 'productNames',
-  [ResourceType.NamedValue]: 'namedValueNames',
-  [ResourceType.Logger]: 'loggerNames',
-  [ResourceType.Diagnostic]: 'diagnosticNames',
-  [ResourceType.Tag]: 'tagNames',
-  [ResourceType.PolicyFragment]: 'policyFragmentNames',
-  [ResourceType.Gateway]: 'gatewayNames',
-  [ResourceType.VersionSet]: 'versionSetNames',
-  [ResourceType.Group]: 'groupNames',
-  [ResourceType.Subscription]: 'subscriptionNames',
-  [ResourceType.GlobalSchema]: 'schemaNames',
-  [ResourceType.PolicyRestriction]: 'policyRestrictionNames',
-  [ResourceType.Documentation]: 'documentationNames',
+  [ResourceType.Api]: 'apis',
+  [ResourceType.Backend]: 'backends',
+  [ResourceType.Product]: 'products',
+  [ResourceType.NamedValue]: 'namedValues',
+  [ResourceType.Logger]: 'loggers',
+  [ResourceType.Diagnostic]: 'diagnostics',
+  [ResourceType.Tag]: 'tags',
+  [ResourceType.PolicyFragment]: 'policyFragments',
+  [ResourceType.Gateway]: 'gateways',
+  [ResourceType.VersionSet]: 'versionSets',
+  [ResourceType.Group]: 'groups',
+  [ResourceType.Subscription]: 'subscriptions',
+  [ResourceType.GlobalSchema]: 'schemas',
+  [ResourceType.ServicePolicy]: 'policies',
+  [ResourceType.PolicyRestriction]: 'policyRestrictions',
+  [ResourceType.Documentation]: 'documentations',
+  [ResourceType.Workspace]: 'workspaces',
 };
 
 /**
@@ -38,23 +40,34 @@ const FILTER_FIELD_MAP: Partial<Record<ResourceType, keyof FilterConfig>> = {
  * If the parent (e.g., Api or Product) passes the filter, all children are included.
  */
 const PARENT_FILTER_MAP: Partial<Record<ResourceType, keyof FilterConfig>> = {
-  [ResourceType.ApiPolicy]: 'apiNames',
-  [ResourceType.ApiTag]: 'apiNames',
-  [ResourceType.ApiDiagnostic]: 'apiNames',
-  [ResourceType.ApiOperation]: 'apiNames',
-  [ResourceType.ApiOperationPolicy]: 'apiNames',
-  [ResourceType.ApiSchema]: 'apiNames',
-  [ResourceType.ApiRelease]: 'apiNames',
-  [ResourceType.ApiTagDescription]: 'apiNames',
-  [ResourceType.ApiWiki]: 'apiNames',
-  [ResourceType.GraphQLResolver]: 'apiNames',
-  [ResourceType.GraphQLResolverPolicy]: 'apiNames',
-  [ResourceType.ProductPolicy]: 'productNames',
-  [ResourceType.ProductApi]: 'productNames',
-  [ResourceType.ProductGroup]: 'productNames',
-  [ResourceType.ProductTag]: 'productNames',
-  [ResourceType.ProductWiki]: 'productNames',
-  [ResourceType.GatewayApi]: 'gatewayNames',
+  [ResourceType.ApiPolicy]: 'apis',
+  [ResourceType.ApiTag]: 'apis',
+  [ResourceType.ApiDiagnostic]: 'apis',
+  [ResourceType.ApiOperation]: 'apis',
+  [ResourceType.ApiOperationPolicy]: 'apis',
+  [ResourceType.ApiSchema]: 'apis',
+  [ResourceType.ApiRelease]: 'apis',
+  [ResourceType.ApiTagDescription]: 'apis',
+  [ResourceType.ApiWiki]: 'apis',
+  [ResourceType.GraphQLResolver]: 'apis',
+  [ResourceType.GraphQLResolverPolicy]: 'apis',
+  [ResourceType.ProductPolicy]: 'products',
+  [ResourceType.ProductApi]: 'products',
+  [ResourceType.ProductGroup]: 'products',
+  [ResourceType.ProductTag]: 'products',
+  [ResourceType.ProductWiki]: 'products',
+  [ResourceType.GatewayApi]: 'gateways',
+};
+
+/**
+ * Map API child resource types to their sub-filter key in ApiSubFilter.
+ */
+const API_SUB_FILTER_KEY_MAP: Partial<Record<ResourceType, keyof ApiSubFilter>> = {
+  [ResourceType.ApiOperation]: 'operations',
+  [ResourceType.ApiOperationPolicy]: 'operations',
+  [ResourceType.ApiDiagnostic]: 'diagnostics',
+  [ResourceType.ApiSchema]: 'schemas',
+  [ResourceType.ApiRelease]: 'releases',
 };
 
 /**
@@ -67,6 +80,7 @@ const PARENT_FILTER_MAP: Partial<Record<ResourceType, keyof FilterConfig>> = {
  * - Matching is case-insensitive.
  * - API filter matches root name; all revisions of matching root are included.
  * - Child resources inherit filter from their parent type.
+ * - API sub-resource filters (operations, diagnostics, schemas, releases) are applied when specified.
  */
 export function shouldIncludeResource(
   descriptor: ResourceDescriptor,
@@ -79,7 +93,11 @@ export function shouldIncludeResource(
   // Check direct filter field for this resource type
   const directField = FILTER_FIELD_MAP[descriptor.type];
   if (directField) {
-    return matchesFilter(getNamePart(descriptor.nameParts, 0), filter[directField]);
+    // Singleton resources (e.g., ServicePolicy) have nameParts: [] — use fixed name from ARM path
+    const resourceName = descriptor.nameParts.length > 0
+      ? getNamePart(descriptor.nameParts, 0)
+      : getSingletonFilterName(descriptor.type);
+    return matchesFilter(resourceName, filter[directField] as string[] | undefined);
   }
 
   // Check parent-based filter for child resource types
@@ -87,17 +105,76 @@ export function shouldIncludeResource(
   if (parentField) {
     const parentName = getParentNameForFilter(descriptor);
     if (parentName) {
-      return matchesFilter(parentName, filter[parentField]);
-    }
-  }
+      // First check: is the parent included?
+      if (!matchesFilter(parentName, filter[parentField] as string[] | undefined)) {
+        return false;
+      }
 
-  // ServicePolicy has no filter — always included
-  if (descriptor.type === ResourceType.ServicePolicy) {
-    return true;
+      // Second check: does the parent have sub-resource filters?
+      if (parentField === 'apis' && filter.apiSubFilters) {
+        return matchesApiSubFilter(descriptor, parentName, filter.apiSubFilters);
+      }
+
+      return true;
+    }
   }
 
   // Unknown types are included by default
   return true;
+}
+
+/**
+ * Get the fixed singleton name for a resource type from its ARM path.
+ * E.g., ServicePolicy → "policy"
+ */
+function getSingletonFilterName(type: ResourceType): string {
+  const meta = RESOURCE_TYPE_METADATA[type];
+  return meta.armPathSuffix.split('/').pop() ?? '';
+}
+
+/**
+ * Check if an API child resource passes the API sub-resource filter.
+ * If the parent API has no sub-filter entry, all children are included.
+ * If the parent API has a sub-filter, only specified children pass.
+ */
+function matchesApiSubFilter(
+  descriptor: ResourceDescriptor,
+  parentApiName: string,
+  apiSubFilters: Record<string, ApiSubFilter>
+): boolean {
+  // Find matching sub-filter using case-insensitive API name
+  const lowerParent = parentApiName.toLowerCase();
+  const matchingKey = Object.keys(apiSubFilters).find(
+    (k) => k.toLowerCase() === lowerParent
+  );
+
+  if (!matchingKey) {
+    // No sub-filter for this API — include all children
+    return true;
+  }
+
+  const subFilter = apiSubFilters[matchingKey];
+  const subFilterKey = API_SUB_FILTER_KEY_MAP[descriptor.type];
+
+  if (!subFilterKey) {
+    // This child type has no sub-filter support (e.g., ApiTag, ApiWiki) — include by default
+    return true;
+  }
+
+  const allowlist = subFilter[subFilterKey];
+  if (allowlist === undefined) {
+    // Sub-filter for this API doesn't specify this child type — include all
+    return true;
+  }
+
+  if (allowlist.length === 0) {
+    // Explicitly empty = exclude all of this child type
+    return false;
+  }
+
+  // Match the child's own name (second name part for ApiOperation, ApiDiagnostic, etc.)
+  const childName = getNamePart(descriptor.nameParts, 1);
+  return matchesFilter(childName, allowlist);
 }
 
 /**
@@ -108,7 +185,7 @@ export function shouldIncludeResource(
 function getParentNameForFilter(descriptor: ResourceDescriptor): string | undefined {
   const parentName = getNamePart(descriptor.nameParts, 0);
   // API children need revision suffix stripped (e.g. "my-api;rev=2" → "my-api")
-  return PARENT_FILTER_MAP[descriptor.type] === 'apiNames'
+  return PARENT_FILTER_MAP[descriptor.type] === 'apis'
     ? extractRootApiName(parentName)
     : parentName;
 }
