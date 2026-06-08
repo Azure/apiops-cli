@@ -2,6 +2,18 @@
 
 ## Active Decisions
 
+### 2026-06-08T18:52:23Z: Long-Term Maintainability Over Quick Fixes
+**By:** User directive (anonymized)  
+**Status:** Active directive  
+**What:** When fixing code in tests or product logic, avoid quick/easy fixes and prefer solutions optimized for long-term maintainability.
+**Why:** Establishes a durable engineering quality standard and reduces short-lived patchwork changes.
+
+### 2026-06-08T18:50:20Z: Round-Trip Test Default Execution Standard
+**By:** User directive (anonymized)  
+**Status:** Active directive  
+**What:** When the user asks to run the round-trip test, follow the workflow documented in `tests/integration/all-resource-types/README.md` Quick Commands, default to StandardV2 SKU, and always save the log. Use Premium SKU only when branch-specific changes require Premium-only coverage.
+**Why:** Enforces consistent execution defaults and reliable log capture for repeatable integration test runs.
+
 ### 2026-06-05T23:40:00Z: Operation reconciliation PATCH strips schema refs
 **By:** ApimExpert + TypeScriptDev  
 **Status:** Implemented  
