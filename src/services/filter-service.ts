@@ -6,7 +6,7 @@
  * case-insensitive matching, API root-name matching for revisions.
  */
 
-import { FilterConfig } from '../models/config.js';
+import { FilterConfig, ApiSubFilter } from '../models/config.js';
 import { ResourceType } from '../models/resource-types.js';
 import { ResourceDescriptor } from '../models/types.js';
 import { logger } from '../lib/logger.js';
@@ -31,6 +31,7 @@ const FILTER_FIELD_MAP: Partial<Record<ResourceType, keyof FilterConfig>> = {
   [ResourceType.GlobalSchema]: 'schemas',
   [ResourceType.PolicyRestriction]: 'policyRestrictions',
   [ResourceType.Documentation]: 'documentations',
+  [ResourceType.Workspace]: 'workspaces',
 };
 
 /**
@@ -58,6 +59,17 @@ const PARENT_FILTER_MAP: Partial<Record<ResourceType, keyof FilterConfig>> = {
 };
 
 /**
+ * Map API child resource types to their sub-filter key in ApiSubFilter.
+ */
+const API_SUB_FILTER_KEY_MAP: Partial<Record<ResourceType, keyof ApiSubFilter>> = {
+  [ResourceType.ApiOperation]: 'operations',
+  [ResourceType.ApiOperationPolicy]: 'operations',
+  [ResourceType.ApiDiagnostic]: 'diagnostics',
+  [ResourceType.ApiSchema]: 'schemas',
+  [ResourceType.ApiRelease]: 'releases',
+};
+
+/**
  * Determines if a resource should be included based on the filter config.
  *
  * Rules:
@@ -67,6 +79,7 @@ const PARENT_FILTER_MAP: Partial<Record<ResourceType, keyof FilterConfig>> = {
  * - Matching is case-insensitive.
  * - API filter matches root name; all revisions of matching root are included.
  * - Child resources inherit filter from their parent type.
+ * - API sub-resource filters (operations, diagnostics, schemas, releases) are applied when specified.
  */
 export function shouldIncludeResource(
   descriptor: ResourceDescriptor,
@@ -79,7 +92,7 @@ export function shouldIncludeResource(
   // Check direct filter field for this resource type
   const directField = FILTER_FIELD_MAP[descriptor.type];
   if (directField) {
-    return matchesFilter(getNamePart(descriptor.nameParts, 0), filter[directField]);
+    return matchesFilter(getNamePart(descriptor.nameParts, 0), filter[directField] as string[] | undefined);
   }
 
   // Check parent-based filter for child resource types
@@ -87,7 +100,17 @@ export function shouldIncludeResource(
   if (parentField) {
     const parentName = getParentNameForFilter(descriptor);
     if (parentName) {
-      return matchesFilter(parentName, filter[parentField]);
+      // First check: is the parent included?
+      if (!matchesFilter(parentName, filter[parentField] as string[] | undefined)) {
+        return false;
+      }
+
+      // Second check: does the parent have sub-resource filters?
+      if (parentField === 'apis' && filter.apiSubFilters) {
+        return matchesApiSubFilter(descriptor, parentName, filter.apiSubFilters);
+      }
+
+      return true;
     }
   }
 
@@ -98,6 +121,51 @@ export function shouldIncludeResource(
 
   // Unknown types are included by default
   return true;
+}
+
+/**
+ * Check if an API child resource passes the API sub-resource filter.
+ * If the parent API has no sub-filter entry, all children are included.
+ * If the parent API has a sub-filter, only specified children pass.
+ */
+function matchesApiSubFilter(
+  descriptor: ResourceDescriptor,
+  parentApiName: string,
+  apiSubFilters: Record<string, ApiSubFilter>
+): boolean {
+  // Find matching sub-filter using case-insensitive API name
+  const lowerParent = parentApiName.toLowerCase();
+  const matchingKey = Object.keys(apiSubFilters).find(
+    (k) => k.toLowerCase() === lowerParent
+  );
+
+  if (!matchingKey) {
+    // No sub-filter for this API — include all children
+    return true;
+  }
+
+  const subFilter = apiSubFilters[matchingKey];
+  const subFilterKey = API_SUB_FILTER_KEY_MAP[descriptor.type];
+
+  if (!subFilterKey) {
+    // This child type has no sub-filter support (e.g., ApiTag, ApiWiki) — include by default
+    return true;
+  }
+
+  const allowlist = subFilter[subFilterKey];
+  if (allowlist === undefined) {
+    // Sub-filter for this API doesn't specify this child type — include all
+    return true;
+  }
+
+  if (allowlist.length === 0) {
+    // Explicitly empty = exclude all of this child type
+    return false;
+  }
+
+  // Match the child's own name (second name part for ApiOperation, ApiDiagnostic, etc.)
+  const childName = getNamePart(descriptor.nameParts, 1);
+  return matchesFilter(childName, allowlist);
 }
 
 /**

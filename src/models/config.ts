@@ -18,8 +18,41 @@ export interface ExtractConfig {
   otelConfigPath?: string;
 }
 
+/**
+ * Sub-resource filter for an individual API.
+ * Only sub-resources listed here are included; undefined means include all.
+ * An empty array means include NONE of that sub-resource type.
+ */
+export interface ApiSubFilter {
+  operations?: string[];
+  diagnostics?: string[];
+  schemas?: string[];
+  releases?: string[];
+}
+
+/**
+ * Sub-resource filter for an individual workspace.
+ * Specifies exactly which workspace-scoped resources to include.
+ */
+export interface WorkspaceSubFilter {
+  apis?: string[];
+  apiSubFilters?: Record<string, ApiSubFilter>;
+  backends?: string[];
+  diagnostics?: string[];
+  groups?: string[];
+  loggers?: string[];
+  namedValues?: string[];
+  policyFragments?: string[];
+  products?: string[];
+  subscriptions?: string[];
+  tags?: string[];
+  versionSets?: string[];
+}
+
 export interface FilterConfig {
   apis?: string[];
+  /** Per-API sub-resource filters (only for APIs listed with nested object syntax) */
+  apiSubFilters?: Record<string, ApiSubFilter>;
   backends?: string[];
   products?: string[];
   namedValues?: string[];
@@ -35,6 +68,8 @@ export interface FilterConfig {
   policyRestrictions?: string[];
   documentations?: string[];
   workspaces?: string[];
+  /** Per-workspace sub-resource filters (only for workspaces listed with nested object syntax) */
+  workspaceSubFilters?: Record<string, WorkspaceSubFilter>;
 }
 
 export interface PublishConfig {
@@ -48,40 +83,39 @@ export interface PublishConfig {
   otelConfigPath?: string;
 }
 
+/**
+ * A single override entry: properties to deep-merge + optional nested child overrides.
+ */
+export interface OverrideEntry {
+  /** Properties to deep-merge into the resource's ARM DTO */
+  properties: Record<string, unknown>;
+  /** Nested sub-resource override sections (e.g., diagnostics under an API) */
+  children?: Record<string, OverrideSection>;
+}
+
+/** A section of overrides: resource name → override entry */
+export type OverrideSection = Record<string, OverrideEntry>;
+
+/**
+ * Environment-specific override configuration.
+ * Supports all Toolkit override sections with generic property passthrough.
+ * Nested sub-resource overrides (e.g., API diagnostics) are stored in OverrideEntry.children.
+ */
 export interface OverrideConfig {
-  namedValues?: Record<string, NamedValueOverride>;
-  backends?: Record<string, BackendOverride>;
-  apis?: Record<string, ApiOverride>;
-  diagnostics?: Record<string, DiagnosticOverride>;
-  loggers?: Record<string, LoggerOverride>;
-}
-
-export interface NamedValueOverride {
-  value?: string;
-  displayName?: string;
-  tags?: string[];
-  keyVault?: {
-    identityClientId?: string;
-    secretIdentifier?: string;
-  };
-}
-
-export interface BackendOverride {
-  url?: string;
-  credentials?: Record<string, unknown>;
-}
-
-export interface ApiOverride {
-  serviceUrl?: string;
-}
-
-export interface DiagnosticOverride {
-  loggerId?: string;
-}
-
-export interface LoggerOverride {
-  credentials?: Record<string, unknown>;
-  resourceId?: string;
+  namedValues?: OverrideSection;
+  backends?: OverrideSection;
+  apis?: OverrideSection;
+  diagnostics?: OverrideSection;
+  loggers?: OverrideSection;
+  policies?: OverrideSection;
+  gateways?: OverrideSection;
+  versionSets?: OverrideSection;
+  groups?: OverrideSection;
+  subscriptions?: OverrideSection;
+  products?: OverrideSection;
+  tags?: OverrideSection;
+  policyFragments?: OverrideSection;
+  workspaces?: OverrideSection;
 }
 
 export interface InitConfig {

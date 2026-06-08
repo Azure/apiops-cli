@@ -49,9 +49,17 @@ export async function extractWorkspaces(
 ): Promise<WorkspaceExtractionResult[]> {
   const results: WorkspaceExtractionResult[] = [];
   let workspaceNames: string[];
-  if (filter?.workspaces && filter.workspaces.length > 0) {
+
+  if (filter?.workspaces !== undefined) {
+    // Defined workspace filter: use exactly the specified list.
+    // Empty array = exclude all workspaces (extract none).
+    if (filter.workspaces.length === 0) {
+      logger.debug('Workspace filter is empty array — excluding all workspaces');
+      return results;
+    }
     workspaceNames = filter.workspaces;
   } else {
+    // No workspace filter defined — discover all workspaces
     const discovered: string[] = [];
     for await (const item of client.listResources(context, ResourceType.Workspace)) {
       const name = item['name'];

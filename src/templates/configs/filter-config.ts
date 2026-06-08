@@ -14,6 +14,19 @@ export function generateFilterConfig(): string {
 #   - echo-api
 #   - petstore-api
 
+# Advanced: Filter API sub-resources (operations, diagnostics, schemas, releases)
+# apis:
+#   - echo-api                        # Include all sub-resources
+#   - petstore-api:                   # Control sub-resources
+#       operations:
+#         - get-pets
+#         - create-pet
+#       diagnostics:
+#         - applicationinsights
+#       schemas: []                   # Exclude all schemas
+#       releases:
+#         - v1
+
 # Extract only specific products
 # products:
 #   - starter
@@ -79,6 +92,17 @@ export function generateFilterConfig(): string {
 # Extract only specific workspaces
 # workspaces:
 #   - dev-workspace
+
+# Advanced: Filter workspace sub-resources
+# workspaces:
+#   - team-workspace:
+#       apis:
+#         - team-api-1
+#         - team-api-2
+#       backends:
+#         - team-backend
+#       namedValues:
+#         - team-api-key
 
 # Filter behavior:
 # - Leave a section commented out to include ALL resources of that type

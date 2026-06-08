@@ -29,9 +29,11 @@ function createMockClient() {
     listResources: async function* () {},
     getResource: vi.fn(),
     putResource: vi.fn().mockResolvedValue(undefined),
+    patchResource: vi.fn().mockResolvedValue(undefined),
     deleteResource: vi.fn(),
     listApiRevisions: async function* () {},
     getApiSpecification: vi.fn(),
+    validatePreFlight: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -149,7 +151,9 @@ describe('resource-publisher', () => {
         overrides: {
           namedValues: {
             'my-nv': {
-              value: 'overridden',
+              properties: {
+                value: 'overridden',
+              },
             },
           },
         },

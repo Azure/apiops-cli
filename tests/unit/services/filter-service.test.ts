@@ -189,6 +189,89 @@ describe('filter-service', () => {
       };
       expect(shouldIncludeResource(otherGwApi, filter)).toBe(false);
     });
+
+    it('should include API operations listed in apiSubFilters', () => {
+      const filter: FilterConfig = {
+        apis: ['my-api'],
+        apiSubFilters: {
+          'my-api': {
+            operations: ['get-pets'],
+          },
+        },
+      };
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['my-api', 'get-pets'],
+      };
+
+      expect(shouldIncludeResource(descriptor, filter)).toBe(true);
+    });
+
+    it('should exclude API operations when operation sub-filter is empty', () => {
+      const filter: FilterConfig = {
+        apis: ['my-api'],
+        apiSubFilters: {
+          'my-api': {
+            operations: [],
+          },
+        },
+      };
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['my-api', 'get-pets'],
+      };
+
+      expect(shouldIncludeResource(descriptor, filter)).toBe(false);
+    });
+
+    it('should include API diagnostics when no diagnostic sub-filter is specified', () => {
+      const filter: FilterConfig = {
+        apis: ['my-api'],
+        apiSubFilters: {
+          'my-api': {
+            operations: ['get-pets'],
+          },
+        },
+      };
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ApiDiagnostic,
+        nameParts: ['my-api', 'applicationinsights'],
+      };
+
+      expect(shouldIncludeResource(descriptor, filter)).toBe(true);
+    });
+
+    it('should exclude API schemas when schema sub-filter is empty', () => {
+      const filter: FilterConfig = {
+        apis: ['my-api'],
+        apiSubFilters: {
+          'my-api': {
+            schemas: [],
+          },
+        },
+      };
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ApiSchema,
+        nameParts: ['my-api', 'pet-schema'],
+      };
+
+      expect(shouldIncludeResource(descriptor, filter)).toBe(false);
+    });
+
+    it('should filter workspaces', () => {
+      const filter: FilterConfig = { workspaces: ['workspace-a'] };
+      const included: ResourceDescriptor = {
+        type: ResourceType.Workspace,
+        nameParts: ['workspace-a'],
+      };
+      const excluded: ResourceDescriptor = {
+        type: ResourceType.Workspace,
+        nameParts: ['workspace-b'],
+      };
+
+      expect(shouldIncludeResource(included, filter)).toBe(true);
+      expect(shouldIncludeResource(excluded, filter)).toBe(false);
+    });
   });
 
   describe('filterResources', () => {

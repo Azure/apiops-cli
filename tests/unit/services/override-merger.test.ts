@@ -41,7 +41,9 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         namedValues: {
           'my-nv': {
-            value: 'overridden-value',
+            properties: {
+              value: 'overridden-value',
+            },
           },
         },
       };
@@ -55,7 +57,9 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         namedValues: {
           'MY-NV': {
-            value: 'case-insensitive-match',
+            properties: {
+              value: 'case-insensitive-match',
+            },
           },
         },
       };
@@ -81,7 +85,9 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         backends: {
           'my-backend': {
-            url: 'https://overridden.example.com',
+            properties: {
+              url: 'https://overridden.example.com',
+            },
           },
         },
       };
@@ -108,7 +114,9 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         apis: {
           'my-api': {
-            serviceUrl: 'https://overridden-api.example.com',
+            properties: {
+              serviceUrl: 'https://overridden-api.example.com',
+            },
           },
         },
       };
@@ -122,8 +130,10 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         namedValues: {
           'my-nv': {
-            keyVault: {
-              secretIdentifier: 'https://vault.azure.net/secrets/my-secret',
+            properties: {
+              keyVault: {
+                secretIdentifier: 'https://vault.azure.net/secrets/my-secret',
+              },
             },
           },
         },
@@ -152,7 +162,9 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         namedValues: {
           'my-nv': {
-            value: 'new-value',
+            properties: {
+              value: 'new-value',
+            },
           },
         },
       };
@@ -177,7 +189,9 @@ describe('override-merger', () => {
 
       const overrideConfig: OverrideConfig = {
         namedValues: {
-          'some-nv': { value: 'test' },
+          'some-nv': {
+            properties: { value: 'test' },
+          },
         },
       };
 
@@ -189,7 +203,9 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         namedValues: {
           'other-nv': {
-            value: 'other-value',
+            properties: {
+              value: 'other-value',
+            },
           },
         },
       };
@@ -202,7 +218,9 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         namedValues: {
           'my-nv': {
-            tags: ['env:prod', 'region:us'],
+            properties: {
+              tags: ['env:prod', 'region:us'],
+            },
           },
         },
       };
@@ -223,7 +241,9 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         namedValues: {
           'my-nv': {
-            displayName: 'New Display Name',
+            properties: {
+              displayName: 'New Display Name',
+            },
           },
         },
       };
@@ -249,13 +269,246 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         loggers: {
           'my-logger': {
-            resourceId: '/subscriptions/new/...',
+            properties: {
+              resourceId: '/subscriptions/new/...',
+            },
           },
         },
       };
 
       const result = applyOverrides(loggerDescriptor, loggerJson, overrideConfig);
       expect(result.properties).toHaveProperty('resourceId', '/subscriptions/new/...');
+    });
+
+    it('should apply nested API diagnostic overrides', () => {
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ApiDiagnostic,
+        nameParts: ['my-api', 'applicationinsights'],
+      };
+      const json = { name: 'applicationinsights', properties: { loggerId: '/old-logger' } };
+      const overrideConfig: OverrideConfig = {
+        apis: {
+          'my-api': {
+            properties: { serviceUrl: 'https://prod.example.com' },
+            children: {
+              diagnostics: {
+                applicationinsights: {
+                  properties: { loggerId: '/new-logger', verbosity: 'Error' },
+                },
+              },
+            },
+          },
+        },
+      };
+      const result = applyOverrides(descriptor, json, overrideConfig);
+      expect(result.properties).toHaveProperty('loggerId', '/new-logger');
+      expect((result.properties as Record<string, unknown>).verbosity).toBe('Error');
+    });
+
+    it('should apply nested API operation overrides', () => {
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['my-api', 'get-pets'],
+      };
+      const json = {
+        name: 'get-pets',
+        properties: {
+          method: 'GET',
+          urlTemplate: '/pets',
+        },
+      };
+      const overrideConfig: OverrideConfig = {
+        apis: {
+          'my-api': {
+            properties: {},
+            children: {
+              operations: {
+                'get-pets': {
+                  properties: {
+                    method: 'POST',
+                    description: 'Overridden operation',
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      const result = applyOverrides(descriptor, json, overrideConfig);
+      expect(result.properties).toHaveProperty('method', 'POST');
+      expect(result.properties).toHaveProperty('urlTemplate', '/pets');
+      expect(result.properties).toHaveProperty('description', 'Overridden operation');
+    });
+
+    it('should apply 3-level ApiOperationPolicy overrides', () => {
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ApiOperationPolicy,
+        nameParts: ['my-api', 'get-pets', 'policy'],
+      };
+      const json = { name: 'policy', properties: { format: 'xml' } };
+      const overrideConfig: OverrideConfig = {
+        apis: {
+          'my-api': {
+            properties: {},
+            children: {
+              operations: {
+                'get-pets': {
+                  properties: {},
+                  children: {
+                    policies: {
+                      policy: {
+                        properties: { format: 'rawxml' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+      const result = applyOverrides(descriptor, json, overrideConfig);
+      expect(result.properties).toHaveProperty('format', 'rawxml');
+    });
+
+    it('should apply nested product policy overrides', () => {
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ProductPolicy,
+        nameParts: ['starter', 'policy'],
+      };
+      const json = { name: 'policy', properties: { format: 'xml' } };
+      const overrideConfig: OverrideConfig = {
+        products: {
+          starter: {
+            properties: {},
+            children: {
+              policies: {
+                policy: {
+                  properties: { format: 'rawxml' },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      const result = applyOverrides(descriptor, json, overrideConfig);
+      expect(result.properties).toHaveProperty('format', 'rawxml');
+    });
+
+    it('should not apply sub-resource overrides when parent has no children', () => {
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ApiDiagnostic,
+        nameParts: ['my-api', 'applicationinsights'],
+      };
+      const json = { name: 'applicationinsights', properties: { loggerId: '/old-logger' } };
+      const overrideConfig: OverrideConfig = {
+        apis: {
+          'my-api': {
+            properties: { serviceUrl: 'https://prod.example.com' },
+          },
+        },
+      };
+
+      const result = applyOverrides(descriptor, json, overrideConfig);
+      expect(result).toEqual(json);
+    });
+
+    it('should apply overrides from newly mapped top-level sections', () => {
+      const cases: Array<{
+        descriptor: ResourceDescriptor;
+        json: Record<string, unknown>;
+        overrideConfig: OverrideConfig;
+        expectedKey: string;
+        expectedValue: unknown;
+      }> = [
+        {
+          descriptor: { type: ResourceType.Product, nameParts: ['starter'] },
+          json: { name: 'starter', properties: { displayName: 'Starter' } },
+          overrideConfig: {
+            products: {
+              starter: { properties: { displayName: 'Starter Plus' } },
+            },
+          },
+          expectedKey: 'displayName',
+          expectedValue: 'Starter Plus',
+        },
+        {
+          descriptor: { type: ResourceType.Gateway, nameParts: ['gw-1'] },
+          json: { name: 'gw-1', properties: { description: 'Original gateway' } },
+          overrideConfig: {
+            gateways: {
+              'gw-1': { properties: { description: 'Updated gateway' } },
+            },
+          },
+          expectedKey: 'description',
+          expectedValue: 'Updated gateway',
+        },
+        {
+          descriptor: { type: ResourceType.Tag, nameParts: ['tag-a'] },
+          json: { name: 'tag-a', properties: { displayName: 'Tag A' } },
+          overrideConfig: {
+            tags: {
+              'tag-a': { properties: { displayName: 'Tag Alpha' } },
+            },
+          },
+          expectedKey: 'displayName',
+          expectedValue: 'Tag Alpha',
+        },
+        {
+          descriptor: { type: ResourceType.ServicePolicy, nameParts: ['policy'] },
+          json: { name: 'policy', properties: { format: 'xml' } },
+          overrideConfig: {
+            policies: {
+              policy: { properties: { format: 'rawxml' } },
+            },
+          },
+          expectedKey: 'format',
+          expectedValue: 'rawxml',
+        },
+        {
+          descriptor: { type: ResourceType.PolicyFragment, nameParts: ['fragment-a'] },
+          json: { name: 'fragment-a', properties: { format: 'xml' } },
+          overrideConfig: {
+            policyFragments: {
+              'fragment-a': { properties: { format: 'rawxml' } },
+            },
+          },
+          expectedKey: 'format',
+          expectedValue: 'rawxml',
+        },
+      ];
+
+      for (const testCase of cases) {
+        const result = applyOverrides(testCase.descriptor, testCase.json, testCase.overrideConfig);
+        expect(result.properties).toHaveProperty(testCase.expectedKey, testCase.expectedValue);
+      }
+    });
+
+    it('should match nested override keys case-insensitively', () => {
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ApiDiagnostic,
+        nameParts: ['my-api', 'applicationinsights'],
+      };
+      const json = { name: 'applicationinsights', properties: { loggerId: '/old-logger' } };
+      const overrideConfig: OverrideConfig = {
+        apis: {
+          'MY-API': {
+            properties: {},
+            children: {
+              diagnostics: {
+                ApplicationInsights: {
+                  properties: { loggerId: '/case-insensitive-logger' },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      const result = applyOverrides(descriptor, json, overrideConfig);
+      expect(result.properties).toHaveProperty('loggerId', '/case-insensitive-logger');
     });
 
     it('should apply diagnostic overrides', () => {
@@ -274,7 +527,9 @@ describe('override-merger', () => {
       const overrideConfig: OverrideConfig = {
         diagnostics: {
           'my-diagnostic': {
-            loggerId: '/loggers/new-logger',
+            properties: {
+              loggerId: '/loggers/new-logger',
+            },
           },
         },
       };

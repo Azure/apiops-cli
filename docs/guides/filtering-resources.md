@@ -69,9 +69,57 @@ namedValues:
 
 **Rules:**
 - Each field is optional — omit it to extract all resources of that type
-- Each field must be an array of strings (validated at load time)
-- Names are case-sensitive and must match the APIM resource name exactly
+- Simple fields must be an array of strings
+- `apis` and `workspaces` also accept nested object entries for sub-resource filtering (see below)
+- Names are matched case-insensitively against APIM resource names
 - An empty file extracts everything (same as no filter)
+- An empty array (`[]`) excludes ALL resources of that type
+
+---
+
+## Nested Sub-Resource Filtering
+
+### API sub-resource filters
+
+For APIs, you can control which sub-resources (operations, diagnostics, schemas, releases) are extracted. Use an object entry instead of a plain string:
+
+```yaml
+apis:
+  - petstore-api                  # Simple: include all sub-resources
+  - orders-api:                   # Nested: control sub-resources
+      operations:
+        - get-order
+        - create-order
+      diagnostics:
+        - applicationinsights
+      schemas: []                 # Empty = exclude ALL schemas
+      releases:
+        - v1-release
+```
+
+**Sub-filter rules:**
+- If a sub-resource key is **omitted**, all sub-resources of that type are included
+- If a sub-resource key is an **empty array** (`[]`), all sub-resources of that type are excluded
+- If a sub-resource key lists **names**, only those sub-resources are included
+
+### Workspace sub-resource filters
+
+For workspaces, you can specify which workspace-scoped resources to extract:
+
+```yaml
+workspaces:
+  - team-a-workspace:             # Nested: control workspace resources
+      apis:
+        - team-api-1
+        - team-api-2
+      backends:
+        - team-backend
+      namedValues:
+        - team-api-key
+  - team-b-workspace              # Simple: extract all resources
+```
+
+Supported workspace sub-filter keys: `apis`, `backends`, `diagnostics`, `groups`, `loggers`, `namedValues`, `policyFragments`, `products`, `subscriptions`, `tags`, `versionSets`.
 
 ---
 
@@ -224,8 +272,8 @@ There is no "exclude" syntax. To extract everything except certain resources, li
 - **Start broad, narrow later** — Begin with no filter to see what's in your APIM instance, then create a filter for your team's slice
 - **One filter per team** — In multi-team setups, each team maintains its own `configuration.extractor.yaml`
 - **Commit the filter file** — Keep it in version control alongside your artifacts so CI/CD pipelines can use it
-- **Case-sensitive names** — Filter values must match APIM resource names exactly (usually lowercase with hyphens)
-- **Validate early** — The config loader validates that each filter field is an array of strings and will throw `Failed to load filter config` on invalid YAML
+- **Case-insensitive matching** — Filter values are matched case-insensitively against APIM resource names
+- **Validate early** — The config loader validates filter entries and will throw `Failed to load filter config` on invalid YAML. Unknown top-level keys produce a warning.
 
 ---
 

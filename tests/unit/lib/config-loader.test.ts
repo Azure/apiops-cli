@@ -1,7 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { loadFilterConfig, loadOverrideConfig, loadOTelConfig } from '../../../src/lib/config-loader.js';
+import { logger } from '../../../src/lib/logger.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -14,6 +15,7 @@ describe('config-loader', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -175,6 +177,68 @@ versionSets:
       expect(config!.backends).toEqual(['backend1']);
       expect(config!.versionSets).toEqual(['vs1']);
     });
+
+    it('should load nested API filter entries', async () => {
+      const content = `
+apis:
+  - simple-api
+  - complex-api:
+      operations:
+        - get-pets
+      diagnostics: []
+`;
+      const filePath = path.join(tmpDir, 'nested-api-filter.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.apis).toEqual(['simple-api', 'complex-api']);
+      expect(config!.apiSubFilters).toEqual({
+        'complex-api': {
+          operations: ['get-pets'],
+          diagnostics: [],
+        },
+      });
+    });
+
+    it('should load nested workspace filter entries', async () => {
+      const content = `
+workspaces:
+  - ws-simple
+  - ws-complex:
+      apis:
+        - api-a
+      diagnostics: []
+`;
+      const filePath = path.join(tmpDir, 'nested-workspace-filter.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.workspaces).toEqual(['ws-simple', 'ws-complex']);
+      expect(config!.workspaceSubFilters).toEqual({
+        'ws-complex': {
+          apis: ['api-a'],
+          diagnostics: [],
+        },
+      });
+    });
+
+    it('should warn about unknown top-level filter keys', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const content = `
+apis:
+  - api1
+mystery:
+  - value
+`;
+      const filePath = path.join(tmpDir, 'unknown-filter-key.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+      expect(config!.apis).toEqual(['api1']);
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Unknown filter config key 'mystery'"));
+    });
   });
 
   describe('loadOverrideConfig', () => {
@@ -239,12 +303,16 @@ backends:
       expect(config).toBeDefined();
       expect(config!.namedValues).toEqual({
         nv1: {
-          value: 'overridden',
+          properties: {
+            value: 'overridden',
+          },
         },
       });
       expect(config!.backends).toEqual({
         be1: {
-          url: 'https://new-backend.com',
+          properties: {
+            url: 'https://new-backend.com',
+          },
         },
       });
     });
@@ -297,7 +365,9 @@ namedValues:
       expect(config).toBeDefined();
       expect(config!.namedValues).toEqual({
         nv1: {
-          value: 'inline-value',
+          properties: {
+            value: 'inline-value',
+          },
         },
       });
     });
@@ -337,14 +407,155 @@ backends:
       expect(config).toBeDefined();
       expect(config!.namedValues).toEqual({
         nv1: {
-          value: 'valid',
+          properties: {
+            value: 'valid',
+          },
         },
       });
       expect(config!.backends).toEqual({
         be1: {
-          url: 'https://valid.example.com',
+          properties: {
+            url: 'https://valid.example.com',
+          },
         },
       });
+    });
+
+    it('should load override sections beyond the original core set', async () => {
+      const content = `
+products:
+  - name: starter
+    properties:
+      displayName: "Starter Plus"
+gateways:
+  - name: gw-1
+    properties:
+      description: "Gateway 1"
+tags:
+  - name: tag-a
+    properties:
+      displayName: "Tag A"
+policies:
+  - name: policy
+    properties:
+      format: "rawxml"
+policyFragments:
+  - name: fragment-a
+    properties:
+      format: "rawxml"
+`;
+      const filePath = path.join(tmpDir, 'override-all-sections.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadOverrideConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.products).toEqual({
+        starter: {
+          properties: {
+            displayName: 'Starter Plus',
+          },
+        },
+      });
+      expect(config!.gateways).toEqual({
+        'gw-1': {
+          properties: {
+            description: 'Gateway 1',
+          },
+        },
+      });
+      expect(config!.tags).toEqual({
+        'tag-a': {
+          properties: {
+            displayName: 'Tag A',
+          },
+        },
+      });
+      expect(config!.policies).toEqual({
+        policy: {
+          properties: {
+            format: 'rawxml',
+          },
+        },
+      });
+      expect(config!.policyFragments).toEqual({
+        'fragment-a': {
+          properties: {
+            format: 'rawxml',
+          },
+        },
+      });
+    });
+
+    it('should load nested API overrides with child sections', async () => {
+      const content = `
+apis:
+  - name: my-api
+    properties:
+      serviceUrl: "https://prod.example.com"
+    diagnostics:
+      - name: applicationinsights
+        properties:
+          loggerId: "/new-logger"
+    operations:
+      - name: get-pets
+        properties:
+          method: "GET"
+`;
+      const filePath = path.join(tmpDir, 'override-nested-api.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadOverrideConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.apis).toEqual({
+        'my-api': {
+          properties: {
+            serviceUrl: 'https://prod.example.com',
+          },
+          children: {
+            diagnostics: {
+              applicationinsights: {
+                properties: {
+                  loggerId: '/new-logger',
+                },
+              },
+            },
+            operations: {
+              'get-pets': {
+                properties: {
+                  method: 'GET',
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    it('should warn when an override section contains duplicate names', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const content = `
+namedValues:
+  - name: nv1
+    properties:
+      value: "first"
+  - name: nv1
+    properties:
+      value: "second"
+`;
+      const filePath = path.join(tmpDir, 'override-duplicate-names.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadOverrideConfig(filePath);
+      expect(config!.namedValues).toEqual({
+        nv1: {
+          properties: {
+            value: 'second',
+          },
+        },
+      });
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Duplicate name 'nv1' in overrides.namedValues")
+      );
     });
   });
 

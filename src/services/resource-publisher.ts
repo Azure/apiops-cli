@@ -371,7 +371,10 @@ async function publishPolicy(
       },
     };
 
-    await client.putResource(context, descriptor, payload);
+    // Apply overrides (e.g., format: xml) before PUT — matches Toolkit behavior
+    const mergedPayload = applyOverrides(descriptor, payload, config.overrides);
+
+    await client.putResource(context, descriptor, mergedPayload);
 
     return {
       descriptor,

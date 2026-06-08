@@ -8,6 +8,7 @@
 export function generateOverrideConfig(environment: string): string {
   return `# APIM Override Configuration for ${environment} environment
 # Customize resource properties for this specific environment
+# All APIOps Toolkit override sections are supported.
 
 # Override named values (e.g., API keys, connection strings)
 # namedValues:
@@ -31,8 +32,9 @@ export function generateOverrideConfig(environment: string): string {
 #   - name: legacy-backend
 #     properties:
 #       url: "https://${environment}-legacy.example.com"
+#       resourceId: "/subscriptions/.../sites/${environment}-backend"
 
-# Override API service URLs
+# Override API service URLs (with optional nested sub-resource overrides)
 # apis:
 #   - name: echo-api
 #     properties:
@@ -40,17 +42,57 @@ export function generateOverrideConfig(environment: string): string {
 #   - name: petstore-api
 #     properties:
 #       serviceUrl: "https://${environment}-petstore.example.com"
+#       displayName: "Petstore API (${environment})"
+#     diagnostics:
+#       - name: applicationinsights
+#         properties:
+#           loggerId: "appinsights-logger-${environment}"
+#           verbosity: Error
+#     policies:
+#       - name: policy
+#         properties:
+#           format: rawxml
 
 # Override diagnostic logger references
 # diagnostics:
 #   - name: applicationinsights
 #     properties:
 #       loggerId: "appinsights-logger-${environment}"
+#       verbosity: Error
 
 # Override logger credentials or resource IDs
 # loggers:
 #   - name: appinsights-logger
 #     properties:
+#       loggerType: applicationInsights
 #       resourceId: "/subscriptions/xxxxx/resourceGroups/${environment}-rg/providers/microsoft.insights/components/${environment}-appinsights"
+#       isBuffered: true
+
+# Override service-level policies
+# policies:
+#   - name: policy
+#     properties:
+#       format: rawxml
+
+# Override gateway properties
+# gateways:
+#   - name: on-prem-gateway
+#     properties:
+#       locationData:
+#         name: "${environment} datacenter"
+
+# Override version sets, groups, subscriptions, products, tags, policy fragments
+# versionSets:
+#   - name: my-version-set
+#     properties:
+#       displayName: "My Version Set (${environment})"
+# products:
+#   - name: starter
+#     properties:
+#       displayName: "Starter Plan (${environment})"
+# tags:
+#   - name: env-tag
+#     properties:
+#       displayName: "${environment}"
 `;
 }
