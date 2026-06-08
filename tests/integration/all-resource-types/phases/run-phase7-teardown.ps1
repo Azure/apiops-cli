@@ -82,13 +82,16 @@ function Wait-ForResourceGroupsDeletion {
         $waitedSeconds += $IntervalSeconds
     }
 
-    throw "Timed out waiting for resource group deletion."
+    $maskedGroups = $ResourceGroups | ForEach-Object { Protect-ResourceGroupName -Value $_ }
+    throw "Timed out waiting for resource group deletion for: $($maskedGroups -join ', ')."
 }
 
 function Wait-ForDeletedApimService {
     param(
         [Parameter(Mandatory)]
         [string]$ServiceName,
+        [Parameter(Mandatory)]
+        [string]$ServiceLocation,
         [int]$TimeoutMinutes = 30,
         [int]$IntervalSeconds = 15
     )
@@ -97,11 +100,8 @@ function Wait-ForDeletedApimService {
     $timeoutSeconds = $TimeoutMinutes * 60
 
     while ($waitedSeconds -lt $timeoutSeconds) {
-        $matchingDeletedServicesCount = az apim deletedservice list --query "[?name=='$ServiceName'] | length(@)" -o tsv 2>$null
-        $deletedServicesCount = 0
-        $null = [int]::TryParse($matchingDeletedServicesCount, [ref]$deletedServicesCount)
-
-        if ($deletedServicesCount -gt 0) {
+        az apim deletedservice show --service-name $ServiceName --location $ServiceLocation -o none 2>$null
+        if ($LASTEXITCODE -eq 0) {
             return
         }
 
@@ -110,7 +110,7 @@ function Wait-ForDeletedApimService {
         $waitedSeconds += $IntervalSeconds
     }
 
-    throw "Timed out waiting for APIM soft-delete entry for '$(Protect-ApimName -Value $ServiceName)'."
+    throw "Timed out waiting for APIM soft-delete entry for '$(Protect-ApimName -Value $ServiceName)' in location '$ServiceLocation'."
 }
 
 Write-Host "   Deleting $(Protect-ResourceGroupName -Value $SourceResourceGroup)..."
@@ -122,13 +122,13 @@ Write-Host "   ⏳ Waiting for resource group deletions to complete for hard-del
 Wait-ForResourceGroupsDeletion -ResourceGroups @($SourceResourceGroup, $TargetResourceGroup)
 
 if ($sourceApimName) {
-    Wait-ForDeletedApimService -ServiceName $sourceApimName
+    Wait-ForDeletedApimService -ServiceName $sourceApimName -ServiceLocation $Location
     Write-Host "   🗑️  Purging soft-deleted APIM: $(Protect-ApimName -Value $sourceApimName)..."
     az apim deletedservice purge --service-name $sourceApimName --location $Location 2>$null
 }
 
 if ($targetApimName) {
-    Wait-ForDeletedApimService -ServiceName $targetApimName
+    Wait-ForDeletedApimService -ServiceName $targetApimName -ServiceLocation $Location
     Write-Host "   🗑️  Purging soft-deleted APIM: $(Protect-ApimName -Value $targetApimName)..."
     az apim deletedservice purge --service-name $targetApimName --location $Location 2>$null
 }
