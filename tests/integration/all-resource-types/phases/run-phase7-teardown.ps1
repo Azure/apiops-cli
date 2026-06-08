@@ -110,7 +110,7 @@ function Wait-ForDeletedApimService {
         $waitedSeconds += $IntervalSeconds
     }
 
-    throw "Timed out waiting for APIM soft-delete entry for '$ServiceName'."
+    throw "Timed out waiting for APIM soft-delete entry for '$(Protect-ApimName -Value $ServiceName)'."
 }
 
 Write-Host "   Deleting $(Protect-ResourceGroupName -Value $SourceResourceGroup)..."
