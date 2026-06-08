@@ -8,10 +8,10 @@
  */
 
 import { ResourceDescriptor } from '../models/types.js';
-import { ResourceType } from '../models/resource-types.js';
+import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { OverrideConfig, OverrideSection, OverrideEntry } from '../models/config.js';
 import { logger } from '../lib/logger.js';
-import { getNameFromNameParts } from '../lib/resource-path.js';
+import { getNameFromNameParts, isSingletonType } from '../lib/resource-path.js';
 
 /**
  * Map resource types to their top-level override config section key.
@@ -98,13 +98,15 @@ export function applyOverrides(
 
 /**
  * Apply override from a direct section match.
+ * For singleton resources (e.g., ServicePolicy with nameParts: []),
+ * uses the fixed singleton name from the ARM path (e.g., "policy").
  */
 function applyFromSection(
   descriptor: ResourceDescriptor,
   json: Record<string, unknown>,
   section: OverrideSection
 ): Record<string, unknown> {
-  const resourceName = getNameFromNameParts(descriptor.nameParts);
+  const resourceName = getSingletonOrNamePartName(descriptor);
   const entry = findEntryByName(section, resourceName);
 
   if (!entry) {
@@ -116,7 +118,25 @@ function applyFromSection(
   }
 
   // ARM resources have all overridable fields inside 'properties'
-  const wrappedOverride = { properties: entry.properties };
+  let overrideProperties = entry.properties;
+
+  // Strip apiRevision and isCurrent from API overrides — matches Toolkit behavior.
+  // These fields should not be overridden per environment.
+  if (descriptor.type === ResourceType.Api) {
+    const { apiRevision, isCurrent, ...rest } = overrideProperties;
+    if (apiRevision !== undefined || isCurrent !== undefined) {
+      logger.warn(
+        `Ignoring 'apiRevision' and/or 'isCurrent' in API override for '${resourceName}'; ` +
+        `these fields cannot be overridden (matching Toolkit behavior).`
+      );
+    }
+    overrideProperties = rest;
+    if (Object.keys(overrideProperties).length === 0) {
+      return { ...json };
+    }
+  }
+
+  const wrappedOverride = { properties: overrideProperties };
   const result = deepMerge(json, wrappedOverride);
 
   logger.debug(
@@ -129,7 +149,10 @@ function applyFromSection(
 
 /**
  * Apply nested child override (e.g., ApiDiagnostic under apis.children.diagnostics).
- * nameParts layout: [parentName, childName, ...]
+ *
+ * nameParts layout varies by resource type:
+ * - Named children (ApiDiagnostic, ApiOperation, ApiRelease): [parentName, childName]
+ * - Singleton children (ApiPolicy, ProductPolicy): [parentName] (child name is always "policy")
  */
 function applyNestedOverride(
   descriptor: ResourceDescriptor,
@@ -149,8 +172,11 @@ function applyNestedOverride(
   const childSection = parentEntry.children[mapping.childKey];
   if (!childSection) return { ...json };
 
-  // Child name is the second name part (e.g., the diagnostic name, operation name)
-  const childName = descriptor.nameParts[1];
+  // For singleton children (e.g., ApiPolicy), the name is fixed (e.g., "policy"),
+  // NOT in nameParts. For named children, it's nameParts[1].
+  const childName = isSingletonType(descriptor.type)
+    ? getSingletonName(descriptor.type)
+    : descriptor.nameParts[1];
   if (!childName) return { ...json };
 
   const childEntry = findEntryByName(childSection, childName);
@@ -171,8 +197,10 @@ function applyNestedOverride(
 
 /**
  * Apply grandchild (3-level) override.
- * E.g., ApiOperationPolicy: apis[apiName].children.operations[opName].children.policies[policyName]
- * nameParts layout: [parentName, childName, grandchildName]
+ * E.g., ApiOperationPolicy: apis[apiName].children.operations[opName].children.policies[policy]
+ *
+ * nameParts layout for ApiOperationPolicy: [apiName, operationName]
+ * The grandchild name is always the fixed singleton name (e.g., "policy").
  */
 function applyGrandchildOverride(
   descriptor: ResourceDescriptor,
@@ -201,7 +229,8 @@ function applyGrandchildOverride(
   const grandchildSection = childEntry.children[mapping.grandchildKey];
   if (!grandchildSection) return { ...json };
 
-  const grandchildName = descriptor.nameParts[2];
+  // Grandchild is always a singleton (e.g., "policy") — name is NOT in nameParts
+  const grandchildName = getSingletonName(descriptor.type);
   if (!grandchildName) return { ...json };
 
   const grandchildEntry = findEntryByName(grandchildSection, grandchildName);
@@ -218,6 +247,37 @@ function applyGrandchildOverride(
   );
 
   return result;
+}
+
+/**
+ * Get the resource name for override lookup, handling singletons correctly.
+ * - Top-level singletons (ServicePolicy with nameParts: []) use the fixed singleton name
+ * - Named resources use the last element of nameParts
+ */
+function getSingletonOrNamePartName(descriptor: ResourceDescriptor): string {
+  if (descriptor.nameParts.length === 0) {
+    // Top-level singleton (e.g., ServicePolicy)
+    const name = getSingletonName(descriptor.type);
+    if (!name) {
+      throw new RangeError(
+        `getSingletonOrNamePartName: ${descriptor.type} has empty nameParts ` +
+        `but no known singleton name`
+      );
+    }
+    return name;
+  }
+  return getNameFromNameParts(descriptor.nameParts);
+}
+
+/**
+ * Get the fixed singleton name for a resource type from its ARM path.
+ * E.g., ServicePolicy → "policy", ApiPolicy → "policy", ApiWiki → "default"
+ * Returns undefined if the resource type is not a singleton.
+ */
+function getSingletonName(type: ResourceType): string | undefined {
+  if (!isSingletonType(type)) return undefined;
+  const meta = RESOURCE_TYPE_METADATA[type];
+  return meta.armPathSuffix.split('/').pop();
 }
 
 /**

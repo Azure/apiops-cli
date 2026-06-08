@@ -81,6 +81,10 @@ export function generateFilterConfig(): string {
 # schemas:
 #   - pet-schema
 
+# Filter service-level policies
+# policies:
+#   - policy
+
 # Extract only specific policy restrictions
 # policyRestrictions:
 #   - global-policy-restriction

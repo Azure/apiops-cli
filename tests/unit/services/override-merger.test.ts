@@ -342,9 +342,11 @@ describe('override-merger', () => {
     });
 
     it('should apply 3-level ApiOperationPolicy overrides', () => {
+      // ApiOperationPolicy is a singleton child — nameParts: [apiName, operationName]
+      // The policy name "policy" is fixed and NOT in nameParts
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ApiOperationPolicy,
-        nameParts: ['my-api', 'get-pets', 'policy'],
+        nameParts: ['my-api', 'get-pets'],
       };
       const json = { name: 'policy', properties: { format: 'xml' } };
       const overrideConfig: OverrideConfig = {
@@ -373,9 +375,11 @@ describe('override-merger', () => {
     });
 
     it('should apply nested product policy overrides', () => {
+      // ProductPolicy is a singleton child — nameParts: [productName]
+      // The policy name "policy" is fixed and NOT in nameParts
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ProductPolicy,
-        nameParts: ['starter', 'policy'],
+        nameParts: ['starter'],
       };
       const json = { name: 'policy', properties: { format: 'xml' } };
       const overrideConfig: OverrideConfig = {
@@ -457,7 +461,8 @@ describe('override-merger', () => {
           expectedValue: 'Tag Alpha',
         },
         {
-          descriptor: { type: ResourceType.ServicePolicy, nameParts: ['policy'] },
+          // ServicePolicy is a top-level singleton — nameParts: []
+          descriptor: { type: ResourceType.ServicePolicy, nameParts: [] },
           json: { name: 'policy', properties: { format: 'xml' } },
           overrideConfig: {
             policies: {
@@ -536,6 +541,73 @@ describe('override-merger', () => {
 
       const result = applyOverrides(diagnosticDescriptor, diagnosticJson, overrideConfig);
       expect(result.properties).toHaveProperty('loggerId', '/loggers/new-logger');
+    });
+
+    it('should apply ServicePolicy override with empty nameParts', () => {
+      // ServicePolicy is a top-level singleton with nameParts: [] (verified from buildDescriptor)
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ServicePolicy,
+        nameParts: [],
+      };
+      const json = { name: 'policy', properties: { format: 'xml', value: '<policies/>' } };
+      const overrideConfig: OverrideConfig = {
+        policies: {
+          policy: { properties: { format: 'rawxml' } },
+        },
+      };
+      const result = applyOverrides(descriptor, json, overrideConfig);
+      expect(result.properties).toHaveProperty('format', 'rawxml');
+      expect(result.properties).toHaveProperty('value', '<policies/>');
+    });
+
+    it('should apply ApiPolicy override with singleton nameParts', () => {
+      // ApiPolicy is a singleton child with nameParts: [apiName] (verified from buildDescriptor)
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ApiPolicy,
+        nameParts: ['my-api'],
+      };
+      const json = { name: 'policy', properties: { format: 'xml' } };
+      const overrideConfig: OverrideConfig = {
+        apis: {
+          'my-api': {
+            properties: {},
+            children: {
+              policies: {
+                policy: { properties: { format: 'rawxml' } },
+              },
+            },
+          },
+        },
+      };
+      const result = applyOverrides(descriptor, json, overrideConfig);
+      expect(result.properties).toHaveProperty('format', 'rawxml');
+    });
+
+    it('should strip apiRevision and isCurrent from API overrides', () => {
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['my-api'],
+      };
+      const json = {
+        name: 'my-api',
+        properties: { serviceUrl: 'https://dev.example.com', apiRevision: '1', isCurrent: true },
+      };
+      const overrideConfig: OverrideConfig = {
+        apis: {
+          'my-api': {
+            properties: {
+              serviceUrl: 'https://prod.example.com',
+              apiRevision: '99',
+              isCurrent: false,
+            },
+          },
+        },
+      };
+      const result = applyOverrides(descriptor, json, overrideConfig);
+      expect(result.properties).toHaveProperty('serviceUrl', 'https://prod.example.com');
+      // apiRevision and isCurrent should NOT be overridden
+      expect(result.properties).toHaveProperty('apiRevision', '1');
+      expect(result.properties).toHaveProperty('isCurrent', true);
     });
   });
 });

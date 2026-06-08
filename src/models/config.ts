@@ -65,6 +65,7 @@ export interface FilterConfig {
   groups?: string[];
   subscriptions?: string[];
   schemas?: string[];
+  policies?: string[];
   policyRestrictions?: string[];
   documentations?: string[];
   workspaces?: string[];

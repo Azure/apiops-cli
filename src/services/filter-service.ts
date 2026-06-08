@@ -7,7 +7,7 @@
  */
 
 import { FilterConfig, ApiSubFilter } from '../models/config.js';
-import { ResourceType } from '../models/resource-types.js';
+import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { ResourceDescriptor } from '../models/types.js';
 import { logger } from '../lib/logger.js';
 import { getNamePart } from '../lib/resource-path.js';
@@ -29,6 +29,7 @@ const FILTER_FIELD_MAP: Partial<Record<ResourceType, keyof FilterConfig>> = {
   [ResourceType.Group]: 'groups',
   [ResourceType.Subscription]: 'subscriptions',
   [ResourceType.GlobalSchema]: 'schemas',
+  [ResourceType.ServicePolicy]: 'policies',
   [ResourceType.PolicyRestriction]: 'policyRestrictions',
   [ResourceType.Documentation]: 'documentations',
   [ResourceType.Workspace]: 'workspaces',
@@ -92,7 +93,11 @@ export function shouldIncludeResource(
   // Check direct filter field for this resource type
   const directField = FILTER_FIELD_MAP[descriptor.type];
   if (directField) {
-    return matchesFilter(getNamePart(descriptor.nameParts, 0), filter[directField] as string[] | undefined);
+    // Singleton resources (e.g., ServicePolicy) have nameParts: [] — use fixed name from ARM path
+    const resourceName = descriptor.nameParts.length > 0
+      ? getNamePart(descriptor.nameParts, 0)
+      : getSingletonFilterName(descriptor.type);
+    return matchesFilter(resourceName, filter[directField] as string[] | undefined);
   }
 
   // Check parent-based filter for child resource types
@@ -114,13 +119,17 @@ export function shouldIncludeResource(
     }
   }
 
-  // ServicePolicy has no filter — always included
-  if (descriptor.type === ResourceType.ServicePolicy) {
-    return true;
-  }
-
   // Unknown types are included by default
   return true;
+}
+
+/**
+ * Get the fixed singleton name for a resource type from its ARM path.
+ * E.g., ServicePolicy → "policy"
+ */
+function getSingletonFilterName(type: ResourceType): string {
+  const meta = RESOURCE_TYPE_METADATA[type];
+  return meta.armPathSuffix.split('/').pop() ?? '';
 }
 
 /**

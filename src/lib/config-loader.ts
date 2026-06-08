@@ -116,6 +116,7 @@ const FILTER_KEY_ALIASES: Record<FilterYamlKey, string> = {
   groups: 'groupNames',
   subscriptions: 'subscriptionNames',
   schemas: 'schemaNames',
+  policies: 'policyNames',
   policyRestrictions: 'policyRestrictionNames',
   documentations: 'documentationNames',
   workspaces: 'workspaceNames',
@@ -320,34 +321,42 @@ const OVERRIDE_CHILD_SECTIONS: Record<string, Set<string>> = {
  * Normalize one override section into OverrideSection format.
  * Supports Toolkit list format: `[{ name, properties, ...childSections }]`
  * Recursively parses nested child sections.
+ *
+ * @param section - The raw YAML value for this section
+ * @param displayPath - Full dotted path for error messages (e.g., "apis.my-api.operations")
+ * @param sectionKind - Bare section key for child lookup (e.g., "operations")
  */
 function normalizeOverrideSectionRecursive(
   section: unknown,
-  sectionName: string
+  displayPath: string,
+  sectionKind?: string
 ): OverrideSection | undefined {
+  // Use sectionKind for child lookup; fall back to displayPath for top-level calls
+  const lookupKey = sectionKind ?? displayPath;
+
   if (section === undefined || section === null) {
     return undefined;
   }
 
   if (!Array.isArray(section)) {
     throw new Error(
-      `Invalid overrides.${sectionName}: expected an array in toolkit format ` +
+      `Invalid overrides.${displayPath}: expected an array in toolkit format ` +
       `([ { name, properties } ]), got ${typeof section}.`
     );
   }
 
   const normalized: OverrideSection = {};
-  const childKeys = OVERRIDE_CHILD_SECTIONS[sectionName] ?? new Set<string>();
+  const childKeys = OVERRIDE_CHILD_SECTIONS[lookupKey] ?? new Set<string>();
 
   for (const item of section) {
     if (!isPlainObject(item)) {
-      logger.warn(`Ignoring invalid item in overrides.${sectionName}; expected object.`);
+      logger.warn(`Ignoring invalid item in overrides.${displayPath}; expected object.`);
       continue;
     }
 
     const name = item.name;
     if (typeof name !== 'string' || name.trim().length === 0) {
-      logger.warn(`Ignoring item in overrides.${sectionName}; "name" is required.`);
+      logger.warn(`Ignoring item in overrides.${displayPath}; "name" is required.`);
       continue;
     }
 
@@ -356,7 +365,7 @@ function normalizeOverrideSectionRecursive(
     if (item.properties !== undefined && item.properties !== null) {
       if (!isPlainObject(item.properties)) {
         logger.warn(
-          `Ignoring item '${name}' in overrides.${sectionName}; ` +
+          `Ignoring item '${name}' in overrides.${displayPath}; ` +
           `"properties" must be an object, got ${typeof item.properties}.`
         );
         continue;
@@ -369,7 +378,7 @@ function normalizeOverrideSectionRecursive(
       );
       if (Object.keys(fallbackFields).length > 0) {
         logger.debug(
-          `Item '${name}' in overrides.${sectionName} is missing 'properties'; using fields directly.`
+          `Item '${name}' in overrides.${displayPath} is missing 'properties'; using fields directly.`
         );
         properties = fallbackFields;
       } else {
@@ -382,7 +391,11 @@ function normalizeOverrideSectionRecursive(
     for (const childKey of childKeys) {
       const childValue: unknown = item[childKey];
       if (childValue !== undefined) {
-        const childSection = normalizeOverrideSectionRecursive(childValue, `${sectionName}.${name}.${childKey}`);
+        const childSection = normalizeOverrideSectionRecursive(
+          childValue,
+          `${displayPath}.${name}.${childKey}`,
+          childKey
+        );
         if (childSection !== undefined) {
           if (!children) children = {};
           children[childKey] = childSection;
@@ -396,11 +409,11 @@ function normalizeOverrideSectionRecursive(
     // Only add entry if it has properties or children
     if (Object.keys(properties).length > 0 || children) {
       if (normalized[name] !== undefined) {
-        logger.warn(`Duplicate name '${name}' in overrides.${sectionName}; later entry overwrites earlier one.`);
+        logger.warn(`Duplicate name '${name}' in overrides.${displayPath}; later entry overwrites earlier one.`);
       }
       normalized[name] = entry;
     } else {
-      logger.warn(`Ignoring item '${name}' in overrides.${sectionName}; no override properties or child sections.`);
+      logger.warn(`Ignoring item '${name}' in overrides.${displayPath}; no override properties or child sections.`);
     }
   }
 

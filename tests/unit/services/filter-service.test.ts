@@ -134,13 +134,29 @@ describe('filter-service', () => {
       expect(shouldIncludeResource(productApi, filter)).toBe(false);
     });
 
-    it('should always include ServicePolicy', () => {
+    it('should include ServicePolicy when policies filter is undefined', () => {
       const filter: FilterConfig = { apis: [] };
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ServicePolicy,
         nameParts: [],
       };
       expect(shouldIncludeResource(descriptor, filter)).toBe(true);
+    });
+
+    it('should filter ServicePolicy via policies key', () => {
+      // ServicePolicy has nameParts: [] — uses fixed singleton name "policy"
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ServicePolicy,
+        nameParts: [],
+      };
+
+      // Include when listed
+      const includeFilter: FilterConfig = { policies: ['policy'] };
+      expect(shouldIncludeResource(descriptor, includeFilter)).toBe(true);
+
+      // Exclude when empty array
+      const excludeFilter: FilterConfig = { policies: [] };
+      expect(shouldIncludeResource(descriptor, excludeFilter)).toBe(false);
     });
 
     it('should filter named values', () => {

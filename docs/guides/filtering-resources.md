@@ -104,7 +104,9 @@ apis:
 
 ### Workspace sub-resource filters
 
-For workspaces, you can specify which workspace-scoped resources to extract:
+> **Note:** Workspace sub-resource filtering is parsed but not yet applied at runtime. Currently, including a workspace extracts all resources within it. This matches the Toolkit's configuration format for forward compatibility. See [#119](https://github.com/Azure/apiops-cli/issues/119) for tracking.
+
+The configuration format supports specifying which workspace-scoped resources to extract:
 
 ```yaml
 workspaces:
@@ -140,6 +142,7 @@ Supported workspace sub-filter keys: `apis`, `backends`, `diagnostics`, `groups`
 | `groups` | Groups | `developers`, `partners`, `admins` |
 | `subscriptions` | Subscriptions | `team-a-subscription` |
 | `schemas` | Global Schemas | `shared-error-schema` |
+| `policies` | Service-level Policies | `policy` |
 | `policyRestrictions` | Policy Restrictions | `no-external-calls` |
 | `documentations` | Documentation | `getting-started`, `changelog` |
 | `workspaces` | Workspaces | `team-a-workspace`, `team-b-workspace` |
