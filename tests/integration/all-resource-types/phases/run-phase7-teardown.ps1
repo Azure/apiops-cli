@@ -31,6 +31,10 @@ param(
     [Parameter(Mandatory)]
     [string]$TargetResourceGroup,
 
+    [string]$SourceSubscriptionId,
+
+    [string]$TargetSubscriptionId,
+
     [string]$Location = 'eastus2',
 
     [switch]$SkipTeardown
@@ -49,12 +53,42 @@ Write-Host "🧹 PHASE 7 — Teardown"
 
 $sourceApimName = $null
 $targetApimName = $null
-$sourceApimName = az apim list --resource-group $SourceResourceGroup --query "[0].name" -o tsv 2>$null
-$targetApimName = az apim list --resource-group $TargetResourceGroup --query "[0].name" -o tsv 2>$null
+
+function Get-SubscriptionArgs {
+    param([string]$SubscriptionId)
+
+    if ([string]::IsNullOrWhiteSpace($SubscriptionId)) {
+        return @()
+    }
+
+    return @('--subscription', $SubscriptionId)
+}
+
+function Get-GroupExists {
+    param(
+        [Parameter(Mandatory)]
+        [string]$ResourceGroup,
+        [string]$SubscriptionId
+    )
+
+    $subArgs = Get-SubscriptionArgs -SubscriptionId $SubscriptionId
+    $exists = az group exists --name $ResourceGroup @subArgs -o tsv 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to query existence for resource group '$(Protect-ResourceGroupName -Value $ResourceGroup)'."
+    }
+
+    return $exists -eq 'true'
+}
+
+$sourceListArgs = @('apim', 'list', '--resource-group', $SourceResourceGroup, '--query', '[0].name', '-o', 'tsv') + (Get-SubscriptionArgs -SubscriptionId $SourceSubscriptionId)
+$targetListArgs = @('apim', 'list', '--resource-group', $TargetResourceGroup, '--query', '[0].name', '-o', 'tsv') + (Get-SubscriptionArgs -SubscriptionId $TargetSubscriptionId)
+
+$sourceApimName = az @sourceListArgs 2>$null
+$targetApimName = az @targetListArgs 2>$null
 
 function Wait-ForResourceGroupsDeletion {
     param(
-        [string[]]$ResourceGroups,
+        [hashtable[]]$Groups,
         [int]$TimeoutMinutes = 60,
         [int]$IntervalSeconds = 30
     )
@@ -65,9 +99,9 @@ function Wait-ForResourceGroupsDeletion {
     while ($waitedSeconds -lt $timeoutSeconds) {
         $existingGroups = @()
 
-        foreach ($resourceGroup in $ResourceGroups) {
-            if ((az group exists --name $resourceGroup -o tsv 2>$null) -eq 'true') {
-                $existingGroups += $resourceGroup
+        foreach ($group in $Groups) {
+            if (Get-GroupExists -ResourceGroup $group.ResourceGroup -SubscriptionId $group.SubscriptionId) {
+                $existingGroups += $group.ResourceGroup
             }
         }
 
@@ -82,7 +116,7 @@ function Wait-ForResourceGroupsDeletion {
         $waitedSeconds += $IntervalSeconds
     }
 
-    $maskedGroups = $ResourceGroups | ForEach-Object { Protect-ResourceGroupName -Value $_ }
+    $maskedGroups = $Groups | ForEach-Object { Protect-ResourceGroupName -Value $_.ResourceGroup }
     throw "Timed out waiting for resource group deletion for: $($maskedGroups -join ', ')."
 }
 
@@ -114,12 +148,35 @@ function Wait-ForDeletedApimService {
 }
 
 Write-Host "   Deleting $(Protect-ResourceGroupName -Value $SourceResourceGroup)..."
-az group delete --name $SourceResourceGroup --yes --no-wait 2>$null
+if (Get-GroupExists -ResourceGroup $SourceResourceGroup -SubscriptionId $SourceSubscriptionId) {
+    $sourceDeleteArgs = @('group', 'delete', '--name', $SourceResourceGroup, '--yes', '--no-wait') + (Get-SubscriptionArgs -SubscriptionId $SourceSubscriptionId)
+    az @sourceDeleteArgs 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to start deletion for source resource group '$(Protect-ResourceGroupName -Value $SourceResourceGroup)'."
+    }
+}
+else {
+    Write-Host "   Source resource group already absent"
+}
+
 Write-Host "   Deleting $(Protect-ResourceGroupName -Value $TargetResourceGroup)..."
-az group delete --name $TargetResourceGroup --yes --no-wait 2>$null
+if (Get-GroupExists -ResourceGroup $TargetResourceGroup -SubscriptionId $TargetSubscriptionId) {
+    $targetDeleteArgs = @('group', 'delete', '--name', $TargetResourceGroup, '--yes', '--no-wait') + (Get-SubscriptionArgs -SubscriptionId $TargetSubscriptionId)
+    az @targetDeleteArgs 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to start deletion for target resource group '$(Protect-ResourceGroupName -Value $TargetResourceGroup)'."
+    }
+}
+else {
+    Write-Host "   Target resource group already absent"
+}
 
 Write-Host "   ⏳ Waiting for resource group deletions to complete for hard-delete..."
-Wait-ForResourceGroupsDeletion -ResourceGroups @($SourceResourceGroup, $TargetResourceGroup)
+$groups = @(
+    @{ ResourceGroup = $SourceResourceGroup; SubscriptionId = $SourceSubscriptionId },
+    @{ ResourceGroup = $TargetResourceGroup; SubscriptionId = $TargetSubscriptionId }
+)
+Wait-ForResourceGroupsDeletion -Groups $groups
 
 if ($sourceApimName) {
     Wait-ForDeletedApimService -ServiceName $sourceApimName -ServiceLocation $Location
