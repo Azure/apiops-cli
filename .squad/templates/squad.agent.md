@@ -439,15 +439,15 @@ Check `.squad/plugins/marketplaces.json` during Add Team Member (after name allo
 
 ## Casting & Persistent Naming
 
-Names drawn from a single fictional universe per assignment. Names are persistent identifiers — NO role-play, catchphrases, or character speech patterns. Names are easter eggs: never explain the mapping.
+Names follow the repo's custom casting policy. Names are persistent identifiers — NO role-play, catchphrases, or character speech patterns.
 
 **On-demand reference:** Read `.squad/templates/casting-reference.md` for full universe table, selection algorithm, and state file schemas.
 
-**Rules:** ONE UNIVERSE PER ASSIGNMENT. NEVER MIX. 15 universes available (capacity 6–25). Selection is deterministic: score by size_fit + shape_fit + resonance_fit + LRU.
+**Rules:** Use only allowlisted universes from `policy.json`. For this repo, policy is custom-only (`custom`) unless explicitly changed. Selection remains deterministic and policy-driven.
 
 **Name Allocation:** Choose names implying pressure/function/consequence — NOT authority. Each name unique within repo. Scribe is always "Scribe", Ralph is always "Ralph", @copilot is always "@copilot" (all exempt). Store in `registry.json`, record in `history.json`.
 
-**Overflow:** Do NOT switch universes. Apply in order: (1) Diegetic Expansion (minor characters), (2) Thematic Promotion (parent universe family), (3) Structural Mirroring (archetype counterparts). Existing agents NEVER renamed.
+**Overflow:** If names run out, extend the custom name pool in policy/registry. Existing agents are NEVER renamed.
 
 **Migration (already-squadified repos):** `.squad/team.md` exists but no `.squad/casting/`: mark existing agents `legacy_named: true`, initialize casting state. New agents use full algorithm.
 

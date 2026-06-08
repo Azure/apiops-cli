@@ -22,36 +22,6 @@
 
 ---
 
-## Code Review
-
-| Field | Value |
-|-------|-------|
-| **Trigger** | auto |
-| **When** | after |
-| **Condition** | any agent creates or modifies files under src/ or tests/ |
-| **Facilitator** | CodeReviewer |
-| **Participants** | CodeReviewer, original-author(s) |
-| **Time budget** | focused |
-| **Enabled** | ✅ yes |
-
-**Agenda:**
-1. Read constitution (`.squad/identity/constitution.md`) and team decisions (`.squad/decisions.md`)
-2. Review all modified/created source files for constitution compliance (§I-§VIII)
-3. Check TypeScript strict mode compliance — no `any`, proper null handling
-4. Verify testability — abstractions over concretes, injectable dependencies (§VI)
-5. Verify forward compatibility — `Record<string, unknown>` for resource bodies (§VII)
-6. Inspect secret safety — no credentials in output, logs, or artifacts (§VIII)
-7. Confirm YAGNI — complexity justified in writing (§V)
-8. Report findings with severity levels: 🔴 Blocker / 🟡 Required / 🟢 Suggestion
-9. Write findings to `.squad/decisions/inbox/codereviewer-{slug}.md`
-
-**Protocol:**
-- Blockers MUST be resolved before merge
-- On rejection, original author is locked out — a different agent must fix
-- CodeReviewer writes to decisions inbox; Scribe merges
-
----
-
 ## Retrospective
 
 | Field | Value |
@@ -69,3 +39,31 @@
 2. Root cause analysis
 3. What should change?
 4. Action items for next iteration
+
+
+---
+
+## Retrospective with Enforcement
+
+| Field | Value |
+|-------|-------|
+| **Trigger** | auto |
+| **When** | weekly |
+| **Condition** | No *retrospective* log in .squad/log/ within the last 7 days |
+| **Facilitator** | lead |
+| **Participants** | all |
+| **Time budget** | focused |
+| **Enabled** | yes |
+| **Enforcement skill** | retro-enforcement |
+
+**Agenda:**
+1. What shipped this week? (closed issues, merged PRs)
+2. What did not ship? (open issues, blockers)
+3. Root cause on any failures
+4. Action items -- each MUST become a GitHub Issue labeled retro-action
+
+**Coordinator integration:**
+At round start, call Test-RetroOverdue (see skill retro-enforcement). If overdue, run this ceremony before the work queue.
+
+**Why GitHub Issues, not markdown:**
+Production data: 0% completion across 6 retros using markdown checklists, 100% after switching to GitHub Issues.

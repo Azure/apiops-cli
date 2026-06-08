@@ -85,16 +85,16 @@ The `union` merge driver keeps all lines from both sides, which is correct for a
 2. Runs `git config user.name` → "Brady"
 3. Asks: *"Hey Brady, what are you building?"*
 4. User: *"TypeScript CLI tool with GitHub API integration"*
-5. Coordinator runs casting algorithm → selects "The Usual Suspects" universe
-6. Proposes: Keaton (Lead), Verbal (Prompt), Fenster (Backend), Hockney (Tester), Scribe, Ralph
+5. Coordinator applies custom-only casting policy (`custom`)
+6. Proposes: Lead, Backend, Tester, Scribe, Ralph (or other configured custom names)
 7. Uses `ask_user` with choices → user selects "Yes, hire this team"
 8. Coordinator creates `.squad/` structure, initializes casting state, seeds agents
-9. Says: *"✅ Team hired. Try: 'Keaton, set up the project structure'"*
+9. Says: *"✅ Team hired. Try: 'Lead, set up the project structure'"*
 
 ## Anti-Patterns
 
 - ❌ Creating files before user confirms Phase 1
-- ❌ Mixing agents from different universes in the same cast
+- ❌ Selecting names that violate the active casting policy allowlist
 - ❌ Skipping the `ask_user` tool and assuming confirmation
 - ❌ Proceeding to Phase 2 when user said "add someone" or "change a role"
 - ❌ Using `## Team Roster` instead of `## Members` as the header (breaks GitHub workflows)
