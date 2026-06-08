@@ -67,3 +67,53 @@ All new `.ts` files in `src/` and `tests/` must include:
 - [Microsoft Open Source Program](https://opensource.microsoft.com/program)
 
 ---
+
+### 2026-07-16: Issue #114 Architectural Review — Filter & Override Toolkit Alignment
+**By:** ApiOpsLead  
+**Status:** Approved (Follow-up required)  
+**What:** Architecture review of issue #114 models, config loader, filter service, override merger, workspace extractor, transitive resolver.
+
+**Key Findings:**
+
+- **OverrideEntry recursive model:** Sound design, well-bounded recursion (max depth 3), no cycle risk.
+- **Toolkit parity:** All 14 override sections and 16 filter fields implemented. `Workspace` filter added correctly.
+- **Forward compatibility (§VII):** Clean extension points; 1–3 LOC cost per new section/relationship.
+- **Override merger traversal:** 🟡 ApiOperationPolicy double-nesting gap — YAML is 3-level (`apis → operations → policies`), but `applyNestedOverride` does 2-level traversal only. Practical impact low (rare use, operation properties typically empty).
+- **Filter service sub-filtering:** ✅ Correct semantics (case-insensitive matching, proper empty array handling).
+- **Workspace sub-filter consumption:** ✅ Parsed correctly, consumption path can follow in separate PR.
+
+**Verdict:** Approve. Architecture maps cleanly to Toolkit format with sound design and good extension points. ApiOperationPolicy gap is non-blocking — **file follow-up issue.**
+
+**Constitution compliance:** §II (APIM Native), §V (YAGNI), §VI (Testability), §VII (Forward Compatibility)
+
+---
+
+### 2026-07-16: Issue #114 Code Review — Standards & Testability
+**By:** CodeReviewer  
+**Status:** Request Changes (5 required items)  
+**What:** Standards review of 6 source files, 3 test files, 4 doc/template files for issue #114.
+
+**Required Changes (🟡):**
+
+| ID | Issue | File(s) | Principle |
+|----|-------|---------|-----------|
+| R1 | ApiOperationPolicy nested override lookup broken | override-merger.ts | §IV Idempotent Operations |
+| R2 | Filter name case sensitivity doc/code mismatch | filtering-resources.md | §III Configuration as Code |
+| R3 | Duplicate override names silently overwritten | config-loader.ts | §I CLI-First Design |
+| R4 | Workspace sub-filters parsed but never consumed | config.ts, config-loader.ts, workspace-extractor.ts | §V Simplicity/YAGNI |
+| R5 | Zero test coverage for nested override functionality | override-merger.test.ts, config-loader.test.ts | §VI Testability by Design |
+
+**Details:**
+- **R1:** Remove `ApiOperationPolicy` from `CHILD_OVERRIDE_MAP` or implement multi-level traversal for 3-deep nesting.
+- **R2:** `matchesFilter()` uses `.toLowerCase()` (case-insensitive); update docs from "case-sensitive" to "case-insensitive."
+- **R3:** Emit warning when duplicate `name` in override array; currently silently overwrites.
+- **R4:** Either remove workspace sub-filter parsing/model or implement consumption in filter-service/workspace-extractor.
+- **R5:** Add tests: ApiDiagnostic nested override, ApiOperation nested override, ProductPolicy nested override, config loader nested override parsing, config loader API sub-filter parsing, config loader workspace sub-filter parsing (if kept).
+
+**Positive Observations:** All 9 files have correct copyright headers. Zero `any` types. All imports use `.js` extensions. Forward compatibility preserved (§VII). Immutability maintained. Secret safety compliant (§VIII). Error handling is actionable. Idempotent design verified (§IV). Legacy alias support with deprecation warnings. Template quality high.
+
+**Verdict:** Well-structured implementation with good constitution compliance. R1–R5 must be resolved before merge. No blockers.
+
+**Constitution compliance:** §I, §III, §IV, §V, §VI, §VII, §VIII
+
+---
