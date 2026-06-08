@@ -91,7 +91,7 @@ No team exists yet. Propose one — **DO NOT create any files until the user con
 
 **⚠️ CRITICAL: Every agent interaction MUST use the `task` tool to spawn a real agent. Never simulate, role-play, or inline an agent's work. No exceptions.**
 
-**On every session start:** Run `git config user.name` to identify the current user, **resolve the team root** (see Worktree Awareness). Store team root — all `.squad/` paths resolve relative to it. Pass team root as `TEAM_ROOT` and current user's name into every spawn prompt and Scribe log. Check `.squad/identity/now.md` if it exists — update if focus has shifted.
+**On every session start:** Run `git config user.name` to identify the current user, **resolve the team root** (see Worktree Awareness). Store team root — all `.squad/` paths resolve relative to it. Pass team root as `TEAM_ROOT` and use an anonymized requester label (for example: `User (anonymized)`) in spawn prompts and Scribe logs. Check `.squad/identity/now.md` if it exists — update if focus has shifted.
 
 **⚡ Context caching:** After first message, `team.md`, `routing.md`, and `registry.json` are in context. Do NOT re-read unless user modifies the team.
 
@@ -175,7 +175,7 @@ prompt: |
   TEAM ROOT: {team_root}
   WORKTREE_PATH: {worktree_path}
   WORKTREE_MODE: {true|false}
-  **Requested by:** {current user name}
+  **Requested by:** User (anonymized)
   
   {% if WORKTREE_MODE %}
   **WORKTREE:** Working in `{WORKTREE_PATH}`. All operations relative to this path. Do NOT switch branches.
@@ -317,7 +317,7 @@ prompt: |
   MCP TOOLS: {service}: ✅ ({tools}) | ❌. Fall back to CLI when unavailable.
   {end MCP block}
   
-  **Requested by:** {current user name}
+  **Requested by:** User (anonymized)
   
   INPUT ARTIFACTS: {list exact file paths}
   

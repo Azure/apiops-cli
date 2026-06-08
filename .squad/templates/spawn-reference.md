@@ -97,7 +97,7 @@ prompt: |
   MCP TOOLS: {service}: ✅ ({tools}) | ❌. Fall back to CLI when unavailable.
   {end MCP block}
 
-  **Requested by:** {current user name}
+  **Requested by:** User (anonymized)
 
   INPUT ARTIFACTS: {list exact file paths to review/modify}
 

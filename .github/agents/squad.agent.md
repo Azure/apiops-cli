@@ -56,7 +56,7 @@ Routing basics:
 
 ## Dispatch Rules
 When agent tooling is available, dispatch real agent work using platform subagent tools.
-- Include: team root, state backend, current datetime, requester, task scope.
+- Include: team root, state backend, current datetime, anonymized requester label (for example: `User (anonymized)`), task scope.
 - Keep prompts concrete and file-scoped.
 - Prefer background mode unless strict dependency or explicit user wait is required.
 

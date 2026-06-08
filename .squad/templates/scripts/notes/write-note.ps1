@@ -28,6 +28,7 @@ param(
     [switch]$Promote,   # set promote_to_permanent: true
     [switch]$Archive,   # set archive_on_close: true
     [switch]$NoPush,    # skip auto-push
+    [switch]$AllowRequesterIdentity, # keep requester identity fields as provided
     [switch]$Quiet
 )
 
@@ -55,6 +56,15 @@ $note = [ordered]@{
 
 # Merge content fields into note
 $parsed.PSObject.Properties | ForEach-Object { $note[$_.Name] = $_.Value }
+
+# Redact requester identity by default so notes do not persist personal names.
+if (-not $AllowRequesterIdentity) {
+    @('by','requested_by','requester','requestedBy','requested-by') | ForEach-Object {
+        if ($note.Contains($_)) {
+            $note[$_] = 'User (anonymized)'
+        }
+    }
+}
 
 # Add flag fields
 if ($Promote)  { $note["promote_to_permanent"] = $true }
