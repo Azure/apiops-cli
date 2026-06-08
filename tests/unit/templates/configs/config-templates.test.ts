@@ -89,44 +89,50 @@ describe('configs/override-config', () => {
     it('should include namedValues override examples', () => {
       const config = generateOverrideConfig('dev');
       expect(config).toContain('# namedValues:');
-      expect(config).toContain('#   api-key:');
-      expect(config).toContain('#     value:');
+      expect(config).toContain('#   - name: api-key');
+      expect(config).toContain('#     properties:');
+      expect(config).toContain('#       value:');
     });
 
     it('should include backends override examples', () => {
       const config = generateOverrideConfig('dev');
       expect(config).toContain('# backends:');
-      expect(config).toContain('#   backend-api:');
-      expect(config).toContain('#     url:');
+      expect(config).toContain('#   - name: backend-api');
+      expect(config).toContain('#     properties:');
+      expect(config).toContain('#       url:');
     });
 
     it('should include apis override examples', () => {
       const config = generateOverrideConfig('dev');
       expect(config).toContain('# apis:');
-      expect(config).toContain('#   echo-api:');
-      expect(config).toContain('#     serviceUrl:');
+      expect(config).toContain('#   - name: echo-api');
+      expect(config).toContain('#     properties:');
+      expect(config).toContain('#       serviceUrl:');
     });
 
     it('should include KeyVault example in namedValues', () => {
       const config = generateOverrideConfig('staging');
-      expect(config).toContain('#   secret-from-keyvault:');
-      expect(config).toContain('#     keyVault:');
-      expect(config).toContain('#       secretIdentifier:');
+      expect(config).toContain('#   - name: secret-from-keyvault');
+      expect(config).toContain('#     properties:');
+      expect(config).toContain('#       keyVault:');
+      expect(config).toContain('#         secretIdentifier:');
       expect(config).toContain('staging-kv.vault.azure.net');
     });
 
     it('should include diagnostics override examples', () => {
       const config = generateOverrideConfig('dev');
       expect(config).toContain('# diagnostics:');
-      expect(config).toContain('#   applicationinsights:');
-      expect(config).toContain('#     loggerId:');
+      expect(config).toContain('#   - name: applicationinsights');
+      expect(config).toContain('#     properties:');
+      expect(config).toContain('#       loggerId:');
     });
 
     it('should include loggers override examples', () => {
       const config = generateOverrideConfig('dev');
       expect(config).toContain('# loggers:');
-      expect(config).toContain('#   appinsights-logger:');
-      expect(config).toContain('#     resourceId:');
+      expect(config).toContain('#   - name: appinsights-logger');
+      expect(config).toContain('#     properties:');
+      expect(config).toContain('#       resourceId:');
     });
 
     it('should not have any uncommented configuration by default', () => {

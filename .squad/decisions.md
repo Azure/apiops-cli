@@ -19,6 +19,14 @@
 **Status:** Implemented  
 **What:** `reconcileOperationsAfterSpecImport` removes `schemaId` and `typeName` from operation `request.representations` and `responses[].representations` before PATCH.
 **Why:** Those IDs are source-instance specific. After target spec import, APIM assigns its own schema IDs; sending stale source IDs causes APIM to drop schema refs.
+### 2026-07-15: PR #102 Metadata Correction
+**By:** GitHubExpert  
+**Status:** Applied (partial)  
+**What:** PR #102 body updated to accurately reflect the branch's real work — aligning apiops-cli override configuration format with APIOps Toolkit (issue #96). Title update requires manual intervention due to API token scope limitations.  
+**Why:** The PR was auto-created with metadata describing only the final merge-main action, not the feature work (override format alignment, docs updates, test hardening). Accurate PR metadata is critical for reviewer context and changelog generation.  
+**Correct title:** `fix: align override configuration format with APIOps Toolkit`
+
+---
 
 ### 2026-05-28T23:06:01Z: Team-Wide Evidence Standard
 **By:** User directive (anonymized)  

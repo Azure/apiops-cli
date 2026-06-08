@@ -74,6 +74,8 @@ Always include `Closes #N` in **both** the commit message AND the PR body's "Rel
 
 **⚠️ CRITICAL:** When creating a pull request, the title and description must summarize **ALL changes in the branch**, not just the last commit.
 
+**⚠️ CRITICAL:** Once a pull request already exists, do **not** change its title or description unless the user explicitly asks you to do so.
+
 ### Before Creating Any PR
 
 1. Run `git log main..HEAD --oneline` to see ALL commits in the branch
@@ -85,6 +87,12 @@ Always include `Closes #N` in **both** the commit message AND the PR body's "Rel
    - Related issues/tasks
    - New files added
    - Modified functionality
+
+### After a PR Already Exists
+
+1. Treat the current PR title and description as user-approved context unless the user explicitly asks for a change
+2. If the user does ask for an update, keep the title and description aligned with the **entire branch**, not just the latest iteration
+3. Do not overwrite a good PR summary just because you made a new commit, merged `main`, or addressed review feedback
 
 ### Common Mistake
 

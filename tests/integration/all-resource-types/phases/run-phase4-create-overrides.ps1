@@ -101,19 +101,22 @@ if (-not $targetEhConnStr) {
 $overrideFile = [System.IO.Path]::GetFullPath((Join-Path $ExtractOutputDir '.overrides.yaml'))
 $overrideYaml = @"
 namedValues:
-  src-nv-keyvault:
-    keyVault:
-      secretIdentifier: "${targetKvUri}secrets/tgt-secret-value"
+  - name: src-nv-keyvault
+    properties:
+      keyVault:
+        secretIdentifier: "${targetKvUri}secrets/tgt-secret-value"
 
 loggers:
-  src-logger-appinsights:
-    resourceId: "$targetAiResourceId"
-    credentials:
-      instrumentationKey: "$targetAiKey"
-  src-logger-eventhub:
-    credentials:
-      name: "tgt-eh-logs"
-      connectionString: "$targetEhConnStr"
+  - name: src-logger-appinsights
+    properties:
+      resourceId: "$targetAiResourceId"
+      credentials:
+        instrumentationKey: "$targetAiKey"
+  - name: src-logger-eventhub
+    properties:
+      credentials:
+        name: "tgt-eh-logs"
+        connectionString: "$targetEhConnStr"
 "@
 
 $overrideYaml | Set-Content -Path $overrideFile -Encoding utf8

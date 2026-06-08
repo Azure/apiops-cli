@@ -44,15 +44,17 @@ Referenced backends, named values, and policy fragments are included automatical
 
 ## Publish to a target environment
 
-Create `overrides.prod.yaml` for environment-specific values:
+Create `configuration.prod.yaml` for environment-specific values:
 
 ```yaml
 namedValues:
-  backend-url:
-    value: "https://api.prod.example.com"
+  - name: backend-url
+    properties:
+      value: "https://api.prod.example.com"
 backends:
-  my-backend:
-    url: "https://api.prod.example.com"
+  - name: my-backend
+    properties:
+      url: "https://api.prod.example.com"
 ```
 
 ```bash
@@ -60,7 +62,7 @@ apiops publish \
   --resource-group prod-rg \
   --service-name prod-apim \
   --source ./apim-artifacts \
-  --overrides overrides.prod.yaml
+  --overrides configuration.prod.yaml
 ```
 
 ## Preview changes before publishing
@@ -70,7 +72,7 @@ apiops publish \
   --resource-group prod-rg \
   --service-name prod-apim \
   --source ./apim-artifacts \
-  --overrides overrides.prod.yaml \
+  --overrides configuration.prod.yaml \
   --dry-run
 ```
 
