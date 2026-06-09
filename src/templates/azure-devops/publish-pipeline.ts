@@ -42,6 +42,13 @@ export function generatePublishPipeline(config: PublishPipelineConfig): string {
               - script: npm ci
                 displayName: 'Install dependencies'
 
+              - task: replacetokens@6
+                displayName: 'Substitute tokens in configuration.${env}.yaml'
+                inputs:
+                  sources: 'configuration.${env}.yaml'
+                  tokenPrefix: '{#['
+                  tokenSuffix: ']#}'
+
               - task: AzureCLI@2
                 displayName: 'Publish to ${env} (incremental - last commit only)'
                 condition: ne('\${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo')

@@ -211,5 +211,35 @@ describe('azure-devops/publish-pipeline', () => {
       expect(pipeline).toContain('npm ci');
       expect(pipeline).toContain('npx apiops publish');
     });
+
+    it('should include token substitution step before publish', () => {
+      const pipeline = generatePublishPipeline({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+      });
+      expect(pipeline).toContain('replacetokens@6');
+      expect(pipeline).toContain("tokenPrefix: '{#['");
+      expect(pipeline).toContain("tokenSuffix: ']#}'");
+    });
+
+    it('should target environment-specific configuration file for token substitution', () => {
+      const pipeline = generatePublishPipeline({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+      });
+      expect(pipeline).toContain("sources: 'configuration.dev.yaml'");
+      expect(pipeline).toContain("sources: 'configuration.prod.yaml'");
+    });
+
+    it('should place token substitution step before publish steps', () => {
+      const pipeline = generatePublishPipeline({
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+      });
+      const tokenIdx = pipeline.indexOf('replacetokens@6');
+      const publishIdx = pipeline.indexOf('npx apiops publish');
+      expect(tokenIdx).toBeGreaterThan(0);
+      expect(tokenIdx).toBeLessThan(publishIdx);
+    });
   });
 });

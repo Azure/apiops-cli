@@ -144,7 +144,8 @@ Each stage:
 2. **Uses a deployment job** — Wraps the publish step in a `deployment` job targeting an [Azure DevOps environment](https://learn.microsoft.com/en-us/azure/devops/pipelines/process/environments) for approval gates
 3. **Loads per-environment variables** — Each stage uses its own variable group (`apim-dev`, `apim-prod`)
 4. **Authenticates per-environment** — Uses environment-specific service connections (`AZURE_SERVICE_CONNECTION_DEV`, `AZURE_SERVICE_CONNECTION_PROD`)
-5. **Applies overrides** — Passes `--override configuration.{env}.yaml` to apply [environment-specific overrides](../guides/environment-overrides.md)
+5. **Substitutes tokens** — Replaces `{#[TOKEN_NAME]#}` placeholders in `configuration.<env>.yaml` with secret variable values before publishing
+6. **Applies overrides** — Passes `--override configuration.{env}.yaml` to apply [environment-specific overrides](../guides/environment-overrides.md)
 
 ### Publish Pipeline Walkthrough
 
@@ -293,6 +294,27 @@ In your `package.json`, pin to a specific version:
 }
 ```
 
+### Using Token Substitution
+
+To replace `{#[TOKEN_NAME]#}` placeholders in `configuration.<env>.yaml` with secret variable values:
+
+1. **Install the [Replace Tokens extension](https://marketplace.visualstudio.com/items?itemName=qetza.replacetokens)** in your Azure DevOps organization (if not already installed).
+
+2. **Add secret variables** to the `apim-<env>` variable group (e.g., `PROD_SECRET_VALUE`). Mark them as secret.
+
+3. The generated substitution step runs automatically before publish:
+
+   ```yaml
+   - task: replacetokens@6
+     displayName: 'Substitute tokens in configuration.prod.yaml'
+     inputs:
+       sources: 'configuration.prod.yaml'
+       tokenPrefix: '{#['
+       tokenSuffix: ']#}'
+   ```
+
+See the [Token Substitution Guide](../guides/token-substitution.md) for full details, including migration from APIOps Toolkit.
+
 ---
 
 ## Troubleshooting
@@ -317,4 +339,5 @@ In your `package.json`, pin to a specific version:
 - [apiops publish](../commands/publish.md) — publish command reference
 - [Authentication Guide](../guides/authentication.md) — auth methods and RBAC
 - [Environment Overrides](../guides/environment-overrides.md) — per-environment configuration
+- [Token Substitution](../guides/token-substitution.md) — pipeline placeholder substitution with `{#[TOKEN_NAME]#}`
 - [Filtering Resources](../guides/filtering-resources.md) — extract specific APIs

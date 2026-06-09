@@ -48,6 +48,18 @@ ${autoDeployComment}
           tenant-id: \${{ secrets.AZURE_TENANT_ID }}
           subscription-id: \${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Substitute tokens in configuration.${env}.yaml
+        uses: cschleiden/replace-tokens@v1.3
+        with:
+          tokenPrefix: '{#['
+          tokenSuffix: ']#}'
+          files: '["configuration.${env}.yaml"]'
+        env:
+          # Map pipeline secrets/variables to environment variables so that
+          # {#[TOKEN_NAME]#} placeholders in configuration.${env}.yaml are replaced
+          # with their actual values before the publish step runs. Example:
+          #   MY_SECRET: \${{ secrets.MY_SECRET }}
+
       - name: Publish to ${env} (incremental - last commit only)
         if: \${{ github.event.inputs.COMMIT_ID_CHOICE != 'publish-all-artifacts-in-repo' }}
         run: |
