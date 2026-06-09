@@ -437,6 +437,9 @@ async function reconcileOperationsAfterSpecImport(
       }
     }
 
+    // Strip source schema refs; APIM rebinds on import and drops stale IDs.
+    stripRepresentationSchemaRefs(patchProps);
+
     if (Object.keys(patchProps).length === 0) return;
 
     const patchBody: Record<string, unknown> = { properties: patchProps };
@@ -456,6 +459,39 @@ async function reconcileOperationsAfterSpecImport(
       `Reconciling ${tasks.length} operation(s) after spec import for "${getNamePart(apiDescriptor.nameParts, 0)}"`
     );
     await runParallel(tasks, 5);
+  }
+}
+
+/** Strip source schema refs from request/response representations before PATCH. */
+function stripRepresentationSchemaRefs(patchProps: Record<string, unknown>): void {
+  const SCHEMA_REF_FIELDS = ['schemaId', 'typeName'];
+
+  function stripFromRepresentations(representations: unknown): void {
+    if (!Array.isArray(representations)) return;
+    for (const rep of representations) {
+      if (rep && typeof rep === 'object') {
+        for (const field of SCHEMA_REF_FIELDS) {
+          delete (rep as Record<string, unknown>)[field];
+        }
+      }
+    }
+  }
+
+  // Strip schema refs from request.representations.
+  const request = patchProps.request;
+  if (request && typeof request === 'object') {
+    const req = request as Record<string, unknown>;
+    stripFromRepresentations(req.representations);
+  }
+
+  // Strip schema refs from responses[].representations.
+  const responses = patchProps.responses;
+  if (Array.isArray(responses)) {
+    for (const response of responses) {
+      if (response && typeof response === 'object') {
+        stripFromRepresentations((response as Record<string, unknown>).representations);
+      }
+    }
   }
 }
 
