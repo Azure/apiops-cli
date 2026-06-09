@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "skuVariants": {
     "note": "Some resources only exist on certain SKUs",
-    "workspaces": ["Premium", "BasicV2", "StandardV2", "PremiumV2"],
+    "workspaces": ["Premium", "StandardV2", "PremiumV2"],
     "selfHostedGateways": ["Developer", "Premium"]
   },
   "serviceLevelArtifacts": {
@@ -633,9 +633,9 @@
     }
   },
   "workspaces": {
-    "note": "Workspaces exist on Premium and all V2 SKUs (BasicV2, StandardV2, PremiumV2)",
+    "note": "Workspaces exist on Premium and StandardV2/PremiumV2 (BasicV2 blocked by MethodNotAllowedInPricingTier as of June 2026)",
     "skuDependent": true,
-    "skuFilter": ["Premium", "BasicV2", "StandardV2", "PremiumV2"],
+    "skuFilter": ["Premium", "StandardV2", "PremiumV2"],
     "expected": [
       {
         "name": "src-workspace",
