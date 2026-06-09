@@ -2,7 +2,7 @@
 param apimName string
 
 @description('APIM SKU name. Classic SKUs support docs/wiki/policyRestriction.')
-@allowed(['Developer', 'Premium', 'StandardV2', 'PremiumV2'])
+@allowed(['Developer', 'Premium', 'BasicV2', 'StandardV2', 'PremiumV2'])
 param skuName string
 
 var isClassicSku = skuName == 'Developer' || skuName == 'Premium'

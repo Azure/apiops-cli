@@ -26,8 +26,8 @@ param publisherEmail string
 @description('Publisher name shown in the developer portal.')
 param publisherName string = 'APIOps BVT'
 
-@description('APIM SKU name. Use StandardV2/PremiumV2 for v2 tiers, or Developer/Premium/Standard for classic.')
-@allowed(['Developer', 'Premium', 'Standard', 'StandardV2', 'PremiumV2'])
+@description('APIM SKU name. Use BasicV2/StandardV2/PremiumV2 for v2 tiers, or Developer/Premium/Standard for classic.')
+@allowed(['Developer', 'Premium', 'Standard', 'BasicV2', 'StandardV2', 'PremiumV2'])
 param skuName string = 'StandardV2'
 
 @description('Application Insights name for logger/diagnostic testing.')
@@ -49,7 +49,7 @@ param logAnalyticsName string = 'bvt-${uniqueString(resourceGroup().id)}-src-law
 var isClassicSku = skuName == 'Developer' || skuName == 'Premium' || skuName == 'Standard'
 var apimSkuCapacity = isClassicSku ? 1 : 1
 var supportsSelfHostedGateway = skuName == 'Developer' || skuName == 'Premium'
-var supportsWorkspaces = skuName == 'Premium' || skuName == 'PremiumV2'
+var supportsWorkspaces = skuName == 'Premium' || skuName == 'BasicV2' || skuName == 'StandardV2' || skuName == 'PremiumV2'
 
 // Minimal but valid OpenAPI 3.0 spec
 var openApiSpec = '''

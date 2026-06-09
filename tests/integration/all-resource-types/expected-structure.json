@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "skuVariants": {
     "note": "Some resources only exist on certain SKUs",
-    "workspaces": ["Premium", "PremiumV2"],
+    "workspaces": ["Premium", "BasicV2", "StandardV2", "PremiumV2"],
     "selfHostedGateways": ["Developer", "Premium"]
   },
   "serviceLevelArtifacts": {
@@ -633,9 +633,9 @@
     }
   },
   "workspaces": {
-    "note": "Workspaces only exist on Premium and PremiumV2 SKUs",
+    "note": "Workspaces exist on Premium and all V2 SKUs (BasicV2, StandardV2, PremiumV2)",
     "skuDependent": true,
-    "skuFilter": ["Premium", "PremiumV2"],
+    "skuFilter": ["Premium", "BasicV2", "StandardV2", "PremiumV2"],
     "expected": [
       {
         "name": "src-workspace",

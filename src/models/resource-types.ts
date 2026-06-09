@@ -41,7 +41,7 @@ export enum ResourceType {
   GraphQLResolverPolicy = 'GraphQLResolverPolicy',
   /** MCP (Model Context Protocol) server configuration per API. Singleton per API. */
   McpServer = 'McpServer',
-  /** Premium/PremiumV2 workspace container. */
+  /** Workspace container (Premium and all V2 SKUs). */
   Workspace = 'Workspace',
 }
 

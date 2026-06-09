@@ -57,7 +57,7 @@ param(
     [Parameter()]
     [string]$TargetSubscriptionId,
 
-    [ValidateSet('Developer', 'Premium', 'Standard', 'StandardV2', 'PremiumV2')]
+    [ValidateSet('Developer', 'Premium', 'Standard', 'BasicV2', 'StandardV2', 'PremiumV2')]
     [string]$SkuName = 'StandardV2',
 
     [string]$Location = 'centralus',
