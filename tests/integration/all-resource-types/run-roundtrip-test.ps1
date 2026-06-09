@@ -257,11 +257,16 @@ catch {
 }
 finally {
     # Phase 7: Teardown apim instances and supporting resources
-    & $phase7TeardownScript `
-        -SourceResourceGroup $SourceResourceGroup `
-        -TargetResourceGroup $TargetResourceGroup `
-        -Location $Location `
-        -SkipTeardown:$SkipTeardown
+    $phase7Args = @{
+        SourceResourceGroup = $SourceResourceGroup
+        TargetResourceGroup = $TargetResourceGroup
+        Location            = $Location
+        SkipTeardown        = $SkipTeardown
+    }
+    Add-ArgumentIfSet -Hashtable $phase7Args -Key 'SourceSubscriptionId' -Value $SourceSubscriptionId
+    Add-ArgumentIfSet -Hashtable $phase7Args -Key 'TargetSubscriptionId' -Value $TargetSubscriptionId
+
+    & $phase7TeardownScript @phase7Args
 }
 
 exit $exitCode
