@@ -300,18 +300,21 @@ To replace `{#[TOKEN_NAME]#}` placeholders in `configuration.<env>.yaml` with se
 
 1. **Install the [Replace Tokens extension](https://marketplace.visualstudio.com/items?itemName=qetza.replacetokens)** in your Azure DevOps organization (if not already installed).
 
-2. **Add secret variables** to the `apim-<env>` variable group (e.g., `PROD_SECRET_VALUE`). Mark them as secret.
+2. **Add secret variables** to the `apim-<env>` variable group. See the Azure DevOps documentation for [adding variables to a variable group](https://learn.microsoft.com/en-us/azure/devops/pipelines/library/variable-groups) and [marking variables as secret](https://learn.microsoft.com/en-us/azure/devops/pipelines/process/set-secret-variables).
 
-3. The generated substitution step runs automatically before publish:
+   For example, to substitute `{#[BACKEND_URL]#}` in your configuration file:
 
+   `configuration.prod.yaml`:
    ```yaml
-   - task: replacetokens@6
-     displayName: 'Substitute tokens in configuration.prod.yaml'
-     inputs:
-       sources: 'configuration.prod.yaml'
-       tokenPrefix: '{#['
-       tokenSuffix: ']#}'
+   backends:
+     - name: my-backend
+       properties:
+         url: "{#[BACKEND_URL]#}"
    ```
+
+   Add `BACKEND_URL` as a secret variable in the `apim-prod` variable group with the actual backend URL as the value.
+
+3. The substitution step runs automatically before publish.
 
 See the [Token Substitution Guide](../guides/token-substitution.md) for full details, including migration from APIOps Toolkit.
 
@@ -331,7 +334,7 @@ See the [Token Substitution Guide](../guides/token-substitution.md) for full det
 
 ---
 
-## Related
+## Further Reading
 
 - [GitHub Actions Integration](github-actions.md) — alternative CI/CD platform
 - [apiops init](../commands/init.md) — generates pipeline files

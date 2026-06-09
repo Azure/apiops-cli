@@ -23,9 +23,9 @@ This feature is compatible with APIOps Toolkit configuration files — users mig
          value: "{#[BACKEND_API_URL]#}"
    ```
 
-2. **Store actual values** in your pipeline's secret store (GitHub Actions Secrets or Azure DevOps variable groups / Key Vault).
+2. **Store actual values** in your pipeline's secret store (GitHub Actions Secrets or Azure DevOps variable groups).
 
-3. **Token substitution runs automatically** as a pipeline step before `apiops publish`. Placeholders are replaced with the actual values in memory — the files on disk are modified only within the pipeline run and the secrets are never committed to the repository.
+3. **Token substitution runs automatically** as a pipeline step before `apiops publish`. Placeholders are replaced with the actual values — the secrets are never committed to the repository.
 
 The substitution follows this pattern:
 
@@ -55,23 +55,8 @@ The substitution follows this pattern:
     #   MY_SECRET: ${{ secrets.MY_SECRET }}
 ```
 
-### Mapping Secrets to Tokens
-
-To substitute a token, add the corresponding secret to your GitHub environment and map it in the `env` block:
-
-```yaml
-- name: Substitute tokens in configuration.prod.yaml
-  uses: cschleiden/replace-tokens@v1.3
-  with:
-    tokenPrefix: '{#['
-    tokenSuffix: ']#}'
-    files: '["configuration.prod.yaml"]'
-  env:
-    PROD_SECRET_VALUE: ${{ secrets.PROD_SECRET_VALUE }}
-    BACKEND_API_URL: ${{ secrets.BACKEND_API_URL }}
-```
-
-> **Important:** The environment variable name must exactly match the token name inside `{#[...]#}`. Token names are case-sensitive.
+> [!IMPORTANT]
+> The environment variable name must exactly match the token name inside `{#[...]#}`. Token names are case-sensitive.
 
 ### Step-by-Step for GitHub Actions
 
@@ -111,26 +96,14 @@ Result: the placeholder `{#[PAYMENT_API_KEY]#}` is replaced with `sk-live-abc123
 
 ## Azure DevOps Setup
 
-### Generated Step
-
-`apiops init` generates a substitution step in each environment's deployment job using the [Replace Tokens](https://marketplace.visualstudio.com/items?itemName=qetza.replacetokens) extension:
-
-```yaml
-- task: replacetokens@6
-  displayName: 'Substitute tokens in configuration.prod.yaml'
-  inputs:
-    sources: 'configuration.prod.yaml'
-    tokenPrefix: '{#['
-    tokenSuffix: ']#}'
-```
-
-> **Prerequisite:** The [Replace Tokens extension](https://marketplace.visualstudio.com/items?itemName=qetza.replacetokens) (by Guillaume Rouchon / qetza) must be installed in your Azure DevOps organization from the Visual Studio Marketplace.
+> [!IMPORTANT]
+> The [Replace Tokens extension](https://marketplace.visualstudio.com/items?itemName=qetza.replacetokens) must be installed in your Azure DevOps organization from the Visual Studio Marketplace.
 
 ### Mapping Variables to Tokens
 
 The `replacetokens` task automatically reads from pipeline variables (including those from variable groups). Add your secret values as variables in the `apim-<env>` variable group:
 
-1. Go to **Pipelines → Library → apim-prod**
+1. Go to **Pipelines → Library → apim\<env\>** (e.g., `apim-prod`)
 2. Add a variable for each token (e.g., `PROD_SECRET_VALUE`)
 3. Check **"Keep this value secret"** to mark it as a secret variable
 
@@ -141,7 +114,7 @@ The substitution task will automatically replace `{#[PROD_SECRET_VALUE]#}` with 
 1. **Install the Replace Tokens extension** in your Azure DevOps organization if not already present.
 
 2. **Add secret variables to your variable group:**
-   - Go to **Pipelines → Library → apim-prod**
+   - Go to **Pipelines → Library → apim\<env\>** (e.g., `apim-prod`)
    - Add each token as a secret variable (e.g., `PROD_SECRET_VALUE`)
 
 3. **Define placeholders** in `configuration.prod.yaml` using matching variable names.
@@ -159,7 +132,7 @@ backends:
       description: Order processing backend
 ```
 
-Variable group `apim-prod`:
+Variable group `apim<env>` (e.g., `apim-prod`):
 | Variable | Value | Secret |
 |----------|-------|--------|
 | `ORDER_SERVICE_URL` | `https://orders.contoso.com/api` | ✓ |
@@ -170,28 +143,7 @@ Result: `{#[ORDER_SERVICE_URL]#}` is replaced with `https://orders.contoso.com/a
 
 ## Migration from APIOps Toolkit
 
-If you are migrating from APIOps Toolkit, your existing `configuration.<env>.yaml` files that use `{#[TOKEN_NAME]#}` placeholders work without modification. The same syntax is supported.
-
-The only difference is where secrets are stored and mapped:
-
-| | APIOps Toolkit | APIOps CLI |
-|---|---|---|
-| **Token syntax** | `{#[TOKEN_NAME]#}` | `{#[TOKEN_NAME]#}` (identical) |
-| **GitHub Actions** | `cschleiden/replace-tokens@v1.3` | `cschleiden/replace-tokens@v1.3` (same action) |
-| **Azure DevOps** | `qetza.replacetokens@6` | `replacetokens@6` (same extension) |
-| **Token prefix/suffix** | `{#[` / `]#}` | `{#[` / `]#}` (identical) |
-
-### Migration Steps
-
-1. Copy your existing `configuration.<env>.yaml` files to your new repository — no changes required.
-
-2. Run `apiops init` to generate the pipeline scaffolding. The publish pipeline includes token substitution steps out of the box.
-
-3. Re-create your secrets in the new pipeline:
-   - **GitHub Actions**: Add each secret to the corresponding GitHub environment.
-   - **Azure DevOps**: Add each secret to the corresponding `apim-<env>` variable group.
-
-4. For GitHub Actions, add the `env:` mappings to the substitution step as described in [GitHub Actions Setup](#github-actions-setup).
+If you are migrating from APIOps Toolkit, your existing `configuration.<env>.yaml` files that use `{#[TOKEN_NAME]#}` placeholders work without modification. The same syntax is supported, using the same token prefix/suffix and the same pipeline extensions.
 
 ---
 
@@ -242,9 +194,9 @@ Use separate `configuration.<env>.yaml` files (e.g., `configuration.dev.yaml`, `
 
 ## Security Notes
 
-- Tokens are replaced **in the pipeline runner's memory** — they are never committed to the repository.
-- Use your pipeline platform's secret storage (GitHub Actions Secrets or Azure DevOps secret variables / Key Vault) — never store actual secret values in YAML files.
-- The replaced configuration YAML files are only visible within the single pipeline run and are discarded after the run completes.
+- `{#[TOKEN_NAME]#}` placeholders are committed to your repository — actual secret values are never stored in YAML files.
+- Use your pipeline platform's secret storage (GitHub Actions Secrets or Azure DevOps secret variables) to store the actual values.
+- Substitution happens at pipeline runtime before `apiops publish` runs.
 
 ---
 
