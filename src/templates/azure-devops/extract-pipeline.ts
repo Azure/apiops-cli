@@ -38,7 +38,7 @@ variables:
   - group: apim-common
 
 steps:
-  - task: NodeTool@0
+  - task: UseNode@1
     displayName: 'Setup Node.js'
     inputs:
       versionSpec: '22.x'

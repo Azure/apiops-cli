@@ -48,7 +48,7 @@ describe('azure-devops/extract-pipeline', () => {
 
     it('should include Node.js setup step', () => {
       const pipeline = generateExtractPipeline({ artifactDir: './apim-artifacts' });
-      expect(pipeline).toContain('NodeTool@0');
+      expect(pipeline).toContain('UseNode@1');
       expect(pipeline).toContain("versionSpec: '22.x'");
     });
 

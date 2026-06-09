@@ -65,7 +65,7 @@ flowchart TD
     J --> L[Log: create a pull request]
 ```
 
-1. **Node.js setup** — Installs Node.js 22.x via `NodeTool@0`
+1. **Node.js setup** — Installs Node.js 22.x via `UseNode@1`
 2. **Install dependencies** — Runs `npm ci`
 3. **Run extract** — Executes `apiops extract` via `AzureCLI@2` task, authenticating through the service connection
 4. **Publish artifacts** — Uploads the artifact directory as a pipeline artifact named `apim-artifacts`

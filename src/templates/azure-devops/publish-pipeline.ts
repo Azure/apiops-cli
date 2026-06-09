@@ -34,7 +34,7 @@ export function generatePublishPipeline(config: PublishPipelineConfig): string {
               - checkout: self
                 fetchDepth: 2
 
-              - task: NodeTool@0
+              - task: UseNode@1
                 displayName: 'Setup Node.js'
                 inputs:
                   versionSpec: '22.x'
