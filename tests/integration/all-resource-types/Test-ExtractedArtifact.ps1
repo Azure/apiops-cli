@@ -21,7 +21,7 @@
   Path to expected-structure.json manifest file.
 
 .PARAMETER SkuName
-  APIM SKU name (StandardV2, Developer, Premium, Standard, PremiumV2) to handle SKU-variant
+  APIM SKU name (Developer, Premium, Standard, BasicV2, StandardV2, PremiumV2) to handle SKU-variant
   resources. Default: StandardV2.
 
 .EXAMPLE
@@ -36,6 +36,7 @@ param(
     [Parameter(Mandatory)]
     [string]$ManifestFile,
 
+    [ValidateSet('Developer', 'Premium', 'Standard', 'BasicV2', 'StandardV2', 'PremiumV2')]
     [string]$SkuName = 'StandardV2'
 )
 

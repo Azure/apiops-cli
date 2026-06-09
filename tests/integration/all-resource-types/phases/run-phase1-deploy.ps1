@@ -54,7 +54,7 @@ param(
     [Parameter(Mandatory)]
     [string]$TargetResourceGroup,
 
-    [ValidateSet('Developer', 'Premium', 'Standard', 'StandardV2', 'PremiumV2')]
+    [ValidateSet('Developer', 'Premium', 'Standard', 'BasicV2', 'StandardV2', 'PremiumV2')]
     [string]$SkuName = 'StandardV2',
 
     [string]$Location = 'eastus2',
@@ -243,7 +243,7 @@ $targetName = if ($targetOutputs -and $targetOutputs.apimServiceName.value) { $t
     $apimName
 }
 
-if ($SkuName -in @('Developer', 'Premium', 'PremiumV2')) {
+if ($SkuName -in @('Developer', 'Premium', 'BasicV2', 'StandardV2', 'PremiumV2')) {
     $postActivationState = az deployment group list `
         --resource-group $sourceRg `
         --query "sort_by([?starts_with(name, 'source-apim-post-activation-')], &properties.timestamp)[-1].properties.provisioningState" `

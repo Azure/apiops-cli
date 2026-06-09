@@ -714,7 +714,7 @@ try {
         }
     }
     catch {
-        Write-Host "  ⚠️  Workspaces not available (requires Premium/PremiumV2): $_" -ForegroundColor Yellow
+        Write-Host "  ⚠️  Workspaces not available (requires Premium or V2 SKU): $_" -ForegroundColor Yellow
     }
 
     # ── Summary ─────────────────────────────────────────────────────────────

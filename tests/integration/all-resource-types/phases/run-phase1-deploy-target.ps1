@@ -18,7 +18,7 @@
   Azure region. Default: eastus2.
 
 .PARAMETER SkuName
-  APIM SKU. Default: StandardV2. Allowed: Developer, Premium, StandardV2, PremiumV2.
+  APIM SKU. Default: StandardV2. Allowed: Developer, Premium, BasicV2, StandardV2, PremiumV2.
 #>
 
 [CmdletBinding()]
@@ -31,7 +31,7 @@ param(
 
     [string]$Location = 'eastus2',
 
-    [ValidateSet('Developer', 'Premium', 'Standard', 'StandardV2', 'PremiumV2')]
+    [ValidateSet('Developer', 'Premium', 'Standard', 'BasicV2', 'StandardV2', 'PremiumV2')]
     [string]$SkuName = 'StandardV2',
 
     [string]$ApimName,

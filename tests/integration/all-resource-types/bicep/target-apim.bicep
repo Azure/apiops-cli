@@ -30,7 +30,7 @@ param publisherEmail string
 param publisherName string = 'APIOps BVT'
 
 @description('APIM SKU name. Must match the source instance SKU.')
-@allowed(['Developer', 'Premium', 'Standard', 'StandardV2', 'PremiumV2'])
+@allowed(['Developer', 'Premium', 'Standard', 'BasicV2', 'StandardV2', 'PremiumV2'])
 param skuName string = 'StandardV2'
 
 @description('Application Insights name for logger/diagnostic testing.')
