@@ -11,7 +11,7 @@
   "remoteEnv": {
     "PATH": "${containerEnv:PATH}:${containerWorkspaceFolder}/node_modules/.bin"
   },  
-  "postCreateCommand": "npm ci --ignore-scripts",
+  "postCreateCommand": "npm ci --ignore-scripts && WELCOME_SOURCE=\"source \\\"$PWD/.devcontainer/welcome.sh\\\"\" && (grep -qxF \"$WELCOME_SOURCE\" ~/.bashrc || echo \"$WELCOME_SOURCE\" >> ~/.bashrc) && mkdir -p ~/.config/vscode-dev-containers && touch ~/.config/vscode-dev-containers/first-run-notice-already-displayed",
   "customizations": {
     "vscode": {
       "settings": {
@@ -22,7 +22,9 @@
         "eslint.format.enable": true,
         "eslint.validate": ["typescript", "typescriptreact"],
         "js/ts.tsdk.path": "node_modules/typescript/lib",
-        "js/ts.tsdk.promptToUseWorkspaceVersion": true
+        "js/ts.tsdk.promptToUseWorkspaceVersion": true,
+        "extensions.ignoreRecommendations": true,
+        "extensions.showRecommendationsOnInstall": false
       },
       "extensions": [
         "dbaeumer.vscode-eslint",
