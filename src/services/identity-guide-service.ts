@@ -20,8 +20,6 @@ export interface IdentityGuideService {
   ): string;
 
   generateAzureDevOpsGuide(
-    subscriptionId: string,
-    resourceGroup: string,
     environments: string[]
   ): string;
 }
@@ -63,16 +61,16 @@ class IdentityGuideServiceImpl implements IdentityGuideService {
   }
 
   generateAzureDevOpsGuide(
-    subscriptionId: string,
-    resourceGroup: string,
     environments: string[]
   ): string {
-    const environmentsArrayPowerShell = environments.map((e) => `"${e}"`).join(', ');
-    const environmentsArrayBash = environments.map((e) => `"${e}"`).join(' ');
+    const environmentsArrayPowerShell = environments
+      .map((environment) => `"${environment}"`)
+      .join(', ');
+    const environmentsArrayBash = environments
+      .map((environment) => `"${environment}"`)
+      .join(' ');
 
     const coreSteps = this.renderTemplate(azureDevOpsIdentitySetupCoreTemplate, {
-      SUBSCRIPTION_ID: subscriptionId,
-      RESOURCE_GROUP: resourceGroup,
       ENVIRONMENTS_ARRAY_POWERSHELL: environmentsArrayPowerShell,
       ENVIRONMENTS_ARRAY_BASH: environmentsArrayBash,
     });

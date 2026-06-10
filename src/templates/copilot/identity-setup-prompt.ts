@@ -3,10 +3,10 @@
 /**
  * GitHub Copilot prompt template for automating identity setup.
  * Generates a .prompt.md file that guides Copilot through:
- *   1. Gathering Azure & GitHub info from the user
- *   2. Creating Azure AD app registration + federated credentials
+ *   1. Gathering environment and identity information
+ *   2. Creating identity configuration for the selected CI provider
  *   3. Assigning RBAC roles
- *   4. Setting GitHub repository secrets
+ *   4. Completing provider-specific setup tasks
  */
 
 import {
@@ -39,8 +39,6 @@ export function generateIdentitySetupPrompt(config: IdentitySetupPromptConfig): 
       .join(' ');
 
     const coreSteps = renderTemplate(azureDevOpsIdentitySetupCoreTemplate, {
-      SUBSCRIPTION_ID: '<your-subscription-id>',
-      RESOURCE_GROUP: '<your-resource-group>',
       ENVIRONMENTS_ARRAY_POWERSHELL: environmentsArrayPowerShell,
       ENVIRONMENTS_ARRAY_BASH: environmentsArrayBash,
     });

@@ -332,6 +332,7 @@ class InitServiceImpl implements InitService {
     // Extract pipeline
     const extractPipelineConfig: ExtractPipelineConfig = {
       artifactDir: config.artifactDir,
+      environments: config.environments,
     };
     const extractContent = generateExtractPipeline(extractPipelineConfig);
     const extractPath = path.join(pipelinesDir, 'run-apim-extractor.yml');
@@ -407,11 +408,7 @@ class InitServiceImpl implements InitService {
         config.environments
       );
     } else {
-      guide = identityGuideService.generateAzureDevOpsGuide(
-        subscriptionId,
-        resourceGroup,
-        config.environments
-      );
+      guide = identityGuideService.generateAzureDevOpsGuide(config.environments);
     }
 
     // Save guide to file

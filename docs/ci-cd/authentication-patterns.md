@@ -146,7 +146,7 @@ variables:
   - group: apim-config  # Contains APIM_RESOURCE_GROUP, APIM_SERVICE_NAME, etc.
 
 steps:
-  - task: NodeTool@0
+  - task: UseNode@1
     inputs:
       versionSpec: '22.x'
 

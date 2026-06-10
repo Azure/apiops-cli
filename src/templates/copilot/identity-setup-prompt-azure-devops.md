@@ -6,12 +6,13 @@
 
 ## Goal
 
-Configure Azure AD identity, Azure DevOps service connections, and variable groups
+Configure workload identity federation (OIDC), Azure DevOps federated service connections,
+and variable groups
 for APIOps extract and publish pipelines.
 
 {{AZURE_DEVOPS_CORE_STEPS}}
 
-## Step 8: Enable Pipeline Contributions
+## Step 10: Enable Pipeline Contributions
 
 Grant the Build Service permission to contribute to the repository.
 
@@ -46,7 +47,7 @@ az devops security permission update --namespace-id "$GIT_REPOS_NAMESPACE" --sub
 
 ---
 
-## Step 9: Verify Setup
+## Step 11: Verify Setup
 
 Verify all resources were created correctly:
 
@@ -61,3 +62,30 @@ az pipelines variable-group list --query "[].name" -o table
 ```
 
 Run the APIOps pipelines and confirm they can authenticate and access APIM resources.
+
+---
+
+## Step 12: Create Pipelines
+
+Create Azure Pipelines from the YAML files in your repository.
+
+**PowerShell:**
+```powershell
+$REPO_NAME = $AZDO_PROJECT
+
+az pipelines create --name "apiops-extract" --repository $REPO_NAME --branch main --yml-path ".azdo/pipelines/run-apim-extractor.yml" --repository-type tfsgit --skip-first-run true
+az pipelines create --name "apiops-publish" --repository $REPO_NAME --branch main --yml-path ".azdo/pipelines/run-apim-publisher.yml" --repository-type tfsgit --skip-first-run true
+```
+
+**Git Bash:**
+```bash
+REPO_NAME="$AZDO_PROJECT"
+
+az pipelines create --name "apiops-extract" --repository "$REPO_NAME" --branch main --yml-path ".azdo/pipelines/run-apim-extractor.yml" --repository-type tfsgit --skip-first-run true
+az pipelines create --name "apiops-publish" --repository "$REPO_NAME" --branch main --yml-path ".azdo/pipelines/run-apim-publisher.yml" --repository-type tfsgit --skip-first-run true
+```
+
+Verify pipelines were created:
+```bash
+az pipelines list --query "[].name" -o table
+```

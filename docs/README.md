@@ -42,6 +42,7 @@ Requires Node.js 22 or later.
 - **Incremental publish** — Deploy only changed resources via git diff
 - **Dry-run mode** — Preview changes before applying them
 - **CI/CD scaffolding** — `apiops init` generates GitHub Actions or Azure DevOps pipelines
+- **Token substitution** — Replace `{#[TOKEN_NAME]#}` placeholders in config files with pipeline secrets before publish
 - **Multiple auth methods** — Azure CLI, managed identity, workload identity (OIDC), service principal
 
 ## Documentation Structure
@@ -64,6 +65,7 @@ docs/
 │   ├── multi-environment.md           — Dev / staging / prod promotion
 │   ├── multi-team-workflows.md        — Selective extraction, CODEOWNERS
 │   ├── code-first-workflow.md         — IDE → git → CI/CD → APIM
+│   ├── token-substitution.md          — Pipeline token/placeholder substitution
 │   └── migration-from-v1.md           — Migrate from Azure/apiops toolkit
 ├── ci-cd/
 │   ├── github-actions.md              — GitHub Actions integration
