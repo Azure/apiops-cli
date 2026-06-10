@@ -183,7 +183,7 @@ The generated pipelines (`pipelines/run-extractor.yaml` and `pipelines/run-publi
 | Edit | What to Change |
 |------|----------------|
 | 1. **Agent pool** | Update [pool YAML schema](https://learn.microsoft.com/en-us/azure/devops/pipelines/yaml-schema/pool?view=azure-pipelines). Replace `pool: vmImage: ubuntu-latest` with self-hosted agent pool (e.g., `pool: name: air-gapped-pool`).<br>(See next step [Configure the Azure DevOps Self-Hosted Agent](#3-configure-the-azure-devops-self-hosted-agent) for setup details.) |
-| 2. **Remove NodeTool task** | Delete the `NodeTool@0` step (Node.js is pre-installed on the agent). |
+| 2. **Remove UseNode task** | Delete the `UseNode@1` step (Node.js is pre-installed on the agent). |
 | 3. **Add feed auth** | Insert [`npmAuthenticate@0`](https://learn.microsoft.com/en-us/azure/devops/pipelines/tasks/reference/npm-authenticate-v0?view=azure-pipelines) before the `npm ci` step. See necessary. yaml snippet below. |
 
 Add this task before any `npm ci` step in both pipelines:

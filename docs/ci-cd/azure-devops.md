@@ -65,7 +65,7 @@ flowchart TD
     J --> L[Log: create a pull request]
 ```
 
-1. **Node.js setup** — Installs Node.js 22.x via `NodeTool@0`
+1. **Node.js setup** — Installs Node.js 22.x via `UseNode@1`
 2. **Install dependencies** — Runs `npm ci`
 3. **Run extract** — Executes `apiops extract` via `AzureCLI@2` task, authenticating through the service connection
 4. **Publish artifacts** — Uploads the artifact directory as a pipeline artifact named `apim-artifacts`
@@ -127,24 +127,26 @@ The pipeline runs automatically when changes to artifact files or configuration 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `COMMIT_ID_CHOICE` | string | `publish-artifacts-in-last-commit` | Choose `publish-artifacts-in-last-commit` for incremental publish, or `publish-all-artifacts-in-repo` for a full publish |
-| `ENVIRONMENT` | string | `all` | Which environment to publish to: `all`, `dev`, or `prod` |
+| `ENVIRONMENT` | string | `dev` | Which environment to publish to (for example `dev` or `prod`) |
 
 ### Multi-Stage Deployment
 
-The pipeline generates one stage per environment. Stages run sequentially — each stage depends on the previous:
+The pipeline generates one stage per environment. The selected stage runs based on the `ENVIRONMENT` parameter.
 
 ```mermaid
 flowchart LR
-    A[Publish_dev] --> B[Publish_prod]
+  A[ENVIRONMENT=dev] --> B[Publish_dev]
+  C[ENVIRONMENT=prod] --> D[Publish_prod]
 ```
 
 Each stage:
 
-1. **Conditionally runs** — Only executes if the `ENVIRONMENT` parameter matches the stage name or is `all`
+1. **Conditionally runs** — Only executes when the `ENVIRONMENT` parameter matches the stage name
 2. **Uses a deployment job** — Wraps the publish step in a `deployment` job targeting an [Azure DevOps environment](https://learn.microsoft.com/en-us/azure/devops/pipelines/process/environments) for approval gates
 3. **Loads per-environment variables** — Each stage uses its own variable group (`apim-dev`, `apim-prod`)
 4. **Authenticates per-environment** — Uses environment-specific service connections (`AZURE_SERVICE_CONNECTION_DEV`, `AZURE_SERVICE_CONNECTION_PROD`)
-5. **Applies overrides** — Passes `--override configuration.{env}.yaml` to apply [environment-specific overrides](../guides/environment-overrides.md)
+5. **Substitutes tokens** — Replaces `{#[TOKEN_NAME]#}` placeholders in `configuration.<env>.yaml` with secret variable values before publishing
+6. **Applies overrides** — Passes `--overrides configuration.{env}.yaml` to apply [environment-specific overrides](../guides/environment-overrides.md)
 
 ### Publish Pipeline Walkthrough
 
@@ -155,7 +157,7 @@ For incremental publish (default), `--commit-id $(Build.SourceVersion)` is passe
   displayName: 'Publish to dev (incremental - last commit only)'
   condition: ne('${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo')
   inputs:
-    azureSubscription: '$(AZURE_SERVICE_CONNECTION_DEV)'
+    azureSubscription: 'AZURE_SERVICE_CONNECTION_DEV'
     scriptType: 'bash'
     scriptLocation: 'inlineScript'
     inlineScript: |
@@ -163,7 +165,7 @@ For incremental publish (default), `--commit-id $(Build.SourceVersion)` is passe
         --resource-group $(APIM_RESOURCE_GROUP_DEV) \
         --service-name $(APIM_SERVICE_NAME_DEV) \
         --source ./apim-artifacts \
-        --override configuration.dev.yaml \
+        --overrides configuration.dev.yaml \
         --commit-id $(Build.SourceVersion) \
         --subscription-id $(AZURE_SUBSCRIPTION_ID)
 ```
@@ -293,6 +295,35 @@ In your `package.json`, pin to a specific version:
 }
 ```
 
+### Using Token Substitution
+
+To replace `{#[TOKEN_NAME]#}` placeholders in `configuration.<env>.yaml` with secret variable values:
+
+1. **Install the [Replace Tokens extension](https://marketplace.visualstudio.com/items?itemName=qetza.replacetokens)** in your Azure DevOps organization (if not already installed).
+
+  You can do this via CLI:
+  ```bash
+  az devops extension install --publisher-id qetza --extension-id replacetokens
+  ```
+
+2. **Add secret variables** to the `apim-<env>` variable group. See the Azure DevOps documentation for [adding variables to a variable group](https://learn.microsoft.com/en-us/azure/devops/pipelines/library/variable-groups) and [marking variables as secret](https://learn.microsoft.com/en-us/azure/devops/pipelines/process/set-secret-variables).
+
+   For example, to substitute `{#[BACKEND_URL]#}` in your configuration file:
+
+   `configuration.prod.yaml`:
+   ```yaml
+   backends:
+     - name: my-backend
+       properties:
+         url: "{#[BACKEND_URL]#}"
+   ```
+
+   Add `BACKEND_URL` as a secret variable in the `apim-prod` variable group with the actual backend URL as the value.
+
+3. The substitution step runs automatically before publish.
+
+See the [Token Substitution Guide](../guides/token-substitution.md) for full details, including migration from APIOps Toolkit.
+
 ---
 
 ## Troubleshooting
@@ -301,15 +332,16 @@ In your `package.json`, pin to a specific version:
 |---------|-------|-----|
 | `AzureCLI@2` fails with "service connection not found" | Variable group not linked or variable name mismatch | Verify the variable group is linked to the pipeline and `AZURE_SERVICE_CONNECTION` is defined |
 | Extract shows "No changes to commit" | APIM config hasn't changed since last extract | Expected behavior — no branch is created |
-| Publish stage is skipped | `ENVIRONMENT` parameter doesn't match the stage | Set `ENVIRONMENT` to `all` or the specific stage name |
+| Publish stage is skipped | `ENVIRONMENT` parameter doesn't match the stage | Set `ENVIRONMENT` to the specific stage name (for example `dev` or `prod`) |
 | `npm ci` fails | `package.json` or `package-lock.json` missing | Run `apiops init` to generate project files, then commit them |
 | "publish-all-artifacts-in-repo" deploys everything | Expected — this mode publishes all artifacts, ignoring git diff | Use `publish-artifacts-in-last-commit` (default) for incremental |
 | Approval gate blocks deployment | Environment checks configured | Approve in **Pipelines → Environments → {env}** |
+| Run is stuck with "This pipeline needs permission to access a resource" | Environment resource isn't authorized for pipeline use | Authorize the environment in Azure DevOps or run the prompt step that PATCHes `pipelinePermissions/environment/{id}` with `{"allPipelines":{"authorized":true}}` |
 | `--subscription-id` error | `AZURE_SUBSCRIPTION_ID` not set in variable group | Add it to the relevant variable group |
 
 ---
 
-## Related
+## Further Reading
 
 - [GitHub Actions Integration](github-actions.md) — alternative CI/CD platform
 - [apiops init](../commands/init.md) — generates pipeline files
@@ -317,4 +349,5 @@ In your `package.json`, pin to a specific version:
 - [apiops publish](../commands/publish.md) — publish command reference
 - [Authentication Guide](../guides/authentication.md) — auth methods and RBAC
 - [Environment Overrides](../guides/environment-overrides.md) — per-environment configuration
+- [Token Substitution](../guides/token-substitution.md) — pipeline placeholder substitution with `{#[TOKEN_NAME]#}`
 - [Filtering Resources](../guides/filtering-resources.md) — extract specific APIs

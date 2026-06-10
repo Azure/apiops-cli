@@ -120,32 +120,30 @@ describe('identity-guide-service', () => {
   });
 
   describe('generateAzureDevOpsGuide', () => {
-    it('should include subscription ID in guide', () => {
-      const guide = identityGuideService.generateAzureDevOpsGuide(
-        'sub-12345',
-        'my-rg',
-        ['dev', 'prod']
-      );
-      expect(guide).toContain('sub-12345');
+    it('should ask for per-environment subscription and resource details', () => {
+      const guide = identityGuideService.generateAzureDevOpsGuide(['dev', 'prod']);
+      expect(guide).toContain('APIM_SUBSCRIPTION_<ENV_UPPER>');
+      expect(guide).toContain('APIM_RG_<ENV_UPPER>');
+      expect(guide).toContain('APIM_NAME_<ENV_UPPER>');
     });
 
-    it('should include resource group in guide', () => {
-      const guide = identityGuideService.generateAzureDevOpsGuide(
-        'sub-12345',
-        'my-rg',
-        ['dev']
-      );
-      expect(guide).toContain('my-rg');
+    it('should create non-suffixed variable groups per environment', () => {
+      const guide = identityGuideService.generateAzureDevOpsGuide(['dev', 'prod']);
+      expect(guide).toContain('--name "apim-$env"');
+      expect(guide).toContain('APIM_RESOURCE_GROUP=');
+      expect(guide).toContain('APIM_SERVICE_NAME=');
+      expect(guide).toContain('AZURE_SUBSCRIPTION_ID=');
+    });
+
+    it('should render environment arrays for PowerShell and Bash', () => {
+      const guide = identityGuideService.generateAzureDevOpsGuide(['dev', 'prod']);
+      expect(guide).toContain('$ENVIRONMENTS = @("dev", "prod")');
+      expect(guide).toContain('ENVIRONMENTS=("dev" "prod")');
     });
 
     it('should render all template placeholders', () => {
-      const guide = identityGuideService.generateAzureDevOpsGuide(
-        'sub-12345',
-        'my-rg',
-        ['dev']
-      );
-      expect(guide).not.toContain('{{');
-      expect(guide).not.toContain('}}');
+      const guide = identityGuideService.generateAzureDevOpsGuide(['dev']);
+      expect(guide).not.toMatch(/\{\{[^}]+\}\}/);
     });
 
   });

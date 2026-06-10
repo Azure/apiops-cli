@@ -2,7 +2,7 @@
 
 {{AZURE_DEVOPS_CORE_STEPS}}
 
-## Step 8: Enable Pipeline Contributions
+## Step 10: Enable Pipeline Contributions
 
 Grant the Build Service permission to contribute to the repository. This allows pipelines to push commits (e.g., extracted API artifacts).
 
@@ -67,7 +67,7 @@ az devops security permission show --namespace-id "$GIT_REPOS_NAMESPACE" --subje
 
 ---
 
-## Step 9: Verify Setup
+## Step 11: Verify Setup
 
 Verify all resources were created correctly:
 
@@ -109,34 +109,34 @@ az role assignment list --assignee "$APP_ID" --query "[].{Role:roleDefinitionNam
 
 ---
 
-## Step 10: Create Pipelines
+## Step 12: Create Pipelines
 
 Create Azure Pipelines from the YAML files in your repository.
 
-**Prerequisites:** Ensure your pipeline YAML files are committed to the repository (e.g., `azure-pipelines-extract.yml`, `azure-pipelines-publish.yml`).
+**Prerequisites:** Ensure your pipeline YAML files are committed to the repository (e.g., `.azdo/pipelines/run-apim-extractor.yml`, `.azdo/pipelines/run-apim-publisher.yml`).
 
 **Create Extract Pipeline:**
 
 **PowerShell:**
 ```powershell
-az pipelines create --name "apiops-extract" --repository $REPO_NAME --branch main --yml-path "azure-pipelines-extract.yml" --repository-type tfsgit --skip-first-run true
+az pipelines create --name "apiops-extract" --repository $REPO_NAME --branch main --yml-path ".azdo/pipelines/run-apim-extractor.yml" --repository-type tfsgit --skip-first-run true
 ```
 
 **Git Bash:**
 ```bash
-az pipelines create --name "apiops-extract" --repository "$REPO_NAME" --branch main --yml-path "azure-pipelines-extract.yml" --repository-type tfsgit --skip-first-run true
+az pipelines create --name "apiops-extract" --repository "$REPO_NAME" --branch main --yml-path ".azdo/pipelines/run-apim-extractor.yml" --repository-type tfsgit --skip-first-run true
 ```
 
 **Create Publish Pipeline:**
 
 **PowerShell:**
 ```powershell
-az pipelines create --name "apiops-publish" --repository $REPO_NAME --branch main --yml-path "azure-pipelines-publish.yml" --repository-type tfsgit --skip-first-run true
+az pipelines create --name "apiops-publish" --repository $REPO_NAME --branch main --yml-path ".azdo/pipelines/run-apim-publisher.yml" --repository-type tfsgit --skip-first-run true
 ```
 
 **Git Bash:**
 ```bash
-az pipelines create --name "apiops-publish" --repository "$REPO_NAME" --branch main --yml-path "azure-pipelines-publish.yml" --repository-type tfsgit --skip-first-run true
+az pipelines create --name "apiops-publish" --repository "$REPO_NAME" --branch main --yml-path ".azdo/pipelines/run-apim-publisher.yml" --repository-type tfsgit --skip-first-run true
 ```
 
 **Verify pipelines were created:**
@@ -159,8 +159,6 @@ az pipelines run --name "apiops-extract"
 ---
 
 ## Security Notes
-- Use separate service principals for production environments
 - Enable environment approvals for production deployments
-- Rotate service principal secrets periodically (recommended: 90 days)
-- Use managed identities when possible for Azure-hosted agents
+- Prefer workload identity federation (OIDC) over client secrets
 - Review RBAC assignments regularly

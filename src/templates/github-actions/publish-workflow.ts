@@ -14,6 +14,7 @@ export function generatePublishWorkflow(config: PublishWorkflowConfig): string {
   const envChoices = config.environments.map((env) => `          - ${env}`).join('\n');
 
   const envJobs = config.environments.map((env, idx) => {
+    const envUpper = env.toUpperCase();
     const autoDeployComment = idx === 0
       ? `    # To enable automatic deployment on push to main, uncomment the condition below:
     # if: github.event.inputs.ENVIRONMENT == '${env}' || github.event_name == 'push'`
@@ -48,14 +49,26 @@ ${autoDeployComment}
           tenant-id: \${{ secrets.AZURE_TENANT_ID }}
           subscription-id: \${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Substitute tokens in configuration.${env}.yaml
+        uses: cschleiden/replace-tokens@v1.3
+        with:
+          tokenPrefix: '{#['
+          tokenSuffix: ']#}'
+          files: '["configuration.${env}.yaml"]'
+          # Example token mapping for ${env} (uncomment and customize when needed):
+          # env:
+          #   MY_SECRET: \${{ secrets.MY_SECRET_${envUpper} }}
+          #   ANOTHER_TOKEN: \${{ secrets.ANOTHER_TOKEN_${envUpper} }}
+
       - name: Publish to ${env} (incremental - last commit only)
         if: \${{ github.event.inputs.COMMIT_ID_CHOICE != 'publish-all-artifacts-in-repo' }}
         run: |
           npx apiops publish \\
             --subscription-id \${{ secrets.AZURE_SUBSCRIPTION_ID }} \\
-            --resource-group \${{ secrets.APIM_RESOURCE_GROUP_${env.toUpperCase()} }} \\
-            --service-name \${{ secrets.APIM_SERVICE_NAME_${env.toUpperCase()} }} \\
+            --resource-group \${{ secrets.APIM_RESOURCE_GROUP_${envUpper} }} \\
+            --service-name \${{ secrets.APIM_SERVICE_NAME_${envUpper} }} \\
             --source ${config.artifactDir} \\
+            --overrides configuration.${env}.yaml \\
             --commit-id \${{ needs.get-commit.outputs.commit_id }}
 
       - name: Publish to ${env} (all artifacts)
@@ -63,9 +76,10 @@ ${autoDeployComment}
         run: |
           npx apiops publish \\
             --subscription-id \${{ secrets.AZURE_SUBSCRIPTION_ID }} \\
-            --resource-group \${{ secrets.APIM_RESOURCE_GROUP_${env.toUpperCase()} }} \\
-            --service-name \${{ secrets.APIM_SERVICE_NAME_${env.toUpperCase()} }} \\
-            --source ${config.artifactDir}
+            --resource-group \${{ secrets.APIM_RESOURCE_GROUP_${envUpper} }} \\
+            --service-name \${{ secrets.APIM_SERVICE_NAME_${envUpper} }} \\
+            --source ${config.artifactDir} \\
+            --overrides configuration.${env}.yaml
 `;
   }).join('\n');
 

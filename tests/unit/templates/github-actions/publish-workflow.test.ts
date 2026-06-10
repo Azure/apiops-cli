@@ -205,5 +205,35 @@ describe('github-actions/publish-workflow', () => {
       expect(workflow).toContain('npm install');
       expect(workflow).toContain('npx apiops publish');
     });
+
+    it('should include token substitution step before publish', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+      });
+      expect(workflow).toContain('cschleiden/replace-tokens@v1.3');
+      expect(workflow).toContain("tokenPrefix: '{#['");
+      expect(workflow).toContain("tokenSuffix: ']#}'");
+    });
+
+    it('should target environment-specific configuration file for token substitution', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+      });
+      expect(workflow).toContain('files: \'["configuration.dev.yaml"]\'');
+      expect(workflow).toContain('files: \'["configuration.prod.yaml"]\'');
+    });
+
+    it('should place token substitution step before publish steps', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+      });
+      const tokenIdx = workflow.indexOf('cschleiden/replace-tokens');
+      const publishIdx = workflow.indexOf('npx apiops publish');
+      expect(tokenIdx).toBeGreaterThan(0);
+      expect(tokenIdx).toBeLessThan(publishIdx);
+    });
   });
 });

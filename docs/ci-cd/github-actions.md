@@ -100,7 +100,8 @@ The workflow runs automatically when changes are pushed to `main` in these paths
 1. **Resolves the commit ID** — captures `GITHUB_SHA` for incremental publish.
 2. **Checks out the repository** with `fetch-depth: 2` (needed for git diff).
 3. **Authenticates with Azure** using OIDC federated credentials.
-4. **Runs `apiops publish`** in one of two modes:
+4. **Substitutes tokens** — replaces `{#[TOKEN_NAME]#}` placeholders in `configuration.<env>.yaml` with pipeline secret values.
+5. **Runs `apiops publish`** in one of two modes:
    - **Incremental** (default): uses `--commit-id` to publish only changed files.
    - **Full**: publishes all artifacts in the repository (useful for recovery or initial setup).
 
@@ -212,6 +213,24 @@ Use GitHub environment protection rules for production deployments:
 
 The publish workflow will pause and wait for approval before deploying to prod.
 
+### Using Token Substitution
+
+To replace `{#[TOKEN_NAME]#}` placeholders in your configuration YAML with pipeline secrets, add the secret mappings to the `env:` block of the generated substitution step:
+
+```yaml
+- name: Substitute tokens in configuration.prod.yaml
+  uses: cschleiden/replace-tokens@v1.3
+  with:
+    tokenPrefix: '{#['
+    tokenSuffix: ']#}'
+    files: '["configuration.prod.yaml"]'
+  env:
+    MY_SECRET: ${{ secrets.MY_SECRET }}
+    BACKEND_URL: ${{ secrets.BACKEND_URL }}
+```
+
+See the [Token Substitution Guide](../guides/token-substitution.md) for full details, including migration from APIOps Toolkit.
+
 ### Adding Environment Overrides
 
 To use [environment-specific overrides](../guides/environment-overrides.md), add the `--overrides` flag to the publish step in the workflow:
@@ -271,4 +290,5 @@ For authentication issues, see the [Authentication Guide](../guides/authenticati
 
 - [Authentication Guide](../guides/authentication.md) — all auth methods and RBAC roles
 - [Environment Overrides](../guides/environment-overrides.md) — per-environment configuration
+- [Token Substitution](../guides/token-substitution.md) — pipeline placeholder substitution with `{#[TOKEN_NAME]#}`
 - [Scenarios and Workflows](../guides/scenarios-and-workflows.md) — portal-first vs. code-first patterns
