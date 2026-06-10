@@ -1434,6 +1434,9 @@ resource wsApiTagLink 'Microsoft.ApiManagement/service/workspaces/tags/apiLinks@
   }
 }
 
+// NOTE: Workspace-scoped tagDescriptions (Microsoft.ApiManagement/service/workspaces/apis/tagDescriptions)
+// is NOT supported by APIM — the endpoint returns HTTP 500. Skipped until APIM adds support.
+
 // --- Workspace Product ↔ Tag association (via tag productLinks endpoint) ---
 resource wsProductTagLink 'Microsoft.ApiManagement/service/workspaces/tags/productLinks@2025-09-01-preview' = if (supportsWorkspaces) {
   parent: wsTag

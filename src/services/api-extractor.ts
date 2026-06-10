@@ -245,12 +245,14 @@ export async function extractApiResources(
   );
   result.releases = releaseResult.extracted;
 
-  // Extract API tag descriptions
-  const tagDescResult = await extractResourceType(
-    client, store, context, ResourceType.ApiTagDescription,
-    outputDir, filter, apiDescriptor, workspace
-  );
-  result.tagDescriptions = tagDescResult.extracted;
+  // Extract API tag descriptions (not supported in workspace scope)
+  if (!workspace) {
+    const tagDescResult = await extractResourceType(
+      client, store, context, ResourceType.ApiTagDescription,
+      outputDir, filter, apiDescriptor, workspace
+    );
+    result.tagDescriptions = tagDescResult.extracted;
+  }
 
   // Extract API wiki
   result.wiki = await extractApiWiki(

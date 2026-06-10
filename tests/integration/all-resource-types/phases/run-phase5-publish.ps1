@@ -87,7 +87,7 @@ if (-not (Test-Path $overrideFileValue)) {
     exit 2
 }
 
-$overrideFile = [System.IO.Path]::GetFullPath($overrideFileValue)
+$overrideFile = (Resolve-Path $overrideFileValue).Path
 
 Write-Host "📤 Publish — Publish artifacts to target APIM"
 $publishArgs = @(

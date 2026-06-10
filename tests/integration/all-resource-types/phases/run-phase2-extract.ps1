@@ -104,7 +104,7 @@ if (-not $extractedFiles -or $extractedFiles.Count -eq 0) {
     exit 2
 }
 
-$resolvedExtractOutputDir = [System.IO.Path]::GetFullPath($ExtractOutputDir)
+$resolvedExtractOutputDir = (Resolve-Path $ExtractOutputDir).Path
 
 if ($env:GITHUB_OUTPUT) {
     "ExtractOutputDir=$resolvedExtractOutputDir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
