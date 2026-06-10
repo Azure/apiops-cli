@@ -691,12 +691,23 @@
             "expected": [
               {
                 "name": "src-ws-product",
-                "files": ["productInformation.json"],
+                "files": ["productInformation.json", "apis.json"],
                 "spotChecks": {
                   "productInformation.json": {
                     "properties.displayName": "Workspace Product",
                     "properties.subscriptionRequired": false,
                     "properties.state": "published"
+                  }
+                },
+                "directories": {
+                  "tags": {
+                    "minCount": 1,
+                    "expected": [
+                      {
+                        "name": "src-ws-tag",
+                        "files": ["tagInformation.json"]
+                      }
+                    ]
                   }
                 }
               }
@@ -712,6 +723,17 @@
                   "apiInformation.json": {
                     "properties.displayName": "Workspace REST API",
                     "properties.path": "ks/ws/rest"
+                  }
+                },
+                "directories": {
+                  "tags": {
+                    "minCount": 1,
+                    "expected": [
+                      {
+                        "name": "src-ws-tag",
+                        "files": ["tagInformation.json"]
+                      }
+                    ]
                   }
                 }
               }

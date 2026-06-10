@@ -711,6 +711,50 @@ try {
                 $totalCompared += $result.Compared
                 if ($result.Skipped) { $skippedTypes++ }
             }
+
+            # Compare workspace product children (APIs, tags)
+            try {
+                $wsProducts = Get-ArmResourceList -Url "$SourceBase/workspaces/$wsName/products"
+                foreach ($wsProd in $wsProducts) {
+                    $wsProdName = Get-ResourceName -ResourceId $wsProd.id
+                    Write-Host "  Workspace/$wsName/Product: $wsProdName" -ForegroundColor DarkCyan
+
+                    foreach ($wsProductChild in @('apis', 'tags')) {
+                        $result = Compare-ResourceType `
+                            -TypeLabel "  Workspace/$wsName/Product/$wsProdName/$wsProductChild" `
+                            -SourceUrl "$SourceBase/workspaces/$wsName/products/$wsProdName/$wsProductChild" `
+                            -TargetUrl "$TargetBase/workspaces/$wsName/products/$wsProdName/$wsProductChild"
+                        $totalTypes++
+                        $totalDiffs += $result.Diffs
+                        $totalCompared += $result.Compared
+                        if ($result.Skipped) { $skippedTypes++ }
+                    }
+                }
+            }
+            catch {
+                Write-Verbose "Could not enumerate workspace products for $wsName — $_"
+            }
+
+            # Compare workspace API children (tags)
+            try {
+                $wsApis = Get-ArmResourceList -Url "$SourceBase/workspaces/$wsName/apis"
+                foreach ($wsApiItem in $wsApis) {
+                    $wsApiName = Get-ResourceName -ResourceId $wsApiItem.id
+                    Write-Host "  Workspace/$wsName/API: $wsApiName" -ForegroundColor DarkCyan
+
+                    $result = Compare-ResourceType `
+                        -TypeLabel "  Workspace/$wsName/API/$wsApiName/tags" `
+                        -SourceUrl "$SourceBase/workspaces/$wsName/apis/$wsApiName/tags" `
+                        -TargetUrl "$TargetBase/workspaces/$wsName/apis/$wsApiName/tags"
+                    $totalTypes++
+                    $totalDiffs += $result.Diffs
+                    $totalCompared += $result.Compared
+                    if ($result.Skipped) { $skippedTypes++ }
+                }
+            }
+            catch {
+                Write-Verbose "Could not enumerate workspace APIs for $wsName — $_"
+            }
         }
     }
     catch {

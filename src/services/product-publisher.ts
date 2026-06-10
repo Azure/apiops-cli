@@ -9,11 +9,12 @@ import type { IApimClient } from '../clients/iapim-client.js';
 import type { IArtifactStore } from '../clients/iartifact-store.js';
 import type { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import type { PublishConfig } from '../models/config.js';
-import { ResourceType } from '../models/resource-types.js';
+import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { publishResource, type ResourcePublishResult } from './resource-publisher.js';
 import { logger } from '../lib/logger.js';
 import { getNamePart } from '../lib/resource-path.js';
 import { parseArmUri } from '../lib/resource-uri.js';
+import { isWorkspaceScope, buildLinkPayload } from '../lib/workspace-link.js';
 
 /**
  * Publish a Product with all its associations (APIs, Groups, Tags).
@@ -152,7 +153,8 @@ function parseProductGroupDescriptor(
 }
 
 /**
- * Publish associations (ProductApi or ProductGroup) for a product
+ * Publish associations (ProductApi or ProductGroup) for a product.
+ * In workspace scope, uses the link endpoint with a link payload body.
  */
 async function publishProductAssociations(
   client: IApimClient,
@@ -177,6 +179,12 @@ async function publishProductAssociations(
     return;
   }
 
+  const workspaceScoped = isWorkspaceScope(context);
+  const meta = RESOURCE_TYPE_METADATA[resourceType];
+  const linkProperty = meta.workspaceLinkIdProperty;
+  // Map association type to the ARM resource type segment for building ARM IDs
+  const resourceTypeSegment = associationType === 'apis' ? 'apis' : 'groups';
+
   // Create association for each name
   for (const name of names) {
     const assocDescriptor: ResourceDescriptor = {
@@ -186,8 +194,12 @@ async function publishProductAssociations(
     };
     
     try {
-      // PUT empty body for association (APIM uses PUT to create association)
-      await client.putResource(context, assocDescriptor, {});
+      // In workspace scope, PUT with link payload; otherwise empty body
+      let payload: Record<string, unknown> = {};
+      if (workspaceScoped && linkProperty) {
+        payload = buildLinkPayload(context, linkProperty, resourceTypeSegment, name);
+      }
+      await client.putResource(context, assocDescriptor, payload);
       logger.debug(`Created ${resourceType} association: ${productName}/${name}`);
     } catch (error) {
       logger.warn(`Failed to create ${resourceType} association ${productName}/${name}: ${String(error)}`);
@@ -198,6 +210,7 @@ async function publishProductAssociations(
 /**
  * Publish ProductTag associations for a product.
  * Tags are stored in tags.json similar to apis.json and groups.json.
+ * In workspace scope, uses `tags/{tag}/productLinks/{linkId}` endpoint.
  */
 async function publishProductTags(
   client: IApimClient,
@@ -220,6 +233,9 @@ async function publishProductTags(
     return;
   }
 
+  const workspaceScoped = isWorkspaceScope(context);
+  const linkProperty = RESOURCE_TYPE_METADATA[ResourceType.ProductTag].workspaceLinkIdProperty;
+
   // Create association for each tag
   for (const tagName of tagNames) {
     const tagDescriptor: ResourceDescriptor = {
@@ -229,8 +245,11 @@ async function publishProductTags(
     };
     
     try {
-      // PUT empty body for tag association
-      await client.putResource(context, tagDescriptor, {});
+      let payload: Record<string, unknown> = {};
+      if (workspaceScoped && linkProperty) {
+        payload = buildLinkPayload(context, linkProperty, 'products', productName);
+      }
+      await client.putResource(context, tagDescriptor, payload);
       logger.debug(`Created ProductTag association: ${productName}/${tagName}`);
     } catch (error) {
       logger.warn(`Failed to create ProductTag association ${productName}/${tagName}: ${String(error)}`);

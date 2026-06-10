@@ -8,6 +8,7 @@
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import { RESOURCE_TYPE_METADATA, ResourceType } from '../models/resource-types.js';
 import { formatTemplatePath, parseTemplatePath, countTemplatePlaceholders, makeFullPath, makeRelativePath } from './resource-path.js';
+import { isWorkspaceScope } from './workspace-link.js';
 
 /**
  * Builds the full ARM resource URI for a given descriptor and service context.
@@ -23,8 +24,16 @@ export function buildArmUri(
 ): string {
   const metadata = RESOURCE_TYPE_METADATA[descriptor.type];
 
+  // Use workspace-specific ARM path when in workspace scope.
+  // Workspace scope is indicated either by descriptor.workspace being set or
+  // by the context.baseUrl already containing a /workspaces/ segment.
+  const isWorkspaceScoped = !!descriptor.workspace || isWorkspaceScope(context);
+  const armPathTemplate = isWorkspaceScoped && metadata.workspaceArmPathSuffix
+    ? metadata.workspaceArmPathSuffix
+    : metadata.armPathSuffix;
+
   // Validate that all positional placeholders have a corresponding name-part
-  const placeholderCount = countTemplatePlaceholders(metadata.armPathSuffix);
+  const placeholderCount = countTemplatePlaceholders(armPathTemplate);
   if (descriptor.nameParts.length < placeholderCount) {
     throw new Error(
       `Unresolved placeholder in ARM path for ${descriptor.type}: expected ${placeholderCount} name-parts, got ${descriptor.nameParts.length}`
@@ -32,11 +41,17 @@ export function buildArmUri(
   }
 
   // URL-encode each name part before filling the ARM path template
-  const armPath = formatTemplatePath(metadata.armPathSuffix, descriptor.nameParts.map(encodeURIComponent));
+  const armPath = formatTemplatePath(armPathTemplate, descriptor.nameParts.map(encodeURIComponent));
 
-  // Add workspace prefix if workspace-scoped; prepend '/' to produce an absolute path
-  const fullPath = descriptor.workspace
-    ? makeFullPath(`workspaces/${encodeURIComponent(descriptor.workspace)}/${armPath}`)
+  // Add workspace prefix if workspace-scoped AND the context base URL does not
+  // already include it. The workspace extractor modifies context.baseUrl to
+  // include `/workspaces/{name}`, so adding it again from descriptor.workspace
+  // would produce a double-prefix.
+  const contextAlreadyHasWorkspace = isWorkspaceScope(context);
+  const needsWorkspacePrefix = descriptor.workspace && !contextAlreadyHasWorkspace;
+
+  const fullPath = needsWorkspacePrefix
+    ? makeFullPath(`workspaces/${encodeURIComponent(descriptor.workspace!)}/${armPath}`)
     : makeFullPath(armPath);
 
   return `${context.baseUrl}${fullPath}?api-version=${context.apiVersion}`;
@@ -84,6 +99,14 @@ export function parseArmUri(
 
     if (nameParts) {
       return { type, nameParts: nameParts.map((m) => decodeURIComponent(m)), workspace };
+    }
+
+    // Also try workspace-specific ARM paths (e.g. `products/{0}/groupLinks/{1}`)
+    if (workspace && metadata.workspaceArmPathSuffix) {
+      const wsNameParts = parseTemplatePath(metadata.workspaceArmPathSuffix, relativePath);
+      if (wsNameParts) {
+        return { type, nameParts: wsNameParts.map((m) => decodeURIComponent(m)), workspace };
+      }
     }
   }
 

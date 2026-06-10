@@ -10,13 +10,14 @@
 import { IApimClient } from '../clients/iapim-client.js';
 import { IArtifactStore } from '../clients/iartifact-store.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
-import { ResourceType } from '../models/resource-types.js';
+import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { FilterConfig } from '../models/config.js';
 import { shouldIncludeResource } from './filter-service.js';
 import { extractResourceType, ExtractedResource } from './resource-extractor.js';
 import { logger } from '../lib/logger.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
 import { getNamePart } from '../lib/resource-path.js';
+import { isWorkspaceScope, extractNameFromLink } from '../lib/workspace-link.js';
 
 /**
  * Result of API-specific extraction for a single API.
@@ -217,11 +218,18 @@ export async function extractApiResources(
   result.policies.push(...opsResult.policies);
 
   // Extract API tags
-  const tagsResult = await extractResourceType(
-    client, store, context, ResourceType.ApiTag,
-    outputDir, filter, apiDescriptor, workspace
-  );
-  result.tags = tagsResult.extracted;
+  // In workspace scope, the classic `apis/{api}/tags` endpoint returns HTTP 500.
+  // Workspace uses `tags/{tag}/apiLinks` (inverted parent-child). Skip here;
+  // workspace-scoped API tag extraction is handled separately by
+  // extractWorkspaceApiTags() in the workspace extractor after all APIs/tags
+  // are available.
+  if (!isWorkspaceScope(context)) {
+    const tagsResult = await extractResourceType(
+      client, store, context, ResourceType.ApiTag,
+      outputDir, filter, apiDescriptor, workspace
+    );
+    result.tags = tagsResult.extracted;
+  }
 
   // Extract API diagnostics
   const diagResult = await extractResourceType(
@@ -669,4 +677,87 @@ async function extractApiMcpServer(
   );
   logger.info(`Extracted ${buildResourceLabel(mcpDescriptor)} from API metadata`);
   return true;
+}
+
+/**
+ * Extract API tag associations in workspace scope using the tag-centric
+ * `tags/{tag}/apiLinks` endpoint.
+ *
+ * In workspace scope the classic `apis/{api}/tags` endpoint is not available
+ * (HTTP 500). Instead, tag-to-API associations are exposed via each tag's
+ * `apiLinks` collection. This function iterates all workspace tags and
+ * discovers their linked APIs, then writes ApiTag artifacts.
+ *
+ * @param client - APIM REST client
+ * @param store - Artifact file store
+ * @param context - Workspace-scoped APIM context
+ * @param extractedTagNames - Tag names already extracted for this workspace
+ * @param extractedApiNames - API names already extracted for this workspace
+ * @param outputDir - Output directory
+ * @param workspace - Workspace name
+ * @returns Number of ApiTag artifacts written
+ */
+export async function extractWorkspaceApiTags(
+  client: IApimClient,
+  store: IArtifactStore,
+  context: ApimServiceContext,
+  extractedTagNames: string[],
+  extractedApiNames: Set<string>,
+  outputDir: string,
+  workspace: string
+): Promise<number> {
+  const linkProperty = RESOURCE_TYPE_METADATA[ResourceType.ApiTag].workspaceLinkIdProperty;
+  if (!linkProperty) {
+    return 0;
+  }
+
+  let count = 0;
+
+  for (const tagName of extractedTagNames) {
+    // List apiLinks under this tag.
+    // Do NOT set workspace on this descriptor — context.baseUrl already includes
+    // the workspace prefix and buildArmUri would double it.
+    const tagDescriptor: ResourceDescriptor = {
+      type: ResourceType.Tag,
+      nameParts: [tagName],
+    };
+
+    try {
+      for await (const linkJson of client.listResources(context, ResourceType.ApiTag, tagDescriptor)) {
+        const apiName = extractNameFromLink(linkJson, linkProperty);
+        if (!apiName) {
+          logger.warn(`Failed to extract API name from tag "${tagName}" apiLink response`);
+          continue;
+        }
+
+        // Only create ApiTag artifacts for APIs that were extracted
+        if (!extractedApiNames.has(apiName)) {
+          logger.debug(`Skipping apiLink for tag "${tagName}" → API "${apiName}" (API not extracted)`);
+          continue;
+        }
+
+        // Write the ApiTag artifact
+        const apiTagDescriptor: ResourceDescriptor = {
+          type: ResourceType.ApiTag,
+          nameParts: [apiName, tagName],
+          workspace,
+        };
+
+        // ApiTag artifacts store a minimal tag information JSON
+        const tagJson: Record<string, unknown> = {
+          properties: {
+            displayName: tagName,
+          },
+        };
+
+        await store.writeResource(outputDir, apiTagDescriptor, tagJson);
+        logger.info(`Extracted workspace ApiTag: ${apiName}/tags/${tagName}`);
+        count++;
+      }
+    } catch (error) {
+      logger.warn(`Failed to list apiLinks for tag "${tagName}": ${(error as Error).message}`);
+    }
+  }
+
+  return count;
 }

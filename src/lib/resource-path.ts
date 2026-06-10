@@ -181,8 +181,30 @@ function templateToRegex(template: string): RegExp {
 export function parseTemplatePath(template: string, path: string): string[] | undefined {
   const match = templateToRegex(template).exec(path);
   if (!match) return undefined;
-  // Captures correspond directly to {0}, {1}, … positions in the template
-  return match.slice(1);
+
+  const captures = match.slice(1);
+
+  // Extract placeholder indices in left-to-right appearance order.
+  // For `tags/{1}/apiLinks/{0}` this yields [1, 0].
+  const placeholderIndices: number[] = [];
+  const placeholderPattern = /\{(\d+)\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = placeholderPattern.exec(template)) !== null) {
+    placeholderIndices.push(Number(m[1]));
+  }
+
+  // Re-sort captures so result[i] corresponds to placeholder {i}.
+  // When indices are sequential (the common case), this is a no-op.
+  const sorted = new Array<string>(captures.length);
+  for (let i = 0; i < captures.length; i++) {
+    const idx = placeholderIndices[i];
+    const val = captures[i];
+    if (idx !== undefined && val !== undefined) {
+      sorted[idx] = val;
+    }
+  }
+
+  return sorted;
 }
 
 /**

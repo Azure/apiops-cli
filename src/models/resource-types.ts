@@ -75,6 +75,19 @@ export interface ResourceTypeMetadata {
    * without maintaining a separate hardcoded list.
    */
   readonly workspaceSupported?: boolean;
+  /**
+   * Alternative ARM path suffix used in workspace scope.
+   * Some association resources use a different "links" endpoint pattern
+   * in workspace scope (e.g. `products/{0}/apiLinks/{1}` instead of
+   * `products/{0}/apis/{1}`).
+   */
+  readonly workspaceArmPathSuffix?: string;
+  /**
+   * The property name in a workspace link response that contains the
+   * linked resource's full ARM resource ID (e.g. 'apiId', 'groupId').
+   * Only relevant when `workspaceArmPathSuffix` is set.
+   */
+  readonly workspaceLinkIdProperty?: string;
 }
 
 export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> = {
@@ -103,6 +116,7 @@ export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> 
     artifactDirectory: 'versionSets/{0}',
     infoFile: 'versionSetInformation.json',
     supportsGet: true,
+    workspaceSupported: true,
   },
   [ResourceType.Backend]: {
     armPathSuffix: 'backends/{0}',
@@ -163,18 +177,24 @@ export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> 
     artifactDirectory: 'products/{0}',
     infoFile: 'apis.json',
     supportsGet: false,
+    workspaceArmPathSuffix: 'products/{0}/apiLinks/{1}',
+    workspaceLinkIdProperty: 'apiId',
   },
   [ResourceType.ProductGroup]: {
     armPathSuffix: 'products/{0}/groups/{1}',
     artifactDirectory: 'products/{0}',
     infoFile: 'groups.json',
     supportsGet: false,
+    workspaceArmPathSuffix: 'products/{0}/groupLinks/{1}',
+    workspaceLinkIdProperty: 'groupId',
   },
   [ResourceType.ProductTag]: {
     armPathSuffix: 'products/{0}/tags/{1}',
     artifactDirectory: 'products/{0}',
     infoFile: null, // Embedded in productInformation.json
     supportsGet: false,
+    workspaceArmPathSuffix: 'tags/{1}/productLinks/{0}',
+    workspaceLinkIdProperty: 'productId',
   },
   [ResourceType.Api]: {
     armPathSuffix: 'apis/{0}',
@@ -194,6 +214,8 @@ export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> 
     artifactDirectory: 'apis/{0}/tags/{1}',
     infoFile: 'tagInformation.json',
     supportsGet: true,
+    workspaceArmPathSuffix: 'tags/{1}/apiLinks/{0}',
+    workspaceLinkIdProperty: 'apiId',
   },
   [ResourceType.ApiDiagnostic]: {
     armPathSuffix: 'apis/{0}/diagnostics/{1}',
@@ -244,7 +266,6 @@ export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> 
     artifactDirectory: 'documentations/{0}',
     infoFile: 'documentationInformation.json',
     supportsGet: true,
-    workspaceSupported: true,
   },
   [ResourceType.ApiSchema]: {
     armPathSuffix: 'apis/{0}/schemas/{1}',

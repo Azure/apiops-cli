@@ -13,6 +13,7 @@ import { RESOURCE_TYPE_METADATA, ResourceType } from '../models/resource-types.j
 import { buildArmUri, buildResourceLabel } from '../lib/resource-uri.js';
 import { deriveListPaths } from '../lib/resource-path.js';
 import { logger } from '../lib/logger.js';
+import { isWorkspaceScope } from '../lib/workspace-link.js';
 import { USER_AGENT } from '../lib/user-agent.js';
 
 /**
@@ -232,7 +233,12 @@ export class ApimClient implements IApimClient {
     let url: string;
 
     const meta = RESOURCE_TYPE_METADATA[type];
-    const { listPath, childListPath } = deriveListPaths(meta.armPathSuffix);
+    // Use workspace-specific ARM path when context is workspace-scoped
+    const isWorkspaceScoped = isWorkspaceScope(context);
+    const armPath = isWorkspaceScoped && meta.workspaceArmPathSuffix
+      ? meta.workspaceArmPathSuffix
+      : meta.armPathSuffix;
+    const { listPath, childListPath } = deriveListPaths(armPath);
 
     if (parent) {
       // For child resources, use parent's ARM URI as base.

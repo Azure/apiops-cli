@@ -1416,6 +1416,27 @@ resource wsApi 'Microsoft.ApiManagement/service/workspaces/apis@2025-09-01-previ
   }
 }
 
+// --- Workspace Product ↔ API association ---
+resource wsProductApi 'Microsoft.ApiManagement/service/workspaces/products/apis@2025-09-01-preview' = if (supportsWorkspaces) {
+  parent: wsProduct
+  name: 'src-ws-api-rest'
+  dependsOn: [wsApi]
+}
+
+// --- Workspace API ↔ Tag association ---
+resource wsApiTag 'Microsoft.ApiManagement/service/workspaces/apis/tags@2025-09-01-preview' = if (supportsWorkspaces) {
+  parent: wsApi
+  name: 'src-ws-tag'
+  dependsOn: [wsTag]
+}
+
+// --- Workspace Product ↔ Tag association ---
+resource wsProductTag 'Microsoft.ApiManagement/service/workspaces/products/tags@2025-09-01-preview' = if (supportsWorkspaces) {
+  parent: wsProduct
+  name: 'src-ws-tag'
+  dependsOn: [wsTag]
+}
+
 // ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------
