@@ -712,40 +712,20 @@ try {
                 if ($result.Skipped) { $skippedTypes++ }
             }
 
-            # Compare workspace product children (APIs, tags)
+            # Compare workspace product associations via link APIs
+            # Classic endpoints (products/{p}/apis, products/{p}/tags) return HTTP 500
+            # in workspace scope; use the link endpoints instead.
             try {
                 $wsProducts = Get-ArmResourceList -Url "$SourceBase/workspaces/$wsName/products"
                 foreach ($wsProd in $wsProducts) {
                     $wsProdName = Get-ResourceName -ResourceId $wsProd.id
                     Write-Host "  Workspace/$wsName/Product: $wsProdName" -ForegroundColor DarkCyan
 
-                    foreach ($wsProductChild in @('apis', 'tags')) {
-                        $result = Compare-ResourceType `
-                            -TypeLabel "  Workspace/$wsName/Product/$wsProdName/$wsProductChild" `
-                            -SourceUrl "$SourceBase/workspaces/$wsName/products/$wsProdName/$wsProductChild" `
-                            -TargetUrl "$TargetBase/workspaces/$wsName/products/$wsProdName/$wsProductChild"
-                        $totalTypes++
-                        $totalDiffs += $result.Diffs
-                        $totalCompared += $result.Compared
-                        if ($result.Skipped) { $skippedTypes++ }
-                    }
-                }
-            }
-            catch {
-                Write-Verbose "Could not enumerate workspace products for $wsName — $_"
-            }
-
-            # Compare workspace API children (tags)
-            try {
-                $wsApis = Get-ArmResourceList -Url "$SourceBase/workspaces/$wsName/apis"
-                foreach ($wsApiItem in $wsApis) {
-                    $wsApiName = Get-ResourceName -ResourceId $wsApiItem.id
-                    Write-Host "  Workspace/$wsName/API: $wsApiName" -ForegroundColor DarkCyan
-
+                    # Product → API associations via apiLinks
                     $result = Compare-ResourceType `
-                        -TypeLabel "  Workspace/$wsName/API/$wsApiName/tags" `
-                        -SourceUrl "$SourceBase/workspaces/$wsName/apis/$wsApiName/tags" `
-                        -TargetUrl "$TargetBase/workspaces/$wsName/apis/$wsApiName/tags"
+                        -TypeLabel "  Workspace/$wsName/Product/$wsProdName/apiLinks" `
+                        -SourceUrl "$SourceBase/workspaces/$wsName/products/$wsProdName/apiLinks" `
+                        -TargetUrl "$TargetBase/workspaces/$wsName/products/$wsProdName/apiLinks"
                     $totalTypes++
                     $totalDiffs += $result.Diffs
                     $totalCompared += $result.Compared
@@ -753,7 +733,39 @@ try {
                 }
             }
             catch {
-                Write-Verbose "Could not enumerate workspace APIs for $wsName — $_"
+                Write-Verbose "Could not enumerate workspace products for $wsName — $_"
+            }
+
+            # Compare workspace product ↔ tag associations via productLinks
+            try {
+                $wsTags = Get-ArmResourceList -Url "$SourceBase/workspaces/$wsName/tags"
+                foreach ($wsTagItem in $wsTags) {
+                    $wsTagName = Get-ResourceName -ResourceId $wsTagItem.id
+                    Write-Host "  Workspace/$wsName/Tag: $wsTagName" -ForegroundColor DarkCyan
+
+                    # Tag → Product associations via productLinks
+                    $result = Compare-ResourceType `
+                        -TypeLabel "  Workspace/$wsName/Tag/$wsTagName/productLinks" `
+                        -SourceUrl "$SourceBase/workspaces/$wsName/tags/$wsTagName/productLinks" `
+                        -TargetUrl "$TargetBase/workspaces/$wsName/tags/$wsTagName/productLinks"
+                    $totalTypes++
+                    $totalDiffs += $result.Diffs
+                    $totalCompared += $result.Compared
+                    if ($result.Skipped) { $skippedTypes++ }
+
+                    # Tag → API associations via apiLinks
+                    $result = Compare-ResourceType `
+                        -TypeLabel "  Workspace/$wsName/Tag/$wsTagName/apiLinks" `
+                        -SourceUrl "$SourceBase/workspaces/$wsName/tags/$wsTagName/apiLinks" `
+                        -TargetUrl "$TargetBase/workspaces/$wsName/tags/$wsTagName/apiLinks"
+                    $totalTypes++
+                    $totalDiffs += $result.Diffs
+                    $totalCompared += $result.Compared
+                    if ($result.Skipped) { $skippedTypes++ }
+                }
+            }
+            catch {
+                Write-Verbose "Could not enumerate workspace tags for $wsName — $_"
             }
         }
     }

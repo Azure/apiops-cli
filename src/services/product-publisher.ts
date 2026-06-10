@@ -179,7 +179,7 @@ async function publishProductAssociations(
     return;
   }
 
-  const workspaceScoped = isWorkspaceScope(context);
+  const workspaceScoped = !!productDescriptor.workspace || isWorkspaceScope(context);
   const meta = RESOURCE_TYPE_METADATA[resourceType];
   const linkProperty = meta.workspaceLinkIdProperty;
   // Map association type to the ARM resource type segment for building ARM IDs
@@ -197,7 +197,7 @@ async function publishProductAssociations(
       // In workspace scope, PUT with link payload; otherwise empty body
       let payload: Record<string, unknown> = {};
       if (workspaceScoped && linkProperty) {
-        payload = buildLinkPayload(context, linkProperty, resourceTypeSegment, name);
+        payload = buildLinkPayload(context, linkProperty, resourceTypeSegment, name, productDescriptor.workspace);
       }
       await client.putResource(context, assocDescriptor, payload);
       logger.debug(`Created ${resourceType} association: ${productName}/${name}`);
@@ -233,7 +233,7 @@ async function publishProductTags(
     return;
   }
 
-  const workspaceScoped = isWorkspaceScope(context);
+  const workspaceScoped = !!productDescriptor.workspace || isWorkspaceScope(context);
   const linkProperty = RESOURCE_TYPE_METADATA[ResourceType.ProductTag].workspaceLinkIdProperty;
 
   // Create association for each tag
@@ -247,7 +247,7 @@ async function publishProductTags(
     try {
       let payload: Record<string, unknown> = {};
       if (workspaceScoped && linkProperty) {
-        payload = buildLinkPayload(context, linkProperty, 'products', productName);
+        payload = buildLinkPayload(context, linkProperty, 'products', productName, productDescriptor.workspace);
       }
       await client.putResource(context, tagDescriptor, payload);
       logger.debug(`Created ProductTag association: ${productName}/${tagName}`);

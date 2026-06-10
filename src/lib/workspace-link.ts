@@ -51,20 +51,31 @@ export function extractNameFromLink(
  * Builds the full ARM resource ID for a workspace-scoped resource.
  * Used when creating link resources that reference another resource via its ARM ID.
  *
- * @param context - APIM service context (with workspace baseUrl)
+ * @param context - APIM service context (may be service-scoped or workspace-scoped)
  * @param resourcePath - The ARM path segment (e.g. 'apis/myApi' or 'groups/myGroup')
+ * @param workspace - Optional workspace name; required when context is service-scoped
  * @returns Full ARM resource ID
  */
 export function buildWorkspaceResourceId(
   context: ApimServiceContext,
-  resourcePath: string
+  resourcePath: string,
+  workspace?: string
 ): string {
-  // context.baseUrl for workspace scope is:
-  //   https://management.azure.com/subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.ApiManagement/service/{svc}/workspaces/{ws}
-  // We need to return:
-  //   /subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.ApiManagement/service/{svc}/workspaces/{ws}/{resourcePath}
   const url = new URL(context.baseUrl);
-  return `${url.pathname}/${resourcePath}`;
+  const basePath = url.pathname;
+
+  // If context already includes the workspace segment, use it directly
+  if (isWorkspaceScope(context)) {
+    return `${basePath}/${resourcePath}`;
+  }
+
+  // Context is service-scoped — prepend the workspace segment from the descriptor
+  if (workspace) {
+    return `${basePath}/workspaces/${encodeURIComponent(workspace)}/${resourcePath}`;
+  }
+
+  // Fallback: no workspace info available (should not happen in practice)
+  return `${basePath}/${resourcePath}`;
 }
 
 /**
@@ -83,21 +94,24 @@ export function isWorkspaceScope(context: ApimServiceContext): boolean {
 /**
  * Builds the PUT payload for creating a workspace link resource.
  *
- * @param context - Workspace-scoped APIM context
+ * @param context - APIM service context (may be service-scoped or workspace-scoped)
  * @param linkIdProperty - Property name for the ARM ID (e.g. 'apiId', 'groupId')
  * @param resourceType - The ARM resource type segment (e.g. 'apis', 'groups', 'products')
  * @param resourceName - The resource name to link to
+ * @param workspace - Optional workspace name; required when context is service-scoped
  * @returns PUT payload for the link resource
  */
 export function buildLinkPayload(
   context: ApimServiceContext,
   linkIdProperty: string,
   resourceType: string,
-  resourceName: string
+  resourceName: string,
+  workspace?: string
 ): Record<string, unknown> {
   const resourceId = buildWorkspaceResourceId(
     context,
-    `${resourceType}/${encodeURIComponent(resourceName)}`
+    `${resourceType}/${encodeURIComponent(resourceName)}`,
+    workspace
   );
 
   return {

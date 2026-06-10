@@ -1416,25 +1416,31 @@ resource wsApi 'Microsoft.ApiManagement/service/workspaces/apis@2025-09-01-previ
   }
 }
 
-// --- Workspace Product ↔ API association ---
-resource wsProductApi 'Microsoft.ApiManagement/service/workspaces/products/apis@2025-09-01-preview' = if (supportsWorkspaces) {
+// --- Workspace Product ↔ API association (via apiLinks endpoint) ---
+resource wsProductApiLink 'Microsoft.ApiManagement/service/workspaces/products/apiLinks@2025-09-01-preview' = if (supportsWorkspaces) {
   parent: wsProduct
-  name: 'src-ws-api-rest'
-  dependsOn: [wsApi]
+  name: 'src-ws-api-rest-link'
+  properties: {
+    apiId: wsApi.id
+  }
 }
 
-// --- Workspace API ↔ Tag association ---
-resource wsApiTag 'Microsoft.ApiManagement/service/workspaces/apis/tags@2025-09-01-preview' = if (supportsWorkspaces) {
-  parent: wsApi
-  name: 'src-ws-tag'
-  dependsOn: [wsTag]
+// --- Workspace API ↔ Tag association (via tag apiLinks endpoint) ---
+resource wsApiTagLink 'Microsoft.ApiManagement/service/workspaces/tags/apiLinks@2025-09-01-preview' = if (supportsWorkspaces) {
+  parent: wsTag
+  name: 'src-ws-api-rest-link'
+  properties: {
+    apiId: wsApi.id
+  }
 }
 
-// --- Workspace Product ↔ Tag association ---
-resource wsProductTag 'Microsoft.ApiManagement/service/workspaces/products/tags@2025-09-01-preview' = if (supportsWorkspaces) {
-  parent: wsProduct
-  name: 'src-ws-tag'
-  dependsOn: [wsTag]
+// --- Workspace Product ↔ Tag association (via tag productLinks endpoint) ---
+resource wsProductTagLink 'Microsoft.ApiManagement/service/workspaces/tags/productLinks@2025-09-01-preview' = if (supportsWorkspaces) {
+  parent: wsTag
+  name: 'src-ws-product-link'
+  properties: {
+    productId: wsProduct.id
+  }
 }
 
 // ---------------------------------------------------------------------------

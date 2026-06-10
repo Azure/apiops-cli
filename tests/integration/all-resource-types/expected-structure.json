@@ -691,23 +691,12 @@
             "expected": [
               {
                 "name": "src-ws-product",
-                "files": ["productInformation.json", "apis.json"],
+                "files": ["productInformation.json", "apis.json", "tags.json"],
                 "spotChecks": {
                   "productInformation.json": {
                     "properties.displayName": "Workspace Product",
                     "properties.subscriptionRequired": false,
                     "properties.state": "published"
-                  }
-                },
-                "directories": {
-                  "tags": {
-                    "minCount": 1,
-                    "expected": [
-                      {
-                        "name": "src-ws-tag",
-                        "files": ["tagInformation.json"]
-                      }
-                    ]
                   }
                 }
               }

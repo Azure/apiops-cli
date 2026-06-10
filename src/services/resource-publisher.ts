@@ -93,7 +93,7 @@ export async function publishResource(
     // Handle workspace ApiTag — uses link endpoint with link payload.
     // In service scope, ApiTag is a regular PUT with the tag JSON; in workspace
     // scope it becomes a link resource at `tags/{tag}/apiLinks/{api}`.
-    if (descriptor.type === ResourceType.ApiTag && isWorkspaceScope(context)) {
+    if (descriptor.type === ResourceType.ApiTag && (descriptor.workspace || isWorkspaceScope(context))) {
       return await publishWorkspaceApiTagLink(client, context, descriptor);
     }
 
@@ -574,8 +574,11 @@ async function publishWorkspaceApiTagLink(
 ): Promise<ResourcePublishResult> {
   try {
     const apiName = getNamePart(descriptor.nameParts, 0);
-    const linkProperty = RESOURCE_TYPE_METADATA[ResourceType.ApiTag].workspaceLinkIdProperty!;
-    const payload = buildLinkPayload(context, linkProperty, 'apis', apiName);
+    const meta = RESOURCE_TYPE_METADATA[ResourceType.ApiTag];
+    if (!meta.workspaceLinkIdProperty) {
+      throw new Error(`Missing workspaceLinkIdProperty in metadata for ${ResourceType.ApiTag}`);
+    }
+    const payload = buildLinkPayload(context, meta.workspaceLinkIdProperty, 'apis', apiName, descriptor.workspace);
 
     await client.putResource(context, descriptor, payload);
 

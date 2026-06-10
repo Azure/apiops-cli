@@ -144,7 +144,7 @@ async function extractProductAssociations(
 
 /**
  * Extract product tags and write to artifact store as tags.json.
- * In workspace scope, uses the tag-centric productLinks endpoint.
+ * Only used in service scope; workspace scope is handled by extractWorkspaceProductTags().
  */
 async function extractProductTags(
   client: IApimClient,
