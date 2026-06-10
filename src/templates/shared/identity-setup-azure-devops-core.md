@@ -397,6 +397,40 @@ done
 rm -f env-body.json
 ```
 
-**Note:** Environment approvals and checks must be configured via the Azure DevOps UI.
+Authorize each environment for all pipelines (prevents first-run permission prompts):
+
+**PowerShell:**
+```powershell
+$ADO_RESOURCE = "499b84ac-1321-427f-aa17-267ca6975798"
+$TOKEN = az account get-access-token --resource $ADO_RESOURCE --query accessToken -o tsv
+
+foreach ($env in $ENVIRONMENTS) {
+    $envId = az devops invoke --area environments --resource environments --route-parameters project=$AZDO_PROJECT --query-parameters "api-version=7.1" --query "value[?name=='$env'].id | [0]" -o tsv
+    if ($envId) {
+        $url = "$AZDO_ORG/$AZDO_PROJECT/_apis/pipelines/pipelinePermissions/environment/$envId?api-version=7.1-preview.1"
+        $body = '{"allPipelines":{"authorized":true}}'
+        Invoke-RestMethod -Method Patch -Uri $url -Headers @{ Authorization = "Bearer $TOKEN" } -ContentType "application/json" -Body $body | Out-Null
+    }
+}
+```
+
+**Git Bash:**
+```bash
+ADO_RESOURCE="499b84ac-1321-427f-aa17-267ca6975798"
+TOKEN=$(az account get-access-token --resource "$ADO_RESOURCE" --query accessToken -o tsv)
+
+for env in "${ENVIRONMENTS[@]}"; do
+    env_id=$(az devops invoke --area environments --resource environments --route-parameters project="$AZDO_PROJECT" --query-parameters "api-version=7.1" --query "value[?name=='$env'].id | [0]" -o tsv)
+    if [[ -n "$env_id" ]]; then
+        curl -sS -X PATCH \
+          -H "Authorization: Bearer $TOKEN" \
+          -H "Content-Type: application/json" \
+          "$AZDO_ORG/$AZDO_PROJECT/_apis/pipelines/pipelinePermissions/environment/$env_id?api-version=7.1-preview.1" \
+          -d '{"allPipelines":{"authorized":true}}' >/dev/null
+    fi
+done
+```
+
+**Note:** Environment approvals and checks still must be configured via the Azure DevOps UI.
 
 ---

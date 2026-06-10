@@ -150,8 +150,7 @@ describe('copilot/identity-setup-prompt', () => {
 
     it('should render all template placeholders', () => {
       const prompt = generateIdentitySetupPrompt({ environments: ['dev', 'prod'] });
-      expect(prompt).not.toContain('{{');
-      expect(prompt).not.toContain('}}');
+      expect(prompt).not.toMatch(/\{\{[^}]+\}\}/);
     });
 
     it('should generate Azure DevOps instructions when ciProvider is azure-devops', () => {
@@ -219,6 +218,15 @@ describe('copilot/identity-setup-prompt', () => {
       expect(prompt).toContain('for env in "${ENVIRONMENTS[@]}"; do');
     });
 
+    it('should authorize environments for pipeline access in ADO prompt', () => {
+      const prompt = generateIdentitySetupPrompt({
+        environments: ['dev', 'prod'],
+        ciProvider: 'azure-devops',
+      });
+      expect(prompt).toContain('pipelinePermissions/environment');
+      expect(prompt).toContain('"allPipelines":{"authorized":true}');
+    });
+
     it('should render environment arrays for PowerShell and Git Bash in ADO prompt', () => {
       const prompt = generateIdentitySetupPrompt({
         environments: ['dev', 'prod'],
@@ -233,8 +241,7 @@ describe('copilot/identity-setup-prompt', () => {
         environments: ['dev', 'prod'],
         ciProvider: 'azure-devops',
       });
-      expect(prompt).not.toContain('{{');
-      expect(prompt).not.toContain('}}');
+      expect(prompt).not.toMatch(/\{\{[^}]+\}\}/);
     });
   });
 });

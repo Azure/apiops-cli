@@ -143,8 +143,7 @@ describe('identity-guide-service', () => {
 
     it('should render all template placeholders', () => {
       const guide = identityGuideService.generateAzureDevOpsGuide(['dev']);
-      expect(guide).not.toContain('{{');
-      expect(guide).not.toContain('}}');
+      expect(guide).not.toMatch(/\{\{[^}]+\}\}/);
     });
 
   });
