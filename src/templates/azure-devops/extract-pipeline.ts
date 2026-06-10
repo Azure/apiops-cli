@@ -38,13 +38,62 @@ variables:
   - group: apim-common
 
 steps:
+  - checkout: self
+    persistCredentials: true
+    fetchDepth: 2
+
   - task: UseNode@1
     displayName: 'Setup Node.js'
     inputs:
-      versionSpec: '22.x'
+      version: '22.x'
 
-  - script: npm ci
+  - script: |
+      if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+        npm ci
+      else
+        npm install --no-audit --no-fund
+      fi
     displayName: 'Install dependencies'
+
+  - bash: |
+      echo "##vso[task.setvariable variable=RESOURCE_GROUP]\${{ parameters.resourceGroup }}"
+      echo "##vso[task.setvariable variable=SERVICE_NAME]\${{ parameters.serviceName }}"
+    displayName: 'Set parameters as variables'
+
+  - bash: |
+      RESOURCE_GROUP='$(RESOURCE_GROUP)'
+      SERVICE_NAME='$(SERVICE_NAME)'
+      SERVICE_CONNECTION='$(AZURE_SERVICE_CONNECTION)'
+      SUBSCRIPTION_ID='$(AZURE_SUBSCRIPTION_ID)'
+
+      is_unresolved() {
+        local value="$1"
+        case "$value" in
+          ""|\$\(*\)) return 0 ;;
+          *) return 1 ;;
+        esac
+      }
+
+      if is_unresolved "$RESOURCE_GROUP"; then
+        echo "##vso[task.logissue type=error]RESOURCE_GROUP was not resolved. Verify apim-common defines APIM_RESOURCE_GROUP and is authorized for this pipeline."
+        exit 2
+      fi
+
+      if is_unresolved "$SERVICE_NAME"; then
+        echo "##vso[task.logissue type=error]SERVICE_NAME was not resolved. Verify apim-common defines APIM_SERVICE_NAME and is authorized for this pipeline."
+        exit 2
+      fi
+
+      if is_unresolved "$SERVICE_CONNECTION"; then
+        echo "##vso[task.logissue type=error]AZURE_SERVICE_CONNECTION was not resolved. Verify apim-common defines AZURE_SERVICE_CONNECTION and is authorized for this pipeline."
+        exit 2
+      fi
+
+      if is_unresolved "$SUBSCRIPTION_ID"; then
+        echo "##vso[task.logissue type=error]AZURE_SUBSCRIPTION_ID was not resolved. Verify apim-common defines AZURE_SUBSCRIPTION_ID and is authorized for this pipeline."
+        exit 2
+      fi
+    displayName: 'Validate required variables'
 
   - task: AzureCLI@2
     displayName: 'Run APIM Extract (All APIs)'
@@ -54,11 +103,25 @@ steps:
       scriptType: 'bash'
       scriptLocation: 'inlineScript'
       inlineScript: |
-        npx apiops extract \\
-          --resource-group \${{ parameters.resourceGroup }} \\
-          --service-name \${{ parameters.serviceName }} \\
+        SUBSCRIPTION_ID='$(AZURE_SUBSCRIPTION_ID)'
+
+        is_unresolved() {
+          local value="$1"
+          case "$value" in
+            ""|\$\(*\)) return 0 ;;
+            *) return 1 ;;
+          esac
+        }
+
+        if is_unresolved "$SUBSCRIPTION_ID"; then
+          echo "##vso[task.logissue type=error]AZURE_SUBSCRIPTION_ID was not resolved. Ensure apim-common is authorized and defines AZURE_SUBSCRIPTION_ID."
+          exit 2
+        fi
+        npx @peterhauge/apiops-cli extract \\
+          --resource-group "$(RESOURCE_GROUP)" \\
+          --service-name "$(SERVICE_NAME)" \\
           --output ${config.artifactDir} \\
-          --subscription-id $(AZURE_SUBSCRIPTION_ID)
+          --subscription-id "$SUBSCRIPTION_ID"
 
   - task: AzureCLI@2
     displayName: 'Run APIM Extract (With Configuration)'
@@ -68,12 +131,26 @@ steps:
       scriptType: 'bash'
       scriptLocation: 'inlineScript'
       inlineScript: |
-        npx apiops extract \\
-          --resource-group \${{ parameters.resourceGroup }} \\
-          --service-name \${{ parameters.serviceName }} \\
+        SUBSCRIPTION_ID='$(AZURE_SUBSCRIPTION_ID)'
+
+        is_unresolved() {
+          local value="$1"
+          case "$value" in
+            ""|\$\(*\)) return 0 ;;
+            *) return 1 ;;
+          esac
+        }
+
+        if is_unresolved "$SUBSCRIPTION_ID"; then
+          echo "##vso[task.logissue type=error]AZURE_SUBSCRIPTION_ID was not resolved. Ensure apim-common is authorized and defines AZURE_SUBSCRIPTION_ID."
+          exit 2
+        fi
+        npx @peterhauge/apiops-cli extract \\
+          --resource-group "$(RESOURCE_GROUP)" \\
+          --service-name "$(SERVICE_NAME)" \\
           --output ${config.artifactDir} \\
           --filter configuration.extractor.yaml \\
-          --subscription-id $(AZURE_SUBSCRIPTION_ID)
+          --subscription-id "$SUBSCRIPTION_ID"
 
   - task: PublishPipelineArtifact@1
     displayName: 'Publish artifacts'

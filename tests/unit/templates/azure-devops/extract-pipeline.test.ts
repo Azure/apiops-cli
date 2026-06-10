@@ -49,7 +49,7 @@ describe('azure-devops/extract-pipeline', () => {
     it('should include Node.js setup step', () => {
       const pipeline = generateExtractPipeline({ artifactDir: './apim-artifacts' });
       expect(pipeline).toContain('UseNode@1');
-      expect(pipeline).toContain("versionSpec: '22.x'");
+      expect(pipeline).toContain("version: '22.x'");
     });
 
     it('should include npm ci step', () => {
@@ -78,7 +78,8 @@ describe('azure-devops/extract-pipeline', () => {
 
     it('should include subscription-id flag', () => {
       const pipeline = generateExtractPipeline({ artifactDir: './apim-artifacts' });
-      expect(pipeline).toContain('--subscription-id $(AZURE_SUBSCRIPTION_ID)');
+      expect(pipeline).toContain("SUBSCRIPTION_ID='$(AZURE_SUBSCRIPTION_ID)'");
+      expect(pipeline).toContain('--subscription-id "$SUBSCRIPTION_ID"');
     });
 
     it('should publish pipeline artifacts', () => {
@@ -99,7 +100,7 @@ describe('azure-devops/extract-pipeline', () => {
     it('should use npm ci to install dependencies (uses tgz from package.json)', () => {
       const pipeline = generateExtractPipeline({ artifactDir: './apim-artifacts' });
       expect(pipeline).toContain('npm ci');
-      expect(pipeline).toContain('npx apiops extract');
+      expect(pipeline).toContain('npx @peterhauge/apiops-cli extract');
     });
   });
 });
