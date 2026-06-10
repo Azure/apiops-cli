@@ -1,54 +1,96 @@
 ## Prerequisites
-- Azure subscription: {{SUBSCRIPTION_ID}}
-- Resource group: {{RESOURCE_GROUP}}
 - Azure DevOps organization and project
 - Azure CLI installed and authenticated (`az login`)
+- `az devops` extension (`az extension add --name azure-devops`)
 
-> **Note:** All commands use only built-in tools. Commands are shown for both
-> **PowerShell** and **Git Bash** where syntax differs.
+This flow is designed for Microsoft-hosted or self-hosted agents and uses workload identity federation (OIDC) instead of managed identity.
+
+> **Note:** All commands are shown for both **PowerShell** and **Git Bash** where syntax differs.
 
 ---
 
-## Step 1: Set Variables
+## Step 1: Gather Per-Environment Information
+
+**Copilot:** Ask the user for the following values before proceeding. Store each answer for use in later steps.
+
+For each environment, provide either **Option A** (three separate values) or **Option B** (a single full APIM resource ID in the form `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ApiManagement/service/<name>`). Copilot will parse Option B into the individual components automatically.
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `APP_NAME` | Display name for the Entra application | `apiops-azdo-sp` |
+| `AZDO_ORG` | Azure DevOps organization URL | `https://dev.azure.com/my-org` |
+| `AZDO_PROJECT` | Azure DevOps project name | `my-project` |
+| `TENANT_ID` | Tenant ID that should own the app/service connection | `11111111-2222-3333-4444-555555555555` |
+
+For each environment in the configured list, gather these values (where `<ENV_UPPER>` is the upper-case environment name):
+- `APIM_SUBSCRIPTION_<ENV_UPPER>`
+- `APIM_RG_<ENV_UPPER>`
+- `APIM_NAME_<ENV_UPPER>`
+- `APIM_RESOURCE_ID_<ENV_UPPER>` *(optional Option B shorthand)*
+
+---
+
+## Step 2: Set Variables
 
 **PowerShell:**
 ```powershell
-$SUBSCRIPTION_ID = "{{SUBSCRIPTION_ID}}"
-$RESOURCE_GROUP = "{{RESOURCE_GROUP}}"
 $APP_NAME = "apiops-azdo-sp"
+$AZDO_ORG = "<your-azdo-org-url>"
+$AZDO_PROJECT = "<your-project>"
+$TENANT_ID = "<your-tenant-id>"
 $ENVIRONMENTS = @({{ENVIRONMENTS_ARRAY_POWERSHELL}})
+
+# Fill these maps with values for each environment.
+$APIM_SUBSCRIPTIONS = @{}
+$APIM_RESOURCE_GROUPS = @{}
+$APIM_SERVICE_NAMES = @{}
+
+foreach ($env in $ENVIRONMENTS) {
+    # Option A: provide values directly.
+    $APIM_SUBSCRIPTIONS[$env] = "<subscription-id-for-$env>"
+    $APIM_RESOURCE_GROUPS[$env] = "<resource-group-for-$env>"
+    $APIM_SERVICE_NAMES[$env] = "<service-name-for-$env>"
+
+    # Option B: if APIM resource ID is provided, parse it into the same maps.
+    # $resourceId = "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ApiManagement/service/<name>"
+    # if ($resourceId) {
+    #     $parts = $resourceId.Trim('/') -split '/'
+    #     $APIM_SUBSCRIPTIONS[$env] = $parts[1]
+    #     $APIM_RESOURCE_GROUPS[$env] = $parts[3]
+    #     $APIM_SERVICE_NAMES[$env] = $parts[7]
+    # }
+}
 ```
 
 **Git Bash:**
 ```bash
-SUBSCRIPTION_ID="{{SUBSCRIPTION_ID}}"
-RESOURCE_GROUP="{{RESOURCE_GROUP}}"
 APP_NAME="apiops-azdo-sp"
+AZDO_ORG="<your-azdo-org-url>"
+AZDO_PROJECT="<your-project>"
+TENANT_ID="<your-tenant-id>"
 ENVIRONMENTS=({{ENVIRONMENTS_ARRAY_BASH}})
+
+# Fill these maps with values for each environment.
+declare -A APIM_SUBSCRIPTIONS
+declare -A APIM_RESOURCE_GROUPS
+declare -A APIM_SERVICE_NAMES
+
+for env in "${ENVIRONMENTS[@]}"; do
+    # Option A: provide values directly.
+    APIM_SUBSCRIPTIONS["$env"]="<subscription-id-for-$env>"
+    APIM_RESOURCE_GROUPS["$env"]="<resource-group-for-$env>"
+    APIM_SERVICE_NAMES["$env"]="<service-name-for-$env>"
+
+    # Option B: if APIM resource ID is provided, parse it into the same maps.
+    # resource_id="/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ApiManagement/service/<name>"
+    # if [[ -n "$resource_id" ]]; then
+    #   IFS='/' read -r _ subscriptions sub resourceGroups rg providers provider service svc <<< "$resource_id"
+    #   APIM_SUBSCRIPTIONS["$env"]="$sub"
+    #   APIM_RESOURCE_GROUPS["$env"]="$rg"
+    #   APIM_SERVICE_NAMES["$env"]="$svc"
+    # fi
+done
 ```
-
----
-
-## Step 2: Create Service Principal
-
-**PowerShell:**
-```powershell
-$SP_OUTPUT = az ad sp create-for-rbac --name $APP_NAME --role "API Management Service Contributor" --scopes "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP"
-$spObj = $SP_OUTPUT | ConvertFrom-Json
-$APP_ID = $spObj.appId
-$PASSWORD = $spObj.password
-$TENANT_ID = $spObj.tenant
-```
-
-**Git Bash:** (use `MSYS_NO_PATHCONV=1` to prevent path conversion on Windows)
-```bash
-SP_OUTPUT=$(MSYS_NO_PATHCONV=1 az ad sp create-for-rbac --name "$APP_NAME" --role "API Management Service Contributor" --scopes "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP")
-APP_ID=$(echo "$SP_OUTPUT" | grep -o '"appId": *"[^"]*"' | cut -d'"' -f4)
-PASSWORD=$(echo "$SP_OUTPUT" | grep -o '"password": *"[^"]*"' | cut -d'"' -f4)
-TENANT_ID=$(echo "$SP_OUTPUT" | grep -o '"tenant": *"[^"]*"' | cut -d'"' -f4)
-```
-
-**Important:** The password is only shown once during creation. Save it securely now.
 
 ---
 
@@ -61,120 +103,242 @@ az extension add --name azure-devops
 
 Set organization defaults:
 
+For self-hosted Azure DevOps Server, use your server/collection URL format:
+- `https://<server>/<collection>`
+
 **PowerShell:**
 ```powershell
-# For self-hosted Azure DevOps Server, use: https://<server>/<collection>
-$AZDO_ORG = "https://dev.azure.com/<your-org>"
-$ORG_NAME = "<your-org>"  # Used for Build Service identity
-$AZDO_PROJECT = "<your-project>"
 az devops configure --defaults organization=$AZDO_ORG project=$AZDO_PROJECT
-$SUBSCRIPTION_NAME = az account show --subscription $SUBSCRIPTION_ID --query name -o tsv
+$ORG_NAME = $AZDO_ORG -replace 'https://dev\.azure\.com/', ''
 ```
 
 **Git Bash:**
 ```bash
-# For self-hosted Azure DevOps Server, use: https://<server>/<collection>
-AZDO_ORG="https://dev.azure.com/<your-org>"
-ORG_NAME="<your-org>"  # Used for Build Service identity
-AZDO_PROJECT="<your-project>"
 az devops configure --defaults organization="$AZDO_ORG" project="$AZDO_PROJECT"
-SUBSCRIPTION_NAME=$(az account show --subscription "$SUBSCRIPTION_ID" --query name -o tsv)
+ORG_NAME="${AZDO_ORG##*/}"
 ```
+
+**Self-hosted note:** If your server URL includes a collection segment (for example, `https://ado.contoso.local/DefaultCollection`), set `ORG_NAME` to the value expected in the Build Service identity display name for your server/project.
 
 ---
 
-## Step 4: Create Azure Service Connections
+## Step 4: Verify Tenant ID
 
-Set the service principal key for non-interactive creation:
-
-**PowerShell:**
-```powershell
-$env:AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY = $PASSWORD
-```
-
-**Git Bash:**
-```bash
-export AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY="$PASSWORD"
-```
-
-Create the base service connection and one per environment:
+Before creating identity objects, confirm you are logged into the intended tenant.
 
 **PowerShell:**
 ```powershell
-az devops service-endpoint azurerm create --name "AZURE_SERVICE_CONNECTION" --azure-rm-service-principal-id $APP_ID --azure-rm-subscription-id $SUBSCRIPTION_ID --azure-rm-subscription-name $SUBSCRIPTION_NAME --azure-rm-tenant-id $TENANT_ID
-
-foreach ($env in $ENVIRONMENTS) {
-    $envUpper = $env.ToUpper()
-    az devops service-endpoint azurerm create --name "AZURE_SERVICE_CONNECTION_$envUpper" --azure-rm-service-principal-id $APP_ID --azure-rm-subscription-id $SUBSCRIPTION_ID --azure-rm-subscription-name $SUBSCRIPTION_NAME --azure-rm-tenant-id $TENANT_ID
+$CURRENT_TENANT_ID = az account show --query tenantId -o tsv
+Write-Host "Current tenant: $CURRENT_TENANT_ID"
+if ($CURRENT_TENANT_ID -ne $TENANT_ID) {
+    throw "Tenant mismatch. Expected $TENANT_ID but got $CURRENT_TENANT_ID. Run: az login --tenant $TENANT_ID"
 }
 ```
 
 **Git Bash:**
 ```bash
-az devops service-endpoint azurerm create --name "AZURE_SERVICE_CONNECTION" --azure-rm-service-principal-id "$APP_ID" --azure-rm-subscription-id "$SUBSCRIPTION_ID" --azure-rm-subscription-name "$SUBSCRIPTION_NAME" --azure-rm-tenant-id "$TENANT_ID"
-
-for env in "${ENVIRONMENTS[@]}"; do
-    env_upper=$(echo "$env" | tr '[:lower:]' '[:upper:]')
-    az devops service-endpoint azurerm create --name "AZURE_SERVICE_CONNECTION_$env_upper" --azure-rm-service-principal-id "$APP_ID" --azure-rm-subscription-id "$SUBSCRIPTION_ID" --azure-rm-subscription-name "$SUBSCRIPTION_NAME" --azure-rm-tenant-id "$TENANT_ID"
-done
+CURRENT_TENANT_ID=$(az account show --query tenantId -o tsv)
+echo "Current tenant: $CURRENT_TENANT_ID"
+if [[ "$CURRENT_TENANT_ID" != "$TENANT_ID" ]]; then
+    echo "Tenant mismatch. Expected $TENANT_ID but got $CURRENT_TENANT_ID"
+    echo "Run: az login --tenant $TENANT_ID"
+    exit 1
+fi
 ```
 
-Clean up the environment variable:
+---
+
+## Step 5: Create Entra Application and Service Principal (No Secret)
+
+> ⚠️ **Error Handling:** If any command fails, stop immediately and show the user the full error output verbatim. Do NOT retry silently.
 
 **PowerShell:**
 ```powershell
-Remove-Item Env:AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY
+az ad app create --display-name $APP_NAME | Out-Null
+$APP_ID = az ad app list --display-name $APP_NAME --query "[0].appId" -o tsv
+az ad sp create --id $APP_ID | Out-Null
+Write-Host "App ID: $APP_ID"
+Write-Host "Tenant ID: $TENANT_ID"
 ```
 
 **Git Bash:**
 ```bash
-unset AZURE_DEVOPS_EXT_AZURE_RM_SERVICE_PRINCIPAL_KEY
+az ad app create --display-name "$APP_NAME" >/dev/null
+APP_ID=$(az ad app list --display-name "$APP_NAME" --query "[0].appId" -o tsv)
+az ad sp create --id "$APP_ID" >/dev/null
+echo "App ID: $APP_ID"
+echo "Tenant ID: $TENANT_ID"
 ```
 
-Verify (works in both shells):
+No client secret is required in this flow.
+
+---
+
+## Step 6: Assign RBAC Roles Per Environment
+
+Grant the service principal **Reader** on each resource group and **API Management Service Contributor** on each APIM instance.
+
+### PowerShell
+```powershell
+foreach ($env in $ENVIRONMENTS) {
+    az role assignment create --assignee "$APP_ID" --role "Reader" --scope "/subscriptions/$($APIM_SUBSCRIPTIONS[$env])/resourceGroups/$($APIM_RESOURCE_GROUPS[$env])"
+    az role assignment create --assignee "$APP_ID" --role "API Management Service Contributor" --scope "/subscriptions/$($APIM_SUBSCRIPTIONS[$env])/resourceGroups/$($APIM_RESOURCE_GROUPS[$env])/providers/Microsoft.ApiManagement/service/$($APIM_SERVICE_NAMES[$env])"
+}
+```
+
+### Git Bash
+```bash
+for env in "${ENVIRONMENTS[@]}"; do
+    az role assignment create --assignee "$APP_ID" --role "Reader" --scope "/subscriptions/${APIM_SUBSCRIPTIONS[$env]}/resourceGroups/${APIM_RESOURCE_GROUPS[$env]}"
+    az role assignment create --assignee "$APP_ID" --role "API Management Service Contributor" --scope "/subscriptions/${APIM_SUBSCRIPTIONS[$env]}/resourceGroups/${APIM_RESOURCE_GROUPS[$env]}/providers/Microsoft.ApiManagement/service/${APIM_SERVICE_NAMES[$env]}"
+done
+```
+
+---
+
+## Step 7: Create Workload Identity Federation Service Connections
+
+Create one service connection per environment, each scoped to that environment's subscription,
+using Azure Resource Manager with Workload Identity Federation.
+
+This step is fully automatable with `az devops service-endpoint create`.
+After each endpoint is created, capture its generated issuer/subject and create
+the corresponding federated credential in Entra.
+
+**PowerShell:**
+```powershell
+foreach ($env in $ENVIRONMENTS) {
+    $envUpper = $env.ToUpper()
+    $name = "AZURE_SERVICE_CONNECTION_$envUpper"
+    $subscriptionName = az account show --subscription $($APIM_SUBSCRIPTIONS[$env]) --query name -o tsv
+
+    $payload = @{
+        name = $name
+        type = "azurerm"
+        url = "https://management.azure.com/"
+        authorization = @{
+            scheme = "WorkloadIdentityFederation"
+            parameters = @{
+                tenantid = $TENANT_ID
+                serviceprincipalid = $APP_ID
+            }
+        }
+        data = @{
+            environment = "AzureCloud"
+            identityType = "AppRegistrationManual"
+            scopeLevel = "Subscription"
+            subscriptionId = $APIM_SUBSCRIPTIONS[$env]
+            subscriptionName = $subscriptionName
+        }
+    } | ConvertTo-Json -Depth 8
+
+    $file = "se-$env.json"
+    $payload | Out-File -Encoding utf8 -FilePath $file
+    az devops service-endpoint create --service-endpoint-configuration $file | Out-Null
+    Remove-Item $file -ErrorAction SilentlyContinue
+
+    $endpoint = az devops service-endpoint list --query "[?name=='$name'] | [0]" -o json | ConvertFrom-Json
+    $issuer = $endpoint.authorization.parameters.workloadIdentityFederationIssuer
+    $subject = $endpoint.authorization.parameters.workloadIdentityFederationSubject
+
+    $FED_CRED_NAME = "azdo-$env"
+
+    $payload = @{
+        name = $FED_CRED_NAME
+        issuer = $issuer
+        subject = $subject
+        audiences = @("api://AzureADTokenExchange")
+    } | ConvertTo-Json -Depth 5
+
+    az ad app federated-credential create --id $APP_ID --parameters $payload
+}
+```
+
+**Git Bash:**
+```bash
+for env in "${ENVIRONMENTS[@]}"; do
+        env_upper=$(echo "$env" | tr '[:lower:]' '[:upper:]')
+        name="AZURE_SERVICE_CONNECTION_$env_upper"
+        subscription_name=$(az account show --subscription "${APIM_SUBSCRIPTIONS[$env]}" --query name -o tsv)
+
+        cat > "se-$env.json" <<JSON
+{
+    "name": "$name",
+    "type": "azurerm",
+    "url": "https://management.azure.com/",
+    "authorization": {
+        "scheme": "WorkloadIdentityFederation",
+        "parameters": {
+            "tenantid": "$TENANT_ID",
+            "serviceprincipalid": "$APP_ID"
+        }
+    },
+    "data": {
+        "environment": "AzureCloud",
+        "identityType": "AppRegistrationManual",
+        "scopeLevel": "Subscription",
+        "subscriptionId": "${APIM_SUBSCRIPTIONS[$env]}",
+        "subscriptionName": "$subscription_name"
+    }
+}
+JSON
+
+        az devops service-endpoint create --service-endpoint-configuration "se-$env.json" >/dev/null
+        rm -f "se-$env.json"
+
+        issuer=$(az devops service-endpoint list --query "[?name=='$name'] | [0].authorization.parameters.workloadIdentityFederationIssuer" -o tsv)
+        subject=$(az devops service-endpoint list --query "[?name=='$name'] | [0].authorization.parameters.workloadIdentityFederationSubject" -o tsv)
+
+    FED_CRED_NAME="azdo-$env"
+
+    az ad app federated-credential create \
+      --id "$APP_ID" \
+            --parameters "{\"name\":\"$FED_CRED_NAME\",\"issuer\":\"$issuer\",\"subject\":\"$subject\",\"audiences\":[\"api://AzureADTokenExchange\"]}"
+done
+```
+
+Authorize service connections for all pipelines (prevents first-run permission prompts):
+
+**PowerShell:**
+```powershell
+foreach ($env in $ENVIRONMENTS) {
+    $envUpper = $env.ToUpper()
+    $name = "AZURE_SERVICE_CONNECTION_$envUpper"
+    $id = az devops service-endpoint list --query "[?name=='$name'].id | [0]" -o tsv
+    if ($id) {
+        az devops service-endpoint update --id $id --enable-for-all true | Out-Null
+    }
+}
+```
+
+**Git Bash:**
+```bash
+for env in "${ENVIRONMENTS[@]}"; do
+    env_upper=$(echo "$env" | tr '[:lower:]' '[:upper:]')
+    name="AZURE_SERVICE_CONNECTION_$env_upper"
+    id=$(az devops service-endpoint list --query "[?name=='$name'].id | [0]" -o tsv)
+    if [[ -n "$id" ]]; then
+        az devops service-endpoint update --id "$id" --enable-for-all true >/dev/null
+    fi
+done
+```
+
+Verify:
 ```bash
 az devops service-endpoint list --query "[].name" -o table
 ```
 
 ---
 
-## Step 5: Create Variable Groups
+## Step 8: Create Variable Groups
 
-Set target environment variables:
-
-**PowerShell:**
-```powershell
-$TARGET_SUBSCRIPTION_ID = "{{SUBSCRIPTION_ID}}"
-$TARGET_APIM_BASE_NAME = "<your-apim-base-name>"
-$TARGET_RESOURCE_GROUP_BASE_NAME = "{{RESOURCE_GROUP}}"
-```
-
-**Git Bash:**
-```bash
-TARGET_SUBSCRIPTION_ID="{{SUBSCRIPTION_ID}}"
-TARGET_APIM_BASE_NAME="<your-apim-base-name>"
-TARGET_RESOURCE_GROUP_BASE_NAME="{{RESOURCE_GROUP}}"
-```
-
-Create the common variable group:
-
-**PowerShell:**
-```powershell
-az pipelines variable-group create --name "apim-common" --variables AZURE_SUBSCRIPTION_ID=$TARGET_SUBSCRIPTION_ID APIM_RESOURCE_GROUP=$TARGET_RESOURCE_GROUP_BASE_NAME APIM_SERVICE_NAME=$TARGET_APIM_BASE_NAME AZURE_SERVICE_CONNECTION="AZURE_SERVICE_CONNECTION"
-```
-
-**Git Bash:**
-```bash
-az pipelines variable-group create --name "apim-common" --variables AZURE_SUBSCRIPTION_ID="$TARGET_SUBSCRIPTION_ID" APIM_RESOURCE_GROUP="$TARGET_RESOURCE_GROUP_BASE_NAME" APIM_SERVICE_NAME="$TARGET_APIM_BASE_NAME" AZURE_SERVICE_CONNECTION="AZURE_SERVICE_CONNECTION"
-```
-
-Create environment-specific variable groups:
+Create one variable group per environment. Each group uses the **non-suffixed** variable names expected by the pipelines (`APIM_RESOURCE_GROUP`, `APIM_SERVICE_NAME`, `AZURE_SUBSCRIPTION_ID`, `AZURE_SERVICE_CONNECTION`).
 
 **PowerShell:**
 ```powershell
 foreach ($env in $ENVIRONMENTS) {
     $envUpper = $env.ToUpper()
-    az pipelines variable-group create --name "apim-$env" --variables "APIM_RESOURCE_GROUP_$envUpper=${TARGET_RESOURCE_GROUP_BASE_NAME}-$env" "APIM_SERVICE_NAME_$envUpper=${TARGET_APIM_BASE_NAME}-$env" "AZURE_SERVICE_CONNECTION_$envUpper=AZURE_SERVICE_CONNECTION_$envUpper"
+    az pipelines variable-group create --name "apim-$env" --variables AZURE_SUBSCRIPTION_ID=$($APIM_SUBSCRIPTIONS[$env]) APIM_RESOURCE_GROUP=$($APIM_RESOURCE_GROUPS[$env]) APIM_SERVICE_NAME=$($APIM_SERVICE_NAMES[$env]) AZURE_SERVICE_CONNECTION="AZURE_SERVICE_CONNECTION_$envUpper"
 }
 ```
 
@@ -182,20 +346,11 @@ foreach ($env in $ENVIRONMENTS) {
 ```bash
 for env in "${ENVIRONMENTS[@]}"; do
     env_upper=$(echo "$env" | tr '[:lower:]' '[:upper:]')
-    az pipelines variable-group create --name "apim-$env" --variables "APIM_RESOURCE_GROUP_$env_upper=${TARGET_RESOURCE_GROUP_BASE_NAME}-$env" "APIM_SERVICE_NAME_$env_upper=${TARGET_APIM_BASE_NAME}-$env" "AZURE_SERVICE_CONNECTION_$env_upper=AZURE_SERVICE_CONNECTION_$env_upper"
+    az pipelines variable-group create --name "apim-$env" --variables AZURE_SUBSCRIPTION_ID="${APIM_SUBSCRIPTIONS[$env]}" APIM_RESOURCE_GROUP="${APIM_RESOURCE_GROUPS[$env]}" APIM_SERVICE_NAME="${APIM_SERVICE_NAMES[$env]}" AZURE_SERVICE_CONNECTION="AZURE_SERVICE_CONNECTION_$env_upper"
 done
 ```
 
-Verify variable groups were created:
-```bash
-az pipelines variable-group list --query "[].name" -o table
-```
-
----
-
-## Step 6: Configure Pipeline Permissions
-
-Authorize all pipelines to use the variable groups:
+Authorize all groups for pipeline use:
 
 **PowerShell:**
 ```powershell
@@ -212,16 +367,21 @@ for id in $(az pipelines variable-group list --query "[].id" -o tsv); do
 done
 ```
 
+Verify:
+```bash
+az pipelines variable-group list --query "[].name" -o table
+```
+
 ---
 
-## Step 7: Create Environments
+## Step 9 (in pipeline): Create Environments
 
-Create deployment environments:
+Create deployment environments in Azure DevOps:
 
 **PowerShell:**
 ```powershell
 foreach ($env in $ENVIRONMENTS) {
-    $body = @{ name = $env } | ConvertTo-Json -Compress
+    $body = "{\"name\": \"$env\"}"
     $body | Out-File -Encoding utf8 -FilePath env-body.json
     az devops invoke --area environments --resource environments --route-parameters project=$AZDO_PROJECT --http-method POST --api-version 7.1 --in-file env-body.json
 }

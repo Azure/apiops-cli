@@ -377,7 +377,7 @@ describe('init-service', () => {
       expect(promptCalls).toHaveLength(1);
       const content = promptCalls[0][1] as string;
       expect(content).toContain('Setup Azure DevOps Identity for APIOps');
-      expect(content).toContain('az devops service-endpoint azurerm create');
+      expect(content).toContain('az devops service-endpoint create --service-endpoint-configuration');
     });
 
     it('should copy CLI tarball into .apiops directory', async () => {

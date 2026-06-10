@@ -11,14 +11,15 @@ export interface PublishPipelineConfig {
 }
 
 export function generatePublishPipeline(config: PublishPipelineConfig): string {
+  const defaultEnvironment = config.environments[0] ?? 'dev';
   const envValues = config.environments.map((env) => `      - '${env}'`).join('\n');
 
-  const stages = config.environments.map((env, idx) => {
-    const dependsOn = idx === 0 ? '' : `  dependsOn: Publish_${config.environments[idx - 1]}\n`;
+  const stages = config.environments.map((env) => {
+    const envUpper = env.toUpperCase();
 
-    return `${dependsOn}- stage: Publish_${env}
+    return `- stage: Publish_${env}
   displayName: 'Publish to ${env}'
-  condition: or(eq('\${{ parameters.ENVIRONMENT }}', '${env}'), eq('\${{ parameters.ENVIRONMENT }}', 'all'))
+  condition: eq('\${{ parameters.ENVIRONMENT }}', '${env}')
   variables:
     - group: apim-${env}
   jobs:
@@ -37,29 +38,49 @@ export function generatePublishPipeline(config: PublishPipelineConfig): string {
               - task: UseNode@1
                 displayName: 'Setup Node.js'
                 inputs:
-                  versionSpec: '22.x'
+                  version: '22.x'
 
-              - script: npm ci
+              - script: |
+                  node -v
+                  npm -v
+                displayName: 'Verify Node.js version'
+
+              - script: |
+                  if [[ -f package-lock.json || -f npm-shrinkwrap.json ]]; then
+                    npm ci
+                  else
+                    npm install
+                  fi
                 displayName: 'Install dependencies'
 
               - task: replacetokens@6
                 displayName: 'Substitute tokens in configuration.${env}.yaml'
                 inputs:
                   sources: 'configuration.${env}.yaml'
+                  tokenPattern: 'custom'
                   tokenPrefix: '{#['
                   tokenSuffix: ']#}'
+                  missingVarAction: 'keep'
+
+              - script: |
+                  if grep -q '{#\\[' configuration.${env}.yaml; then
+                    echo "Unresolved tokens remain in configuration.${env}.yaml"
+                    grep -o '{#\\[[^]]*\\]#}' configuration.${env}.yaml | sort -u
+                    exit 1
+                  fi
+                displayName: 'Validate token substitution (${env})'
 
               - task: AzureCLI@2
                 displayName: 'Publish to ${env} (incremental - last commit only)'
                 condition: ne('\${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo')
                 inputs:
-                  azureSubscription: '$(AZURE_SERVICE_CONNECTION_${env.toUpperCase()})'
+                  azureSubscription: 'AZURE_SERVICE_CONNECTION_${envUpper}'
                   scriptType: 'bash'
                   scriptLocation: 'inlineScript'
                   inlineScript: |
                     npx apiops publish \\
-                      --resource-group $(APIM_RESOURCE_GROUP_${env.toUpperCase()}) \\
-                      --service-name $(APIM_SERVICE_NAME_${env.toUpperCase()}) \\
+                      --resource-group $(APIM_RESOURCE_GROUP_${envUpper}) \\
+                      --service-name $(APIM_SERVICE_NAME_${envUpper}) \\
                       --source ${config.artifactDir} \\
                       --overrides configuration.${env}.yaml \\
                       --commit-id $(Build.SourceVersion) \\
@@ -69,13 +90,13 @@ export function generatePublishPipeline(config: PublishPipelineConfig): string {
                 displayName: 'Publish to ${env} (all artifacts)'
                 condition: eq('\${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo')
                 inputs:
-                  azureSubscription: '$(AZURE_SERVICE_CONNECTION_${env.toUpperCase()})'
+                  azureSubscription: 'AZURE_SERVICE_CONNECTION_${envUpper}'
                   scriptType: 'bash'
                   scriptLocation: 'inlineScript'
                   inlineScript: |
                     npx apiops publish \\
-                      --resource-group $(APIM_RESOURCE_GROUP_${env.toUpperCase()}) \\
-                      --service-name $(APIM_SERVICE_NAME_${env.toUpperCase()}) \\
+                      --resource-group $(APIM_RESOURCE_GROUP_${envUpper}) \\
+                      --service-name $(APIM_SERVICE_NAME_${envUpper}) \\
                       --source ${config.artifactDir} \\
                       --overrides configuration.${env}.yaml \\
                       --subscription-id $(AZURE_SUBSCRIPTION_ID)
@@ -106,9 +127,8 @@ parameters:
   - name: ENVIRONMENT
     type: string
     displayName: 'Choose which environment to publish to'
-    default: 'all'
+    default: '${defaultEnvironment}'
     values:
-      - 'all'
 ${envValues}
 
 stages:

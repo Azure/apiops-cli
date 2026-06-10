@@ -64,13 +64,13 @@ describe('azure-devops/publish-pipeline', () => {
       expect(pipeline).toContain("'publish-all-artifacts-in-repo'");
     });
 
-    it('should include ENVIRONMENT parameter with all and per-env options', () => {
+    it('should include ENVIRONMENT parameter with per-env options only', () => {
       const pipeline = generatePublishPipeline({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
       expect(pipeline).toContain('name: ENVIRONMENT');
-      expect(pipeline).toContain("- 'all'");
+      expect(pipeline).toContain("default: 'dev'");
       expect(pipeline).toContain("- 'dev'");
       expect(pipeline).toContain("- 'prod'");
     });
@@ -85,13 +85,12 @@ describe('azure-devops/publish-pipeline', () => {
       expect(pipeline).toContain('stage: Publish_prod');
     });
 
-    it('should chain stages with dependsOn', () => {
+    it('should not chain stages with dependsOn', () => {
       const pipeline = generatePublishPipeline({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'staging', 'prod'],
       });
-      expect(pipeline).toContain('dependsOn: Publish_dev');
-      expect(pipeline).toContain('dependsOn: Publish_staging');
+      expect(pipeline).not.toContain('dependsOn: Publish_');
     });
 
     it('should filter stages by ENVIRONMENT parameter', () => {
@@ -101,7 +100,7 @@ describe('azure-devops/publish-pipeline', () => {
       });
       expect(pipeline).toContain("eq('${{ parameters.ENVIRONMENT }}', 'dev')");
       expect(pipeline).toContain("eq('${{ parameters.ENVIRONMENT }}', 'prod')");
-      expect(pipeline).toContain("eq('${{ parameters.ENVIRONMENT }}', 'all')");
+      expect(pipeline).not.toContain("eq('${{ parameters.ENVIRONMENT }}', 'all')");
     });
 
     it('should use environment-specific variable groups', () => {
@@ -179,8 +178,8 @@ describe('azure-devops/publish-pipeline', () => {
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
-      expect(pipeline).toContain('$(AZURE_SERVICE_CONNECTION_DEV)');
-      expect(pipeline).toContain('$(AZURE_SERVICE_CONNECTION_PROD)');
+      expect(pipeline).toContain("azureSubscription: 'AZURE_SERVICE_CONNECTION_DEV'");
+      expect(pipeline).toContain("azureSubscription: 'AZURE_SERVICE_CONNECTION_PROD'");
     });
 
     it('should use environment-specific resource group and service name', () => {
@@ -203,12 +202,14 @@ describe('azure-devops/publish-pipeline', () => {
       expect(pipeline).toContain('--overrides configuration.prod.yaml');
     });
 
-    it('should use npm ci to install dependencies (uses tgz from package.json)', () => {
+    it('should use lockfile-aware dependency install', () => {
       const pipeline = generatePublishPipeline({
         artifactDir: './apim-artifacts',
         environments: ['dev'],
       });
+      expect(pipeline).toContain('if [[ -f package-lock.json || -f npm-shrinkwrap.json ]]; then');
       expect(pipeline).toContain('npm ci');
+      expect(pipeline).toContain('npm install');
       expect(pipeline).toContain('npx apiops publish');
     });
 
@@ -218,8 +219,21 @@ describe('azure-devops/publish-pipeline', () => {
         environments: ['dev', 'prod'],
       });
       expect(pipeline).toContain('replacetokens@6');
+      expect(pipeline).toContain("tokenPattern: 'custom'");
       expect(pipeline).toContain("tokenPrefix: '{#['");
       expect(pipeline).toContain("tokenSuffix: ']#}'");
+      expect(pipeline).toContain("missingVarAction: 'keep'");
+    });
+
+    it('should validate unresolved tokens after substitution', () => {
+      const pipeline = generatePublishPipeline({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+      });
+      expect(pipeline).toContain('Validate token substitution (dev)');
+      expect(pipeline).toContain('Validate token substitution (prod)');
+      expect(pipeline).toContain("grep -q '{#\\[' configuration.dev.yaml");
+      expect(pipeline).toContain("grep -q '{#\\[' configuration.prod.yaml");
     });
 
     it('should target environment-specific configuration file for token substitution', () => {

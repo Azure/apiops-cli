@@ -160,8 +160,81 @@ describe('copilot/identity-setup-prompt', () => {
         ciProvider: 'azure-devops',
       });
       expect(prompt).toContain('# Setup Azure DevOps Identity for APIOps');
-      expect(prompt).toContain('az devops service-endpoint azurerm create');
+      expect(prompt).toContain('WorkloadIdentityFederation');
+      expect(prompt).toContain('service-endpoint create --service-endpoint-configuration');
+      expect(prompt).toContain('az ad app federated-credential create');
       expect(prompt).not.toContain('gh secret set');
+    });
+
+    it('should ask Copilot to gather per-environment APIM info for each ADO environment', () => {
+      const prompt = generateIdentitySetupPrompt({
+        environments: ['dev', 'prod'],
+        ciProvider: 'azure-devops',
+      });
+      expect(prompt).toContain('APIM_SUBSCRIPTION_<ENV_UPPER>');
+      expect(prompt).toContain('APIM_RG_<ENV_UPPER>');
+      expect(prompt).toContain('APIM_NAME_<ENV_UPPER>');
+    });
+
+    it('should offer Option B resource ID shorthand per environment in ADO prompt', () => {
+      const prompt = generateIdentitySetupPrompt({
+        environments: ['dev', 'prod'],
+        ciProvider: 'azure-devops',
+      });
+      expect(prompt).toContain('APIM_RESOURCE_ID_<ENV_UPPER>');
+      expect(prompt).toContain('Option B');
+    });
+
+    it('should create one service connection per environment (not a shared base connection) in ADO prompt', () => {
+      const prompt = generateIdentitySetupPrompt({
+        environments: ['dev', 'prod'],
+        ciProvider: 'azure-devops',
+      });
+      expect(prompt).toContain('AZURE_SERVICE_CONNECTION_$envUpper');
+      expect(prompt).toContain('AZURE_SERVICE_CONNECTION_$env_upper');
+      // No generic shared base connection
+      expect(prompt).not.toContain('"AZURE_SERVICE_CONNECTION" --azure-rm-service-principal-id');
+    });
+
+    it('should create per-env variable groups with non-suffixed variable names in ADO prompt', () => {
+      const prompt = generateIdentitySetupPrompt({
+        environments: ['dev', 'prod'],
+        ciProvider: 'azure-devops',
+      });
+      // Groups are created inside environment loops
+      expect(prompt).toContain('--name "apim-$env"');
+      // Non-suffixed variable names inside the group
+      expect(prompt).toContain('APIM_RESOURCE_GROUP=');
+      expect(prompt).toContain('APIM_SERVICE_NAME=');
+      expect(prompt).toContain('AZURE_SUBSCRIPTION_ID=');
+    });
+
+    it('should assign RBAC roles per environment in ADO prompt', () => {
+      const prompt = generateIdentitySetupPrompt({
+        environments: ['dev', 'prod'],
+        ciProvider: 'azure-devops',
+      });
+      expect(prompt).toContain('API Management Service Contributor');
+      expect(prompt).toContain('foreach ($env in $ENVIRONMENTS)');
+      expect(prompt).toContain('for env in "${ENVIRONMENTS[@]}"; do');
+    });
+
+    it('should render environment arrays for PowerShell and Git Bash in ADO prompt', () => {
+      const prompt = generateIdentitySetupPrompt({
+        environments: ['dev', 'prod'],
+        ciProvider: 'azure-devops',
+      });
+      expect(prompt).toContain('$ENVIRONMENTS = @("dev", "prod")');
+      expect(prompt).toContain('ENVIRONMENTS=("dev" "prod")');
+    });
+
+    it('should not contain unresolved template placeholders in ADO prompt', () => {
+      const prompt = generateIdentitySetupPrompt({
+        environments: ['dev', 'prod'],
+        ciProvider: 'azure-devops',
+      });
+      expect(prompt).not.toContain('{{');
+      expect(prompt).not.toContain('}}');
     });
   });
 });
