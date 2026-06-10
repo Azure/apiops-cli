@@ -97,7 +97,9 @@ Result: the placeholder `{#[PAYMENT_API_KEY]#}` is replaced with `sk-live-abc123
 ## Azure DevOps Setup
 
 > [!IMPORTANT]
-> The [Replace Tokens extension](https://marketplace.visualstudio.com/items?itemName=qetza.replacetokens) must be installed in your Azure DevOps organization from the Visual Studio Marketplace.
+> The [Replace Tokens extension](https://marketplace.visualstudio.com/items?itemName=qetza.replacetokens) must be installed in your Azure DevOps organization.
+> You can install it from Marketplace or via CLI:
+> `az devops extension install --publisher-id qetza --extension-id replacetokens`
 
 ### Mapping Variables to Tokens
 
@@ -112,6 +114,9 @@ The substitution task will automatically replace `{#[PROD_SECRET_VALUE]#}` with 
 ### Step-by-Step for Azure DevOps
 
 1. **Install the Replace Tokens extension** in your Azure DevOps organization if not already present.
+  ```bash
+  az devops extension install --publisher-id qetza --extension-id replacetokens
+  ```
 
 2. **Add secret variables to your variable group:**
    - Go to **Pipelines → Library → apim\<env\>** (e.g., `apim-prod`)

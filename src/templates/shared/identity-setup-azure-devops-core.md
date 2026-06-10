@@ -101,6 +101,18 @@ Install the extension (works in both shells):
 az extension add --name azure-devops
 ```
 
+Install the Azure DevOps Replace Tokens extension (required by publish pipeline):
+
+**PowerShell:**
+```powershell
+az devops extension install --publisher-id qetza --extension-id replacetokens
+```
+
+**Git Bash:**
+```bash
+az devops extension install --publisher-id qetza --extension-id replacetokens
+```
+
 Set organization defaults:
 
 For self-hosted Azure DevOps Server, use your server/collection URL format:
