@@ -1061,16 +1061,22 @@ resource apiA2aRuntimeJsonRpcPolicy 'Microsoft.ApiManagement/service/apis/operat
       <set-method>GET</set-method>
     </send-request>
     <set-variable name="latlon" value='@{
-      var r = (IResponse)context.Variables["geoResp"];
-      if (r == null || r.StatusCode != 200) { return (string)null; }
-      var body = r.Body.As<Newtonsoft.Json.Linq.JObject>();
-      var arr = body["results"] as Newtonsoft.Json.Linq.JArray;
-      if (arr == null || arr.Count == 0) { return (string)null; }
-      string lat = arr[0]["latitude"].ToString(Newtonsoft.Json.Formatting.None);
-      string lon = arr[0]["longitude"].ToString(Newtonsoft.Json.Formatting.None);
-      string resolved = (string)arr[0]["name"];
-      string country = (string)arr[0]["country"];
-      return lat + "|" + lon + "|" + resolved + "|" + (country ?? "");
+      try {
+        var r = (IResponse)context.Variables["geoResp"];
+        if (r == null || r.StatusCode != 200) { return (string)null; }
+        var body = r.Body.As<Newtonsoft.Json.Linq.JObject>();
+        var arr = body["results"] as Newtonsoft.Json.Linq.JArray;
+        if (arr == null || arr.Count == 0) { return (string)null; }
+        var first = arr[0] as Newtonsoft.Json.Linq.JObject;
+        if (first == null || first["latitude"] == null || first["longitude"] == null) { return (string)null; }
+        string lat = first["latitude"].ToString(Newtonsoft.Json.Formatting.None);
+        string lon = first["longitude"].ToString(Newtonsoft.Json.Formatting.None);
+        string resolved = (string)first["name"];
+        string country = (string)first["country"];
+        return lat + "|" + lon + "|" + resolved + "|" + (country ?? "");
+      } catch {
+        return (string)null;
+      }
     }' />
     <choose>
       <when condition='@(context.Variables["latlon"] == null)'>
