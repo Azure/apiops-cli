@@ -601,6 +601,15 @@
               "properties.subscriptionKeyParameterNames.query": "subscription-key"
             }
           },
+          "children": {
+            "operations": {
+              "minCount": 2,
+              "expected": [
+                "get-agent-card",
+                "post-jsonrpc"
+              ]
+            }
+          },
           "notes": "A2A API with JSON-RPC runtime mediation and agent card settings."
         }
       ]
