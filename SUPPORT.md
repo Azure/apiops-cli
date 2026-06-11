@@ -1,4 +1,4 @@
-## How to file issues and get help
+## Support
 
 ### GitHub issues
 
@@ -22,4 +22,6 @@ Security issues and bugs should be reported privately. Please review [SECURITY.m
 
 **apiops-cli is an open-source tool** provided under the MIT License.
 
-Community support is available through GitHub Issues. For Azure API Management service-level questions unrelated to this tool, please use the channels listed above or open an [Azure support ticket](https://azure.microsoft.com/support/create-ticket/) if you have an Azure support plan.
+Community support for the apiops-cli is available through GitHub Issues.
+
+For Azure API Management service-level questions unrelated to this tool, please use the channels listed above or open an [Azure support ticket](https://azure.microsoft.com/support/create-ticket/) if you have an Azure support plan.
