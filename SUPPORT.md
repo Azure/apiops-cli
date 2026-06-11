@@ -14,10 +14,6 @@ To keep our issue queue focused and actionable, issues that have had no activity
 - Ask a question at [Microsoft Tech Community — API Management](https://techcommunity.microsoft.com/t5/azure-paas-blog/bg-p/AzurePaaSBlog/label-name/Azure%20API%20Management)
 - Share or upvote feature requests on the [Azure Feedback Portal](https://feedback.azure.com/d365community/forum/e50fd0ca-5525-ec11-b6e6-000d3a4f0f84) (Azure API Management category)
 
-### Security bugs
-
-Security issues and bugs should be reported privately. Please review [SECURITY.md](SECURITY.md) for details on how to responsibly disclose security vulnerabilities.
-
 ## Support Policy
 
 **apiops-cli is an open-source tool** provided as-is under the MIT License. It is not covered by any Azure or Microsoft commercial support plan.
