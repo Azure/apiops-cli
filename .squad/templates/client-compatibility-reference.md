@@ -1,10 +1,10 @@
 # Client Compatibility Reference
 
-> On-demand reference for Squad Coordinator. Read when adapting to different Copilot surfaces.
+### Client Compatibility
 
-See also `docs/scenarios/client-compatibility.md` for the full compatibility matrix.
+Squad runs on multiple Copilot surfaces. The coordinator MUST detect its platform and adapt spawning behavior accordingly. See `docs/scenarios/client-compatibility.md` for the full compatibility matrix.
 
-## Platform Detection
+#### Platform Detection
 
 Before spawning agents, determine the platform by checking available tools:
 
@@ -16,7 +16,7 @@ Before spawning agents, determine the platform by checking available tools:
 
 If both `task` and `runSubagent` are available, prefer `task` (richer parameter surface).
 
-## VS Code Spawn Adaptations
+#### VS Code Spawn Adaptations
 
 When in VS Code mode, the coordinator changes behavior in these ways:
 
@@ -30,7 +30,7 @@ When in VS Code mode, the coordinator changes behavior in these ways:
 - **`description`:** Drop it. The agent name is already in the prompt.
 - **Prompt content:** Keep ALL prompt structure — charter, identity, task, hygiene, response order blocks are surface-independent.
 
-## Feature Degradation Table
+#### Feature Degradation Table
 
 | Feature | CLI | VS Code | Degradation |
 |---------|-----|---------|-------------|
@@ -41,6 +41,6 @@ When in VS Code mode, the coordinator changes behavior in these ways:
 | SQL tool | Available | Not available | Avoid SQL in cross-platform code paths |
 | Response order bug | Critical workaround | Possibly necessary (unverified) | Keep the block — harmless if unnecessary |
 
-## SQL Tool Caveat
+#### SQL Tool Caveat
 
 The `sql` tool is **CLI-only**. It does not exist on VS Code, JetBrains, or GitHub.com. Any coordinator logic or agent workflow that depends on SQL (todo tracking, batch processing, session state) will silently fail on non-CLI surfaces. Cross-platform code paths must not depend on SQL. Use filesystem-based state (`.squad/` files) for anything that must work everywhere.

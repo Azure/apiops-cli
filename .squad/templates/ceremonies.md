@@ -52,6 +52,31 @@
 
 ---
 
+## Task Tracking
+
+| Field | Value |
+|-------|-------|
+| **Trigger** | auto |
+| **When** | after |
+| **Condition** | any agent closes a GitHub issue or completes work referencing a task ID (T0xx) |
+| **Facilitator** | lead |
+| **Participants** | original-author(s) |
+| **Time budget** | minimal |
+| **Enabled** | ✅ yes |
+
+**Agenda:**
+1. Identify which task IDs (T0xx) were completed in this work
+2. Map task IDs to their checkbox lines in `specs/*/tasks.md`
+3. Update checkboxes from `- [ ]` to `- [x]` for each completed task
+4. Commit the tasks.md update alongside the work (same PR) or as an immediate follow-up
+
+**Protocol:**
+- This is a lightweight post-work check — takes seconds, not minutes
+- If tasks.md is already up to date, no action needed
+- If multiple tasks completed, batch all checkbox updates in one edit
+
+---
+
 ## Retrospective
 
 | Field | Value |
@@ -69,3 +94,31 @@
 2. Root cause analysis
 3. What should change?
 4. Action items for next iteration
+
+
+---
+
+## Retrospective with Enforcement
+
+| Field | Value |
+|-------|-------|
+| **Trigger** | auto |
+| **When** | weekly |
+| **Condition** | No *retrospective* log in .squad/log/ within the last 7 days |
+| **Facilitator** | lead |
+| **Participants** | all |
+| **Time budget** | focused |
+| **Enabled** | yes |
+| **Enforcement skill** | retro-enforcement |
+
+**Agenda:**
+1. What shipped this week? (closed issues, merged PRs)
+2. What did not ship? (open issues, blockers)
+3. Root cause on any failures
+4. Action items -- each MUST become a GitHub Issue labeled retro-action
+
+**Coordinator integration:**
+At round start, call Test-RetroOverdue (see skill retro-enforcement). If overdue, run this ceremony before the work queue.
+
+**Why GitHub Issues, not markdown:**
+Production data: 0% completion across 6 retros using markdown checklists, 100% after switching to GitHub Issues.
