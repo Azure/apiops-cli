@@ -4,7 +4,7 @@
 
 We use [GitHub Issues](https://github.com/Azure/apiops-cli/issues/new/choose) to track bugs, questions, and feature requests. GitHub issues are free, but **response time is not guaranteed.**
 
-To keep our issue queue focused and actionable, issues that have had no activity for **30 days** will be automatically closed. If you still need help after an issue is closed, feel free to open a new one with a link to the original.
+To keep our issue queue focused and actionable, issues that have had no activity for **30 days** will be automatically closed. If your issue is closed and the problem still exists, please reopen it.
 
 ### Azure API Management resources
 
