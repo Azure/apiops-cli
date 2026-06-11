@@ -20,12 +20,14 @@ const testContext: ApimServiceContext = {
 
 function createMockClient() {
   return {
-    listResources: async function* () {},
+    listResources: async function* (_ctx: ApimServiceContext, _type: ResourceType): AsyncGenerator<Record<string, unknown>> {},
     getResource: vi.fn().mockResolvedValue(undefined),
     putResource: vi.fn(),
+    patchResource: vi.fn(),
     deleteResource: vi.fn(),
     listApiRevisions: async function* () {},
     getApiSpecification: vi.fn().mockResolvedValue(undefined),
+    validatePreFlight: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -61,6 +63,7 @@ describe('workspace-extractor', () => {
       const expectedTypes = [
         ResourceType.NamedValue,
         ResourceType.Tag,
+        ResourceType.VersionSet,
         ResourceType.Backend,
         ResourceType.Logger,
         ResourceType.Group,
@@ -70,7 +73,6 @@ describe('workspace-extractor', () => {
         ResourceType.Api,
         ResourceType.Subscription,
         ResourceType.GlobalSchema,
-        ResourceType.Documentation,
       ];
 
       // Keep this test focused on the workspace extractor iteration contract.

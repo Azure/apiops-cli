@@ -98,7 +98,7 @@ if (-not $targetEhConnStr) {
     Write-Host "   ⚠️  Could not get Event Hub connection string — EH logger override will be empty"
 }
 
-$overrideFile = [System.IO.Path]::GetFullPath((Join-Path $ExtractOutputDir '.overrides.yaml'))
+$overrideFile = Join-Path (Resolve-Path $ExtractOutputDir).Path '.overrides.yaml'
 $overrideYaml = @"
 namedValues:
   - name: src-nv-keyvault

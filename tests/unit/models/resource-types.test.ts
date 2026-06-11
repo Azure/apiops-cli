@@ -106,6 +106,7 @@ describe('RESOURCE_TYPE_METADATA', () => {
     const expectedWorkspaceTypes = [
       ResourceType.NamedValue,
       ResourceType.Tag,
+      ResourceType.VersionSet,
       ResourceType.Backend,
       ResourceType.Logger,
       ResourceType.Group,
@@ -115,7 +116,6 @@ describe('RESOURCE_TYPE_METADATA', () => {
       ResourceType.Api,
       ResourceType.Subscription,
       ResourceType.GlobalSchema,
-      ResourceType.Documentation,
     ];
     const derivedWorkspaceTypes = Object.values(ResourceType).filter(
       (type) => RESOURCE_TYPE_METADATA[type].workspaceSupported === true

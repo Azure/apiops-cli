@@ -10,10 +10,11 @@ import { IArtifactStore } from '../clients/iartifact-store.js';
 import { ApimServiceContext } from '../models/types.js';
 import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { FilterConfig } from '../models/config.js';
-import { extractResourceType } from './resource-extractor.js';
-import { extractApiResources } from './api-extractor.js';
-import { extractProductResources } from './product-extractor.js';
+import { extractResourceType, ExtractedResource } from './resource-extractor.js';
+import { extractApiResources, extractWorkspaceApiTags } from './api-extractor.js';
+import { extractProductResources, extractWorkspaceProductTags } from './product-extractor.js';
 import { logger } from '../lib/logger.js';
+import { getNamePart } from '../lib/resource-path.js';
 
 /**
  * Types that can exist at the workspace level, derived from RESOURCE_TYPE_METADATA.
@@ -119,6 +120,11 @@ async function extractWorkspace(
     baseUrl: `${context.baseUrl}/workspaces/${encodeURIComponent(workspaceName)}`,
   };
 
+  // Track extracted tags and APIs for workspace-specific ApiTag extraction
+  let extractedTagNames: string[] = [];
+  const extractedApiNames = new Set<string>();
+  let extractedProducts: ExtractedResource[] = [];
+
   for (const type of WORKSPACE_SUPPORTED_TYPES) {
     try {
       const result = await extractResourceType(
@@ -128,10 +134,18 @@ async function extractWorkspace(
       resourceCount += result.extracted.filter((r) => r.status === 'success').length;
       errorCount += result.errorCount;
 
+      // Track extracted tags for later ApiTag/ProductTag extraction
+      if (type === ResourceType.Tag) {
+        extractedTagNames = result.extracted
+          .filter((r) => r.status === 'success')
+          .map((r) => getNamePart(r.descriptor.nameParts, 0));
+      }
+
       // Handle API-specific extraction for APIs in the workspace
       if (type === ResourceType.Api) {
         for (const api of result.extracted) {
           if (api.status !== 'success') continue;
+          extractedApiNames.add(getNamePart(api.descriptor.nameParts, 0));
           try {
             const apiResult = await extractApiResources(
               client, store, wsContext, api.descriptor, api.json,
@@ -149,8 +163,8 @@ async function extractWorkspace(
 
       // Handle product-specific extraction for products in the workspace
       if (type === ResourceType.Product) {
-        for (const product of result.extracted) {
-          if (product.status !== 'success') continue;
+        extractedProducts = result.extracted.filter((r) => r.status === 'success');
+        for (const product of extractedProducts) {
           try {
             await extractProductResources(
               client, store, wsContext, product.descriptor,
@@ -165,6 +179,37 @@ async function extractWorkspace(
       }
     } catch (error) {
       logger.warn(`Failed to extract ${type} from workspace "${workspaceName}": ${(error as Error).message}`);
+      errorCount++;
+    }
+  }
+
+  // Extract workspace API tags using the tag-centric apiLinks endpoint.
+  // This must happen after both Tags and APIs are extracted since the
+  // workspace scope uses `tags/{tag}/apiLinks` (inverted parent-child).
+  if (extractedTagNames.length > 0 && extractedApiNames.size > 0) {
+    try {
+      const apiTagCount = await extractWorkspaceApiTags(
+        client, store, wsContext, extractedTagNames, extractedApiNames,
+        outputDir, workspaceName
+      );
+      resourceCount += apiTagCount;
+    } catch (error) {
+      logger.warn(`Failed to extract API tags for workspace "${workspaceName}": ${(error as Error).message}`);
+      errorCount++;
+    }
+  }
+
+  // Extract workspace product tags using the tag-centric productLinks endpoint.
+  // Similar to ApiTag, workspace ProductTag uses `tags/{tag}/productLinks`.
+  if (extractedTagNames.length > 0 && extractedProducts.length > 0) {
+    try {
+      const productTagCount = await extractWorkspaceProductTags(
+        client, store, wsContext, extractedTagNames, extractedProducts,
+        outputDir, workspaceName
+      );
+      resourceCount += productTagCount;
+    } catch (error) {
+      logger.warn(`Failed to extract product tags for workspace "${workspaceName}": ${(error as Error).message}`);
       errorCount++;
     }
   }

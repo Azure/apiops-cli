@@ -264,6 +264,7 @@ function Invoke-MaskedProcess {
 
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
     $psi.FileName               = $exe.FilePath
+    $psi.WorkingDirectory       = $PWD.Path
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError  = $true
     $psi.RedirectStandardInput  = $true

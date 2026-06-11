@@ -8,11 +8,12 @@
 import { IApimClient } from '../clients/iapim-client.js';
 import { IArtifactStore } from '../clients/iartifact-store.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
-import { ResourceType } from '../models/resource-types.js';
+import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { FilterConfig } from '../models/config.js';
 import { extractResourceName } from './resource-extractor.js';
 import { logger } from '../lib/logger.js';
 import { getNamePart } from '../lib/resource-path.js';
+import { isWorkspaceScope, extractNameFromLink } from '../lib/workspace-link.js';
 
 /**
  * Result of product-specific extraction for a single product.
@@ -74,10 +75,15 @@ export async function extractProductResources(
     client, store, context, productDescriptor, outputDir
   );
 
-  // Extract product tags - store as tags.json association file
-  result.tags = await extractProductTags(
-    client, store, context, productDescriptor, outputDir
-  );
+  // Extract product tags - store as tags.json association file.
+  // In workspace scope, ProductTag uses `tags/{tag}/productLinks` (inverted
+  // parent-child) which is handled separately by extractWorkspaceProductTags()
+  // in the workspace extractor.
+  if (!isWorkspaceScope(context)) {
+    result.tags = await extractProductTags(
+      client, store, context, productDescriptor, outputDir
+    );
+  }
 
   return result;
 }
@@ -100,10 +106,24 @@ async function extractProductAssociations(
 
   try {
     const resources = client.listResources(context, resourceType, productDescriptor);
+    const workspaceScoped = isWorkspaceScope(context);
+    const linkProperty = RESOURCE_TYPE_METADATA[resourceType].workspaceLinkIdProperty;
 
     for await (const json of resources) {
       try {
-        const name = extractResourceName(json);
+        let name: string;
+        if (workspaceScoped && linkProperty) {
+          // Workspace link responses have an opaque link ID as `name` and
+          // the actual resource ARM ID in `properties.<linkProperty>`
+          const extracted = extractNameFromLink(json, linkProperty);
+          if (!extracted) {
+            logger.warn(`Failed to extract ${associationType} link target from workspace link response`);
+            continue;
+          }
+          name = extracted;
+        } else {
+          name = extractResourceName(json);
+        }
         names.push(name);
       } catch (error) {
         logger.warn(`Failed to extract ${associationType} association name: ${(error as Error).message}`);
@@ -124,6 +144,7 @@ async function extractProductAssociations(
 
 /**
  * Extract product tags and write to artifact store as tags.json.
+ * Only used in service scope; workspace scope is handled by extractWorkspaceProductTags().
  */
 async function extractProductTags(
   client: IApimClient,
@@ -133,13 +154,25 @@ async function extractProductTags(
   outputDir: string
 ): Promise<string[]> {
   const names: string[] = [];
+  const workspaceScoped = isWorkspaceScope(context);
+  const linkProperty = RESOURCE_TYPE_METADATA[ResourceType.ProductTag].workspaceLinkIdProperty;
 
   try {
     const resources = client.listResources(context, ResourceType.ProductTag, productDescriptor);
 
     for await (const json of resources) {
       try {
-        const name = extractResourceName(json);
+        let name: string;
+        if (workspaceScoped && linkProperty) {
+          const extracted = extractNameFromLink(json, linkProperty);
+          if (!extracted) {
+            logger.warn('Failed to extract tag name from workspace link response');
+            continue;
+          }
+          name = extracted;
+        } else {
+          name = extractResourceName(json);
+        }
         names.push(name);
       } catch (error) {
         logger.warn(`Failed to extract tag name: ${(error as Error).message}`);
@@ -220,4 +253,79 @@ async function extractProductWiki(
     logger.debug(`No wiki for product "${getNamePart(productDescriptor.nameParts, 0)}": ${(error as Error).message}`);
     return false;
   }
+}
+
+/**
+ * Extract product tag associations in workspace scope using the tag-centric
+ * `tags/{tag}/productLinks` endpoint.
+ *
+ * In workspace scope the classic `products/{product}/tags` endpoint is
+ * undocumented and at risk of future removal. Instead, tag-to-product
+ * associations are exposed via each tag's `productLinks` collection.
+ *
+ * @param client - APIM REST client
+ * @param store - Artifact file store
+ * @param context - Workspace-scoped APIM context
+ * @param extractedTagNames - Tag names already extracted for this workspace
+ * @param extractedProducts - Extracted product descriptors
+ * @param outputDir - Output directory
+ * @param workspace - Workspace name
+ * @returns Number of product-tag associations discovered
+ */
+export async function extractWorkspaceProductTags(
+  client: IApimClient,
+  store: IArtifactStore,
+  context: ApimServiceContext,
+  extractedTagNames: string[],
+  extractedProducts: Array<{ descriptor: ResourceDescriptor }>,
+  outputDir: string,
+  _workspace: string
+): Promise<number> {
+  const linkProperty = RESOURCE_TYPE_METADATA[ResourceType.ProductTag].workspaceLinkIdProperty;
+  if (!linkProperty) {
+    return 0;
+  }
+
+  // Build a map of product name → tags for that product
+  const productTagsMap = new Map<string, string[]>();
+
+  for (const tagName of extractedTagNames) {
+    // Do NOT set workspace on this descriptor — context.baseUrl already includes
+    // the workspace prefix and buildArmUri would double it.
+    const tagDescriptor: ResourceDescriptor = {
+      type: ResourceType.Tag,
+      nameParts: [tagName],
+    };
+
+    try {
+      for await (const linkJson of client.listResources(context, ResourceType.ProductTag, tagDescriptor)) {
+        const productName = extractNameFromLink(linkJson, linkProperty);
+        if (!productName) {
+          logger.warn(`Failed to extract product name from tag "${tagName}" productLink response`);
+          continue;
+        }
+
+        if (!productTagsMap.has(productName)) {
+          productTagsMap.set(productName, []);
+        }
+        productTagsMap.get(productName)!.push(tagName);
+      }
+    } catch (error) {
+      logger.warn(`Failed to list productLinks for tag "${tagName}": ${(error as Error).message}`);
+    }
+  }
+
+  // Write tags.json for each product that has tag associations
+  let count = 0;
+  for (const product of extractedProducts) {
+    const productName = getNamePart(product.descriptor.nameParts, 0);
+    const tags = productTagsMap.get(productName);
+    if (tags && tags.length > 0) {
+      await store.writeAssociation(outputDir, product.descriptor, 'tags', tags);
+      logger.info(`Extracted ${tags.length} tags for workspace product "${productName}"`);
+      count += tags.length;
+    }
+  }
+
+  return count;
 }

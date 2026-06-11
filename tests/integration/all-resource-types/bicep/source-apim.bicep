@@ -1416,6 +1416,36 @@ resource wsApi 'Microsoft.ApiManagement/service/workspaces/apis@2025-09-01-previ
   }
 }
 
+// --- Workspace Product ↔ API association (via apiLinks endpoint) ---
+resource wsProductApiLink 'Microsoft.ApiManagement/service/workspaces/products/apiLinks@2025-09-01-preview' = if (supportsWorkspaces) {
+  parent: wsProduct
+  name: 'src-ws-api-rest-link'
+  properties: {
+    apiId: wsApi.id
+  }
+}
+
+// --- Workspace API ↔ Tag association (via tag apiLinks endpoint) ---
+resource wsApiTagLink 'Microsoft.ApiManagement/service/workspaces/tags/apiLinks@2025-09-01-preview' = if (supportsWorkspaces) {
+  parent: wsTag
+  name: 'src-ws-api-rest-link'
+  properties: {
+    apiId: wsApi.id
+  }
+}
+
+// NOTE: Workspace-scoped tagDescriptions (Microsoft.ApiManagement/service/workspaces/apis/tagDescriptions)
+// is NOT supported by APIM — the endpoint returns HTTP 500. Skipped until APIM adds support.
+
+// --- Workspace Product ↔ Tag association (via tag productLinks endpoint) ---
+resource wsProductTagLink 'Microsoft.ApiManagement/service/workspaces/tags/productLinks@2025-09-01-preview' = if (supportsWorkspaces) {
+  parent: wsTag
+  name: 'src-ws-product-link'
+  properties: {
+    productId: wsProduct.id
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------

@@ -13,6 +13,7 @@ import { RESOURCE_TYPE_METADATA, ResourceType } from '../models/resource-types.j
 import { buildArmUri, buildResourceLabel } from '../lib/resource-uri.js';
 import { deriveListPaths } from '../lib/resource-path.js';
 import { logger } from '../lib/logger.js';
+import { isWorkspaceScope } from '../lib/workspace-link.js';
 import { USER_AGENT } from '../lib/user-agent.js';
 
 /**
@@ -232,7 +233,13 @@ export class ApimClient implements IApimClient {
     let url: string;
 
     const meta = RESOURCE_TYPE_METADATA[type];
-    const { listPath, childListPath } = deriveListPaths(meta.armPathSuffix);
+    // Use workspace-specific ARM path when context OR parent descriptor is workspace-scoped.
+    // During publish the context is service-level but the parent descriptor carries the workspace.
+    const isWorkspaceScoped = isWorkspaceScope(context) || !!(parent?.workspace);
+    const armPath = isWorkspaceScoped && meta.workspaceArmPathSuffix
+      ? meta.workspaceArmPathSuffix
+      : meta.armPathSuffix;
+    const { listPath, childListPath } = deriveListPaths(armPath);
 
     if (parent) {
       // For child resources, use parent's ARM URI as base.
@@ -266,6 +273,11 @@ export class ApimClient implements IApimClient {
         // supported by this APIM pricing tier. Skip it — do not treat as a failure.
         if (error instanceof HttpError && error.code === 'MethodNotAllowedInPricingTier') {
           logger.debug(`Skipping resource type ${type} — not available in this pricing tier.`);
+          return;
+        }
+        // Workspace-scoped list may return transient 500s on freshly-created workspaces.
+        if (error instanceof HttpError && error.status === 500 && isWorkspaceScoped) {
+          logger.warn(`Workspace list for ${type} returned 500, treating as empty list`);
           return;
         }
         throw error;
@@ -311,16 +323,17 @@ export class ApimClient implements IApimClient {
     }
 
     const url = buildArmUri(context, descriptor);
-    // Azure APIM returns HTTP 500 (not 404) when an API or product has no wiki.
-    // Suppress retries for wiki types so the extractor silently skips them.
+    // Azure APIM returns HTTP 500 (not 404) for wiki endpoints.
+    // Suppress retries and treat 500 as "not found" for these cases.
     const isWiki =
       descriptor.type === ResourceType.ApiWiki ||
       descriptor.type === ResourceType.ProductWiki;
+    const suppress500 = isWiki;
 
     try {
-      const response = await this.request(url, { method: 'GET' }, isWiki);
+      const response = await this.request(url, { method: 'GET' }, suppress500);
 
-      if (response.status === 404 || (isWiki && response.status >= 500 && response.status < 600)) {
+      if (response.status === 404 || (suppress500 && response.status >= 500 && response.status < 600)) {
         return undefined;
       }
 
@@ -354,7 +367,7 @@ export class ApimClient implements IApimClient {
     payload: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
     const url = buildArmUri(context, descriptor);
-    
+
     const response = await this.request(url, {
       method: 'PUT',
       body: JSON.stringify(payload),

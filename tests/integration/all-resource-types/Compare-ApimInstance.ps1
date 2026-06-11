@@ -292,6 +292,76 @@ function Test-SkipLoggerCredentials {
     return ($lt -eq 'azureEventHub' -or $lt -eq 'applicationInsights')
 }
 
+function Compare-LinkResources {
+    <#
+    .SYNOPSIS
+        Compares workspace link resources (apiLinks, productLinks) by their
+        linked resource name rather than the opaque link name.
+        Link names are arbitrary (Bicep vs publisher may assign different names),
+        but the linked resource ID in properties (apiId, productId) is canonical.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $TypeLabel,
+        [Parameter(Mandatory)] [string] $SourceUrl,
+        [Parameter(Mandatory)] [string] $TargetUrl,
+        [Parameter(Mandatory)] [string] $LinkProperty  # e.g. 'apiId' or 'productId'
+    )
+
+    Write-Host "  Comparing $TypeLabel ... " -NoNewline
+
+    try { $sourceItems = Get-ArmResourceList -Url $SourceUrl }
+    catch {
+        Write-Host "⚠️  SKIPPED `n`tsource query failed: $_" -ForegroundColor Yellow
+        return @{ Diffs = 0; Compared = 0; Skipped = $true }
+    }
+
+    try { $targetItems = Get-ArmResourceList -Url $TargetUrl }
+    catch {
+        Write-Host "⚠️  SKIPPED `n`ttarget query failed: $_" -ForegroundColor Yellow
+        return @{ Diffs = 0; Compared = 0; Skipped = $true }
+    }
+
+    # Extract the linked resource name (last segment of the ARM ID)
+    $extractLinkedName = {
+        param($item)
+        $armId = $item.properties.$LinkProperty
+        if ($armId) { ($armId -split '/')[-1] } else { $item.name }
+    }
+
+    $srcNames = @($sourceItems | ForEach-Object { & $extractLinkedName $_ }) | Sort-Object
+    $tgtNames = @($targetItems | ForEach-Object { & $extractLinkedName $_ }) | Sort-Object
+
+    $srcCount = $srcNames.Count
+    $tgtCount = $tgtNames.Count
+    Write-Host "[$srcCount src, $tgtCount tgt] " -NoNewline -ForegroundColor DarkGray
+
+    $diffCount = 0
+    $diffDetails = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($name in $srcNames) {
+        if ($name -notin $tgtNames) {
+            $diffDetails.Add("  ❌ MISSING in target: $name")
+            $diffCount++
+        }
+    }
+    foreach ($name in $tgtNames) {
+        if ($name -notin $srcNames) {
+            $diffDetails.Add("  ❌ EXTRA in target:   $name")
+            $diffCount++
+        }
+    }
+
+    if ($diffCount -eq 0) {
+        Write-Host "✅ match" -ForegroundColor Green
+    } else {
+        Write-Host "❌ $diffCount difference(s)" -ForegroundColor Red
+        foreach ($d in $diffDetails) { Write-Host $d -ForegroundColor Red }
+    }
+
+    return @{ Diffs = $diffCount; Compared = [Math]::Max($srcCount, $tgtCount); Skipped = $false }
+}
+
 function Compare-ResourceType {
     <#
     .SYNOPSIS
@@ -711,10 +781,69 @@ try {
                 $totalCompared += $result.Compared
                 if ($result.Skipped) { $skippedTypes++ }
             }
+
+            # Compare workspace product associations via link APIs
+            # Classic endpoints (products/{p}/apis, products/{p}/tags) return HTTP 500
+            # in workspace scope; use the link endpoints instead.
+            try {
+                $wsProducts = Get-ArmResourceList -Url "$SourceBase/workspaces/$wsName/products"
+                foreach ($wsProd in $wsProducts) {
+                    $wsProdName = Get-ResourceName -ResourceId $wsProd.id
+                    Write-Host "  Workspace/$wsName/Product: $wsProdName" -ForegroundColor DarkCyan
+
+                    # Product → API associations via apiLinks
+                    $result = Compare-LinkResources `
+                        -TypeLabel "  Workspace/$wsName/Product/$wsProdName/apiLinks" `
+                        -SourceUrl "$SourceBase/workspaces/$wsName/products/$wsProdName/apiLinks" `
+                        -TargetUrl "$TargetBase/workspaces/$wsName/products/$wsProdName/apiLinks" `
+                        -LinkProperty "apiId"
+                    $totalTypes++
+                    $totalDiffs += $result.Diffs
+                    $totalCompared += $result.Compared
+                    if ($result.Skipped) { $skippedTypes++ }
+                }
+            }
+            catch {
+                Write-Verbose "Could not enumerate workspace products for $wsName — $_"
+            }
+
+            # Compare workspace product ↔ tag associations via productLinks
+            try {
+                $wsTags = Get-ArmResourceList -Url "$SourceBase/workspaces/$wsName/tags"
+                foreach ($wsTagItem in $wsTags) {
+                    $wsTagName = Get-ResourceName -ResourceId $wsTagItem.id
+                    Write-Host "  Workspace/$wsName/Tag: $wsTagName" -ForegroundColor DarkCyan
+
+                    # Tag → Product associations via productLinks
+                    $result = Compare-LinkResources `
+                        -TypeLabel "  Workspace/$wsName/Tag/$wsTagName/productLinks" `
+                        -SourceUrl "$SourceBase/workspaces/$wsName/tags/$wsTagName/productLinks" `
+                        -TargetUrl "$TargetBase/workspaces/$wsName/tags/$wsTagName/productLinks" `
+                        -LinkProperty "productId"
+                    $totalTypes++
+                    $totalDiffs += $result.Diffs
+                    $totalCompared += $result.Compared
+                    if ($result.Skipped) { $skippedTypes++ }
+
+                    # Tag → API associations via apiLinks
+                    $result = Compare-LinkResources `
+                        -TypeLabel "  Workspace/$wsName/Tag/$wsTagName/apiLinks" `
+                        -SourceUrl "$SourceBase/workspaces/$wsName/tags/$wsTagName/apiLinks" `
+                        -TargetUrl "$TargetBase/workspaces/$wsName/tags/$wsTagName/apiLinks" `
+                        -LinkProperty "apiId"
+                    $totalTypes++
+                    $totalDiffs += $result.Diffs
+                    $totalCompared += $result.Compared
+                    if ($result.Skipped) { $skippedTypes++ }
+                }
+            }
+            catch {
+                Write-Verbose "Could not enumerate workspace tags for $wsName — $_"
+            }
         }
     }
     catch {
-        Write-Host "  ⚠️  Workspaces not available (requires Premium or V2 SKU): $_" -ForegroundColor Yellow
+        Write-Host "  ⚠️  Workspaces not available (requires Premium, StandardV2, or PremiumV2): $_" -ForegroundColor Yellow
     }
 
     # ── Summary ─────────────────────────────────────────────────────────────

@@ -633,7 +633,7 @@
     }
   },
   "workspaces": {
-    "note": "Workspaces exist on Premium and StandardV2/PremiumV2 (BasicV2 blocked by MethodNotAllowedInPricingTier as of June 2026)",
+    "note": "Workspaces available on Premium/StandardV2/PremiumV2 via link endpoints (BasicV2 blocked by MethodNotAllowedInPricingTier as of June 2026)",
     "skuDependent": true,
     "skuFilter": ["Premium", "StandardV2", "PremiumV2"],
     "expected": [
@@ -691,7 +691,7 @@
             "expected": [
               {
                 "name": "src-ws-product",
-                "files": ["productInformation.json"],
+                "files": ["productInformation.json", "apis.json", "tags.json"],
                 "spotChecks": {
                   "productInformation.json": {
                     "properties.displayName": "Workspace Product",
@@ -712,6 +712,17 @@
                   "apiInformation.json": {
                     "properties.displayName": "Workspace REST API",
                     "properties.path": "ks/ws/rest"
+                  }
+                },
+                "directories": {
+                  "tags": {
+                    "minCount": 1,
+                    "expected": [
+                      {
+                        "name": "src-ws-tag",
+                        "files": ["tagInformation.json"]
+                      }
+                    ]
                   }
                 }
               }
