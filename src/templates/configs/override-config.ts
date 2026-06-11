@@ -67,6 +67,8 @@ export function generateOverrideConfig(environment: string): string {
 #       loggerType: applicationInsights
 #       resourceId: "/subscriptions/xxxxx/resourceGroups/${environment}-rg/providers/microsoft.insights/components/${environment}-appinsights"
 #       isBuffered: true
+#       credentials:
+#         instrumentationKey: "<APP-INSIGHTS-INSTRUMENTATION-KEY>"
 
 # Override service-level policies
 # policies:

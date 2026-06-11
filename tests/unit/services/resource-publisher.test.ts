@@ -1010,5 +1010,161 @@ describe('resource-publisher', () => {
       expect(client.putResource).toHaveBeenCalledOnce();
     });
   });
+
+  describe('Logger named value reference rewriting', () => {
+    it('should rewrite {{name}} to {{displayName}} in logger credentials', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+
+      const loggerJson = {
+        name: 'my-logger',
+        properties: {
+          loggerType: 'applicationInsights',
+          credentials: {
+            instrumentationKey: '{{abc123def456abc123def456}}',
+          },
+          isBuffered: true,
+        },
+      };
+      store.readResource.mockImplementation(async (_dir: string, desc: ResourceDescriptor) => {
+        if (desc.type === ResourceType.NamedValue && desc.nameParts[0] === 'abc123def456abc123def456') {
+          return {
+            name: 'abc123def456abc123def456',
+            properties: {
+              displayName: 'Logger-Credentials--abc123def456abc123def457',
+              secret: true,
+            },
+          };
+        }
+        if (desc.type === ResourceType.Logger) return loggerJson;
+        return null;
+      });
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Logger,
+        nameParts: ['my-logger'],
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, testConfig);
+
+      expect(result.status).toBe('success');
+      const putPayload = client.putResource.mock.calls[0][2] as Record<string, unknown>;
+      const props = putPayload.properties as Record<string, unknown>;
+      const creds = props.credentials as Record<string, unknown>;
+      expect(creds.instrumentationKey).toBe('{{Logger-Credentials--abc123def456abc123def457}}');
+    });
+
+    it('should leave {{displayName}} references unchanged', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+
+      const loggerJson = {
+        name: 'my-logger',
+        properties: {
+          loggerType: 'applicationInsights',
+          credentials: {
+            instrumentationKey: '{{Logger-Credentials--abc123}}',
+          },
+          isBuffered: true,
+        },
+      };
+      store.readResource.mockImplementation(async (_dir: string, desc: ResourceDescriptor) => {
+        // No named value artifact matches "Logger-Credentials--abc123" as a resource name
+        if (desc.type === ResourceType.Logger) return loggerJson;
+        return null;
+      });
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Logger,
+        nameParts: ['my-logger'],
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, testConfig);
+
+      expect(result.status).toBe('success');
+      const putPayload = client.putResource.mock.calls[0][2] as Record<string, unknown>;
+      const props = putPayload.properties as Record<string, unknown>;
+      const creds = props.credentials as Record<string, unknown>;
+      expect(creds.instrumentationKey).toBe('{{Logger-Credentials--abc123}}');
+    });
+
+    it('should not rewrite credentials for non-Logger resources', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+
+      const backendJson = {
+        name: 'my-backend',
+        properties: {
+          url: 'https://example.com',
+          credentials: {
+            header: { 'x-api-key': ['{{some-named-value}}'] },
+          },
+        },
+      };
+      store.readResource.mockResolvedValue(backendJson);
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Backend,
+        nameParts: ['my-backend'],
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, testConfig);
+
+      expect(result.status).toBe('success');
+      const putPayload = client.putResource.mock.calls[0][2] as Record<string, unknown>;
+      const props = putPayload.properties as Record<string, unknown>;
+      const creds = props.credentials as Record<string, unknown>;
+      const header = creds.header as Record<string, unknown>;
+      expect(header['x-api-key']).toEqual(['{{some-named-value}}']);
+    });
+
+    it('should allow credentials override to replace named value reference', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+
+      const loggerJson = {
+        name: 'my-logger',
+        properties: {
+          loggerType: 'applicationInsights',
+          credentials: {
+            instrumentationKey: '{{abc123def456abc123def456}}',
+          },
+          isBuffered: true,
+        },
+      };
+      store.readResource.mockImplementation(async (_dir: string, desc: ResourceDescriptor) => {
+        if (desc.type === ResourceType.Logger) return loggerJson;
+        return null;
+      });
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Logger,
+        nameParts: ['my-logger'],
+      };
+
+      const configWithOverride: PublishConfig = {
+        ...testConfig,
+        overrides: {
+          loggers: {
+            'my-logger': {
+              properties: {
+                credentials: {
+                  instrumentationKey: 'raw-instrumentation-key-value',
+                },
+              },
+            },
+          },
+        },
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, configWithOverride);
+
+      expect(result.status).toBe('success');
+      const putPayload = client.putResource.mock.calls[0][2] as Record<string, unknown>;
+      const props = putPayload.properties as Record<string, unknown>;
+      const creds = props.credentials as Record<string, unknown>;
+      expect(creds.instrumentationKey).toBe('raw-instrumentation-key-value');
+    });
+  });
 });
 

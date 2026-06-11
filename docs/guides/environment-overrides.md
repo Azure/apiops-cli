@@ -204,6 +204,88 @@ loggers:
       isBuffered: true
 ```
 
+> **Note:** When you provide a raw `instrumentationKey` value (instead of a `{{namedValue}}` reference), APIM will automatically create a named value to store the credential securely.
+
+### Logger credentials with auto-generated named values
+
+When APIM creates a logger (e.g., for Application Insights), it auto-generates a named value to store the instrumentation key. These auto-generated named values have 24-character hex IDs (e.g., `66f48e1226dab62c0823e4f8`) and are normally skipped during publish because APIM recreates them automatically.
+
+However, when publishing to a **fresh environment**, APIM cannot recreate these named values because the logger doesn't exist yet. To handle this, provide an override for the auto-generated named value:
+
+```yaml
+namedValues:
+  # Override the auto-generated named value with the production instrumentation key.
+  # Use the 24-char hex ID from the extracted artifact filename.
+  - name: 66f48e1226dab62c0823e4f8
+    properties:
+      value: "prod-instrumentation-key-value"
+
+loggers:
+  - name: appinsights-logger
+    properties:
+      loggerType: applicationInsights
+      resourceId: "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/microsoft.insights/components/prod-appinsights"
+      isBuffered: true
+```
+
+Alternatively, you can override the logger credentials directly to bypass the named value reference entirely:
+
+```yaml
+loggers:
+  - name: appinsights-logger
+    properties:
+      loggerType: applicationInsights
+      resourceId: "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/microsoft.insights/components/prod-appinsights"
+      credentials:
+        instrumentationKey: "prod-instrumentation-key-value"
+      isBuffered: true
+```
+
+### Subscriptions
+
+```yaml
+subscriptions:
+  - name: my-subscription
+    properties:
+      displayName: "My Subscription (Production)"
+      scope: "/apis/petstore-api"
+```
+
+> **Note:** The built-in `master` subscription is automatically skipped during publish.
+
+### Products
+
+```yaml
+products:
+  - name: starter-product
+    properties:
+      displayName: "Starter (Production)"
+      subscriptionRequired: true
+      approvalRequired: false
+      subscriptionsLimit: 10
+```
+
+### Gateways
+
+```yaml
+gateways:
+  - name: on-prem-gateway
+    properties:
+      locationData:
+        name: "Production datacenter"
+        city: "Seattle"
+        countryOrRegion: "US"
+```
+
+### Policy fragments
+
+```yaml
+policyFragments:
+  - name: rate-limit-fragment
+    properties:
+      description: "Production rate limiting policy"
+```
+
 ### Service-level policies
 
 ```yaml
@@ -213,21 +295,26 @@ policies:
       format: rawxml
 ```
 
-### All other resource types
+### Version sets, groups, and tags
 
-Overrides are also supported for: `gateways`, `versionSets`, `groups`, `subscriptions`, `products`, `tags`, `policyFragments`, and `workspaces`. Each uses the same `name` + `properties` format:
+Overrides are also supported for `versionSets`, `groups`, `tags`, and `workspaces`. Each uses the same `name` + `properties` format:
 
 ```yaml
-gateways:
-  - name: on-prem-gateway
+versionSets:
+  - name: petstore-versions
     properties:
-      locationData:
-        name: "On-premises datacenter"
+      displayName: "Petstore API Versions"
+      versioningScheme: Segment
 
-products:
-  - name: starter-product
+groups:
+  - name: partner-developers
     properties:
-      displayName: "Starter (Production)"
+      displayName: "Partner Developers (Production)"
+
+tags:
+  - name: public-api
+    properties:
+      displayName: "Public API"
 ```
 
 ## Override rules
@@ -359,6 +446,17 @@ If you add a new backend in dev but forget to add it to your override files, pub
 ### Gotcha: Key Vault permissions
 
 When using Key Vault references, the APIM managed identity needs access to the Key Vault. A common failure mode: overrides reference a Key Vault but APIM lacks the `Key Vault Secrets User` role on that vault.
+
+### Gotcha: Auto-generated named values for loggers
+
+When you create a logger in APIM (e.g., for Application Insights), APIM auto-generates a named value to store the credential. These have 24-character hex names like `66f48e1226dab62c0823e4f8`. During extract, these are captured as artifacts. During publish:
+
+- **Same environment:** Auto-generated named values are skipped (APIM already has them).
+- **Fresh environment:** The logger fails because the named value doesn't exist yet. Provide an override with the target environment's credential value, or override the logger's `credentials` directly.
+
+### Gotcha: Redacted secrets
+
+Extracted secret named values have their `value` replaced with `*** REDACTED ***`. If you publish these without providing an override with a real value or Key Vault reference, they will be skipped with a warning. Always provide overrides for secret named values when publishing to a different environment.
 
 ### Dry-run validation
 
