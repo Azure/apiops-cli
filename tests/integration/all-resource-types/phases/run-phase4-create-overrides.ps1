@@ -105,6 +105,9 @@ namedValues:
     properties:
       keyVault:
         secretIdentifier: "${targetKvUri}secrets/tgt-secret-value"
+  - name: src-nv-secret
+    properties:
+      value: "tgt-secret-override-value"
 
 loggers:
   - name: src-logger-appinsights

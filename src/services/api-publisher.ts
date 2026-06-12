@@ -462,34 +462,46 @@ async function reconcileOperationsAfterSpecImport(
   }
 }
 
-/** Strip source schema refs from request/response representations before PATCH. */
+/**
+ * Strip source schema refs from operation parameters and representations
+ * before PATCH. APIM assigns new schema IDs on spec import, so stale IDs
+ * from the source instance would cause "Operation references schema that
+ * does not exist" validation errors.
+ */
 function stripRepresentationSchemaRefs(patchProps: Record<string, unknown>): void {
   const SCHEMA_REF_FIELDS = ['schemaId', 'typeName'];
 
-  function stripFromRepresentations(representations: unknown): void {
-    if (!Array.isArray(representations)) return;
-    for (const rep of representations) {
-      if (rep && typeof rep === 'object') {
+  function stripFromItems(items: unknown): void {
+    if (!Array.isArray(items)) return;
+    for (const item of items) {
+      if (item && typeof item === 'object') {
         for (const field of SCHEMA_REF_FIELDS) {
-          delete (rep as Record<string, unknown>)[field];
+          delete (item as Record<string, unknown>)[field];
         }
       }
     }
   }
 
-  // Strip schema refs from request.representations.
+  // Strip schema refs from top-level templateParameters.
+  stripFromItems(patchProps.templateParameters);
+
+  // Strip schema refs from request parameters and representations.
   const request = patchProps.request;
   if (request && typeof request === 'object') {
     const req = request as Record<string, unknown>;
-    stripFromRepresentations(req.representations);
+    stripFromItems(req.representations);
+    stripFromItems(req.queryParameters);
+    stripFromItems(req.headers);
   }
 
-  // Strip schema refs from responses[].representations.
+  // Strip schema refs from responses[].representations and headers.
   const responses = patchProps.responses;
   if (Array.isArray(responses)) {
     for (const response of responses) {
       if (response && typeof response === 'object') {
-        stripFromRepresentations((response as Record<string, unknown>).representations);
+        const resp = response as Record<string, unknown>;
+        stripFromItems(resp.representations);
+        stripFromItems(resp.headers);
       }
     }
   }

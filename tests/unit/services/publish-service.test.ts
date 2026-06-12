@@ -30,6 +30,7 @@ function createMockClient() {
     listResources: async function* () {},
     getResource: vi.fn(),
     putResource: vi.fn().mockResolvedValue(undefined),
+    patchResource: vi.fn().mockResolvedValue(undefined),
     deleteResource: vi.fn().mockResolvedValue(true),
     listApiRevisions: async function* () {},
     getApiSpecification: vi.fn(),
@@ -961,6 +962,93 @@ describe('publish-service', () => {
         return d.type === ResourceType.ProductApi;
       });
       expect(productApiCalls).toHaveLength(0);
+    });
+  });
+
+  describe('auto-generated named value with overrides', () => {
+    it('should skip auto-generated named values when no override exists', async () => {
+      const autoGenId = 'aabbccddeeff112233445566'; // 24-char hex = auto-generated
+
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.NamedValue, nameParts: [autoGenId] },
+        { type: ResourceType.NamedValue, nameParts: ['regular-nv'] },
+      ];
+
+      const client = createMockClient();
+      vi.mocked(client.putResource).mockResolvedValue(undefined);
+
+      const store = createMockStore(resources);
+      vi.mocked(store.readResource).mockImplementation(
+        async (_sourceDir, descriptor) => ({
+          name: descriptor.nameParts[descriptor.nameParts.length - 1] ?? '',
+          properties: {},
+        })
+      );
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      await runPublish(client, store, config);
+
+      // Only regular-nv should be published
+      const putNames = (client.putResource.mock.calls as unknown[][]).map((c) => {
+        const d = c[1] as ResourceDescriptor;
+        return d.nameParts[d.nameParts.length - 1];
+      });
+      expect(putNames).toContain('regular-nv');
+      expect(putNames).not.toContain(autoGenId);
+    });
+
+    it('should publish auto-generated named values when an override exists', async () => {
+      const autoGenId = 'aabbccddeeff112233445566';
+
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.NamedValue, nameParts: [autoGenId] },
+        { type: ResourceType.NamedValue, nameParts: ['regular-nv'] },
+      ];
+
+      const client = createMockClient();
+      vi.mocked(client.putResource).mockResolvedValue(undefined);
+
+      const store = createMockStore(resources);
+      vi.mocked(store.readResource).mockImplementation(
+        async (_sourceDir, descriptor) => ({
+          name: descriptor.nameParts[descriptor.nameParts.length - 1] ?? '',
+          properties: {},
+        })
+      );
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+        overrides: {
+          namedValues: {
+            [autoGenId]: {
+              properties: {
+                value: 'overridden-secret-value',
+              },
+            },
+          },
+        },
+      };
+
+      await runPublish(client, store, config);
+
+      // Both named values should be published
+      const putNames = (client.putResource.mock.calls as unknown[][]).map((c) => {
+        const d = c[1] as ResourceDescriptor;
+        return d.nameParts[d.nameParts.length - 1];
+      });
+      expect(putNames).toContain('regular-nv');
+      expect(putNames).toContain(autoGenId);
     });
   });
 });
