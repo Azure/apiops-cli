@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 
 /**
- * T014: Structured logger with stderr output
+ * Structured logger with stderr output
  * Supports log levels, timestamps, and --log-level option.
  * Sanitizes sensitive data from log output per Constitution §VIII.
  */

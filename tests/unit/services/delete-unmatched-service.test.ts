@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T035: Delete unmatched resources service
+ * Unit tests for Delete unmatched resources service
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -22,8 +22,10 @@ function createMockClient(apimResources: Map<ResourceType, Record<string, unknow
     getResource: vi.fn(),
     putResource: vi.fn(),
     deleteResource: vi.fn(),
+    patchResource: vi.fn().mockResolvedValue(undefined),
     listApiRevisions: async function* () {},
     getApiSpecification: vi.fn(),
+    validatePreFlight: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -177,7 +179,7 @@ describe('delete-unmatched-service', () => {
     it('should handle APIM listing errors gracefully', async () => {
       const client = createMockClient();
       // Override listResources to throw error
-      client.listResources = (): AsyncIterable<Record<string, unknown>> => {
+      client.listResources = () => {
         throw new Error('Network error');
       };
       const store = createMockStore([]);

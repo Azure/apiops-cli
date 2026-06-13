@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T034: Dry-run reporter service
+ * Unit tests for Dry-run reporter service
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -34,6 +34,7 @@ function createMockClient(
     ),
     putResource: vi.fn(async () => ({ name: 'mock' })),
     deleteResource: vi.fn(async () => true),
+    patchResource: vi.fn(async () => ({})),
     listApiRevisions: async function* () {},
     getApiSpecification: vi.fn(async () => undefined),
     validatePreFlight: vi.fn(async () => {}),

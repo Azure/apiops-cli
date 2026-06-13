@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T035: Delete unmatched resources service
+ * Delete unmatched resources service
  * List current APIM resources, diff against artifact descriptors,
  * generate DELETE actions in reverse dependency order.
  * Requires --delete-unmatched flag per FR-017.

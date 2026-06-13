@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for exit-codes module (T041).
+ * Unit tests for exit-codes module.
  */
 
 import { describe, it, expect } from 'vitest';

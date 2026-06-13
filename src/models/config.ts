@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T008: Config interfaces
+ * Config interfaces
  * ExtractConfig, FilterConfig, PublishConfig, OverrideConfig, InitConfig
  */
 

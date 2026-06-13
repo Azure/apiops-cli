@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T031: Generic resource publisher
+ * Generic resource publisher
  * Read resource from IArtifactStore, apply overrides, PUT via IApimClient.
  * Handles all 33 resource types using ResourceType metadata.
  * MUST preserve opaque JSON per FR-009.

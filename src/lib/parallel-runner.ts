@@ -1,13 +1,13 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T018: Parallel execution runner with concurrency control.
+ * Parallel execution runner with concurrency control.
  *
  * Custom implementation (no external dependencies such as p-limit) to limit
  * concurrent APIM REST API calls and avoid 429 rate limiting. Azure APIM has
  * strict per-second request limits, so unbounded Promise.all() would fire all
  * requests simultaneously, triggering throttling. Bounded concurrency is a
- * requirement from research.md R8 and justified in tasks.md T018.
+ * requirement from research.md.
  *
  * Built-in implementation without external dependencies (no p-limit).
  */

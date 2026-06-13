@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T037/T038: Publish command CLI registration
+ * Unit tests for Publish command CLI registration
  */
 
 import { describe, it, expect } from 'vitest';

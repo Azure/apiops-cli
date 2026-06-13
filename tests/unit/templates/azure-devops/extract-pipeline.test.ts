@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T045: Azure DevOps extract pipeline template
+ * Unit tests for Azure DevOps extract pipeline template
  */
 
 import { describe, it, expect } from 'vitest';

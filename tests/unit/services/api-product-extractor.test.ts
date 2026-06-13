@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T022: API-specific extraction and T023: Product-specific extraction
+ * Unit tests for API-specific extraction and Product-specific extraction
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -31,8 +31,10 @@ function createMockClient(overrides: Record<string, unknown> = {}) {
     getResource: vi.fn().mockResolvedValue(undefined),
     putResource: vi.fn(),
     deleteResource: vi.fn(),
+    patchResource: vi.fn().mockResolvedValue(undefined),
     listApiRevisions: async function* () {},
     getApiSpecification: vi.fn().mockResolvedValue(undefined),
+    validatePreFlight: vi.fn().mockResolvedValue(undefined),
     _resources: resources,
     ...overrides,
   };

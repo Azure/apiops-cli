@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T041: Exit code constants and aggregation
+ * Exit code constants and aggregation
  * Provides standardised exit codes and a reusable aggregation function
  * for combining per-resource results into a single process exit code.
  */

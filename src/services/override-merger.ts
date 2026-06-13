@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T033: Override merger service
+ * Override merger service
  * Apply environment-specific overrides from OverrideConfig to resource JSON payloads.
  * Deep-merges with case-insensitive key matching; supports nested sub-resource overrides.
  * Handles all Toolkit override sections with generic property passthrough.

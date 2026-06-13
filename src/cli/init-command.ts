@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T050: Register init command
+ * Register init command
  * Commander subcommand with --ci, --non-interactive, --artifact-dir, --environments flags
  * Wire to init-service
  */

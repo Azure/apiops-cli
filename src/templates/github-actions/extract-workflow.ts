@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T043: GitHub Actions extract workflow template
+ * GitHub Actions extract workflow template
  * Generates extract workflow with manual trigger, configuration choice, and auto-PR creation
  */
 

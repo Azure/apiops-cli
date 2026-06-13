@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T012: Resource descriptor ↔ ARM URI mapping
+ * Resource descriptor ↔ ARM URI mapping
  * Build full ARM URL from ApimServiceContext + ResourceDescriptor
  */
 

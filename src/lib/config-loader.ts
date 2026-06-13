@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T015: YAML config loader with validation
+ * YAML config loader with validation
  * Parse filter YAML, override YAML, and OTel config files
  */
 
