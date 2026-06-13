@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T024: Filter service
+ * Unit tests for Filter service
  */
 
 import { describe, it, expect } from 'vitest';

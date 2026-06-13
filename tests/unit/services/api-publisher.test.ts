@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T032: API publisher with revision handling
+ * Unit tests for API publisher with revision handling
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';

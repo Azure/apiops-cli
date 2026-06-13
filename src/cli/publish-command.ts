@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T037 & T038: Publish command CLI registration
+ * Publish command CLI registration
  * Commander subcommand with --resource-group, --service-name, --source,
  * --overrides, --dry-run, --delete-unmatched flags.
- * Includes --format json: machine-readable JSON output mode (T038).
+ * Includes --format json: machine-readable JSON output mode.
  */
 
 import { Command } from 'commander';
@@ -173,7 +173,7 @@ export function hasMutuallyExclusivePublishOptions(
 }
 
 /**
- * T038: JSON output mode for publish.
+ * JSON output mode for publish.
  * Machine-readable JSON to stdout with action list and summary.
  */
 function outputJson(result: PublishResult): void {

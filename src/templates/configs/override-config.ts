@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T047: Sample override configuration template per environment
+ * Sample override configuration template per environment
  * Generates environment-specific configuration.{env}.yaml files
  */
 
@@ -9,6 +9,8 @@ export function generateOverrideConfig(environment: string): string {
   return `# APIM Override Configuration for ${environment} environment
 # Customize resource properties for this specific environment
 # All APIOps Toolkit override sections are supported.
+# For full format details and examples, see:
+# https://github.com/Azure/apiops-cli/blob/main/docs/guides/environment-overrides.md
 
 # Override named values (e.g., API keys, connection strings)
 # namedValues:

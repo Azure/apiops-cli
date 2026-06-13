@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T048: Identity setup guide generator
+ * Unit tests for Identity setup guide generator
  */
 
 import { describe, it, expect } from 'vitest';

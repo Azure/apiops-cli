@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T016: Azure REST HTTP client implementing IApimClient
+ * Azure REST HTTP client implementing IApimClient
  * Uses @azure/identity DefaultAzureCredential for auth
  * Handles pagination, retry, rate limiting, and long-running operations
  */

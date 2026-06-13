@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T011: Static dependency graph implementation
+ * Static dependency graph implementation
  * 33 resource types, 4 tiers, topological sort, cycle-detection assertion
  */
 

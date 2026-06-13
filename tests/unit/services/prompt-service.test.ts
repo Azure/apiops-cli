@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T049: Interactive prompt handler
+ * Unit tests for Interactive prompt handler
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';

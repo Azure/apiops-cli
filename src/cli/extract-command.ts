@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T028 & T029: Extract command CLI registration
+ * Extract command CLI registration
  * Commander subcommand with --resource-group, --service-name, --output,
  * --filter, --no-transitive, --spec-format flags.
  * Includes --format json: machine-readable JSON output mode.
@@ -131,7 +131,7 @@ async function executeExtract(
 }
 
 /**
- * T029: JSON output mode for extract.
+ * JSON output mode for extract.
  * Machine-readable JSON to stdout with resource counts and file paths.
  */
 function outputJson(result: ExtractionResult): void {

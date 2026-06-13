@@ -19,11 +19,12 @@ vi.mock('../../../src/services/resource-publisher.js', () => ({
 
 function createMockClient() {
   return {
-    listResources: async function* () {},
+    listResources: async function* (): AsyncGenerator<Record<string, unknown>> {},
     getResource: vi.fn(),
     putResource: vi.fn().mockResolvedValue(undefined),
     deleteResource: vi.fn().mockResolvedValue(true),
-    listApiRevisions: async function* () {},
+    patchResource: vi.fn().mockResolvedValue(undefined),
+    listApiRevisions: async function* (): AsyncGenerator<Record<string, unknown>> {},
     getApiSpecification: vi.fn(),
     validatePreFlight: vi.fn(),
   };

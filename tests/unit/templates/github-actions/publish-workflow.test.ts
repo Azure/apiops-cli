@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T044: GitHub Actions publish workflow template
+ * Unit tests for GitHub Actions publish workflow template
  */
 
 import { describe, it, expect } from 'vitest';

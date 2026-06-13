@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for cloud-config module (T039).
+ * Unit tests for cloud-config module.
  */
 
 import { describe, it, expect } from 'vitest';

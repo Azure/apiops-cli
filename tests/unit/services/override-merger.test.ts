@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T033: Override merger service
+ * Unit tests for Override merger service
  */
 
 import { describe, it, expect } from 'vitest';

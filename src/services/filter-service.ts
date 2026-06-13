@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T024: Filter service
+ * Filter service
  * Load FilterConfig, apply inclusive allowlist per resource type,
  * case-insensitive matching, API root-name matching for revisions.
  */

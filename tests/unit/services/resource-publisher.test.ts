@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T031: Resource publisher service
+ * Unit tests for Resource publisher service
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';

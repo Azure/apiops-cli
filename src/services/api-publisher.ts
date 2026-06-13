@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T032: API publisher with revision handling
+ * API publisher with revision handling
  * Create root API first, then revisions in numeric order with forced revision numbers.
  * Publish operations, policies, schemas, releases, resolvers, tag descriptions, wikis per FR-024.
  * Handle SOAP/WSDL import via ?import=true&format=wsdl-link query parameter.
