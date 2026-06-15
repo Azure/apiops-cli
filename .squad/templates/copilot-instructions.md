@@ -2,20 +2,6 @@
 
 You are working on a project that uses **Squad**, an AI team framework. When picking up issues autonomously, follow these guidelines.
 
-## Coordinator Canary Check
-
-**IMPORTANT — run this check on EVERY session start, before doing any work:**
-
-Look for the exact token `SQUAD_COORDINATOR_CANARY_a8f3` in your `agent_instructions`. This token is placed at the end of `squad.agent.md`. If it is missing, the coordinator file is missing or truncated.
-
-**When the token is missing, you MUST:**
-1. **STOP** — do not proceed with standard Squad behavior.
-2. **WARN the user** with this exact message:
-   ```
-   ⚠️ Squad coordinator (squad.agent.md) appears to be missing or truncated. The canary token was not found. Do NOT proceed with standard Squad behavior — Squad's safety rails are not loaded. Please restart your session.
-   ```
-3. Do not continue with normal Squad routing, spawning, PR, or branch-protection behavior after emitting the warning.
-
 ## Team Context
 
 Before starting work on any issue:
@@ -43,10 +29,31 @@ squad/{issue-number}-{kebab-case-slug}
 ```
 Example: `squad/42-fix-login-validation`
 
+## Commit Message Convention
+
+When creating commits with multi-line messages, **always use `git commit -F <tmpfile>`** instead of `git commit -m "..."` with embedded `\n`. The `-m` flag treats `\n` as literal text, not newlines, which breaks GitHub's auto-close keyword detection.
+
+```bash
+# CORRECT — write message to a temp file, then commit
+echo "feat: add policy extraction" > /tmp/commit-msg.txt
+echo "" >> /tmp/commit-msg.txt
+echo "Closes #42" >> /tmp/commit-msg.txt
+git commit -F /tmp/commit-msg.txt
+rm /tmp/commit-msg.txt
+
+# WRONG — literal \n in -m flag
+git commit -m "feat: add policy extraction\n\nCloses #42"
+```
+
+Always include `Closes #N` or `Fixes #N` in commit messages when the change resolves a GitHub issue.
+
 ## PR Guidelines
 
 When opening a PR:
-- Reference the issue: `Closes #{issue-number}`
+- **Title and description must summarize ALL changes in the branch**, not just the last commit. Use `git log main..HEAD --oneline` (or the appropriate base branch) to review all commits and write a comprehensive PR title and description.
+- Once a PR already exists, **do not change its title or description unless the user explicitly asks you to do so**.
+- If the user does ask for an update, preserve the full-branch summary instead of rewriting the PR around only the most recent iteration.
+- Reference the issue in **both** the commit message AND the PR body: `Closes #{issue-number}`. The PR body is a redundant safety net if commit message formatting fails.
 - If the issue had a `squad:{member}` label, mention the member: `Working as {member} ({role})`
 - If this is a 🟡 needs-review task, add to the PR description: `⚠️ This task was flagged as "needs review" — please have a squad member review before merging.`
 - Follow any project conventions in `.squad/decisions.md`

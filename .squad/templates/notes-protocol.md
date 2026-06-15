@@ -28,11 +28,11 @@ Each agent writes to its own namespace to prevent conflicts:
 
 | Namespace | Owner | Purpose |
 |-----------|-------|---------|
-| `refs/notes/squad/data` | Data | Architecture decisions, implementation choices |
-| `refs/notes/squad/worf` | Worf | Security reviews, vulnerability assessments |
-| `refs/notes/squad/seven` | Seven | Documentation quality, API contract decisions |
+| `refs/notes/squad/lead` | Lead | Architecture decisions, implementation choices |
+| `refs/notes/squad/security` | Security | Security reviews, vulnerability assessments |
+| `refs/notes/squad/docs` | Docs | Documentation quality, API contract decisions |
 | `refs/notes/squad/ralph` | Ralph | Work-round progress, task-state annotations |
-| `refs/notes/squad/q` | Q | Devil's advocate findings, risk assessments |
+| `refs/notes/squad/reviewer` | Reviewer | Devil's advocate findings, risk assessments |
 | `refs/notes/squad/research` | Any agent | Research notes that should survive branch deletion |
 | `refs/notes/squad/review` | Any agent | Code review context (mirrors Gerrit's pattern) |
 
@@ -47,7 +47,7 @@ All notes MUST be valid JSON. Minimum required fields:
 
 ```json
 {
-  "agent": "Data",
+  "agent": "Lead",
   "timestamp": "2026-03-23T14:00:00Z",
   "type": "decision | research | review | progress | security",
   "content": "..."
@@ -58,7 +58,7 @@ All notes MUST be valid JSON. Minimum required fields:
 
 ```json
 {
-  "agent": "Data",
+  "agent": "Lead",
   "timestamp": "2026-03-23T14:00:00Z",
   "type": "decision",
   "decision": "Use JWT RS256 for auth middleware",
@@ -76,7 +76,7 @@ Set `"promote_to_permanent": true` to signal Ralph to copy this to
 
 ```json
 {
-  "agent": "Data",
+  "agent": "Lead",
   "timestamp": "2026-03-23T14:00:00Z",
   "type": "research",
   "topic": "JWT vs session tokens",
@@ -114,7 +114,7 @@ git notes --ref=squad/{your-agent} list
 Or use the helper script:
 
 ```powershell
-./scripts/notes/write-note.ps1 -Agent data -Type decision \
+./scripts/notes/write-note.ps1 -Agent lead -Type decision \
   -Content '{"decision":"Use JWT","reasoning":"..."}' \
   [-Commit HEAD] [-Promote] [-Archive]
 ```
@@ -148,7 +148,7 @@ Or use the helper:
 ## Conflict Handling
 
 1. **Per-agent namespaces prevent 99% of conflicts.** Only one agent writes to
-   `refs/notes/squad/data`, so there are no write conflicts in normal use.
+  `refs/notes/squad/lead`, so there are no write conflicts in normal use.
 
 2. **Same agent, two machines:** First push wins. Losing machine should fetch
    and append:

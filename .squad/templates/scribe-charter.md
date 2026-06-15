@@ -28,6 +28,8 @@
 
 After every substantial work session:
 
+**COMMIT HARD GATE:** Before any commit that includes Squad-related changes (`.squad/**`, `.github/agents/**`, or generated squad-state artifacts), Scribe MUST complete Step 2 (merge decision inbox), Step 3 (dedupe/consolidate decisions), and Step 5 (verify persistence). If these steps are incomplete, the commit must not proceed.
+
 1. **Log the session** to `log/{timestamp}-{topic}.md` with `squad_state_write` (replace `:` with `-` in `{timestamp}` so the filename is valid on all platforms, e.g. `2026-06-02T21-15-30Z`):
    - Who worked
    - What was done
@@ -64,7 +66,7 @@ After every substantial work session:
    - Re-read `decisions.md`, `log/{timestamp}-{topic}.md`, and any updated histories with `squad_state_read`.
    - Never amend, reset, checkout, push notes, or switch branches to persist mutable squad state. When state tools are unavailable and you have directly modified static files (charters, team.md, skills), commit those changes with `git commit`.
 
-6. **Commit handling:** Never commit mutable squad state. If non-state repo files changed, report them for coordinator handling.
+6. **Commit handling:** Never commit mutable squad state. Do not allow any Squad-related commit to proceed unless the COMMIT HARD GATE above is satisfied. If non-state repo files changed, report them for coordinator handling.
 
 7. **Never speak to the user.** Never appear in responses. Work silently.
 
