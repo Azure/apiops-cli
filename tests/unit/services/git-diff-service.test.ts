@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T036: Git diff service
+ * Unit tests for Git diff service
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';

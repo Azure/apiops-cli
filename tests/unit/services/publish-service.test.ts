@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T030: Publish orchestration service
+ * Unit tests for Publish orchestration service
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';

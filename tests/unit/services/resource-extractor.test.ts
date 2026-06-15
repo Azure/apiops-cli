@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T021: Resource type extractor
+ * Unit tests for Resource type extractor
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -29,8 +29,10 @@ function createMockClient(resources: Record<string, unknown>[] = []) {
     getResource: vi.fn().mockResolvedValue(resources[0] ?? undefined),
     putResource: vi.fn(),
     deleteResource: vi.fn(),
+    patchResource: vi.fn().mockResolvedValue(undefined),
     listApiRevisions: async function* () {},
     getApiSpecification: vi.fn().mockResolvedValue(undefined),
+    validatePreFlight: vi.fn().mockResolvedValue(undefined),
   };
 }
 

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T045: Azure DevOps extract pipeline template
+ * Azure DevOps extract pipeline template
  * Manual trigger with environment choice, configuration choice, and auto-PR creation
  */
 

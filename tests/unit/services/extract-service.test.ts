@@ -1,12 +1,12 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T020: Extract service orchestrator
+ * Unit tests for Extract service orchestrator
  */
 
 import { describe, it, expect, vi } from 'vitest';
 import { ResourceType } from '../../../src/models/resource-types.js';
-import { ApimServiceContext } from '../../../src/models/types.js';
+import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
 import { ExtractConfig, FilterConfig } from '../../../src/models/config.js';
 import { runExtraction } from '../../../src/services/extract-service.js';
 import { LogLevel } from '../../../src/lib/logger.js';
@@ -23,8 +23,10 @@ function createMockClient(resourcesByType: Partial<Record<ResourceType, Record<s
     getResource: vi.fn().mockResolvedValue(undefined),
     putResource: vi.fn(),
     deleteResource: vi.fn(),
+    patchResource: vi.fn().mockResolvedValue(undefined),
     listApiRevisions: async function* () {},
     getApiSpecification: vi.fn().mockResolvedValue(undefined),
+    validatePreFlight: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -197,7 +199,7 @@ describe('extract-service', () => {
         service: testContext,
         outputDir: '/output',
         includeTransitive: false,
-        verbose: false,
+        logLevel: LogLevel.INFO,
       };
 
       const result = await runExtraction(client, store, config);
@@ -230,7 +232,7 @@ describe('extract-service', () => {
         service: testContext,
         outputDir: '/output',
         includeTransitive: false,
-        verbose: false,
+        logLevel: LogLevel.INFO,
       };
 
       const result = await runExtraction(client, store, config);
@@ -301,7 +303,7 @@ describe('extract-service', () => {
       });
 
       // Handle GatewayApi requests for the gateway
-      client.listResources = async function* (_ctx, type, parent?) {
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType, parent?: ResourceDescriptor) {
         if (type === ResourceType.Gateway) {
           yield { name: 'gw-1', properties: {} };
         }
@@ -336,7 +338,7 @@ describe('extract-service', () => {
         ],
       });
 
-      client.listResources = async function* (_ctx, type, _parent?) {
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType, _parent?: ResourceDescriptor) {
         if (type === ResourceType.Gateway) {
           yield { name: 'gw-1', properties: {} };
         }

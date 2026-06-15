@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T025: Transitive dependency resolver
+ * Transitive dependency resolver
  * Scan policies for named value refs, backend refs, policy fragment refs.
  * Scan apiInformation.json for apiVersionSetId.
  * Fixed-point expansion; --no-transitive bypass.

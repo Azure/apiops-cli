@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T009: IApimClient interface
+ * IApimClient interface
  * Abstraction over Azure APIM REST API calls
  */
 

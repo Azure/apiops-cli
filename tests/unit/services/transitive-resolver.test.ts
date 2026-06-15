@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T025: Transitive dependency resolver
+ * Unit tests for Transitive dependency resolver
  */
 
 import { describe, it, expect } from 'vitest';

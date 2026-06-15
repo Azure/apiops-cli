@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T048: Identity setup guide generator
+ * Identity setup guide generator
  * Step-by-step instructions for service principal, RBAC, federated credentials,
  * pipeline secrets/service connections. Optional az CLI automation per FR-021.
  */

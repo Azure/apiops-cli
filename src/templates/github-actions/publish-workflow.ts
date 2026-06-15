@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T044: GitHub Actions publish workflow template
+ * GitHub Actions publish workflow template
  * Push-to-main trigger with commit ID choice, environment selection, and multi-env stages
  */
 

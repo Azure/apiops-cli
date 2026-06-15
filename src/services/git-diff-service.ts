@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T036: Git diff service
+ * Git diff service
  * Compute changed resource artifacts between commits using simple-git.
  * Maps file paths to ResourceDescriptors for incremental publish.
  */

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T047: Config templates
+ * Unit tests for Config templates
  */
 
 import { describe, it, expect } from 'vitest';

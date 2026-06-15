@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Unit tests for T027: Workspace-scoped extraction
+ * Unit tests for Workspace-scoped extraction
  */
 
 import { describe, it, expect, vi } from 'vitest';

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T007: Core TypeScript interfaces
+ * Core TypeScript interfaces
  * ResourceDescriptor, ResourcePayload, ApimServiceContext, DependencyEdge
  */
 

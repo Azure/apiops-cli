@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T030: Publish orchestration service
+ * Publish orchestration service
  * Coordinates PUT/DELETE across dependency tiers in topological order
  * PUTs in dependency order (tier 1-4), DELETEs in reverse order (tier 4-1)
  */

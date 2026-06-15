@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T020: Extraction orchestrator
+ * Extraction orchestrator
  * Coordinates resource type extraction across dependency tiers
  * using dependency-graph.ts and parallel-runner.ts.
  * Per-resource status output per FR-023.

@@ -3,7 +3,7 @@
 // Licensed under the MIT license.
 
 /**
- * T019: Commander program entry point
+ * Commander program entry point
  * Sets up global options and subcommand registration pattern
  */
 
@@ -51,7 +51,7 @@ program.hook('preAction', (thisCommand) => {
 
   logger.configure({ level: parseLogLevel(opts.logLevel ?? 'info') });
 
-  // T040: Set DefaultAzureCredential env vars from explicit auth flags.
+  // Set DefaultAzureCredential env vars from explicit auth flags.
   // This ensures the ServicePrincipal credential is tried first,
   // avoiding interactive browser prompts in CI/CD pipelines.
   if (opts.clientId) {

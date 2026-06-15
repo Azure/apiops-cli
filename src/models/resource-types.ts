@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T006: ResourceType enum and metadata
+ * ResourceType enum and metadata
  * All 34 APIM resource types with ARM path suffixes, artifact directories, and info file names
  */
 

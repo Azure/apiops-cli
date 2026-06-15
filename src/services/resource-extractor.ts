@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * T021: Resource type extractor
+ * Resource type extractor
  * Generic extract logic: list resources via IApimClient, write each to IArtifactStore.
  * Handles all 33 types using ResourceType metadata. Preserves opaque JSON per FR-009.
  */
