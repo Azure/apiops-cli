@@ -48,6 +48,7 @@ flowchart TD
 - **First commit (no parent):** All files are treated as added — equivalent to a full publish.
 - **Git unavailable or commit not found:** The CLI warns and publishes nothing (zero resources). This is a safe fallback, not a full publish.
 - **Multiple files per resource:** If `apis/my-api/apiInformation.json` and `apis/my-api/specification.yaml` both change, `my-api` is published once.
+- **Override file changes only:** If a commit only modifies the override configuration file (e.g., `configuration.prod.yaml`) and no artifact files in the `--source` directory changed, **nothing is published**. The override file is not an artifact — it is applied at publish time to artifacts that are already being published. See [workaround](#override-only-changes) below.
 
 ---
 
@@ -131,6 +132,24 @@ Incremental publish is most valuable in CI/CD pipelines where each merge commit 
 
 ---
 
+## Override-Only Changes
+
+Incremental publish detects changed resources by running `git diff` on files inside the `--source` artifact directory. The override file (passed via `--overrides`) lives **outside** the artifact directory and is **not** tracked by `git diff` for resource detection purposes.
+
+This means: if you commit only a change to `configuration.prod.yaml` (for example, updating a named value's override) and trigger an incremental publish, **no resources will be published** — even though the final merged values would be different.
+
+### Workarounds
+
+1. **Run a full publish** (omit `--commit-id`) when you change only the override file. This ensures all resources are published with the updated override values applied.
+
+2. **Touch an artifact file** in the same commit. For example, if you update a named value override, also touch the corresponding named value's artifact JSON in the `--source` directory. This causes the resource to appear in the git diff and be published.
+
+3. **Use a pipeline parameter** (e.g., "Publish all artifacts" vs. "Publish last commit") that lets operators choose a full publish when they know an override changed. See the [Azure DevOps integration](../ci-cd/azure-devops.md) docs for an example of this pattern.
+
+> **Key takeaway:** Override files control *what values* are applied during publish, but they do not control *which resources* are selected for incremental publish. Only artifact file changes drive resource selection.
+
+---
+
 ## When NOT to Use Incremental Publish
 
 Force a full publish (omit `--commit-id`) when:
@@ -138,6 +157,7 @@ Force a full publish (omit `--commit-id`) when:
 - **First deployment** to a new APIM instance — there's no commit history to diff against.
 - **Configuration drift** — someone changed APIM directly in the portal and you want to overwrite everything from git.
 - **Major refactoring** — renaming many APIs or restructuring directories. A full publish ensures nothing is missed.
+- **Override-only changes** — you updated an override file but no artifact files changed. See [Override-Only Changes](#override-only-changes).
 - **You need `--delete-unmatched`** — see below.
 
 ### `--commit-id` and `--delete-unmatched` are mutually exclusive
@@ -159,6 +179,7 @@ Options --commit-id (or COMMIT_ID) and --delete-unmatched are mutually exclusive
 | `Not in a git repository; skipping incremental diff` | The `--source` directory is not inside a git repo | Ensure your artifact directory is inside a cloned repo. In CI, check that the checkout step runs before publish. |
 | `Commit <sha> not found; skipping incremental diff` | Shallow clone doesn't include the commit | Use `fetch-depth: 2` (or more) in your checkout step to include at least the parent commit. |
 | Nothing published, no errors | Commit diff returned no artifact file changes | Verify the commit actually touches files in the `--source` directory. Use `git diff --name-status HEAD~1 HEAD` locally to check. |
+| Nothing published after override change | Override file changed but no artifact files changed | Override files are not artifact files — they don't trigger resource selection. Run a full publish (omit `--commit-id`) or include an artifact file change in the same commit. See [Override-Only Changes](#override-only-changes). |
 | `mutually exclusive` error | Both `--commit-id` and `--delete-unmatched` specified | Remove one. Use `--commit-id` for incremental or `--delete-unmatched` for full sync — not both. |
 
 ### GitHub Actions: fetch depth
