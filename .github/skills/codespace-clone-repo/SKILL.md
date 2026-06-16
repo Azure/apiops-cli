@@ -34,11 +34,20 @@ env -u GITHUB_TOKEN -u GH_TOKEN gh auth login \
 env -u GITHUB_TOKEN -u GH_TOKEN gh auth status
 ```
 
-Then clone:
+Then clone to `/workspaces`:
 
 ```bash
-git clone https://github.com/<owner>/<repo>.git
+cd /workspaces
+gh clone <owner>/<repo>
 ```
+
+After cloning, open workspaces so all repos can be opened:
+
+1. In VS Code, go to **File → Open Folder...**
+2. Navigate to and select `/workspaces`
+3. Click **Open**
+
+VS Code will reload with the cloned repository as your workspace.
 
 ## If Login Appears Stuck
 
@@ -82,5 +91,8 @@ unset GITHUB_TOKEN GH_TOKEN
 gh auth logout -h github.com
 env -u GITHUB_TOKEN -u GH_TOKEN gh auth login -h github.com -p https -w --clipboard --insecure-storage
 env -u GITHUB_TOKEN -u GH_TOKEN gh auth status
-git clone https://github.com/<owner>/<repo>.git
+cd /workspaces
+gh clone <owner>/<repo>
 ```
+
+Then use **File → Open Folder...** to open `/workspaces/<repo-name>` in VS Code.
