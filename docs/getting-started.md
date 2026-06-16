@@ -58,9 +58,10 @@ You'll see directories for each resource type — `apis/`, `backends/`, `namedVa
 Extract only the APIs you care about. Create a `filter.yaml`:
 
 ```yaml
-apiNames:
+apis:
   - pet-store-api
   - user-api
+  - staging-*           # Wildcard: all APIs starting with staging-
 ```
 
 ```bash
