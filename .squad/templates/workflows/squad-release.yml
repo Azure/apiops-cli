@@ -22,6 +22,50 @@ jobs:
       - name: Run tests
         run: node --test test/*.test.js
 
+      - name: Validate custom agent prompt length
+        run: |
+          node <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+
+          const AGENT_DIR = path.join(process.cwd(), '.github', 'agents');
+          const MAX_PROMPT_CHARS = 30000;
+
+          if (!fs.existsSync(AGENT_DIR)) {
+            console.log('No .github/agents directory found; skipping prompt-length validation.');
+            process.exit(0);
+          }
+
+          const agentFiles = fs
+            .readdirSync(AGENT_DIR)
+            .filter((name) => name.endsWith('.agent.md'))
+            .map((name) => path.join(AGENT_DIR, name));
+
+          if (agentFiles.length === 0) {
+            console.log('No .agent.md files found; skipping prompt-length validation.');
+            process.exit(0);
+          }
+
+          let hasError = false;
+          for (const filePath of agentFiles) {
+            const content = fs.readFileSync(filePath, 'utf8');
+            const frontmatter = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
+            const prompt = frontmatter ? content.slice(frontmatter[0].length) : content;
+            const promptChars = [...prompt].length;
+
+            if (promptChars > MAX_PROMPT_CHARS) {
+              hasError = true;
+              console.error(`::error file=${path.relative(process.cwd(), filePath)}::Prompt length ${promptChars} exceeds ${MAX_PROMPT_CHARS} characters.`);
+            } else {
+              console.log(`✓ ${path.relative(process.cwd(), filePath)} prompt length ${promptChars}/${MAX_PROMPT_CHARS}`);
+            }
+          }
+
+          if (hasError) {
+            process.exit(1);
+          }
+          EOF
+
       - name: Validate version consistency
         run: |
           VERSION=$(node -e "console.log(require('./package.json').version)")

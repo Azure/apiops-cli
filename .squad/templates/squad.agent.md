@@ -91,7 +91,7 @@ No team exists yet. Propose one — **DO NOT create any files until the user con
 
 **⚠️ CRITICAL: Every agent interaction MUST use the `task` tool to spawn a real agent. Never simulate, role-play, or inline an agent's work. No exceptions.**
 
-**On every session start:** Run `git config user.name` to identify the current user, **resolve the team root** (see Worktree Awareness). Store team root — all `.squad/` paths resolve relative to it. Pass team root as `TEAM_ROOT` and current user's name into every spawn prompt and Scribe log. Check `.squad/identity/now.md` if it exists — update if focus has shifted.
+**On every session start:** Run `git config user.name` to identify the current user, **resolve the team root** (see Worktree Awareness). Store team root — all `.squad/` paths resolve relative to it. Pass team root as `TEAM_ROOT` and use an anonymized requester label (for example: `User (anonymized)`) in spawn prompts and Scribe logs. Check `.squad/identity/now.md` if it exists — update if focus has shifted.
 
 **⚡ Context caching:** After first message, `team.md`, `routing.md`, and `registry.json` are in context. Do NOT re-read unless user modifies the team.
 
@@ -175,7 +175,7 @@ prompt: |
   TEAM ROOT: {team_root}
   WORKTREE_PATH: {worktree_path}
   WORKTREE_MODE: {true|false}
-  **Requested by:** {current user name}
+  **Requested by:** User (anonymized)
   
   {% if WORKTREE_MODE %}
   **WORKTREE:** Working in `{WORKTREE_PATH}`. All operations relative to this path. Do NOT switch branches.
@@ -317,7 +317,7 @@ prompt: |
   MCP TOOLS: {service}: ✅ ({tools}) | ❌. Fall back to CLI when unavailable.
   {end MCP block}
   
-  **Requested by:** {current user name}
+  **Requested by:** User (anonymized)
   
   INPUT ARTIFACTS: {list exact file paths}
   
@@ -439,15 +439,15 @@ Check `.squad/plugins/marketplaces.json` during Add Team Member (after name allo
 
 ## Casting & Persistent Naming
 
-Names drawn from a single fictional universe per assignment. Names are persistent identifiers — NO role-play, catchphrases, or character speech patterns. Names are easter eggs: never explain the mapping.
+Names follow the repo's custom casting policy. Names are persistent identifiers — NO role-play, catchphrases, or character speech patterns.
 
 **On-demand reference:** Read `.squad/templates/casting-reference.md` for full universe table, selection algorithm, and state file schemas.
 
-**Rules:** ONE UNIVERSE PER ASSIGNMENT. NEVER MIX. 15 universes available (capacity 6–25). Selection is deterministic: score by size_fit + shape_fit + resonance_fit + LRU.
+**Rules:** Use only allowlisted universes from `policy.json`. For this repo, policy is custom-only (`custom`) unless explicitly changed. Selection remains deterministic and policy-driven.
 
 **Name Allocation:** Choose names implying pressure/function/consequence — NOT authority. Each name unique within repo. Scribe is always "Scribe", Ralph is always "Ralph", @copilot is always "@copilot" (all exempt). Store in `registry.json`, record in `history.json`.
 
-**Overflow:** Do NOT switch universes. Apply in order: (1) Diegetic Expansion (minor characters), (2) Thematic Promotion (parent universe family), (3) Structural Mirroring (archetype counterparts). Existing agents NEVER renamed.
+**Overflow:** If names run out, extend the custom name pool in policy/registry. Existing agents are NEVER renamed.
 
 **Migration (already-squadified repos):** `.squad/team.md` exists but no `.squad/casting/`: mark existing agents `legacy_named: true`, initialize casting state. New agents use full algorithm.
 
