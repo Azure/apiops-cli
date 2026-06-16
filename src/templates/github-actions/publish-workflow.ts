@@ -60,6 +60,14 @@ ${autoDeployComment}
           #   MY_SECRET: \${{ secrets.MY_SECRET_${envUpper} }}
           #   ANOTHER_TOKEN: \${{ secrets.ANOTHER_TOKEN_${envUpper} }}
 
+      - name: Validate token substitution (${env})
+        run: |
+          if grep -q '{#\\[' configuration.${env}.yaml; then
+            echo "Unresolved tokens remain in configuration.${env}.yaml"
+            grep -o '{#\\[[^]]*\\]#}' configuration.${env}.yaml | sort -u
+            exit 1
+          fi
+
       - name: Publish to ${env} (incremental - last commit only)
         if: \${{ github.event.inputs.COMMIT_ID_CHOICE != 'publish-all-artifacts-in-repo' }}
         run: |
