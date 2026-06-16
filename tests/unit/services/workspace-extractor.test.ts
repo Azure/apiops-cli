@@ -206,9 +206,7 @@ describe('workspace-extractor', () => {
 
     it('should apply workspace sub-filter to limit extracted resources', async () => {
       const client = createMockClient();
-      const listedTypes: ResourceType[] = [];
       client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType) {
-        listedTypes.push(type);
         if (type === ResourceType.NamedValue) {
           yield { name: 'ws-nv-1', properties: {} };
           yield { name: 'ws-nv-2', properties: {} };
