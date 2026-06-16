@@ -595,7 +595,7 @@
               "properties.type": "a2a",
               "properties.agent.id": "src-a2a-weather-agent",
               "properties.a2aProperties.agentCardPath": "/.well-known/agent-card.json",
-              "properties.jsonRpcProperties.path": "/ks/a2a-weather",
+              "properties.jsonRpcProperties.path": "/",
               "properties.subscriptionRequired": true,
               "properties.subscriptionKeyParameterNames.header": "Ocp-Apim-Subscription-Key",
               "properties.subscriptionKeyParameterNames.query": "subscription-key"

@@ -113,7 +113,9 @@ $requiredProviders = @(
     'Microsoft.OperationalInsights',
     'Microsoft.EventHub',
     'Microsoft.KeyVault',
-    'Microsoft.AlertsManagement'
+    'Microsoft.AlertsManagement',
+    'Microsoft.Web',
+    'Microsoft.Storage'
 )
 foreach ($provider in $requiredProviders) {
     $state = az provider show --namespace $provider --query "registrationState" --output tsv 2>$null
@@ -238,6 +240,35 @@ if ($LASTEXITCODE -ne 0) {
         -DeploymentName    $postDeploymentName `
         -Replacements      $postReplacements
     throw "Source post-activation deployment failed (deployment '$postDeploymentName' in resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)'). See failed-operation details above."
+}
+
+# Deploy A2A weather Function App code (zip deploy with WEBSITE_RUN_FROM_PACKAGE)
+$funcAppName = $outputs.funcAppName.value
+$funcAppDir  = Join-Path (Split-Path $PSScriptRoot -Parent) 'function-app'
+$funcZipPath = Join-Path ([System.IO.Path]::GetTempPath()) 'a2a-func.zip'
+
+if (Test-Path $funcAppDir) {
+    Write-Host "📦 Deploying A2A weather Function App code to $(Protect-ApimName -Value $funcAppName)..." -ForegroundColor Cyan
+    if (Test-Path $funcZipPath) { Remove-Item $funcZipPath -Force }
+    Compress-Archive -Path (Join-Path $funcAppDir '*') -DestinationPath $funcZipPath -Force
+
+    $funcDeployArgs = @(
+        'functionapp', 'deployment', 'source', 'config-zip',
+        '--resource-group', $ResourceGroupName,
+        '--name',           $funcAppName,
+        '--src',            $funcZipPath,
+        '--output',         'none'
+    )
+    Invoke-MaskedAzCommand -Replacements $postReplacements -Arguments $funcDeployArgs
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Function App code deployment failed — A2A managed endpoint may not work correctly."
+    } else {
+        Write-Host "   ✅ Function App code deployed" -ForegroundColor Green
+    }
+
+    Remove-Item $funcZipPath -Force -ErrorAction SilentlyContinue
+} else {
+    Write-Warning "Function App source not found at $funcAppDir — skipping Function App code deployment."
 }
 
 Write-Host ""

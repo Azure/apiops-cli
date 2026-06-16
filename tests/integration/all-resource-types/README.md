@@ -50,7 +50,7 @@ An apim instance with the following apis
 | `src-rest-revisioned` | REST (revisioned) | OpenAPI |
 | `src-mcp-from-api` | MCP (from existing API) | None |
 | `src-mcp-existing-server` | MCP (working existing-server demo via Learn) | None |
-| `src-a2a-weather-agent` | A2A (JSON-RPC + agent card) | None |
+| `src-a2a-weather-agent` | A2A (JSON-RPC + agent card) | External Function App (Open-Meteo weather backend) |
 
 ### Backend Variations
 | Backend | Type |
