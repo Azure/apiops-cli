@@ -1162,6 +1162,73 @@ resource apiA2a 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   })
 }
 
+resource apiA2aManagedCardOperation 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-preview' = {
+  parent: apiA2a
+  name: 'get-agent-card'
+  properties: {
+    displayName: 'Get managed agent card'
+    method: 'GET'
+    urlTemplate: '/.well-known/agent-card.json'
+    responses: [
+      {
+        statusCode: 200
+        description: 'OK'
+        representations: [
+          {
+            contentType: 'application/json'
+          }
+        ]
+      }
+    ]
+  }
+}
+
+resource apiA2aManagedCardPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2025-09-01-preview' = {
+  parent: apiA2aManagedCardOperation
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: '''<policies><inbound><base /><set-backend-service base-url="https://${apim.name}.azure-api.net/ks/a2a-weather" /></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'''
+  }
+}
+
+resource apiA2aManagedJsonRpcOperation 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-preview' = {
+  parent: apiA2a
+  name: 'post-jsonrpc'
+  properties: {
+    displayName: 'Managed JSON-RPC endpoint'
+    method: 'POST'
+    urlTemplate: '/'
+    request: {
+      representations: [
+        {
+          contentType: 'application/json'
+        }
+      ]
+    }
+    responses: [
+      {
+        statusCode: 200
+        description: 'OK'
+        representations: [
+          {
+            contentType: 'application/json'
+          }
+        ]
+      }
+    ]
+  }
+}
+
+resource apiA2aManagedJsonRpcPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2025-09-01-preview' = {
+  parent: apiA2aManagedJsonRpcOperation
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: '''<policies><inbound><base /><set-backend-service base-url="https://${apim.name}.azure-api.net/ks/a2a-weather" /></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'''
+  }
+}
+
 // ---------------------------------------------------------------------------
 // TIER 3: Child Resources
 // ---------------------------------------------------------------------------
