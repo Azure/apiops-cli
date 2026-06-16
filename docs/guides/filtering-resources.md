@@ -140,8 +140,6 @@ apis:
 
 ### Workspace sub-resource filters
 
-> **Note:** Workspace sub-resource filtering is parsed but not yet applied at runtime. Currently, including a workspace extracts all resources within it. This matches the Toolkit's configuration format for forward compatibility. See [#119](https://github.com/Azure/apiops-cli/issues/119) for tracking.
-
 The configuration format supports specifying which workspace-scoped resources to extract:
 
 ```yaml

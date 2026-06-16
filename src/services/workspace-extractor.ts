@@ -9,12 +9,13 @@ import { IApimClient } from '../clients/iapim-client.js';
 import { IArtifactStore } from '../clients/iartifact-store.js';
 import { ApimServiceContext } from '../models/types.js';
 import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
-import { FilterConfig } from '../models/config.js';
+import { FilterConfig, WorkspaceSubFilter } from '../models/config.js';
 import { extractResourceType, ExtractedResource } from './resource-extractor.js';
 import { extractApiResources, extractWorkspaceApiTags } from './api-extractor.js';
 import { extractProductResources, extractWorkspaceProductTags } from './product-extractor.js';
 import { logger } from '../lib/logger.js';
 import { getNamePart } from '../lib/resource-path.js';
+import { isWildcardPattern, wildcardMatch } from './filter-service.js';
 
 /**
  * Types that can exist at the workspace level, derived from RESOURCE_TYPE_METADATA.
@@ -58,17 +59,24 @@ export async function extractWorkspaces(
       logger.debug('Workspace filter is empty array — excluding all workspaces');
       return results;
     }
-    workspaceNames = filter.workspaces;
+
+    const hasWildcards = filter.workspaces.some(isWildcardPattern);
+    if (hasWildcards) {
+      // Wildcard patterns require discovery so we can match against real names
+      const discovered = await discoverWorkspaceNames(client, context);
+      workspaceNames = discovered.filter((name) =>
+        filter.workspaces!.some((pattern) =>
+          isWildcardPattern(pattern)
+            ? wildcardMatch(pattern, name)
+            : pattern.toLowerCase() === name.toLowerCase()
+        )
+      );
+    } else {
+      workspaceNames = filter.workspaces;
+    }
   } else {
     // No workspace filter defined — discover all workspaces
-    const discovered: string[] = [];
-    for await (const item of client.listResources(context, ResourceType.Workspace)) {
-      const name = item['name'];
-      if (typeof name === 'string') {
-        discovered.push(name);
-      }
-    }
-    workspaceNames = discovered;
+    workspaceNames = await discoverWorkspaceNames(client, context);
   }
 
   if (workspaceNames.length === 0) {
@@ -92,7 +100,8 @@ export async function extractWorkspaces(
     }
 
     const wsResult = await extractWorkspace(
-      client, store, context, wsName, outputDir, filter
+      client, store, context, wsName, outputDir,
+      resolveWorkspaceFilter(wsName, filter)
     );
     results.push(wsResult);
   }
@@ -217,4 +226,69 @@ async function extractWorkspace(
   logger.info(`Workspace "${workspaceName}": extracted ${resourceCount} resources, ${errorCount} errors`);
 
   return { workspaceName, resourceCount, errorCount };
+}
+
+/**
+ * Discover all workspace names from APIM.
+ */
+async function discoverWorkspaceNames(
+  client: IApimClient,
+  context: ApimServiceContext
+): Promise<string[]> {
+  const names: string[] = [];
+  for await (const item of client.listResources(context, ResourceType.Workspace)) {
+    const name = item['name'];
+    if (typeof name === 'string') {
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+/**
+ * Resolve the effective FilterConfig for a workspace.
+ * If the workspace has a sub-filter in workspaceSubFilters, convert it to a FilterConfig.
+ * Otherwise return undefined (no filter = extract everything in the workspace).
+ */
+export function resolveWorkspaceFilter(
+  workspaceName: string,
+  filter?: FilterConfig
+): FilterConfig | undefined {
+  if (!filter?.workspaceSubFilters) {
+    return undefined;
+  }
+
+  // Case-insensitive lookup of workspace sub-filter
+  const lowerName = workspaceName.toLowerCase();
+  const matchingKey = Object.keys(filter.workspaceSubFilters).find(
+    (k) => k.toLowerCase() === lowerName
+  );
+
+  if (!matchingKey) {
+    return undefined;
+  }
+
+  const sub = filter.workspaceSubFilters[matchingKey];
+  return workspaceSubFilterToFilterConfig(sub);
+}
+
+/**
+ * Convert a WorkspaceSubFilter to a FilterConfig so the standard
+ * filter-service matching logic can be applied to workspace-scoped resources.
+ */
+function workspaceSubFilterToFilterConfig(sub: WorkspaceSubFilter): FilterConfig {
+  return {
+    apis: sub.apis,
+    apiSubFilters: sub.apiSubFilters,
+    backends: sub.backends,
+    diagnostics: sub.diagnostics,
+    groups: sub.groups,
+    loggers: sub.loggers,
+    namedValues: sub.namedValues,
+    policyFragments: sub.policyFragments,
+    products: sub.products,
+    subscriptions: sub.subscriptions,
+    tags: sub.tags,
+    versionSets: sub.versionSets,
+  };
 }
