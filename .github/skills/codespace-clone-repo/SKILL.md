@@ -78,6 +78,19 @@ Enter the one-time code in the browser and authorize, then return to the origina
 - Clone prompts for credentials unexpectedly:
   verify git protocol is HTTPS in `gh auth status` and re-run `gh auth login -p https` if necessary.
 
+- `git push`/`git fetch` returns `403` even though `gh auth status` looks correct:
+  Codespaces can inject `GITHUB_TOKEN`/`GH_TOKEN` that override account auth for git operations.
+  Use token-sanitized commands and force gh credentials for the operation:
+
+  ```bash
+  env -u GITHUB_TOKEN -u GH_TOKEN git \
+    -c credential.helper= \
+    -c credential.helper='!gh auth git-credential' \
+    push origin <branch>
+  ```
+
+  For fetch/pull, use the same pattern with `fetch` or `pull`.
+
 ## Safety Notes
 
 - Never request a PAT for this workflow unless the user explicitly asks for a PAT-based approach.
@@ -95,4 +108,14 @@ cd /workspaces
 gh clone <owner>/<repo>
 ```
 
-Then use **File → Open Folder...** to open `/workspaces/<repo-name>` in VS Code.
+If you later need to push from a Codespace, use:
+
+```bash
+cd /workspaces/<repo>
+env -u GITHUB_TOKEN -u GH_TOKEN git \
+  -c credential.helper= \
+  -c credential.helper='!gh auth git-credential' \
+  push origin <branch>
+```
+
+Then use **File → Open Folder...** to open `/workspaces` in VS Code.
