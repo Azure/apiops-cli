@@ -22,6 +22,7 @@ dist/
 !*.config.js
 !vitest.config.ts
 !eslint.config.js
+!tests/integration/**/function-app/**/*.js
 
 # OS files
 Thumbs.db
