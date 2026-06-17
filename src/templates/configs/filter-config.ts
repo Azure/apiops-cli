@@ -15,8 +15,8 @@ export function generateFilterConfig(): string {
 # apis:
 #   - echo-api
 #   - petstore-api
-#   - prod-*                        # Wildcard: all APIs starting with prod-
-#   - *-internal-*                  # Wildcard: all APIs containing -internal-
+#   - 'prod-*'                       # Wildcard: all APIs starting with prod-
+#   - '*-internal-*'                 # Wildcard: all APIs containing -internal-
 
 # Advanced: Filter API sub-resources (operations, diagnostics, schemas, releases)
 # apis:
@@ -25,7 +25,7 @@ export function generateFilterConfig(): string {
 #       operations:
 #         - get-pets
 #         - create-pet
-#         - list-*                    # Wildcard: all operations starting with list-
+#         - 'list-*'                  # Wildcard: all operations starting with list-
 #       diagnostics:
 #         - applicationinsights
 #       schemas: []                   # Exclude all schemas

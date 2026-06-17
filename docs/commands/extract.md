@@ -102,7 +102,7 @@ To extract only specific resources, pass a YAML filter file with `--filter`. Fil
 apis:
   - echo-api
   - petstore-api
-  - prod-*              # Wildcard: all APIs starting with prod-
+  - 'prod-*'             # Wildcard: all APIs starting with prod-
 products:
   - starter
 backends:

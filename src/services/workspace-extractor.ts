@@ -71,6 +71,16 @@ export async function extractWorkspaces(
             : pattern.toLowerCase() === name.toLowerCase()
         )
       );
+
+      // Warn about exact (non-wildcard) entries that didn't match any discovered workspace
+      for (const entry of filter.workspaces) {
+        if (!isWildcardPattern(entry)) {
+          const matched = discovered.some((d) => d.toLowerCase() === entry.toLowerCase());
+          if (!matched) {
+            logger.warn(`Workspace filter entry "${entry}" did not match any discovered workspace`);
+          }
+        }
+      }
     } else {
       workspaceNames = filter.workspaces;
     }

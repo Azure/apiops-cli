@@ -61,7 +61,7 @@ Extract only the APIs you care about. Create a `filter.yaml`:
 apiNames:
   - pet-store-api
   - user-api
-  - staging-*           # Wildcard: all APIs starting with staging-
+  - 'staging-*'          # Wildcard: all APIs starting with staging-
 ```
 
 ```bash
