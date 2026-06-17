@@ -459,6 +459,12 @@ When you create a logger in APIM (e.g., for Application Insights), APIM auto-gen
 
 Extracted secret named values have their `value` replaced with `*** REDACTED ***`. If you publish these without providing an override with a real value or Key Vault reference, they will be skipped with a warning. Always provide overrides for secret named values when publishing to a different environment.
 
+### Gotcha: Override-only changes are not published incrementally
+
+If your pipeline uses incremental publish (`--commit-id`) and you commit **only** a change to the override file (e.g., updating a named value URL in `configuration.prod.yaml`), nothing will be published. Incremental publish uses `git diff` on artifact files in the `--source` directory to determine which resources changed — the override file is not an artifact file and is not considered.
+
+**Workaround:** Either run a full publish (omit `--commit-id`) when you change override values, or include an artifact file change in the same commit. See the [Incremental Publish guide](incremental-publish.md#override-only-changes) for details.
+
 ### Dry-run validation
 
 Use `--dry-run` to preview publish behavior with overrides:

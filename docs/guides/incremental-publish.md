@@ -48,6 +48,7 @@ flowchart TD
 - **First commit (no parent):** All files are treated as added — equivalent to a full publish.
 - **Git unavailable or commit not found:** The CLI warns and publishes nothing (zero resources). This is a safe fallback, not a full publish.
 - **Multiple files per resource:** If `apis/my-api/apiInformation.json` and `apis/my-api/specification.yaml` both change, `my-api` is published once.
+- **Override file changes only:** If a commit only modifies the override configuration file (e.g., `configuration.prod.yaml`) and no artifact files in the `--source` directory change, **nothing is published**.
 
 ---
 
@@ -138,6 +139,7 @@ Force a full publish (omit `--commit-id`) when:
 - **First deployment** to a new APIM instance — there's no commit history to diff against.
 - **Configuration drift** — someone changed APIM directly in the portal and you want to overwrite everything from git.
 - **Major refactoring** — renaming many APIs or restructuring directories. A full publish ensures nothing is missed.
+- **Override-only changes** — you updated an override file but no artifact files changed. See [Gotcha: Override-only changes are not published incrementally](environment-overrides.md#gotcha-override-only-changes-are-not-published-incrementally).
 - **You need `--delete-unmatched`** — see below.
 
 ### `--commit-id` and `--delete-unmatched` are mutually exclusive
@@ -159,6 +161,7 @@ Options --commit-id (or COMMIT_ID) and --delete-unmatched are mutually exclusive
 | `Not in a git repository; skipping incremental diff` | The `--source` directory is not inside a git repo | Ensure your artifact directory is inside a cloned repo. In CI, check that the checkout step runs before publish. |
 | `Commit <sha> not found; skipping incremental diff` | Shallow clone doesn't include the commit | Use `fetch-depth: 2` (or more) in your checkout step to include at least the parent commit. |
 | Nothing published, no errors | Commit diff returned no artifact file changes | Verify the commit actually touches files in the `--source` directory. Use `git diff --name-status HEAD~1 HEAD` locally to check. |
+| Nothing published after override change | Override file changed but no artifact files changed | Override files are not artifact files — they don't trigger resource selection. Run a full publish (omit `--commit-id`) or include an artifact file change in the same commit. See [Gotcha: Override-only changes](environment-overrides.md#gotcha-override-only-changes-are-not-published-incrementally). |
 | `mutually exclusive` error | Both `--commit-id` and `--delete-unmatched` specified | Remove one. Use `--commit-id` for incremental or `--delete-unmatched` for full sync — not both. |
 
 ### GitHub Actions: fetch depth
