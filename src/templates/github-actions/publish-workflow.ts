@@ -49,16 +49,59 @@ ${autoDeployComment}
           tenant-id: \${{ secrets.AZURE_TENANT_ID }}
           subscription-id: \${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Validate token source values (${env})
+        env:
+          AVAILABLE_SECRETS_JSON: \${{ toJSON(secrets) }}
+        run: |
+          missing=0
+          tokens=$(grep -o '{#\\[[^]]*\\]#}' configuration.${env}.yaml | sed -E 's/^\\{#\\[([^]]+)\\]#\\}$/\\1/' | sort -u || true)
+
+          if [ -z "$tokens" ]; then
+            echo "No tokens found in configuration.${env}.yaml"
+            exit 0
+          fi
+
+          while IFS= read -r token; do
+            if [ -z "$token" ]; then
+              continue
+            fi
+
+            if ! echo "$token" | grep -Eq '^[A-Za-z_][A-Za-z0-9_]*$'; then
+              echo "::error::Token '$token' is not a valid environment variable name. Use letters, numbers, and underscores only."
+              missing=1
+              continue
+            fi
+
+            value=$(jq -r --arg token "$token" '.[$token] // empty' <<< "$AVAILABLE_SECRETS_JSON")
+            if [ -z "$value" ]; then
+              echo "::error::Missing secret for token '$token'"
+              missing=1
+              continue
+            fi
+
+            printf '%s=%s\\n' "$token" "$value" >> "$GITHUB_ENV"
+          done <<< "$tokens"
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Substitute tokens in configuration.${env}.yaml
         uses: cschleiden/replace-tokens@v1.3
         with:
           tokenPrefix: '{#['
           tokenSuffix: ']#}'
           files: '["configuration.${env}.yaml"]'
-          # Example token mapping for ${env} (uncomment and customize when needed):
-          # env:
-          #   MY_SECRET: \${{ secrets.MY_SECRET_${envUpper} }}
-          #   ANOTHER_TOKEN: \${{ secrets.ANOTHER_TOKEN_${envUpper} }}
+          # Token values are injected in the previous step based on token names.
+          # Ensure tokens in configuration.${env}.yaml match secret names exactly.
+
+      - name: Validate token substitution (${env})
+        run: |
+          if grep -q '{#\\[' configuration.${env}.yaml; then
+            echo "Unresolved tokens remain in configuration.${env}.yaml"
+            grep -o '{#\\[[^]]*\\]#}' configuration.${env}.yaml | sort -u
+            exit 1
+          fi
 
       - name: Publish to ${env} (incremental - last commit only)
         if: \${{ github.event.inputs.COMMIT_ID_CHOICE != 'publish-all-artifacts-in-repo' }}

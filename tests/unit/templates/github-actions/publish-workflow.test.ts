@@ -235,5 +235,35 @@ describe('github-actions/publish-workflow', () => {
       expect(tokenIdx).toBeGreaterThan(0);
       expect(tokenIdx).toBeLessThan(publishIdx);
     });
+
+    it('should validate unresolved tokens after substitution', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+      });
+      expect(workflow).toContain('Validate token source values (dev)');
+      expect(workflow).toContain('Validate token source values (prod)');
+      expect(workflow).toContain('AVAILABLE_SECRETS_JSON: ${{ toJSON(secrets) }}');
+      expect(workflow).toContain("echo \"::error::Missing secret for token '$token'\"");
+      expect(workflow).toContain("printf '%s=%s\\n' \"$token\" \"$value\" >> \"$GITHUB_ENV\"");
+      expect(workflow).toContain('Validate token substitution (dev)');
+      expect(workflow).toContain('Validate token substitution (prod)');
+      expect(workflow).toContain("grep -q '{#\\[' configuration.dev.yaml");
+      expect(workflow).toContain("grep -q '{#\\[' configuration.prod.yaml");
+    });
+
+    it('should place token validation step between substitution and publish', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+      });
+      const validateSourcesIdx = workflow.indexOf('Validate token source values (dev)');
+      const substituteIdx = workflow.indexOf('cschleiden/replace-tokens');
+      const validateSubstitutionIdx = workflow.indexOf('Validate token substitution (dev)');
+      const publishIdx = workflow.indexOf('npx apiops publish');
+      expect(validateSourcesIdx).toBeLessThan(substituteIdx);
+      expect(substituteIdx).toBeLessThan(validateSubstitutionIdx);
+      expect(validateSubstitutionIdx).toBeLessThan(publishIdx);
+    });
   });
 });
