@@ -8,7 +8,6 @@
 export function generateOverrideConfig(environment: string): string {
   return `# APIM Override Configuration for ${environment} environment
 # Customize resource properties for this specific environment
-# All APIOps Toolkit override sections are supported.
 # For full format details and examples, see:
 # https://github.com/Azure/apiops-cli/blob/main/docs/guides/environment-overrides.md
 
@@ -16,10 +15,10 @@ export function generateOverrideConfig(environment: string): string {
 # namedValues:
 #   - name: api-key
 #     properties:
-#       value: "${environment}-api-key-value"
+#       value: "{#[api-key]#}"
 #   - name: connection-string
 #     properties:
-#       value: "Server=${environment}-db.example.com;Database=mydb"
+#       value: "{#[DB_Connection_String]#}"
 #   - name: secret-from-keyvault
 #     properties:
 #       keyVault:

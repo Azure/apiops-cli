@@ -79,10 +79,10 @@ describe('configs/override-config', () => {
       expect(config).toContain('# APIM Override Configuration for dev environment');
     });
 
-    it('should include environment name in examples', () => {
+    it('should include token placeholder examples', () => {
       const config = generateOverrideConfig('production');
-      expect(config).toContain('production-api-key-value');
-      expect(config).toContain('production-db.example.com');
+      expect(config).toContain('{#[api-key]#}');
+      expect(config).toContain('{#[DB_Connection_String]#}');
       expect(config).toContain('production-kv.vault.azure.net');
     });
 
