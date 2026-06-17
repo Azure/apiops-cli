@@ -297,6 +297,7 @@ function workspaceSubFilterToFilterConfig(sub: WorkspaceSubFilter): FilterConfig
     namedValues: sub.namedValues,
     policyFragments: sub.policyFragments,
     products: sub.products,
+    schemas: sub.schemas,
     subscriptions: sub.subscriptions,
     tags: sub.tags,
     versionSets: sub.versionSets,

@@ -44,6 +44,7 @@ export interface WorkspaceSubFilter {
   namedValues?: string[];
   policyFragments?: string[];
   products?: string[];
+  schemas?: string[];
   subscriptions?: string[];
   tags?: string[];
   versionSets?: string[];

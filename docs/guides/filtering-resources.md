@@ -155,7 +155,7 @@ workspaces:
   - team-b-workspace              # Simple: extract all resources
 ```
 
-Supported workspace sub-filter keys: `apis`, `backends`, `diagnostics`, `groups`, `loggers`, `namedValues`, `policyFragments`, `products`, `subscriptions`, `tags`, `versionSets`.
+Supported workspace sub-filter keys: `apis`, `backends`, `diagnostics`, `groups`, `loggers`, `namedValues`, `policyFragments`, `products`, `schemas`, `subscriptions`, `tags`, `versionSets`.
 
 ---
 

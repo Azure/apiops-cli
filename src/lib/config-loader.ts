@@ -186,7 +186,7 @@ export async function loadFilterConfig(filePath: string): Promise<FilterConfig |
         if (Object.keys(subFilters).length > 0) {
           config.workspaceSubFilters = {};
           const validWsSubKeys = ['apis', 'backends', 'diagnostics', 'groups', 'loggers',
-            'namedValues', 'policyFragments', 'products', 'subscriptions', 'tags', 'versionSets'] as const;
+            'namedValues', 'policyFragments', 'products', 'schemas', 'subscriptions', 'tags', 'versionSets'] as const;
           for (const [wsName, sf] of Object.entries(subFilters)) {
             const wsSub: WorkspaceSubFilter = {};
             for (const wsField of validWsSubKeys) {
