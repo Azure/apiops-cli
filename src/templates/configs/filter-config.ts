@@ -11,10 +11,12 @@ export function generateFilterConfig(): string {
 # For full format details and examples, see:
 # https://github.com/Azure/apiops-cli/blob/main/docs/guides/filtering-resources.md
 
-# Extract only specific APIs by name
+# Extract only specific APIs by name (or wildcard pattern)
 # apis:
 #   - echo-api
 #   - petstore-api
+#   - 'prod-*'                       # Wildcard: all APIs starting with prod-
+#   - '*-internal-*'                 # Wildcard: all APIs containing -internal-
 
 # Advanced: Filter API sub-resources (operations, diagnostics, schemas, releases)
 # apis:
@@ -23,6 +25,7 @@ export function generateFilterConfig(): string {
 #       operations:
 #         - get-pets
 #         - create-pet
+#         - 'list-*'                  # Wildcard: all operations starting with list-
 #       diagnostics:
 #         - applicationinsights
 #       schemas: []                   # Exclude all schemas
@@ -116,5 +119,9 @@ export function generateFilterConfig(): string {
 #   Example:
 #   gateways: []
 #   subscriptions: []
+# - Use * to match any characters: prod-* matches prod-api, prod-users
+# - Use ? to match a single character: api-v? matches api-v1, api-v2
+# - Exact names and wildcard patterns can be mixed in the same list
+# - All matching is case-insensitive
 `;
 }

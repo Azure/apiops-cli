@@ -9,6 +9,7 @@ import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext } from '../../../src/models/types.js';
 import { FilterConfig } from '../../../src/models/config.js';
 import { extractWorkspaces } from '../../../src/services/workspace-extractor.js';
+import { resolveWorkspaceFilter } from '../../../src/services/workspace-extractor.js';
 
 const testContext: ApimServiceContext = {
   subscriptionId: 'sub-1',
@@ -201,6 +202,187 @@ describe('workspace-extractor', () => {
 
       expect(results).toHaveLength(1);
       expect(results[0]?.resourceCount).toBeGreaterThan(0);
+    });
+
+    it('should apply workspace sub-filter to limit extracted resources', async () => {
+      const client = createMockClient();
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType) {
+        if (type === ResourceType.NamedValue) {
+          yield { name: 'ws-nv-1', properties: {} };
+          yield { name: 'ws-nv-2', properties: {} };
+        }
+      };
+      const store = createMockStore();
+      const filter: FilterConfig = {
+        workspaces: ['ws-1'],
+        workspaceSubFilters: {
+          'ws-1': {
+            namedValues: ['ws-nv-1'],
+          },
+        },
+      };
+
+      const results = await extractWorkspaces(
+        client, store, testContext, '/output', filter
+      );
+
+      expect(results).toHaveLength(1);
+      // Only ws-nv-1 should be extracted, ws-nv-2 should be filtered out
+      expect(results[0]?.resourceCount).toBe(1);
+    });
+
+    it('should extract everything when workspace has no sub-filter', async () => {
+      const client = createMockClient();
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType) {
+        if (type === ResourceType.NamedValue) {
+          yield { name: 'ws-nv-1', properties: {} };
+          yield { name: 'ws-nv-2', properties: {} };
+        }
+      };
+      const store = createMockStore();
+      const filter: FilterConfig = {
+        workspaces: ['ws-1'],
+        // No workspaceSubFilters — extract everything in the workspace
+      };
+
+      const results = await extractWorkspaces(
+        client, store, testContext, '/output', filter
+      );
+
+      expect(results).toHaveLength(1);
+      // Both named values should be extracted
+      expect(results[0]?.resourceCount).toBe(2);
+    });
+
+    it('should support wildcard patterns in workspace names', async () => {
+      const client = createMockClient();
+      // Discovery returns three workspaces
+      const originalListResources = client.listResources;
+      let firstCall = true;
+      client.listResources = async function* (ctx: ApimServiceContext, type: ResourceType) {
+        if (type === ResourceType.Workspace && firstCall) {
+          firstCall = false;
+          yield { name: 'team-a-workspace', properties: {} };
+          yield { name: 'team-b-workspace', properties: {} };
+          yield { name: 'other-workspace', properties: {} };
+          return;
+        }
+        yield* originalListResources(ctx, type);
+      };
+      const store = createMockStore();
+      const filter: FilterConfig = { workspaces: ['team-*'] };
+
+      const results = await extractWorkspaces(
+        client, store, testContext, '/output', filter
+      );
+
+      // Only team-a-workspace and team-b-workspace should match
+      expect(results).toHaveLength(2);
+      expect(results.map((r) => r.workspaceName).sort()).toEqual([
+        'team-a-workspace',
+        'team-b-workspace',
+      ]);
+    });
+
+    it('should apply sub-filter with wildcard workspace name patterns', async () => {
+      const client = createMockClient();
+      let firstCall = true;
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType) {
+        if (type === ResourceType.Workspace && firstCall) {
+          firstCall = false;
+          yield { name: 'team-a', properties: {} };
+          return;
+        }
+        if (type === ResourceType.NamedValue) {
+          yield { name: 'nv-1', properties: {} };
+          yield { name: 'nv-2', properties: {} };
+        }
+      };
+      const store = createMockStore();
+      const filter: FilterConfig = {
+        workspaces: ['team-*'],
+        workspaceSubFilters: {
+          'team-a': {
+            namedValues: ['nv-1'],
+          },
+        },
+      };
+
+      const results = await extractWorkspaces(
+        client, store, testContext, '/output', filter
+      );
+
+      expect(results).toHaveLength(1);
+      expect(results[0]?.workspaceName).toBe('team-a');
+      // Only nv-1 should be extracted due to sub-filter
+      expect(results[0]?.resourceCount).toBe(1);
+    });
+  });
+
+  describe('resolveWorkspaceFilter', () => {
+    it('should return undefined when no filter provided', () => {
+      expect(resolveWorkspaceFilter('ws-1')).toBeUndefined();
+    });
+
+    it('should return undefined when no workspaceSubFilters', () => {
+      const filter: FilterConfig = { workspaces: ['ws-1'] };
+      expect(resolveWorkspaceFilter('ws-1', filter)).toBeUndefined();
+    });
+
+    it('should return undefined when workspace not in sub-filters', () => {
+      const filter: FilterConfig = {
+        workspaces: ['ws-1'],
+        workspaceSubFilters: {
+          'ws-2': { apis: ['api-1'] },
+        },
+      };
+      expect(resolveWorkspaceFilter('ws-1', filter)).toBeUndefined();
+    });
+
+    it('should resolve workspace sub-filter case-insensitively', () => {
+      const filter: FilterConfig = {
+        workspaces: ['WS-1'],
+        workspaceSubFilters: {
+          'ws-1': { apis: ['api-1'], backends: ['backend-1'] },
+        },
+      };
+      const result = resolveWorkspaceFilter('WS-1', filter);
+      expect(result).toBeDefined();
+      expect(result!.apis).toEqual(['api-1']);
+      expect(result!.backends).toEqual(['backend-1']);
+    });
+
+    it('should convert all workspace sub-filter fields to FilterConfig', () => {
+      const filter: FilterConfig = {
+        workspaceSubFilters: {
+          'ws-1': {
+            apis: ['api-1'],
+            backends: ['be-1'],
+            diagnostics: ['diag-1'],
+            groups: ['group-1'],
+            loggers: ['logger-1'],
+            namedValues: ['nv-1'],
+            policyFragments: ['pf-1'],
+            products: ['prod-1'],
+            subscriptions: ['sub-1'],
+            tags: ['tag-1'],
+            versionSets: ['vs-1'],
+          },
+        },
+      };
+      const result = resolveWorkspaceFilter('ws-1', filter);
+      expect(result).toBeDefined();
+      expect(result!.apis).toEqual(['api-1']);
+      expect(result!.backends).toEqual(['be-1']);
+      expect(result!.diagnostics).toEqual(['diag-1']);
+      expect(result!.groups).toEqual(['group-1']);
+      expect(result!.loggers).toEqual(['logger-1']);
+      expect(result!.namedValues).toEqual(['nv-1']);
+      expect(result!.policyFragments).toEqual(['pf-1']);
+      expect(result!.products).toEqual(['prod-1']);
+      expect(result!.subscriptions).toEqual(['sub-1']);
+      expect(result!.tags).toEqual(['tag-1']);
+      expect(result!.versionSets).toEqual(['vs-1']);
     });
   });
 });

@@ -12,6 +12,9 @@ import {
   shouldIncludeResource,
   filterResources,
   extractRootApiName,
+  isWildcardPattern,
+  wildcardToRegex,
+  wildcardMatch,
 } from '../../../src/services/filter-service.js';
 
 describe('filter-service', () => {
@@ -323,6 +326,261 @@ describe('filter-service', () => {
 
     it('should handle empty string', () => {
       expect(extractRootApiName('')).toBe('');
+    });
+  });
+
+  describe('isWildcardPattern', () => {
+    it('should detect * wildcard', () => {
+      expect(isWildcardPattern('*-test')).toBe(true);
+      expect(isWildcardPattern('prod-*')).toBe(true);
+      expect(isWildcardPattern('*')).toBe(true);
+    });
+
+    it('should detect ? wildcard', () => {
+      expect(isWildcardPattern('api-v?')).toBe(true);
+      expect(isWildcardPattern('?-test')).toBe(true);
+    });
+
+    it('should return false for exact names', () => {
+      expect(isWildcardPattern('my-api')).toBe(false);
+      expect(isWildcardPattern('prod-api-v2')).toBe(false);
+    });
+  });
+
+  describe('wildcardMatch', () => {
+    it('should match * against any characters', () => {
+      expect(wildcardMatch('prod-*', 'prod-api')).toBe(true);
+      expect(wildcardMatch('prod-*', 'prod-')).toBe(true);
+      expect(wildcardMatch('prod-*', 'dev-api')).toBe(false);
+    });
+
+    it('should match ? against a single character', () => {
+      expect(wildcardMatch('api-v?', 'api-v1')).toBe(true);
+      expect(wildcardMatch('api-v?', 'api-v2')).toBe(true);
+      expect(wildcardMatch('api-v?', 'api-v10')).toBe(false);
+      expect(wildcardMatch('api-v?', 'api-v')).toBe(false);
+    });
+
+    it('should treat dots in patterns as literal dots, not regex any-char', () => {
+      // "myapi.*" should match "myapi.test" but NOT "myapixtest"
+      expect(wildcardMatch('myapi.*', 'myapi.test')).toBe(true);
+      expect(wildcardMatch('myapi.*', 'myapi.v2')).toBe(true);
+      expect(wildcardMatch('myapi.*', 'myapixtest')).toBe(false);
+      expect(wildcardMatch('myapi.*', 'myapi-test')).toBe(false);
+    });
+
+    it('should handle names with dots when matching exact segments', () => {
+      // "*.test" should match "echo.test" but not "echo-test"
+      expect(wildcardMatch('*.test', 'echo.test')).toBe(true);
+      expect(wildcardMatch('*.test', 'petstore.test')).toBe(true);
+      expect(wildcardMatch('*.test', 'echo-test')).toBe(false);
+      expect(wildcardMatch('*.test', 'echoXtest')).toBe(false);
+    });
+
+    it('should handle names with multiple dots', () => {
+      expect(wildcardMatch('api.v1.*', 'api.v1.test')).toBe(true);
+      expect(wildcardMatch('api.v1.*', 'api.v1.prod')).toBe(true);
+      expect(wildcardMatch('api.v1.*', 'api.v2.test')).toBe(false);
+      expect(wildcardMatch('*.v1.*', 'api.v1.test')).toBe(true);
+      expect(wildcardMatch('*.v1.*', 'svc.v1.prod')).toBe(true);
+    });
+
+    it('should treat other regex special chars as literals', () => {
+      // Names with parentheses, brackets, plus, etc.
+      expect(wildcardMatch('api(v1)*', 'api(v1)-test')).toBe(true);
+      expect(wildcardMatch('api[1]*', 'api[1]-prod')).toBe(true);
+      expect(wildcardMatch('api+v1*', 'api+v1-test')).toBe(true);
+    });
+
+    it('should be case-insensitive', () => {
+      expect(wildcardMatch('Prod-*', 'prod-api')).toBe(true);
+      expect(wildcardMatch('Prod-*', 'PROD-API')).toBe(true);
+    });
+  });
+
+  describe('wildcardToRegex', () => {
+    it('should produce a regex that anchors to start and end', () => {
+      const regex = wildcardToRegex('prod-*');
+      expect(regex.test('prod-api')).toBe(true);
+      expect(regex.test('xxprod-api')).toBe(false);
+    });
+
+    it('should escape regex special characters', () => {
+      const regex = wildcardToRegex('api.v1.*');
+      expect(regex.test('api.v1.test')).toBe(true);
+      expect(regex.test('apixv1xtest')).toBe(false);
+    });
+  });
+
+  describe('wildcard pattern matching in shouldIncludeResource', () => {
+    it('should match APIs ending with a suffix using *-suffix pattern', () => {
+      const filter: FilterConfig = { apis: ['*-test'] };
+      const included: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['echo-test'],
+      };
+      const excluded: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['echo-prod'],
+      };
+      expect(shouldIncludeResource(included, filter)).toBe(true);
+      expect(shouldIncludeResource(excluded, filter)).toBe(false);
+    });
+
+    it('should match APIs starting with a prefix using prefix-* pattern', () => {
+      const filter: FilterConfig = { apis: ['prod-*'] };
+      const included: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['prod-users-api'],
+      };
+      const excluded: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['dev-users-api'],
+      };
+      expect(shouldIncludeResource(included, filter)).toBe(true);
+      expect(shouldIncludeResource(excluded, filter)).toBe(false);
+    });
+
+    it('should match APIs containing a substring using *-substr-* pattern', () => {
+      const filter: FilterConfig = { apis: ['*-internal-*'] };
+      const included: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['company-internal-users'],
+      };
+      const excluded: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['company-external-users'],
+      };
+      expect(shouldIncludeResource(included, filter)).toBe(true);
+      expect(shouldIncludeResource(excluded, filter)).toBe(false);
+    });
+
+    it('should match all resources with * wildcard', () => {
+      const filter: FilterConfig = { apis: ['*'] };
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['any-api-name'],
+      };
+      expect(shouldIncludeResource(descriptor, filter)).toBe(true);
+    });
+
+    it('should support ? for single character matching', () => {
+      const filter: FilterConfig = { apis: ['api-v?'] };
+      const v1: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['api-v1'],
+      };
+      const v2: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['api-v2'],
+      };
+      const v10: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['api-v10'],
+      };
+      expect(shouldIncludeResource(v1, filter)).toBe(true);
+      expect(shouldIncludeResource(v2, filter)).toBe(true);
+      expect(shouldIncludeResource(v10, filter)).toBe(false);
+    });
+
+    it('should support mixing exact names and wildcard patterns', () => {
+      const filter: FilterConfig = { apis: ['echo-api', 'prod-*'] };
+      const exact: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['echo-api'],
+      };
+      const pattern: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['prod-users'],
+      };
+      const neither: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['dev-users'],
+      };
+      expect(shouldIncludeResource(exact, filter)).toBe(true);
+      expect(shouldIncludeResource(pattern, filter)).toBe(true);
+      expect(shouldIncludeResource(neither, filter)).toBe(false);
+    });
+
+    it('should apply wildcard matching case-insensitively', () => {
+      const filter: FilterConfig = { apis: ['Prod-*'] };
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['PROD-Users-Api'],
+      };
+      expect(shouldIncludeResource(descriptor, filter)).toBe(true);
+    });
+
+    it('should apply wildcard matching to non-API resource types', () => {
+      const filter: FilterConfig = {
+        backends: ['backend-*-prod'],
+        products: ['test-*'],
+        namedValues: ['*-secret'],
+      };
+      const backend: ResourceDescriptor = {
+        type: ResourceType.Backend,
+        nameParts: ['backend-users-prod'],
+      };
+      const product: ResourceDescriptor = {
+        type: ResourceType.Product,
+        nameParts: ['test-starter'],
+      };
+      const namedValue: ResourceDescriptor = {
+        type: ResourceType.NamedValue,
+        nameParts: ['db-connection-secret'],
+      };
+      const excludedBackend: ResourceDescriptor = {
+        type: ResourceType.Backend,
+        nameParts: ['backend-users-dev'],
+      };
+      expect(shouldIncludeResource(backend, filter)).toBe(true);
+      expect(shouldIncludeResource(product, filter)).toBe(true);
+      expect(shouldIncludeResource(namedValue, filter)).toBe(true);
+      expect(shouldIncludeResource(excludedBackend, filter)).toBe(false);
+    });
+
+    it('should apply wildcard matching to API revisions by root name', () => {
+      const filter: FilterConfig = { apis: ['prod-*'] };
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['prod-users;rev=3'],
+      };
+      expect(shouldIncludeResource(descriptor, filter)).toBe(true);
+    });
+
+    it('should apply wildcard matching to child resources via parent name', () => {
+      const filter: FilterConfig = { apis: ['prod-*'] };
+      const apiPolicy: ResourceDescriptor = {
+        type: ResourceType.ApiPolicy,
+        nameParts: ['prod-users'],
+      };
+      const excludedPolicy: ResourceDescriptor = {
+        type: ResourceType.ApiPolicy,
+        nameParts: ['dev-users'],
+      };
+      expect(shouldIncludeResource(apiPolicy, filter)).toBe(true);
+      expect(shouldIncludeResource(excludedPolicy, filter)).toBe(false);
+    });
+
+    it('should apply wildcard matching in apiSubFilters operations', () => {
+      const filter: FilterConfig = {
+        apis: ['my-api'],
+        apiSubFilters: {
+          'my-api': {
+            operations: ['get-*'],
+          },
+        },
+      };
+      const included: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['my-api', 'get-users'],
+      };
+      const excluded: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['my-api', 'post-users'],
+      };
+      expect(shouldIncludeResource(included, filter)).toBe(true);
+      expect(shouldIncludeResource(excluded, filter)).toBe(false);
     });
   });
 });

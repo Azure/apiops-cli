@@ -95,17 +95,19 @@ For local development, `az login` is the simplest option. For CI/CD pipelines, u
 
 By default, `apiops extract` exports **all** resources from the APIM instance (34 resource types including APIs, products, backends, named values, tags, policies, and more).
 
-To extract only specific resources, pass a YAML filter file with `--filter`:
+To extract only specific resources, pass a YAML filter file with `--filter`. Filter entries support exact names and wildcard patterns (`*` for any characters, `?` for a single character):
 
 ```yaml
 # configuration.extractor.yaml
 apis:
   - echo-api
   - petstore-api
+  - 'prod-*'             # Wildcard: all APIs starting with prod-
 products:
   - starter
 backends:
   - backend-api
+  - '*-internal'        # Wildcard: all backends ending with -internal
 namedValues:
   - api-key
 tags:

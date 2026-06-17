@@ -72,8 +72,44 @@ namedValues:
 - Simple fields must be an array of strings
 - `apis` and `workspaces` also accept nested object entries for sub-resource filtering (see below)
 - Names are matched case-insensitively against APIM resource names
+- Wildcard patterns are supported — `*` matches any characters, `?` matches a single character (see below)
+- Exact names and wildcard patterns can be mixed in the same array
 - An empty file extracts everything (same as no filter)
 - An empty array (`[]`) excludes ALL resources of that type
+
+---
+
+## Wildcard Pattern Matching
+
+Filter entries support glob-style wildcard patterns for matching multiple resources by naming convention:
+
+| Wildcard | Meaning | Example |
+|----------|---------|---------|
+| `*` | Matches zero or more characters | `prod-*` matches `prod-api`, `prod-users` |
+| `?` | Matches exactly one character | `api-v?` matches `api-v1`, `api-v2` but not `api-v10` |
+
+### Examples
+
+```yaml
+apis:
+  - '*-test'          # All APIs ending with -test
+  - 'prod-*'          # All APIs starting with prod-
+  - '*-internal-*'    # All APIs containing -internal-
+  - 'v2-*-api'        # APIs following v2-{name}-api pattern
+  - 'echo-api'        # Exact names and patterns can be mixed
+
+products:
+  - 'test-*'          # All test products
+  - '*-starter'       # All starter tier products
+
+backends:
+  - 'backend-*-prod'  # All production backends
+
+namedValues:
+  - '*-connection-string'  # All connection string named values
+```
+
+Wildcard matching is case-insensitive, just like exact matching. Special characters in resource names (e.g., dots in `my.api.v1`) are treated literally — `my.api.*` matches `my.api.test` but not `myXapiXtest`.
 
 ---
 
@@ -104,8 +140,6 @@ apis:
 
 ### Workspace sub-resource filters
 
-> **Note:** Workspace sub-resource filtering is parsed but not yet applied at runtime. Currently, including a workspace extracts all resources within it. This matches the Toolkit's configuration format for forward compatibility. See [#119](https://github.com/Azure/apiops-cli/issues/119) for tracking.
-
 The configuration format supports specifying which workspace-scoped resources to extract:
 
 ```yaml
@@ -121,7 +155,7 @@ workspaces:
   - team-b-workspace              # Simple: extract all resources
 ```
 
-Supported workspace sub-filter keys: `apis`, `backends`, `diagnostics`, `groups`, `loggers`, `namedValues`, `policyFragments`, `products`, `subscriptions`, `tags`, `versionSets`.
+Supported workspace sub-filter keys: `apis`, `backends`, `diagnostics`, `groups`, `loggers`, `namedValues`, `policyFragments`, `products`, `schemas`, `subscriptions`, `tags`, `versionSets`.
 
 ---
 
@@ -268,6 +302,20 @@ backends:
 
 There is no "exclude" syntax. To extract everything except certain resources, list all the resources you _do_ want. For large instances, it's often easier to extract everything and use `.gitignore` or separate branches to manage visibility.
 
+### Pattern-Based Team Filtering
+
+Using wildcard patterns to extract resources by naming convention:
+
+```yaml
+# configuration.extractor.yaml
+apis:
+  - 'team-payments-*'     # All APIs owned by the payments team
+namedValues:
+  - 'payments-*'          # All named values for payments
+backends:
+  - '*-payments-*'        # All backends related to payments
+```
+
 ---
 
 ## Tips
@@ -276,6 +324,7 @@ There is no "exclude" syntax. To extract everything except certain resources, li
 - **One filter per team** — In multi-team setups, each team maintains its own `configuration.extractor.yaml`
 - **Commit the filter file** — Keep it in version control alongside your artifacts so CI/CD pipelines can use it
 - **Case-insensitive matching** — Filter values are matched case-insensitively against APIM resource names
+- **Use wildcard patterns** — `*` and `?` patterns let you match resources by naming convention instead of listing each name individually
 - **Validate early** — The config loader validates filter entries and will throw `Failed to load filter config` on invalid YAML. Unknown top-level keys produce a warning.
 
 ---

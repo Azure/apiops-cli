@@ -200,11 +200,52 @@ export function extractRootApiName(name: string): string {
 }
 
 /**
+ * Check if a pattern contains wildcard characters (* or ?).
+ */
+export function isWildcardPattern(pattern: string): boolean {
+  return pattern.includes('*') || pattern.includes('?');
+}
+
+/**
+ * Convert a glob-style wildcard pattern to a RegExp.
+ * Supports:
+ *  - `*` matches zero or more characters
+ *  - `?` matches exactly one character
+ * All other characters are escaped for literal matching.
+ * Matching is case-insensitive.
+ */
+export function wildcardToRegex(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  const regexStr = escaped.replace(/\*/g, '.*').replace(/\?/g, '.');
+  return new RegExp(`^${regexStr}$`, 'i');
+}
+
+/** Warn once per pattern that looks likely to cause slow matching. */
+const warnedPatterns = new Set<string>();
+
+/**
+ * Match a string against a glob-style wildcard pattern (case-insensitive).
+ * Logs a warning for patterns with many wildcards that may be slow.
+ */
+export function wildcardMatch(pattern: string, text: string): boolean {
+  const starCount = (pattern.match(/\*/g) ?? []).length;
+  if (starCount > 4 && !warnedPatterns.has(pattern)) {
+    warnedPatterns.add(pattern);
+    logger.warn(
+      `Filter pattern "${pattern}" has ${starCount} wildcards and may be slow to evaluate`
+    );
+  }
+  return wildcardToRegex(pattern).test(text);
+}
+
+/**
  * Match a resource name against a filter allowlist.
  *
  * - undefined allowlist → include all (no filter for this type)
  * - empty array → include none
- * - non-empty array → case-insensitive match
+ * - non-empty array → case-insensitive exact match or wildcard pattern match
+ *
+ * Wildcard patterns use `*` (zero or more characters) and `?` (single character).
  */
 function matchesFilter(name: string, allowlist: string[] | undefined): boolean {
   if (allowlist === undefined) {
@@ -220,6 +261,9 @@ function matchesFilter(name: string, allowlist: string[] | undefined): boolean {
   const lowerRoot = extractRootApiName(lowerName);
 
   return allowlist.some((allowed) => {
+    if (isWildcardPattern(allowed)) {
+      return wildcardMatch(allowed, lowerName) || wildcardMatch(allowed, lowerRoot);
+    }
     const lowerAllowed = allowed.toLowerCase();
     return lowerName === lowerAllowed || lowerRoot === lowerAllowed;
   });
