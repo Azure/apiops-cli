@@ -14,44 +14,15 @@ import { applyOverrides } from '../../../src/services/override-merger.js';
 
 // Mock resource-publisher so we can verify call sequence
 const mockPublishResource = vi.fn();
-vi.mock('../../../src/services/resource-publisher.js', () => ({
-  normalizeMcpToolOperationIds: (json: Record<string, unknown>, context: ApimServiceContext) => {
-    const properties = json.properties as Record<string, unknown> | undefined;
-    const mcpTools = properties?.mcpTools;
-    if (!Array.isArray(mcpTools)) {
-      return json;
-    }
-
-    const targetArmPrefix = context.baseUrl.replace(/^https?:\/\/[^/]+/, '');
-    return {
-      ...json,
-      properties: {
-        ...properties,
-        mcpTools: mcpTools.map((tool) => {
-          if (!tool || typeof tool !== 'object') {
-            return tool;
-          }
-
-          const operationId = (tool as Record<string, unknown>).operationId;
-          if (typeof operationId !== 'string') {
-            return tool;
-          }
-
-          const operationsIndex = operationId.indexOf('/apis/');
-          if (operationsIndex === -1) {
-            return tool;
-          }
-
-          return {
-            ...(tool as Record<string, unknown>),
-            operationId: `${targetArmPrefix}${operationId.slice(operationsIndex)}`,
-          };
-        }),
-      },
-    };
-  },
-  publishResource: (...args: unknown[]) => mockPublishResource(...args),
-}));
+vi.mock('../../../src/services/resource-publisher.js', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/services/resource-publisher.js')>(
+    '../../../src/services/resource-publisher.js'
+  );
+  return {
+    ...actual,
+    publishResource: (...args: unknown[]) => mockPublishResource(...args),
+  };
+});
 
 // Mock override-merger
 vi.mock('../../../src/services/override-merger.js', () => ({
@@ -172,7 +143,7 @@ describe('api-publisher', () => {
       }]);
     });
 
-    it('should ignore legacy McpServer child artifacts when publishing API children', async () => {
+    it('should filter out legacy McpServer child artifacts while still publishing other API children', async () => {
       const client = createMockClient();
       const children = [
         { type: ResourceType.McpServer, nameParts: ['orders-api'] },
