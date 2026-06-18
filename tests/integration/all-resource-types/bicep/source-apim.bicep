@@ -690,18 +690,18 @@ resource productPremium 'Microsoft.ApiManagement/service/products@2025-09-01-pre
 // APIs
 // ---------------------------------------------------------------------------
 
-// 1. REST API with OpenAPI spec
+// 1. REST API with Petstore Swagger spec (imported from URL)
 resource apiRestOpenapi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-rest-openapi'
   properties: {
-    displayName: 'KS REST OpenAPI'
-    description: 'Kitchen sink REST API imported from OpenAPI spec'
+    displayName: 'KS REST Petstore'
+    description: 'Kitchen sink REST API imported from Petstore Swagger'
     path: 'ks/rest'
     protocols: ['https']
-    format: 'openapi'
-    value: openApiSpec
-    serviceUrl: 'https://dummyjson.com'
+    format: 'swagger-link-json'
+    value: 'https://petstore.swagger.io/v2/swagger.json'
+    serviceUrl: 'https://petstore.swagger.io/v2'
     subscriptionRequired: false
     apiType: 'http'
   }
@@ -871,14 +871,14 @@ resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview'
     }
     mcpTools: [
       {
-        name: 'healthCheck'
-        description: 'Health check endpoint'
-        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-openapi', 'healthCheck')
+        name: 'findPetsByStatus'
+        description: 'Find pets by status'
+        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-openapi', 'findPetsByStatus')
       }
       {
-        name: 'listItems'
-        description: 'List all items'
-        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-openapi', 'listItems')
+        name: 'getPetById'
+        description: 'Get pet by ID'
+        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-openapi', 'getPetById')
       }
     ]
   })
@@ -1243,11 +1243,11 @@ resource apiRestDiagnostic 'Microsoft.ApiManagement/service/apis/diagnostics@202
   }
 }
 
-// --- API Operation Policy (on healthCheck operation) ---
-// Note: Operations are created automatically from the OpenAPI spec import.
-// We apply a policy to the GET /healthz operation (operationId: healthCheck).
+// --- API Operation Policy (on getPetById operation) ---
+// Note: Operations are created automatically from the Petstore Swagger import.
+// We apply a policy to the GET /pet/{petId} operation (operationId: getPetById).
 resource apiRestOpPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2025-09-01-preview' = {
-  name: '${apim.name}/src-rest-openapi/healthCheck/policy'
+  name: '${apim.name}/src-rest-openapi/getPetById/policy'
   dependsOn: [apiRestOpenapi]
   properties: {
     format: 'rawxml'

@@ -351,7 +351,7 @@
           "files": ["apiInformation.json", "policy.xml", "specification.yaml"],
           "spotChecks": {
             "apiInformation.json": {
-              "properties.displayName": "KS REST OpenAPI",
+              "properties.displayName": "KS REST Petstore",
               "properties.path": "ks/rest",
               "properties.protocols": ["https"],
               "properties.subscriptionRequired": false
@@ -360,13 +360,14 @@
               "contentIncludes": ["set-header", "X-all-resources"]
             },
             "specification.yaml": {
-              "contentIncludes": ["openapi:", "KS REST OpenAPI"]
+              "contentIncludes": ["openapi:", "Petstore"],
+              "note": "APIM exports swagger-link-json imports as OpenAPI 3.0 YAML via openapi-link, so openapi: prefix is expected"
             }
           },
           "children": {
             "operations": {
               "minCount": 1,
-              "notes": "Only operations with policies get directories (healthCheck has policy)"
+              "notes": "Only operations with policies get directories (getPetById has policy)"
             },
             "tags": {
               "minCount": 2,
@@ -414,7 +415,7 @@
               ]
             }
           },
-          "notes": "healthCheck operation has policy.xml"
+          "notes": "getPetById operation has policy.xml"
         },
         {
           "name": "src-soap-passthrough",

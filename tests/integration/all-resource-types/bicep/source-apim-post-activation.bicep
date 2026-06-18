@@ -45,9 +45,8 @@ var mcpApiPolicyXml = '''
 		<set-variable name="rpcMethod" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?[&quot;method&quot;]?.ToString()) ?? string.Empty)" />
 		<set-variable name="rpcId" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?[&quot;id&quot;]?.ToString()) ?? &quot;1&quot;)" />
 		<set-variable name="toolName" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?.SelectToken(&quot;params.name&quot;)?.ToString()) ?? string.Empty)" />
-		<set-variable name="toolId" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?.SelectToken(&quot;params.arguments.id&quot;)?.ToString()) ?? &quot;1&quot;)" />
-		<set-variable name="createTodoText" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?.SelectToken(&quot;params.arguments.text&quot;)?.ToString()) ?? &quot;Prepare APIOps demo&quot;)" />
-		<set-variable name="createCompleted" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?.SelectToken(&quot;params.arguments.completed&quot;)?.ToString()) ?? &quot;false&quot;)" />
+		<set-variable name="petStatus" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?.SelectToken(&quot;params.arguments.status&quot;)?.ToString()) ?? &quot;available&quot;)" />
+		<set-variable name="petId" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?.SelectToken(&quot;params.arguments.petId&quot;)?.ToString()) ?? &quot;1&quot;)" />
 		<choose>
 			<when condition="@((string)context.Variables[&quot;rpcMethod&quot;] == &quot;initialize&quot;)">
 				<return-response>
@@ -100,54 +99,37 @@ var mcpApiPolicyXml = '''
             {
               new Newtonsoft.Json.Linq.JObject
               {
-                ["name"] = "healthCheck",
-                ["description"] = "Return APIM MCP server health",
-                ["inputSchema"] = new Newtonsoft.Json.Linq.JObject
-                {
-                  ["type"] = "object",
-                  ["properties"] = new Newtonsoft.Json.Linq.JObject()
-                }
-              },
-              new Newtonsoft.Json.Linq.JObject
-              {
-                ["name"] = "listItems",
-                ["description"] = "List todo items from DummyJSON",
-                ["inputSchema"] = new Newtonsoft.Json.Linq.JObject
-                {
-                  ["type"] = "object",
-                  ["properties"] = new Newtonsoft.Json.Linq.JObject()
-                }
-              },
-              new Newtonsoft.Json.Linq.JObject
-              {
-                ["name"] = "getItem",
-                ["description"] = "Get a todo item by id from DummyJSON",
+                ["name"] = "findPetsByStatus",
+                ["description"] = "Find pets by status from the Petstore API",
                 ["inputSchema"] = new Newtonsoft.Json.Linq.JObject
                 {
                   ["type"] = "object",
                   ["properties"] = new Newtonsoft.Json.Linq.JObject
                   {
-                    ["id"] = new Newtonsoft.Json.Linq.JObject
+                    ["status"] = new Newtonsoft.Json.Linq.JObject
+                    {
+                      ["type"] = "string",
+                      ["enum"] = new Newtonsoft.Json.Linq.JArray { "available", "pending", "sold" }
+                    }
+                  },
+                  ["required"] = new Newtonsoft.Json.Linq.JArray { "status" }
+                }
+              },
+              new Newtonsoft.Json.Linq.JObject
+              {
+                ["name"] = "getPetById",
+                ["description"] = "Get a pet by ID from the Petstore API",
+                ["inputSchema"] = new Newtonsoft.Json.Linq.JObject
+                {
+                  ["type"] = "object",
+                  ["properties"] = new Newtonsoft.Json.Linq.JObject
+                  {
+                    ["petId"] = new Newtonsoft.Json.Linq.JObject
                     {
                       ["type"] = "integer"
                     }
                   },
-                  ["required"] = new Newtonsoft.Json.Linq.JArray { "id" }
-                }
-              },
-              new Newtonsoft.Json.Linq.JObject
-              {
-                ["name"] = "createItem",
-                ["description"] = "Create a todo item in DummyJSON",
-                ["inputSchema"] = new Newtonsoft.Json.Linq.JObject
-                {
-                  ["type"] = "object",
-                  ["properties"] = new Newtonsoft.Json.Linq.JObject
-                  {
-                    ["text"] = new Newtonsoft.Json.Linq.JObject { ["type"] = "string" },
-                    ["completed"] = new Newtonsoft.Json.Linq.JObject { ["type"] = "boolean" }
-                  },
-                  ["required"] = new Newtonsoft.Json.Linq.JArray { "text" }
+                  ["required"] = new Newtonsoft.Json.Linq.JArray { "petId" }
                 }
               }
             };
@@ -162,49 +144,12 @@ var mcpApiPolicyXml = '''
           }</set-body>
 				</return-response>
 			</when>
-			<when condition="@((string)context.Variables[&quot;rpcMethod&quot;] == &quot;tools/call&quot; &amp;&amp; (string)context.Variables[&quot;toolName&quot;] == &quot;healthCheck&quot;)">
-				<return-response>
-					<set-status code="200" reason="OK" />
-					<set-header name="Content-Type" exists-action="override">
-						<value>application/json</value>
-					</set-header>
-					<set-body>@{
-            var req = context.Request.Body?.As<Newtonsoft.Json.Linq.JObject>(preserveContent: true) ?? new Newtonsoft.Json.Linq.JObject();
-            var idRaw = req["id"]?.ToString() ?? "1";
-            long idLong;
-            Newtonsoft.Json.Linq.JToken idToken = long.TryParse(idRaw, out idLong) ? (Newtonsoft.Json.Linq.JToken)new Newtonsoft.Json.Linq.JValue(idLong) : new Newtonsoft.Json.Linq.JValue(idRaw);
-            var payload = new Newtonsoft.Json.Linq.JObject
-            {
-              ["status"] = "ok",
-              ["source"] = "apim",
-              ["timestampUtc"] = System.DateTime.UtcNow.ToString("o")
-            };
-            var response = new Newtonsoft.Json.Linq.JObject
-            {
-              ["jsonrpc"] = "2.0",
-              ["id"] = idToken,
-              ["result"] = new Newtonsoft.Json.Linq.JObject
-              {
-                ["content"] = new Newtonsoft.Json.Linq.JArray
-                {
-                  new Newtonsoft.Json.Linq.JObject
-                  {
-                    ["type"] = "text",
-                    ["text"] = payload.ToString(Newtonsoft.Json.Formatting.None)
-                  }
-                }
-              }
-            };
-            return response.ToString(Newtonsoft.Json.Formatting.None);
-          }</set-body>
-				</return-response>
-			</when>
-			<when condition="@((string)context.Variables[&quot;rpcMethod&quot;] == &quot;tools/call&quot; &amp;&amp; (string)context.Variables[&quot;toolName&quot;] == &quot;listItems&quot;)">
-				<send-request mode="new" response-variable-name="dummyResp" timeout="20" ignore-error="false">
-					<set-url>https://dummyjson.com/todos?limit=10</set-url>
+			<when condition="@((string)context.Variables[&quot;rpcMethod&quot;] == &quot;tools/call&quot; &amp;&amp; (string)context.Variables[&quot;toolName&quot;] == &quot;findPetsByStatus&quot;)">
+				<send-request mode="new" response-variable-name="petstoreResp" timeout="20" ignore-error="false">
+					<set-url>@($"https://petstore.swagger.io/v2/pet/findByStatus?status={(string)context.Variables[&quot;petStatus&quot;]}")</set-url>
 					<set-method>GET</set-method>
 				</send-request>
-				<set-variable name="dummyBody" value="@(((IResponse)context.Variables[&quot;dummyResp&quot;]).Body.As&lt;string&gt;(preserveContent: true))" />
+				<set-variable name="petstoreBody" value="@(((IResponse)context.Variables[&quot;petstoreResp&quot;]).Body.As&lt;string&gt;(preserveContent: true))" />
 				<return-response>
 					<set-status code="200" reason="OK" />
 					<set-header name="Content-Type" exists-action="override">
@@ -215,7 +160,7 @@ var mcpApiPolicyXml = '''
             var idRaw = req["id"]?.ToString() ?? "1";
             long idLong;
             Newtonsoft.Json.Linq.JToken idToken = long.TryParse(idRaw, out idLong) ? (Newtonsoft.Json.Linq.JToken)new Newtonsoft.Json.Linq.JValue(idLong) : new Newtonsoft.Json.Linq.JValue(idRaw);
-            var text = (string)context.Variables["dummyBody"];
+            var text = (string)context.Variables["petstoreBody"];
             var response = new Newtonsoft.Json.Linq.JObject
             {
               ["jsonrpc"] = "2.0",
@@ -236,12 +181,12 @@ var mcpApiPolicyXml = '''
           }</set-body>
 				</return-response>
 			</when>
-			<when condition="@((string)context.Variables[&quot;rpcMethod&quot;] == &quot;tools/call&quot; &amp;&amp; (string)context.Variables[&quot;toolName&quot;] == &quot;getItem&quot;)">
-				<send-request mode="new" response-variable-name="dummyResp" timeout="20" ignore-error="false">
-					<set-url>@($"https://dummyjson.com/todos/{(string)context.Variables[&quot;toolId&quot;]}")</set-url>
+			<when condition="@((string)context.Variables[&quot;rpcMethod&quot;] == &quot;tools/call&quot; &amp;&amp; (string)context.Variables[&quot;toolName&quot;] == &quot;getPetById&quot;)">
+				<send-request mode="new" response-variable-name="petstoreResp" timeout="20" ignore-error="false">
+					<set-url>@($"https://petstore.swagger.io/v2/pet/{(string)context.Variables[&quot;petId&quot;]}")</set-url>
 					<set-method>GET</set-method>
 				</send-request>
-				<set-variable name="dummyBody" value="@(((IResponse)context.Variables[&quot;dummyResp&quot;]).Body.As&lt;string&gt;(preserveContent: true))" />
+				<set-variable name="petstoreBody" value="@(((IResponse)context.Variables[&quot;petstoreResp&quot;]).Body.As&lt;string&gt;(preserveContent: true))" />
 				<return-response>
 					<set-status code="200" reason="OK" />
 					<set-header name="Content-Type" exists-action="override">
@@ -252,53 +197,7 @@ var mcpApiPolicyXml = '''
             var idRaw = req["id"]?.ToString() ?? "1";
             long idLong;
             Newtonsoft.Json.Linq.JToken idToken = long.TryParse(idRaw, out idLong) ? (Newtonsoft.Json.Linq.JToken)new Newtonsoft.Json.Linq.JValue(idLong) : new Newtonsoft.Json.Linq.JValue(idRaw);
-            var text = (string)context.Variables["dummyBody"];
-            var response = new Newtonsoft.Json.Linq.JObject
-            {
-              ["jsonrpc"] = "2.0",
-              ["id"] = idToken,
-              ["result"] = new Newtonsoft.Json.Linq.JObject
-              {
-                ["content"] = new Newtonsoft.Json.Linq.JArray
-                {
-                  new Newtonsoft.Json.Linq.JObject
-                  {
-                    ["type"] = "text",
-                    ["text"] = text
-                  }
-                }
-              }
-            };
-            return response.ToString(Newtonsoft.Json.Formatting.None);
-          }</set-body>
-				</return-response>
-			</when>
-			<when condition="@((string)context.Variables[&quot;rpcMethod&quot;] == &quot;tools/call&quot; &amp;&amp; (string)context.Variables[&quot;toolName&quot;] == &quot;createItem&quot;)">
-				<send-request mode="new" response-variable-name="dummyResp" timeout="20" ignore-error="false">
-					<set-url>https://dummyjson.com/todos/add</set-url>
-					<set-method>POST</set-method>
-					<set-header name="Content-Type" exists-action="override">
-						<value>application/json</value>
-					</set-header>
-					<set-body>@{
-            var text = ((string)context.Variables["createTodoText"] ?? "Prepare APIOps demo").Replace("\\", "\\\\").Replace("\"", "\\\"");
-            var completedRaw = ((string)context.Variables["createCompleted"] ?? "false").ToLowerInvariant();
-            var completed = (completedRaw == "true") ? "true" : "false";
-            return "{\"todo\":\"" + text + "\",\"completed\":" + completed + ",\"userId\":1}";
-          }</set-body>
-				</send-request>
-				<set-variable name="dummyBody" value="@(((IResponse)context.Variables[&quot;dummyResp&quot;]).Body.As&lt;string&gt;(preserveContent: true))" />
-				<return-response>
-					<set-status code="200" reason="OK" />
-					<set-header name="Content-Type" exists-action="override">
-						<value>application/json</value>
-					</set-header>
-					<set-body>@{
-            var req = context.Request.Body?.As<Newtonsoft.Json.Linq.JObject>(preserveContent: true) ?? new Newtonsoft.Json.Linq.JObject();
-            var idRaw = req["id"]?.ToString() ?? "1";
-            long idLong;
-            Newtonsoft.Json.Linq.JToken idToken = long.TryParse(idRaw, out idLong) ? (Newtonsoft.Json.Linq.JToken)new Newtonsoft.Json.Linq.JValue(idLong) : new Newtonsoft.Json.Linq.JValue(idRaw);
-            var text = (string)context.Variables["dummyBody"];
+            var text = (string)context.Variables["petstoreBody"];
             var response = new Newtonsoft.Json.Linq.JObject
             {
               ["jsonrpc"] = "2.0",
