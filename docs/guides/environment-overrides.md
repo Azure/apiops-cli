@@ -42,6 +42,10 @@ namedValues:
       keyVault:
         secretIdentifier: "https://prod-kv.vault.azure.net/secrets/db-conn"
         identityClientId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+  - name: payment-api-key
+    properties:
+      secret: true
+      value: "{#[PAYMENT_API_KEY]#}"  # Pipeline token — replaced at runtime
 
 backends:
   - name: petstore-backend
@@ -126,6 +130,29 @@ namedValues:
         secretIdentifier: "https://prod-keyvault.vault.azure.net/secrets/db-conn-string"
         identityClientId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 ```
+
+### Named value secrets (with pipeline token substitution)
+
+Secrets can be stored in Key Vault (see [Key Vault pattern](#key-vault-pattern) below) or injected at pipeline runtime using [token substitution](token-substitution.md). With token substitution, the `{#[TOKEN_NAME]#}` placeholder is replaced with the actual secret value from your pipeline's secret store (GitHub Actions Secrets or Azure DevOps variable groups).
+
+```yaml
+namedValues:
+  - name: payment-api-key
+    properties:
+      displayName: payment-api-key
+      secret: true
+      value: "{#[PAYMENT_API_KEY]#}"  # Replaced at pipeline runtime
+  - name: stripe-webhook-secret
+    properties:
+      secret: true
+      value: "{#[STRIPE_WEBHOOK_SECRET]#}"
+```
+
+Store the actual secret values in:
+- **GitHub Actions:** Environment secrets (Settings → Environments → Add secret)
+- **Azure DevOps:** Variable groups marked as secret (Pipelines → Library)
+
+See the [Token Substitution guide](token-substitution.md) for complete setup instructions.
 
 ### Backends
 
@@ -241,6 +268,8 @@ loggers:
       isBuffered: true
 ```
 
+> **Tip:** You can also use [pipeline token substitution](token-substitution.md) for logger credentials. Replace the hardcoded value with a placeholder like `{#[APPINSIGHTS_KEY]#}`, and store the actual key in your pipeline's secret store. This keeps secrets out of your repository entirely.
+
 ### Subscriptions
 
 ```yaml
@@ -298,7 +327,7 @@ policies:
 
 ### Version sets, groups, and tags
 
-Overrides are also supported for `versionSets`, `groups`, `tags`, and `workspaces`. Each uses the same `name` + `properties` format:
+Overrides are also supported for `versionSets`, `groups`, and `tags`. Each uses the same `name` + `properties` format:
 
 ```yaml
 versionSets:
@@ -317,6 +346,48 @@ tags:
     properties:
       displayName: "Public API"
 ```
+
+### Workspaces
+
+Workspaces (Premium/StandardV2/PremiumV2 tiers) support overrides for the workspace container itself:
+
+```yaml
+workspaces:
+  - name: partner-workspace
+    properties:
+      displayName: "Partner Workspace (Production)"
+      description: "Production workspace for partner APIs"
+```
+
+#### Workspace-scoped resource overrides
+
+Resources inside a workspace are extracted to `workspaces/<workspace-name>/` subdirectories. To override workspace-scoped resources, use the same top-level override sections (`apis`, `backends`, `namedValues`, etc.) with the resource name prefixed by the workspace name and a forward slash:
+
+```yaml
+# Override workspace-scoped resources by prefixing with "workspace-name/"
+apis:
+  - name: partner-workspace/orders-api
+    properties:
+      serviceUrl: "https://orders-prod.contoso.com/v1"
+
+backends:
+  - name: partner-workspace/orders-backend
+    properties:
+      url: "https://orders-prod.contoso.com"
+
+namedValues:
+  - name: partner-workspace/api-key
+    properties:
+      secret: true
+      value: "{#[PARTNER_API_KEY]#}"
+
+loggers:
+  - name: partner-workspace/appinsights-logger
+    properties:
+      resourceId: "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/microsoft.insights/components/prod-appinsights"
+```
+
+Workspace-scoped resources that support overrides include: APIs, backends, named values, loggers, diagnostics, products, subscriptions, groups, tags, version sets, policy fragments, and global schemas.
 
 ## Override rules
 
@@ -478,6 +549,7 @@ apiops publish --overrides configuration.prod.yaml --dry-run \
 ## Related
 
 - [`apiops publish` Command Reference](../commands/publish.md)
+- [Token Substitution Guide](token-substitution.md)
 - [Configuration Reference](../reference/configuration.md)
 - [Authentication Guide](authentication.md)
 - [Scenarios and Workflows](scenarios-and-workflows.md)
