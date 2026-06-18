@@ -15,6 +15,41 @@ import { applyOverrides } from '../../../src/services/override-merger.js';
 // Mock resource-publisher so we can verify call sequence
 const mockPublishResource = vi.fn();
 vi.mock('../../../src/services/resource-publisher.js', () => ({
+  normalizeMcpToolOperationIds: (json: Record<string, unknown>, context: ApimServiceContext) => {
+    const properties = json.properties as Record<string, unknown> | undefined;
+    const mcpTools = properties?.mcpTools;
+    if (!Array.isArray(mcpTools)) {
+      return json;
+    }
+
+    const targetArmPrefix = context.baseUrl.replace(/^https?:\/\/[^/]+/, '');
+    return {
+      ...json,
+      properties: {
+        ...properties,
+        mcpTools: mcpTools.map((tool) => {
+          if (!tool || typeof tool !== 'object') {
+            return tool;
+          }
+
+          const operationId = (tool as Record<string, unknown>).operationId;
+          if (typeof operationId !== 'string') {
+            return tool;
+          }
+
+          const operationsIndex = operationId.indexOf('/apis/');
+          if (operationsIndex === -1) {
+            return tool;
+          }
+
+          return {
+            ...(tool as Record<string, unknown>),
+            operationId: `${targetArmPrefix}${operationId.slice(operationsIndex)}`,
+          };
+        }),
+      },
+    };
+  },
   publishResource: (...args: unknown[]) => mockPublishResource(...args),
 }));
 
@@ -106,24 +141,19 @@ describe('api-publisher', () => {
       );
     });
 
-    it('should publish McpServer as a standard child resource without merging into root API payload', async () => {
+    it('should publish MCP metadata from apiInformation.json and rewrite tool operationIds to the target service', async () => {
       const client = createMockClient();
-      const mcpChild = { type: ResourceType.McpServer, nameParts: ['orders-api'] };
-      const store = createMockStore([mcpChild]);
-      store.readResource.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) => {
-        if (descriptor.type === ResourceType.Api) {
-          return { name: descriptor.nameParts[0] ?? '', properties: { type: 'mcp' } };
-        }
-        if (descriptor.type === ResourceType.McpServer) {
-          return {
-            name: 'default',
-            properties: {
-              mcpProperties: { serverUrl: 'https://example.com/mcp' },
-              mcpTools: [{ name: 'invokeTool' }],
-            },
-          };
-        }
-        return null;
+      const store = createMockStore([]);
+      store.readResource.mockResolvedValue({
+        name: 'orders-api',
+        properties: {
+          type: 'mcp',
+          mcpProperties: { serverUrl: 'https://example.com/mcp' },
+          mcpTools: [{
+            name: 'invokeTool',
+            operationId: '/subscriptions/src-sub/resourceGroups/src-rg/providers/Microsoft.ApiManagement/service/src-apim/apis/orders-api/operations/get-orders',
+          }],
+        },
       });
 
       const apiDescriptor: ResourceDescriptor = {
@@ -133,13 +163,16 @@ describe('api-publisher', () => {
 
       await publishApi(client, store, testContext, apiDescriptor, testConfig);
 
-      // Root API PUT should NOT contain MCP properties — they stay in the McpServer child
       const [, , payload] = client.putResource.mock.calls[0] as [unknown, unknown, Record<string, unknown>];
       const properties = payload.properties as Record<string, unknown> | undefined;
-      expect(properties).not.toHaveProperty('mcpProperties');
+      expect(properties).toHaveProperty('mcpProperties');
+      expect(properties?.mcpTools).toEqual([{
+        name: 'invokeTool',
+        operationId: '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1/apis/orders-api/operations/get-orders',
+      }]);
     });
 
-    it('should include McpServer child in publish tasks (standard child, not skipped)', async () => {
+    it('should ignore legacy McpServer child artifacts when publishing API children', async () => {
       const client = createMockClient();
       const children = [
         { type: ResourceType.McpServer, nameParts: ['orders-api'] },
@@ -167,8 +200,46 @@ describe('api-publisher', () => {
       await publishApi(client, store, testContext, apiDescriptor, testConfig);
 
       const tasks = mockRunParallel.mock.calls[0][0] as Array<() => Promise<unknown>>;
-      // Both McpServer and ApiPolicy should be included — McpServer is a standard child
-      expect(tasks).toHaveLength(2);
+      expect(tasks).toHaveLength(1);
+    });
+
+    it('should keep override-provided MCP tool operationIds unchanged', async () => {
+      const client = createMockClient();
+      const store = createMockStore([]);
+      store.readResource.mockResolvedValue({
+        name: 'orders-api',
+        properties: {
+          type: 'mcp',
+          mcpTools: [{
+            name: 'invokeTool',
+            operationId: '/subscriptions/src-sub/resourceGroups/src-rg/providers/Microsoft.ApiManagement/service/src-apim/apis/orders-api/operations/get-orders',
+          }],
+        },
+      });
+      vi.mocked(applyOverrides).mockImplementation((_descriptor, json) => ({
+        ...json,
+        properties: {
+          ...(json.properties as Record<string, unknown>),
+          mcpTools: [{
+            name: 'invokeTool',
+            operationId: '/subscriptions/override-sub/resourceGroups/override-rg/providers/Microsoft.ApiManagement/service/override-apim/apis/orders-api/operations/get-orders',
+          }],
+        },
+      }));
+
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      const [, , payload] = client.putResource.mock.calls[0] as [unknown, unknown, Record<string, unknown>];
+      const properties = payload.properties as Record<string, unknown>;
+      expect(properties.mcpTools).toEqual([{
+        name: 'invokeTool',
+        operationId: '/subscriptions/override-sub/resourceGroups/override-rg/providers/Microsoft.ApiManagement/service/override-apim/apis/orders-api/operations/get-orders',
+      }]);
     });
 
     it('should not inject specification import fields for A2A APIs', async () => {

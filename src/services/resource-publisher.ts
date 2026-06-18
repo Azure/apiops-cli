@@ -120,6 +120,12 @@ export async function publishResource(
       };
     }
 
+    // Rewrite MCP tool operationIds against the target service before overrides
+    // so explicit override values win unchanged.
+    if (descriptor.type === ResourceType.Api) {
+      json = normalizeMcpToolOperationIds(json, context);
+    }
+
     // Apply overrides (deep merge, preserves opaque structure)
     json = applyOverrides(descriptor, json, config.overrides);
 
@@ -233,7 +239,6 @@ export async function publishResource(
     // validation errors in APIM's revision creation.
     if (descriptor.type === ResourceType.Api) {
       const apiName = getNamePart(descriptor.nameParts, 0);
-      json = normalizeMcpToolOperationIds(json, context);
       if (apiName.includes(';rev=')) {
         const baseApiName = apiName.split(';rev=')[0];
         const props = json.properties as Record<string, unknown> | undefined;
@@ -516,7 +521,7 @@ function normalizeApiReleaseApiId(
  * operationId to target service ARM prefix so APIM validates MCP tools against
  * existing operations in the target instance.
  */
-function normalizeMcpToolOperationIds(
+export function normalizeMcpToolOperationIds(
   json: Record<string, unknown>,
   context: ApimServiceContext
 ): Record<string, unknown> {

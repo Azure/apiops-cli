@@ -13,7 +13,11 @@ import type { ApimServiceContext, ResourceDescriptor } from '../models/types.js'
 import type { PublishConfig } from '../models/config.js';
 import * as yaml from 'js-yaml';
 import { ResourceType } from '../models/resource-types.js';
-import { publishResource, type ResourcePublishResult } from './resource-publisher.js';
+import {
+  normalizeMcpToolOperationIds,
+  publishResource,
+  type ResourcePublishResult,
+} from './resource-publisher.js';
 import { runParallel } from '../lib/parallel-runner.js';
 import { applyOverrides } from './override-merger.js';
 import { logger } from '../lib/logger.js';
@@ -33,7 +37,6 @@ const API_CHILD_TYPES: ResourceType[] = [
   ResourceType.ApiRelease,
   ResourceType.ApiTagDescription,
   ResourceType.ApiWiki,
-  ResourceType.McpServer,
   ResourceType.GraphQLResolver,
   ResourceType.GraphQLResolverPolicy,
 ];
@@ -166,6 +169,9 @@ async function publishRootApi(
       specImported: false,
     };
   }
+
+  // Rewrite source operation ARM ids before overrides so override values win.
+  json = normalizeMcpToolOperationIds(json, context);
 
   // Apply overrides
   json = applyOverrides(descriptor, json, config.overrides);
