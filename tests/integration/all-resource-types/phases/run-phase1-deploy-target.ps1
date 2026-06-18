@@ -113,34 +113,7 @@ if (-not $result.properties.outputs) {
     throw "Target deployment returned no outputs"
 }
 
-# Deploy A2A weather Function App code (zip deploy with WEBSITE_RUN_FROM_PACKAGE)
-$funcAppName = $result.properties.outputs.funcAppName.value
-$funcAppDir  = Join-Path (Split-Path $PSScriptRoot -Parent) 'function-app'
-$funcZipPath = Join-Path ([System.IO.Path]::GetTempPath()) 'a2a-func-tgt.zip'
-
-if (Test-Path $funcAppDir) {
-    Write-Host "📦 Deploying A2A weather Function App code to target..." -ForegroundColor Cyan
-    if (Test-Path $funcZipPath) { Remove-Item $funcZipPath -Force }
-    Compress-Archive -Path (Join-Path $funcAppDir '*') -DestinationPath $funcZipPath -Force
-
-    $funcDeployArgs = @(
-        'functionapp', 'deployment', 'source', 'config-zip',
-        '--resource-group', $ResourceGroupName,
-        '--name',           $funcAppName,
-        '--src',            $funcZipPath,
-        '--output',         'none'
-    )
-    Invoke-MaskedAzCommand -Replacements $azReplacements -Arguments $funcDeployArgs
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "Target Function App code deployment failed — A2A managed endpoint may not work correctly on target."
-    } else {
-        Write-Host "   ✅ Target Function App code deployed" -ForegroundColor Green
-    }
-
-    Remove-Item $funcZipPath -Force -ErrorAction SilentlyContinue
-} else {
-    Write-Warning "Function App source not found at $funcAppDir — skipping."
-}
+# Container App backend code is inlined in Bicep and deployed as part of target-apim.bicep.
 
 Write-Host "✅ Target APIM deployed successfully: $(Protect-ApimName -Value $result.properties.outputs.apimServiceName.value)"
 

@@ -91,6 +91,77 @@ $targetSubscriptionIdValue = Get-BoundParameterValueOrNull -BoundParameters $PSB
 
 Write-Host "🔐 Azure CLI authenticated: $($account.name) ($(Protect-SubscriptionId -Value $subscriptionId))"
 
+function Ensure-ProvidersRegistered {
+    param(
+        [Parameter(Mandatory)]
+        [string]$SubscriptionId,
+
+        [Parameter(Mandatory)]
+        [string[]]$Providers,
+
+        [int]$TimeoutSeconds = 600
+    )
+
+    $subscriptionArgs = @('--subscription', $SubscriptionId)
+    Write-Host "📋 Ensuring resource providers are registered in subscription $(Protect-SubscriptionId -Value $SubscriptionId)..."
+
+    foreach ($provider in $Providers) {
+        $state = az provider show @subscriptionArgs --namespace $provider --query "registrationState" --output tsv 2>$null
+        if ($state -ne 'Registered') {
+            Write-Host "   Registering $provider..." -ForegroundColor Gray
+            az provider register @subscriptionArgs --namespace $provider --output none
+        } else {
+            Write-Host "   $provider already registered" -ForegroundColor Gray
+        }
+    }
+
+    Write-Host "   Waiting for provider registration to complete..." -ForegroundColor Gray
+    $waited = 0
+    while ($waited -lt $TimeoutSeconds) {
+        $allRegistered = $true
+        foreach ($provider in $Providers) {
+            $state = az provider show @subscriptionArgs --namespace $provider --query "registrationState" --output tsv 2>$null
+            if ($state -ne 'Registered') {
+                $allRegistered = $false
+                break
+            }
+        }
+
+        if ($allRegistered) {
+            Write-Host "   ✅ Providers ready" -ForegroundColor Green
+            return
+        }
+
+        Start-Sleep -Seconds 5
+        $waited += 5
+    }
+
+    throw "Timed out waiting for required providers to register in subscription $(Protect-SubscriptionId -Value $SubscriptionId)."
+}
+
+$requiredProviders = @(
+    'Microsoft.ApiManagement',
+    'Microsoft.Insights',
+    'Microsoft.OperationalInsights',
+    'Microsoft.EventHub',
+    'Microsoft.KeyVault',
+    'Microsoft.AlertsManagement',
+    'Microsoft.App'
+)
+
+$subscriptionsToPrepare = @($subscriptionId)
+if (-not [string]::IsNullOrWhiteSpace($sourceSubscriptionIdValue)) {
+    $subscriptionsToPrepare += $sourceSubscriptionIdValue
+}
+if (-not [string]::IsNullOrWhiteSpace($targetSubscriptionIdValue)) {
+    $subscriptionsToPrepare += $targetSubscriptionIdValue
+}
+
+$subscriptionsToPrepare = $subscriptionsToPrepare | Sort-Object -Unique
+foreach ($sub in $subscriptionsToPrepare) {
+    Ensure-ProvidersRegistered -SubscriptionId $sub -Providers $requiredProviders
+}
+
 $deploySourceScript = Join-Path $PSScriptRoot 'run-phase1-deploy-source.ps1'
 $deployTargetScript = Join-Path $PSScriptRoot 'run-phase1-deploy-target.ps1'
 

@@ -98,24 +98,24 @@ if (-not $targetEhConnStr) {
     Write-Host "   ⚠️  Could not get Event Hub connection string — EH logger override will be empty"
 }
 
-# Resolve target A2A Function App hostname for backend URL override
-$targetFuncAppHost = az functionapp list --resource-group $TargetResourceGroup @subscriptionArgs --query "[0].defaultHostName" -o tsv
-if (-not $targetFuncAppHost) {
-    Write-Host "   ⚠️  Could not resolve target Function App — A2A backend override will be skipped"
+# Resolve target A2A backend hostname for backend URL override
+$targetA2aHost = az containerapp list --resource-group $TargetResourceGroup @subscriptionArgs --query "[0].properties.configuration.ingress.fqdn" -o tsv
+if (-not $targetA2aHost) {
+    Write-Host "   ⚠️  Could not resolve target A2A backend hostname — A2A backend override will be skipped"
 }
 
 $overrideFile = [System.IO.Path]::GetFullPath((Join-Path $ExtractOutputDir '.overrides.yaml'))
 $a2aOverrideBlock = ""
-if ($targetFuncAppHost) {
+if ($targetA2aHost) {
     $a2aOverrideBlock = @"
 
 apis:
   - name: src-a2a-weather-agent
     properties:
       a2aProperties:
-        agentCardBackendUrl: "https://${targetFuncAppHost}/.well-known/agent-card.json"
+                agentCardBackendUrl: "https://${targetA2aHost}/.well-known/agent-card.json"
       jsonRpcProperties:
-        backendUrl: "https://${targetFuncAppHost}"
+                backendUrl: "https://${targetA2aHost}"
 "@
 }
 

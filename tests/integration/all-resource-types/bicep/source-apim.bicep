@@ -50,6 +50,147 @@ var isClassicSku = skuName == 'Developer' || skuName == 'Premium' || skuName == 
 var apimSkuCapacity = isClassicSku ? 1 : 1
 var supportsSelfHostedGateway = skuName == 'Developer' || skuName == 'Premium'
 var supportsWorkspaces = skuName == 'Premium' || skuName == 'StandardV2' || skuName == 'PremiumV2'
+var a2aBackendBootstrapScript = '''
+cat <<"PYEOF" > /tmp/a2a_backend.py
+import json
+from urllib.parse import quote
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+USER_AGENT = 'apiops-cli-a2a-weather/1.0'
+
+def fetch_json(url, headers=None, timeout=20):
+  request = Request(url, headers=headers or {})
+  with urlopen(request, timeout=timeout) as response:
+    return json.loads(response.read().decode('utf-8'))
+
+def geocode_city(city_name):
+  url = f'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q={quote(city_name)}'
+  results = fetch_json(url, headers={'User-Agent': USER_AGENT})
+  if not results:
+    return None
+
+  item = results[0]
+  return {
+    'display_name': item.get('display_name', city_name),
+    'latitude': float(item['lat']),
+    'longitude': float(item['lon'])
+  }
+
+def fetch_weather(latitude, longitude):
+  url = (
+    'https://api.open-meteo.com/v1/forecast'
+    f'?latitude={latitude}&longitude={longitude}'
+    '&current=temperature_2m,weather_code,wind_speed_10m'
+    '&temperature_unit=fahrenheit'
+  )
+  return fetch_json(url, headers={'User-Agent': USER_AGENT})
+
+class Handler(BaseHTTPRequestHandler):
+  def log_message(self, format, *args):
+    return
+
+  def _send_json(self, status_code, payload):
+    body = json.dumps(payload).encode("utf-8")
+    self.send_response(status_code)
+    self.send_header("Content-Type", "application/json")
+    self.send_header("Content-Length", str(len(body)))
+    self.end_headers()
+    self.wfile.write(body)
+
+  def do_GET(self):
+    if self.path in ("/.well-known/agent-card.json", "/agent-card.json"):
+      forwarded_host = self.headers.get('X-Forwarded-Host') or self.headers.get('Host')
+      public_base_url = f'https://{forwarded_host}/weather' if forwarded_host else '/weather'
+      self._send_json(200, {
+        "protocolVersion": "0.3.0",
+        "name": "KS A2A Weather Agent",
+        "description": "Live weather agent backed by Open-Meteo and Nominatim",
+        "url": public_base_url,
+        "preferredTransport": "JSONRPC",
+        "version": "1.0.0",
+        "capabilities": {
+          "streaming": False,
+          "pushNotifications": False,
+          "stateTransitionHistory": False
+        },
+        "defaultInputModes": ["text/plain"],
+        "defaultOutputModes": ["text/plain"],
+        "skills": [{
+          "id": "get_weather",
+          "name": "Get weather",
+          "description": "Return current weather conditions for a city",
+          "tags": ["weather", "live"],
+          "examples": ["What is the weather in Seattle?", "weather in Paris"],
+          "inputModes": ["text/plain"],
+          "outputModes": ["text/plain"]
+        }]
+      })
+    else:
+      self._send_json(404, {"error": "Not found"})
+
+  def do_POST(self):
+    if self.path != "/":
+      self._send_json(404, {"error": "Not found"})
+      return
+
+    content_length = int(self.headers.get("Content-Length", 0))
+    raw = self.rfile.read(content_length) if content_length > 0 else b"{}"
+
+    try:
+      request = json.loads(raw.decode("utf-8"))
+    except Exception:
+      request = {}
+
+    req_id = request.get("id", 1)
+    city = "Seattle"
+    params = request.get("params")
+    if isinstance(params, dict):
+      city = params.get("city") or params.get("location") or city
+
+    geocoded = None
+    weather = None
+    error_text = None
+
+    try:
+      geocoded = geocode_city(city)
+      if geocoded:
+        weather = fetch_weather(geocoded['latitude'], geocoded['longitude'])
+      else:
+        error_text = f'Could not geocode city: {city}'
+    except (HTTPError, URLError, ValueError, KeyError, json.JSONDecodeError) as ex:
+      error_text = str(ex)
+
+    response = {
+      "jsonrpc": "2.0",
+      "id": req_id,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": (
+              error_text
+              if error_text
+              else (
+                f"Weather for {geocoded['display_name']}: "
+                f"{weather.get('current', {}).get('temperature_2m', 'unknown')}F, "
+                f"weather code {weather.get('current', {}).get('weather_code', 'unknown')}, "
+                f"wind {weather.get('current', {}).get('wind_speed_10m', 'unknown')} mph"
+              )
+            )
+          }
+        ]
+      }
+    }
+
+    self._send_json(200, response)
+
+
+HTTPServer(("0.0.0.0", 8080), Handler).serve_forever()
+PYEOF
+python /tmp/a2a_backend.py
+'''
 
 // Minimal but valid OpenAPI 3.0 spec
 var openApiSpec = '''
@@ -351,44 +492,55 @@ resource kvSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
 }
 
 // ---------------------------------------------------------------------------
-// A2A Weather Backend — Azure Function App (external backend for A2A API)
+// A2A Weather Backend — Azure Container App (external backend for A2A API)
 // ---------------------------------------------------------------------------
 // Provides the real agent-card and JSON-RPC endpoints for the A2A managed API.
-// Uses Open-Meteo for weather data and Nominatim for geocoding.
+// Uses a lightweight in-container Python service to avoid App Service quota limits.
 
-resource funcStorage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: 'bvt${uniqueString(resourceGroup().id)}a2a'
+resource a2aManagedEnvironment 'Microsoft.App/managedEnvironments@2024-03-01' = {
+  name: 'bvt-${uniqueString(resourceGroup().id)}-src-a2a-env'
   location: location
-  sku: { name: 'Standard_LRS' }
-  kind: 'StorageV2'
   properties: {
-    supportsHttpsTrafficOnly: true
-    minimumTlsVersion: 'TLS1_2'
+    appLogsConfiguration: {
+      destination: 'log-analytics'
+      logAnalyticsConfiguration: {
+        customerId: logAnalytics.properties.customerId
+        sharedKey: logAnalytics.listKeys().primarySharedKey
+      }
+    }
   }
 }
 
-resource funcPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
-  name: 'bvt-${uniqueString(resourceGroup().id)}-src-a2a-plan'
-  location: location
-  sku: { name: 'Y1', tier: 'Dynamic' }
-  properties: { reserved: true }
-}
-
-resource funcApp 'Microsoft.Web/sites@2023-12-01' = {
+resource a2aBackend 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'bvt-${uniqueString(resourceGroup().id)}-src-a2a'
   location: location
-  kind: 'functionapp,linux'
   properties: {
-    serverFarmId: funcPlan.id
-    httpsOnly: true
-    siteConfig: {
-      linuxFxVersion: 'Node|22'
-      appSettings: [
-        { name: 'AzureWebJobsStorage', value: 'DefaultEndpointsProtocol=https;AccountName=${funcStorage.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${funcStorage.listKeys().keys[0].value}' }
-        { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
-        { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'node' }
-        { name: 'WEBSITE_RUN_FROM_PACKAGE', value: '1' }
+    managedEnvironmentId: a2aManagedEnvironment.id
+    configuration: {
+      ingress: {
+        external: true
+        targetPort: 8080
+        transport: 'auto'
+      }
+      activeRevisionsMode: 'Single'
+    }
+    template: {
+      containers: [
+        {
+          name: 'a2a-backend'
+          image: 'python:3.12-slim'
+          command: ['/bin/sh', '-c']
+          args: [a2aBackendBootstrapScript]
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+        }
       ]
+      scale: {
+        minReplicas: 1
+        maxReplicas: 1
+      }
     }
   }
 }
@@ -967,7 +1119,7 @@ resource apiMcpExistingServer 'Microsoft.ApiManagement/service/apis@2025-09-01-p
 }
 
 // 10. A2A API with JSON-RPC runtime and agent card settings
-// Backend is the external Function App (funcApp) instead of APIM self-reference.
+// Backend is the external Container App (a2aBackend) instead of APIM self-reference.
 // any() used because A2A properties are runtime-supported but may not be present
 // in this API version's Bicep type definitions.
 resource apiA2a 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
@@ -975,7 +1127,7 @@ resource apiA2a 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   name: 'src-a2a-weather-agent'
   properties: any({
     displayName: 'KS A2A Weather Agent'
-    description: 'A2A API backed by an external Azure Function (Open-Meteo weather)'
+    description: 'A2A API backed by an external Azure Container App backend'
     path: 'ks/a2a-managed'
     protocols: ['https']
     type: 'a2a'
@@ -985,10 +1137,10 @@ resource apiA2a 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
     }
     a2aProperties: {
       agentCardPath: '/.well-known/agent-card.json'
-      agentCardBackendUrl: 'https://${funcApp.properties.defaultHostName}/.well-known/agent-card.json'
+      agentCardBackendUrl: 'https://${a2aBackend.properties.configuration.ingress.fqdn}/.well-known/agent-card.json'
     }
     jsonRpcProperties: {
-      backendUrl: 'https://${funcApp.properties.defaultHostName}'
+      backendUrl: 'https://${a2aBackend.properties.configuration.ingress.fqdn}'
       path: '/'
     }
     subscriptionRequired: false
@@ -1021,7 +1173,7 @@ resource apiA2aManagedCardPolicy 'Microsoft.ApiManagement/service/apis/operation
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><set-backend-service base-url="https://${funcApp.properties.defaultHostName}" /></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+    value: '<policies><inbound><base /><send-request mode="new" response-variable-name="agentCardResponse" timeout="20" ignore-error="false"><set-url>https://${a2aBackend.properties.configuration.ingress.fqdn}/.well-known/agent-card.json</set-url><set-method>GET</set-method></send-request><return-response response-variable-name="agentCardResponse" /></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
   }
 }
 
@@ -1058,7 +1210,93 @@ resource apiA2aManagedJsonRpcPolicy 'Microsoft.ApiManagement/service/apis/operat
   name: 'policy'
   properties: {
     format: 'rawxml'
-    value: '<policies><inbound><base /><set-backend-service base-url="https://${funcApp.properties.defaultHostName}" /></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+    value: '<policies><inbound><base /><send-request mode="copy" response-variable-name="jsonRpcResponse" timeout="20" ignore-error="false"><set-url>https://${a2aBackend.properties.configuration.ingress.fqdn}/</set-url><set-method>POST</set-method></send-request><return-response response-variable-name="jsonRpcResponse" /></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+  }
+}
+
+// 11. Real weather HTTP API for Foundry
+// This is a plain HTTP API that proxies the live container app so the card
+// and runtime responses flow through APIM without the managed A2A body issue.
+resource apiWeather 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
+  parent: apim
+  name: 'apim-weather'
+  properties: any({
+    displayName: 'apim-weather'
+    description: 'Live weather API for Foundry, backed by Open-Meteo and Nominatim'
+    path: 'weather'
+    protocols: ['https']
+    serviceUrl: 'https://${a2aBackend.properties.configuration.ingress.fqdn}'
+    subscriptionRequired: true
+    isAgent: false
+    type: 'http'
+    apiType: 'http'
+  })
+}
+
+resource apiWeatherAgentCardOperation 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-preview' = {
+  parent: apiWeather
+  name: 'get-agent-card'
+  properties: {
+    displayName: 'Get agent card'
+    method: 'GET'
+    urlTemplate: '/agent-card.json'
+    responses: [
+      {
+        statusCode: 200
+        description: 'OK'
+        representations: [
+          {
+            contentType: 'application/json'
+          }
+        ]
+      }
+    ]
+  }
+}
+
+resource apiWeatherAgentCardPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2025-09-01-preview' = {
+  parent: apiWeatherAgentCardOperation
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: '<policies><inbound><base /></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
+  }
+}
+
+resource apiWeatherJsonRpcOperation 'Microsoft.ApiManagement/service/apis/operations@2025-09-01-preview' = {
+  parent: apiWeather
+  name: 'post-jsonrpc'
+  properties: {
+    displayName: 'JSON-RPC endpoint'
+    method: 'POST'
+    urlTemplate: '/'
+    request: {
+      representations: [
+        {
+          contentType: 'application/json'
+        }
+      ]
+    }
+    responses: [
+      {
+        statusCode: 200
+        description: 'OK'
+        representations: [
+          {
+            contentType: 'application/json'
+          }
+        ]
+      }
+    ]
+  }
+}
+
+resource apiWeatherJsonRpcPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2025-09-01-preview' = {
+  parent: apiWeatherJsonRpcOperation
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: '<policies><inbound><base /></inbound><backend><base /></backend><outbound><base /></outbound><on-error><base /></on-error></policies>'
   }
 }
 
@@ -1343,8 +1581,8 @@ output gatewayDeployed bool = supportsSelfHostedGateway
 @description('APIM SKU used')
 output skuName string = skuName
 
-@description('A2A weather Function App name')
-output funcAppName string = funcApp.name
+@description('A2A weather backend app name')
+output funcAppName string = a2aBackend.name
 
-@description('A2A weather Function App hostname')
-output funcAppHostName string = funcApp.properties.defaultHostName
+@description('A2A weather backend hostname')
+output funcAppHostName string = a2aBackend.properties.configuration.ingress.fqdn

@@ -51,7 +51,6 @@ param logAnalyticsName string = 'bvt-${uniqueString(resourceGroup().id)}-tgt-law
 
 var isClassicSku = skuName == 'Developer' || skuName == 'Premium' || skuName == 'Standard'
 var apimSkuCapacity = isClassicSku ? 1 : 1
-
 // ---------------------------------------------------------------------------
 // Supporting Resources
 // ---------------------------------------------------------------------------
@@ -133,48 +132,6 @@ resource kvSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
 }
 
 // ---------------------------------------------------------------------------
-// A2A Weather Backend — Azure Function App (external backend for A2A API)
-// ---------------------------------------------------------------------------
-// Mirrors the source Function App so the target APIM can use its own backend.
-
-resource funcStorage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: 'bvt${uniqueString(resourceGroup().id)}a2a'
-  location: location
-  sku: { name: 'Standard_LRS' }
-  kind: 'StorageV2'
-  properties: {
-    supportsHttpsTrafficOnly: true
-    minimumTlsVersion: 'TLS1_2'
-  }
-}
-
-resource funcPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
-  name: 'bvt-${uniqueString(resourceGroup().id)}-tgt-a2a-plan'
-  location: location
-  sku: { name: 'Y1', tier: 'Dynamic' }
-  properties: { reserved: true }
-}
-
-resource funcApp 'Microsoft.Web/sites@2023-12-01' = {
-  name: 'bvt-${uniqueString(resourceGroup().id)}-tgt-a2a'
-  location: location
-  kind: 'functionapp,linux'
-  properties: {
-    serverFarmId: funcPlan.id
-    httpsOnly: true
-    siteConfig: {
-      linuxFxVersion: 'Node|22'
-      appSettings: [
-        { name: 'AzureWebJobsStorage', value: 'DefaultEndpointsProtocol=https;AccountName=${funcStorage.name};EndpointSuffix=${environment().suffixes.storage};AccountKey=${funcStorage.listKeys().keys[0].value}' }
-        { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
-        { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'node' }
-        { name: 'WEBSITE_RUN_FROM_PACKAGE', value: '1' }
-      ]
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
 // APIM Service (blank — no child resources)
 // ---------------------------------------------------------------------------
 
@@ -245,7 +202,7 @@ output keyVaultName string = keyVault.name
 output keyVaultUri string = keyVault.properties.vaultUri
 
 @description('A2A weather Function App name')
-output funcAppName string = funcApp.name
+output funcAppName string = a2aBackend.name
 
 @description('A2A weather Function App hostname')
-output funcAppHostName string = funcApp.properties.defaultHostName
+output funcAppHostName string = a2aBackend.properties.configuration.ingress.fqdn

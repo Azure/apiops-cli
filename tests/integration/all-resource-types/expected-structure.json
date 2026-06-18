@@ -344,7 +344,7 @@
       ]
     },
     "apis": {
-      "minCount": 10,
+      "minCount": 11,
       "expected": [
         {
           "name": "src-rest-openapi",
@@ -611,6 +611,36 @@
             }
           },
           "notes": "A2A API with JSON-RPC runtime mediation and agent card settings."
+        },
+        {
+          "name": "apim-weather",
+          "files": ["apiInformation.json"],
+          "spotChecks": {
+            "apiInformation.json": {
+              "properties.displayName": "apim-weather",
+              "properties.path": "weather",
+              "properties.type": "http",
+              "properties.isAgent": false,
+              "properties.subscriptionRequired": true,
+              "properties.serviceUrl": "exists"
+            }
+          },
+          "children": {
+            "operations": {
+              "minCount": 2,
+              "expected": [
+                {
+                  "name": "get-agent-card",
+                  "files": ["operationInformation.json", "policy.xml"]
+                },
+                {
+                  "name": "post-jsonrpc",
+                  "files": ["operationInformation.json", "policy.xml"]
+                }
+              ]
+            }
+          },
+          "notes": "Foundry-friendly weather HTTP API proxying real live weather data through APIM."
         }
       ]
     },
