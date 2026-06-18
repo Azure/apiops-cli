@@ -170,7 +170,9 @@ async function publishRootApi(
     };
   }
 
-  // Rewrite source operation ARM ids before overrides so override values win.
+  // Root APIs publish through api-publisher rather than publishResource, so
+  // they need the same pre-override MCP tool normalization here that revision
+  // APIs receive in resource-publisher.
   json = normalizeMcpToolOperationIds(json, context);
 
   // Apply overrides

@@ -172,6 +172,14 @@ describe('api-publisher', () => {
 
       const tasks = mockRunParallel.mock.calls[0][0] as Array<() => Promise<unknown>>;
       expect(tasks).toHaveLength(1);
+      await tasks[0]?.();
+      expect(mockPublishResource).toHaveBeenCalledWith(
+        client,
+        store,
+        testContext,
+        expect.objectContaining({ type: ResourceType.ApiPolicy, nameParts: ['orders-api'] }),
+        testConfig
+      );
     });
 
     it('should keep override-provided MCP tool operationIds unchanged', async () => {
