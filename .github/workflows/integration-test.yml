@@ -87,8 +87,8 @@ concurrency:
   cancel-in-progress: false # Don't cancel — would leave resources running
 
 env:
-  SOURCE_RG: rg-apiops-bvt-source-${{ github.run_id }}
-  TARGET_RG: rg-apiops-bvt-target-${{ github.run_id }}
+  SOURCE_RG: rg-apiops-bvt-src-${{ github.run_id }}
+  TARGET_RG: rg-apiops-bvt-tgt-${{ github.run_id }}
   SOURCE_APIM: apiops-bvt-src-${{ github.run_id }}
   TARGET_APIM: apiops-bvt-tgt-${{ github.run_id }}
 
