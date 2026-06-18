@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { loadFilterConfig, loadOverrideConfig, loadOTelConfig } from '../../../src/lib/config-loader.js';
+import { loadFilterConfig, loadOverrideConfig } from '../../../src/lib/config-loader.js';
 import { logger } from '../../../src/lib/logger.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
@@ -556,49 +556,6 @@ namedValues:
       expect(warnSpy).toHaveBeenCalledWith(
         expect.stringContaining("Duplicate name 'nv1' in overrides.namedValues")
       );
-    });
-  });
-
-  describe('loadOTelConfig', () => {
-    it('should load a valid OTel YAML file', async () => {
-      const content = `
-exporters:
-  otlp:
-    endpoint: "http://localhost:4317"
-service:
-  pipelines:
-    traces:
-      exporters: [otlp]
-`;
-      const filePath = path.join(tmpDir, 'otel.yaml');
-      await fs.writeFile(filePath, content, 'utf-8');
-
-      const config = await loadOTelConfig(filePath);
-      expect(config).toBeDefined();
-      expect(config!.exporters).toBeDefined();
-    });
-
-    it('should return undefined for missing file', async () => {
-      const config = await loadOTelConfig(path.join(tmpDir, 'nonexistent.yaml'));
-      expect(config).toBeUndefined();
-    });
-
-    it('should handle completely empty file', async () => {
-      const filePath = path.join(tmpDir, 'blank.yaml');
-      await fs.writeFile(filePath, '', 'utf-8');
-
-      const config = await loadOTelConfig(filePath);
-      expect(config).toBeDefined();
-      expect(config).toEqual({});
-    });
-
-    it('should handle file with only whitespace', async () => {
-      const filePath = path.join(tmpDir, 'whitespace.yaml');
-      await fs.writeFile(filePath, '   \n  \n  ', 'utf-8');
-
-      const config = await loadOTelConfig(filePath);
-      expect(config).toBeDefined();
-      expect(config).toEqual({});
     });
   });
 });
