@@ -150,7 +150,6 @@ interface ExtractConfig {
   outputDir: string;
   filter?: FilterConfig;
   includeTransitive: boolean;   // Default: true; false when --no-transitive
-  specFormat?: string;          // From --spec-format; undefined = native format
   verbose: boolean;
   otelConfigPath?: string;
 }

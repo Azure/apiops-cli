@@ -35,9 +35,7 @@ A platform engineer wants to capture the current state of an Azure API Managemen
 
 3. **Given** the user only wants a subset of resources, **When** the user provides a filter configuration file via `--filter filter.yaml`, **Then** only the resources matching the allowlist in the configuration file are extracted, along with any resources those filtered resources transitively depend on (e.g., backends, named values, loggers referenced in policies). The user can suppress transitive inclusion with `--no-transitive`.
 
-4. **Given** an APIM instance with APIs using different specification formats (OpenAPI v2/v3, GraphQL, SOAP/WSDL), **When** the user runs extract with a `--spec-format` option, **Then** API specifications are exported in the requested format where format conversion is possible, and in their native format otherwise.
-
-5. **Given** an APIM instance, **When** the user runs `apiops extract --format json`, **Then** machine-readable JSON progress output is written to stdout (resource counts, file paths written) suitable for CI/CD pipeline consumption.
+4. **Given** an APIM instance, **When** the user runs `apiops extract --format json`, **Then** machine-readable JSON progress output is written to stdout (resource counts, file paths written) suitable for CI/CD pipeline consumption.
 
 7. **Given** an APIM instance with APIs that have multiple revisions (e.g., `orders-api;rev=1`, `orders-api;rev=2`), **When** the user runs `apiops extract`, **Then** all revisions are extracted as sub-folders under the API directory, preserving revision numbers and metadata.
 

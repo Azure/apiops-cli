@@ -254,7 +254,6 @@ program.command('extract')
   .option('--output <dir>', 'Output directory', './apim-artifacts')
   .option('--filter <path>', 'Filter configuration YAML file')
   .option('--no-transitive', 'Disable transitive dependency inclusion')
-  .option('--spec-format <format>', 'API specification format')
   .action(extractAction)
 
 program.command('publish')

@@ -35,7 +35,6 @@ Extract APIM configuration to local artifact files.
 | `--output <dir>` | string | no | `./apim-artifacts` | Output directory path |
 | `--filter <path>` | string | no | — | Filter configuration YAML file |
 | `--no-transitive` | boolean | no | `false` | Disable transitive dependency inclusion |
-| `--spec-format <format>` | string | no | — | API specification format (`openapi-v2-json`, `openapi-v3-json`, `openapi-v3-yaml`); native format used when omitted or conversion not possible |
 
 **stdout**: Per-resource status lines (one per extracted resource)  
 **stderr**: Structured log messages (JSON when `--verbose`)  
