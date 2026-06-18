@@ -318,7 +318,7 @@ export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> 
     // no longer read or write the legacy mcpServerInformation.json sidecar.
     armPathSuffix: 'apis/{0}/mcpServers/default',
     artifactDirectory: 'apis/{0}',
-    infoFile: null,
+    infoFile: null, // Intentionally disables legacy mcpServerInformation.json sidecar IO.
     supportsGet: true,
   },
   [ResourceType.Workspace]: {

@@ -20,7 +20,7 @@ vi.mock('../../../src/services/resource-publisher.js', async () => {
   );
   return {
     ...actual,
-    publishResource: (...args: unknown[]) => mockPublishResource(...args),
+    publishResource: vi.fn().mockImplementation((...args: unknown[]) => mockPublishResource(...args)),
   };
 });
 

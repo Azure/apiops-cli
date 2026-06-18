@@ -40,10 +40,6 @@ export interface ApiExtractionResult {
   policies: string[];
 }
 
-function getApiProperties(apiJson: Record<string, unknown>): Record<string, unknown> | undefined {
-  return apiJson.properties as Record<string, unknown> | undefined;
-}
-
 /**
  * Extract all API-specific resources for a single API.
  * This includes revisions, specifications, operations, policies, etc.
@@ -477,7 +473,7 @@ async function extractGraphQLResolvers(
   const policies: string[] = [];
 
   // Only extract resolvers for GraphQL APIs — use the already-fetched apiJson
-  const properties = getApiProperties(apiJson);
+  const properties = apiJson.properties as Record<string, unknown> | undefined;
   const apiType = properties?.type as string | undefined;
   if (apiType?.toLowerCase() !== 'graphql') {
     return { resolvers, resolverPolicies, policies };
