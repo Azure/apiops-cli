@@ -151,7 +151,6 @@ interface ExtractConfig {
   filter?: FilterConfig;
   includeTransitive: boolean;   // Default: true; false when --no-transitive
   verbose: boolean;
-  otelConfigPath?: string;
 }
 ```
 
@@ -203,7 +202,6 @@ interface PublishConfig {
   deleteUnmatched: boolean;    // Default: false; true when --delete-unmatched
   commitId?: string;           // From COMMIT_ID env var; triggers incremental publish
   verbose: boolean;
-  otelConfigPath?: string;
 }
 ```
 

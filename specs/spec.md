@@ -15,7 +15,6 @@
 - Q: What progress feedback should the tool provide during long-running operations? → A: Per-resource status lines by default (e.g., `✓ apis/orders-api`). A `--log-level debug` option adds additional diagnostic output (HTTP requests, timing, retry details) useful for debugging.
 - Q: How should the tool handle API revisions during extract and publish? → A: Extract all revisions, stored as sub-folders under each API. Publish recreates all revisions in the correct order (root API first, then revisions with forced revision numbers).
 - Q: How should the tool parallelize extraction? → A: Cross-type parallel where safe (independent resource types extracted concurrently; resources within each type also concurrent). Publish remains dependency-ordered.
-- Q: Should the CLI emit structured telemetry/logging? → A: Structured logging to stderr by default. An `--otel <path>` flag accepts a standard OpenTelemetry configuration YAML file to enable trace and metric export. Credentials (API keys, connection strings) live in the OTel config file or environment variables, never as CLI flags.
 
 ### User Story 1 — Extract APIM Configuration (Priority: P1)
 
@@ -35,7 +34,7 @@ A platform engineer wants to capture the current state of an Azure API Managemen
 
 3. **Given** the user only wants a subset of resources, **When** the user provides a filter configuration file via `--filter filter.yaml`, **Then** only the resources matching the allowlist in the configuration file are extracted, along with any resources those filtered resources transitively depend on (e.g., backends, named values, loggers referenced in policies). The user can suppress transitive inclusion with `--no-transitive`.
 
-4. **Given** an APIM instance, **When** the user runs `apiops extract --format json`, **Then** machine-readable JSON progress output is written to stdout (resource counts, file paths written) suitable for CI/CD pipeline consumption.
+5. **Given** an APIM instance, **When** the user runs `apiops extract --format json`, **Then** machine-readable JSON progress output is written to stdout (resource counts, file paths written) suitable for CI/CD pipeline consumption.
 
 7. **Given** an APIM instance with APIs that have multiple revisions (e.g., `orders-api;rev=1`, `orders-api;rev=2`), **When** the user runs `apiops extract`, **Then** all revisions are extracted as sub-folders under the API directory, preserving revision numbers and metadata.
 
@@ -161,7 +160,7 @@ The development team wants the CLI to support adding new top-level commands (e.g
 - **FR-012**: System MUST support configuring the APIM REST API version per invocation via a CLI flag or configuration file.
 - **FR-024**: System MUST extract all API revisions as sub-folders under each API directory, preserving revision numbers. During publish, the tool MUST create the root API first, then apply revisions in order with forced revision numbers to prevent APIM from auto-assigning.
 - **FR-025**: During extraction, the system MUST parallelize across independent resource types (e.g., backends and loggers concurrently) and across resources within each type. Dependencies between types (e.g., APIs depend on version sets) MUST be respected. During publish, resource types MUST be processed in dependency order.
-- **FR-026**: All commands MUST emit structured log output to stderr by default (timestamps, log levels, resource context). An `--otel <path>` flag MUST accept a standard OpenTelemetry configuration YAML file to enable trace and metric export. The tool MUST pass this file to the OTel SDK (equivalent to setting `OTEL_CONFIG_FILE`). If `--otel` is not provided, no telemetry is exported. Credentials (API keys, connection strings) MUST NOT be accepted as separate CLI flags — they MUST reside in the OTel config file or environment variables.
+- **FR-026**: All commands MUST emit structured log output to stderr by default (timestamps, log levels, resource context).
 - **FR-013**: System MUST provide `--format json|text` on all commands for machine-readable output suitable for CI/CD pipeline consumption. The default format is `text` (human-readable). `--format json` writes structured JSON to stdout. This flag is independent of `--output` (extract directory) and `--source` (publish directory).
 - **FR-014**: System MUST handle paginated Azure REST API responses by following `nextLink` continuation tokens.
 - **FR-015**: System MUST implement retry logic with exponential backoff for transient HTTP failures and 429 rate-limit responses.

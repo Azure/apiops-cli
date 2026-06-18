@@ -32,7 +32,6 @@ program
       .choices(['debug', 'info', 'warn', 'error'])
       .default('info'),
   )
-  .option('--otel <path>', 'Path to OpenTelemetry config YAML')
   .option('--format <type>', 'Output format: text or json', 'text')
   .option('--subscription-id <id>', 'Azure subscription ID')
   .option('--cloud <name>', 'Sovereign cloud: public, china, usgov, germany', 'public')

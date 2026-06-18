@@ -15,7 +15,6 @@ These flags are available on **all** commands (`extract`, `publish`, `init`).
 | `--api-version <version>` | string | no | `2024-05-01` | APIM REST API version |
 | `--format <mode>` | string | no | `text` | Output format: `text` (human-readable) or `json` (machine-readable) |
 | `--verbose` | boolean | no | `false` | Enable debug-level output |
-| `--otel <path>` | string | no | — | OpenTelemetry configuration YAML file |
 | `--client-id <id>` | string | no | — | Service principal client ID (sets `AZURE_CLIENT_ID` for DefaultAzureCredential) |
 | `--client-secret <secret>` | string | no | — | Service principal client secret (sets `AZURE_CLIENT_SECRET`) |
 | `--tenant-id <id>` | string | no | — | Azure AD tenant ID (sets `AZURE_TENANT_ID`) |
@@ -108,8 +107,6 @@ Initialize repository structure and CI/CD pipeline configuration.
 | `AZURE_SUBSCRIPTION_ID` | Azure subscription (fallback for `--subscription-id`) | extract, publish |
 | `AZURE_API_VERSION` | Override APIM REST API version (default: `2024-05-01`) | extract, publish |
 | `COMMIT_ID` | Git SHA for incremental publish | publish |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTel exporter endpoint (used by OTel SDK) | extract, publish |
-| `APPLICATIONINSIGHTS_CONNECTION_STRING` | Azure Monitor connection string | extract, publish |
 
 ---
 
