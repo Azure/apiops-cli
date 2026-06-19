@@ -733,9 +733,15 @@ resource apiRestSwagger 'Microsoft.ApiManagement/service/apis@2025-09-01-preview
 //     specification.yaml (openapi: 3.x). Also serves as the backing API for the
 //     MCP-from-API server below (its findPetsByStatus / getPetById operations
 //     are surfaced as MCP tools).
+// dependsOn apiRestSwagger: both import the Petstore spec, which defines the
+// same tags (pet/store/user). APIM auto-creates those service-level tags during
+// import; deploying both APIs in parallel races to create identical tags and
+// fails with "Tag with the same name already exists". Serializing the imports
+// lets the second API reuse the tags created by the first.
 resource apiRestPetstoreV3 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-rest-petstore-v3'
+  dependsOn: [apiRestSwagger]
   properties: {
     displayName: 'KS REST Petstore v3'
     description: 'Kitchen sink REST API imported from Petstore OpenAPI 3.0 (v3)'
