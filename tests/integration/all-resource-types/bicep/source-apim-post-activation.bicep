@@ -146,7 +146,7 @@ var mcpApiPolicyXml = '''
 			</when>
 			<when condition="@((string)context.Variables[&quot;rpcMethod&quot;] == &quot;tools/call&quot; &amp;&amp; (string)context.Variables[&quot;toolName&quot;] == &quot;findPetsByStatus&quot;)">
 				<send-request mode="new" response-variable-name="petstoreResp" timeout="20" ignore-error="false">
-					<set-url>@($"https://petstore.swagger.io/v2/pet/findByStatus?status={(string)context.Variables[&quot;petStatus&quot;]}")</set-url>
+					<set-url>@($"https://petstore3.swagger.io/api/v3/pet/findByStatus?status={(string)context.Variables[&quot;petStatus&quot;]}")</set-url>
 					<set-method>GET</set-method>
 				</send-request>
 				<set-variable name="petstoreBody" value="@(((IResponse)context.Variables[&quot;petstoreResp&quot;]).Body.As&lt;string&gt;(preserveContent: true))" />
@@ -183,7 +183,7 @@ var mcpApiPolicyXml = '''
 			</when>
 			<when condition="@((string)context.Variables[&quot;rpcMethod&quot;] == &quot;tools/call&quot; &amp;&amp; (string)context.Variables[&quot;toolName&quot;] == &quot;getPetById&quot;)">
 				<send-request mode="new" response-variable-name="petstoreResp" timeout="20" ignore-error="false">
-					<set-url>@($"https://petstore.swagger.io/v2/pet/{(string)context.Variables[&quot;petId&quot;]}")</set-url>
+					<set-url>@($"https://petstore3.swagger.io/api/v3/pet/{(string)context.Variables[&quot;petId&quot;]}")</set-url>
 					<set-method>GET</set-method>
 				</send-request>
 				<set-variable name="petstoreBody" value="@(((IResponse)context.Variables[&quot;petstoreResp&quot;]).Body.As&lt;string&gt;(preserveContent: true))" />

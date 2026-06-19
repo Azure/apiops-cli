@@ -41,7 +41,9 @@ if ($LASTEXITCODE -ne 0) { throw "Round-trip failed with exit code $LASTEXITCODE
 An apim instance with the following apis
 | API | Type | Spec Format |
 |-----|------|-------------|
-| `src-rest-openapi` | REST | OpenAPI 3.0 YAML |
+| `src-rest-openapi` | REST | OpenAPI 3.0 YAML (inline) |
+| `src-rest-swagger` | REST | Swagger 2.0 JSON (Petstore v2) |
+| `src-rest-petstore-v3` | REST | OpenAPI 3.0 YAML (Petstore v3) |
 | `src-soap-passthrough` | SOAP | WSDL |
 | `src-graphql-synthetic` | GraphQL | SDL (inline) |
 | `src-graphql-passthrough` | GraphQL | SDL (pass-through) |

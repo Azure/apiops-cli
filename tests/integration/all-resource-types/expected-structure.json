@@ -344,14 +344,14 @@
       ]
     },
     "apis": {
-      "minCount": 10,
+      "minCount": 12,
       "expected": [
         {
           "name": "src-rest-openapi",
           "files": ["apiInformation.json", "policy.xml", "specification.yaml"],
           "spotChecks": {
             "apiInformation.json": {
-              "properties.displayName": "KS REST Petstore",
+              "properties.displayName": "KS REST OpenAPI",
               "properties.path": "ks/rest",
               "properties.protocols": ["https"],
               "properties.subscriptionRequired": false
@@ -360,14 +360,13 @@
               "contentIncludes": ["set-header", "X-all-resources"]
             },
             "specification.yaml": {
-              "contentIncludes": ["openapi:", "Petstore"],
-              "note": "APIM exports swagger-link-json imports as OpenAPI 3.0 YAML via openapi-link, so openapi: prefix is expected"
+              "contentIncludes": ["openapi:", "KS REST OpenAPI"]
             }
           },
           "children": {
             "operations": {
               "minCount": 1,
-              "notes": "Only operations with policies get directories (getPetById has policy)"
+              "notes": "Only operations with policies get directories (healthCheck has policy)"
             },
             "tags": {
               "minCount": 2,
@@ -415,7 +414,41 @@
               ]
             }
           },
-          "notes": "getPetById operation has policy.xml"
+          "notes": "healthCheck operation has policy.xml"
+        },
+        {
+          "name": "src-rest-swagger",
+          "files": ["apiInformation.json", "specification.json"],
+          "spotChecks": {
+            "apiInformation.json": {
+              "properties.displayName": "KS REST Petstore v2",
+              "properties.path": "ks/rest-swagger",
+              "properties.protocols": ["https"],
+              "properties.subscriptionRequired": false
+            },
+            "specification.json": {
+              "contentIncludes": ["swagger", "Petstore"],
+              "note": "Swagger 2.0 API imported via swagger-link-json extracts natively as specification.json (top-level \"swagger\": \"2.0\"), preserving the source dialect"
+            }
+          },
+          "notes": "Swagger 2.0 REST API (Petstore v2) — covers the swagger2 spec dialect alongside the OpenAPI 3.0 APIs"
+        },
+        {
+          "name": "src-rest-petstore-v3",
+          "files": ["apiInformation.json", "specification.yaml"],
+          "spotChecks": {
+            "apiInformation.json": {
+              "properties.displayName": "KS REST Petstore v3",
+              "properties.path": "ks/rest-petstore-v3",
+              "properties.protocols": ["https"],
+              "properties.subscriptionRequired": false
+            },
+            "specification.yaml": {
+              "contentIncludes": ["openapi:", "Petstore"],
+              "note": "OpenAPI 3.0 API imported via openapi-link extracts as specification.yaml (top-level openapi: 3.x), the OpenAPI 3.0 counterpart of the Swagger 2.0 src-rest-swagger API and the backing API for the MCP-from-API server"
+            }
+          },
+          "notes": "OpenAPI 3.0 REST API (Petstore v3) — covers the openapi3 spec dialect and backs the src-mcp-from-api MCP server"
         },
         {
           "name": "src-soap-passthrough",
