@@ -553,15 +553,13 @@
         },
         {
           "name": "src-mcp-from-api",
-          "files": ["apiInformation.json", "mcpServerInformation.json"],
+          "files": ["apiInformation.json"],
           "spotChecks": {
             "apiInformation.json": {
               "properties.displayName": "KS MCP from Existing API",
               "properties.path": "ks/mcp-from-api",
               "properties.type": "mcp",
-              "properties.subscriptionRequired": false
-            },
-            "mcpServerInformation.json": {
+              "properties.subscriptionRequired": false,
               "properties.mcpTools": "exists"
             }
           },
@@ -569,18 +567,15 @@
         },
         {
           "name": "src-mcp-existing-server",
-          "files": ["apiInformation.json", "mcpServerInformation.json", "policy.xml"],
+          "files": ["apiInformation.json", "policy.xml"],
           "spotChecks": {
             "apiInformation.json": {
               "properties.displayName": "KS MCP Existing Server Demo",
               "properties.path": "ks/mcp-existing",
               "properties.type": "mcp",
               "properties.subscriptionRequired": false,
-              "properties.backendId": "src-backend-mcp-learn"
-            },
-            "mcpServerInformation.json": {
-              "properties.mcpProperties.endpoints.mcp.uriTemplate": "/mcp",
-              "properties.backendId": "src-backend-mcp-learn"
+              "properties.backendId": "src-backend-mcp-learn",
+              "properties.mcpProperties.endpoints.mcp.uriTemplate": "/mcp"
             }
           },
           "notes": "Working existing-server MCP demo. APIM exposes a public Microsoft Learn MCP server through a policy-based MCP proxy so the API is extractable and demoable end to end."
@@ -671,6 +666,21 @@
               }
             ]
           },
+          "groups": {
+            "minCount": 1,
+            "expected": [
+              {
+                "name": "src-ws-group-internal",
+                "files": ["groupInformation.json"],
+                "spotChecks": {
+                  "groupInformation.json": {
+                    "properties.displayName": "Kitchen Sink Workspace Group",
+                    "properties.type": "custom"
+                  }
+                }
+              }
+            ]
+          },
           "backends": {
             "minCount": 1,
             "expected": [
@@ -691,12 +701,20 @@
             "expected": [
               {
                 "name": "src-ws-product",
-                "files": ["productInformation.json", "apis.json", "tags.json"],
+                "files": ["productInformation.json", "apis.json", "tags.json", "groups.json"],
                 "spotChecks": {
                   "productInformation.json": {
                     "properties.displayName": "Workspace Product",
                     "properties.subscriptionRequired": false,
                     "properties.state": "published"
+                  },
+                  "groups.json": {
+                    "minLength": 2,
+                    "contains": ["administrators", "src-ws-group-internal"],
+                    "containsEntry": [
+                      { "name": "administrators", "scope": "service" },
+                      { "name": "src-ws-group-internal", "scope": "workspace" }
+                    ]
                   }
                 }
               }
