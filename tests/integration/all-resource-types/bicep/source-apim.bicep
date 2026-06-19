@@ -934,7 +934,7 @@ resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview'
 // non-MCP API — e.g. src-rest-petstore-v3 above). ApiOperation BVT coverage
 // is therefore provided by the REST APIs in this template, not by the MCP APIs.
 
-resource apiMcpExistingMcp 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = {
+resource backendMcpLearn 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = {
   parent: apim
   name: 'src-backend-mcp-learn'
   properties: {
@@ -954,7 +954,7 @@ resource apiMcpExistingServer 'Microsoft.ApiManagement/service/apis@2025-09-01-p
     protocols: ['https']
     subscriptionRequired: false
     type: 'mcp'
-    backendId: apiMcpExistingMcp.name
+    backendId: backendMcpLearn.name
     mcpProperties: {
       endpoints: {
         mcp: {
