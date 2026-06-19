@@ -253,8 +253,13 @@ function ConvertTo-NormalizedPropertyValue {
         $normalized = @(foreach ($item in $Value) {
             ConvertTo-NormalizedPropertyValue -Value $item -Context $Context -IgnoreRepresentationSchemaRefs:$IgnoreRepresentationSchemaRefs
         })
-        $sorted = $normalized | Sort-Object { ($_ | ConvertTo-Json -Depth 50 -Compress) }
-        return @($sorted)
+        $sorted = @($normalized | Sort-Object { ($_ | ConvertTo-Json -Depth 50 -Compress) })
+        # Use the unary comma to return the array intact. Without it, PowerShell
+        # unwraps a single-element array to its inner element, so a one-item
+        # collection (e.g. an operation with a single templateParameter) would be
+        # compared as a bare object — producing misleading per-field MISSING/EXTRA
+        # diffs instead of a single array-level DIFF.
+        return ,$sorted
     }
 
     if ($Value -is [System.Collections.IDictionary]) {
