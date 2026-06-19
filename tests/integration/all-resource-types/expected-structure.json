@@ -427,8 +427,7 @@
               "properties.subscriptionRequired": false
             },
             "specification.json": {
-              "contentIncludes": ["swagger", "Petstore"],
-              "note": "Swagger 2.0 API imported via swagger-link-json extracts natively as specification.json (top-level \"swagger\": \"2.0\"), preserving the source dialect"
+              "contentIncludes": ["swagger", "Petstore"]
             }
           },
           "notes": "Swagger 2.0 REST API (Petstore v2) — covers the swagger2 spec dialect alongside the OpenAPI 3.0 APIs"
@@ -444,8 +443,7 @@
               "properties.subscriptionRequired": false
             },
             "specification.yaml": {
-              "contentIncludes": ["openapi:", "Petstore"],
-              "note": "OpenAPI 3.0 API imported via openapi-link extracts as specification.yaml (top-level openapi: 3.x), the OpenAPI 3.0 counterpart of the Swagger 2.0 src-rest-swagger API and the backing API for the MCP-from-API server"
+              "contentIncludes": ["openapi:", "Petstore"]
             }
           },
           "notes": "OpenAPI 3.0 REST API (Petstore v3) — covers the openapi3 spec dialect and backs the src-mcp-from-api MCP server"
