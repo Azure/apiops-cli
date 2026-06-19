@@ -98,7 +98,7 @@ if ($extractExitCode -ne 0) {
     exit 2
 }
 
-$extractedFiles = Get-ChildItem -Path $ExtractOutputDir -Recurse -File -ErrorAction SilentlyContinue
+$extractedFiles = @(Get-ChildItem -Path $ExtractOutputDir -Recurse -File -ErrorAction SilentlyContinue)
 if (-not $extractedFiles -or $extractedFiles.Count -eq 0) {
     Write-Host "❌ Extract produced no files in $ExtractOutputDir"
     exit 2

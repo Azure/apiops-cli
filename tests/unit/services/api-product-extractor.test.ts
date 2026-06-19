@@ -1066,7 +1066,10 @@ describe('product-extractor', () => {
         '/output',
         expect.objectContaining({ type: ResourceType.Product, nameParts: ['starter'] }),
         'tags',
-        expect.arrayContaining(['v1', 'production'])
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'v1' }),
+          expect.objectContaining({ name: 'production' }),
+        ])
       );
     });
 

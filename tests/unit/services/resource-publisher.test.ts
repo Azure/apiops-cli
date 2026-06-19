@@ -249,7 +249,7 @@ describe('resource-publisher', () => {
     it('should handle association resources (ProductApi)', async () => {
       const client = createMockClient();
       const store = createMockStore();
-      store.readAssociation.mockResolvedValue(['api-1', 'api-2']);
+      store.readAssociation.mockResolvedValue([{ name: 'api-1' }, { name: 'api-2' }]);
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ProductApi,
@@ -281,7 +281,7 @@ describe('resource-publisher', () => {
     it('should handle association resources (ProductGroup)', async () => {
       const client = createMockClient();
       const store = createMockStore();
-      store.readAssociation.mockResolvedValue(['group-1']);
+      store.readAssociation.mockResolvedValue([{ name: 'group-1' }]);
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ProductGroup,
@@ -307,7 +307,7 @@ describe('resource-publisher', () => {
     it('should handle association resources (GatewayApi)', async () => {
       const client = createMockClient();
       const store = createMockStore();
-      store.readAssociation.mockResolvedValue(['api-1']);
+      store.readAssociation.mockResolvedValue([{ name: 'api-1' }]);
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.GatewayApi,

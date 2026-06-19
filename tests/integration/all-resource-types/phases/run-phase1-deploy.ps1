@@ -163,7 +163,10 @@ $jobs = @($sourceJob, $targetJob)
 $sourceLastPos = 0
 $targetLastPos = 0
 
-while (($jobs | Where-Object { $_.State -eq 'Running' }).Count -gt 0) {
+# Wrap the filtered pipeline in @() — Where-Object emits a scalar for a single
+# match, which would make .Count throw under Set-StrictMode -Version Latest once
+# one of the two deploy jobs finishes and exactly one is still running.
+while (@($jobs | Where-Object { $_.State -eq 'Running' }).Count -gt 0) {
     if (Test-Path $sourceLogFile) {
         $content = Get-Content $sourceLogFile -Raw -ErrorAction SilentlyContinue
         if ($content -and $content.Length -gt $sourceLastPos) {

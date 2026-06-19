@@ -213,7 +213,23 @@ describe('ArtifactStore', () => {
       await store.writeAssociation(tmpDir, descriptor, 'apis', apis);
       const result = await store.readAssociation(tmpDir, descriptor, 'apis');
 
-      expect(result).toEqual(apis);
+      expect(result).toEqual(apis.map(name => ({ name })));
+    });
+
+    it('should preserve association scope round-trip', async () => {
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Product,
+        nameParts: ['ws-product'],
+      };
+      const entries = [
+        { name: 'administrators', scope: 'service' as const },
+        { name: 'ws-group', scope: 'workspace' as const },
+      ];
+
+      await store.writeAssociation(tmpDir, descriptor, 'groups', entries);
+      const result = await store.readAssociation(tmpDir, descriptor, 'groups');
+
+      expect(result).toEqual(entries);
     });
 
     it('should return empty array for missing association', async () => {

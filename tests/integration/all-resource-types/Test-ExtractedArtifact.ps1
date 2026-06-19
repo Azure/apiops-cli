@@ -200,6 +200,35 @@ function Invoke-SpotCheck([string]$basePath, [psobject]$spotChecks, [string]$lab
                 continue
             }
 
+            # --- containsEntry: verify array file contains entries matching name + scope ---
+            # Association files store [{ name, scope? }]. `scope` distinguishes a
+            # service-level link target (e.g. the built-in `administrators` group)
+            # from a workspace-level one. A missing scope in the file matches an
+            # expected scope of 'service' (legacy/service-scoped entries omit it).
+            if ($field -eq 'containsEntry') {
+                try {
+                    $arr = @($content | ConvertFrom-Json)
+                    $targets = @($expected)
+                    foreach ($t in $targets) {
+                        $expectedScope = if ($t.scope) { "$($t.scope)" } else { 'service' }
+                        $match = $arr | Where-Object {
+                            $_.name -eq $t.name -and (
+                                $(if ($_.scope) { "$($_.scope)" } else { 'service' }) -eq $expectedScope
+                            )
+                        }
+                        $found = @($match).Count -gt 0
+                        $detail = if (-not $found) {
+                            $seen = @($arr) | ForEach-Object { "$($_.name)[$(if ($_.scope) { $_.scope } else { 'service' })]" }
+                            "Not found in: $($seen -join ', ')"
+                        } else { '' }
+                        Write-Check "Array entry [$label/$fileName]: name='$($t.name)' scope='$expectedScope'" $found $detail
+                    }
+                } catch {
+                    Write-Check "Array entry [$label/$fileName]" $false "Failed to parse JSON: $_"
+                }
+                continue
+            }
+
             # --- dot-path field assertion (JSON files) ---
             if ($fileName -like '*.json') {
                 try {

@@ -296,17 +296,17 @@ async function publishAssociation(
       nameParts: [getNamePart(descriptor.nameParts, 0)],
       workspace: descriptor.workspace,
     };
-    const names = await store.readAssociation(
+    const entries = await store.readAssociation(
       config.sourceDir,
       parentDescriptor,
       associationType
     );
 
     // Create association for each name
-    for (const name of names) {
+    for (const entry of entries) {
       const assocDescriptor: ResourceDescriptor = {
         type: descriptor.type,
-        nameParts: [getNamePart(descriptor.nameParts, 0), name],
+        nameParts: [getNamePart(descriptor.nameParts, 0), entry.name],
       };
       // PUT empty body for association (APIM uses PUT to create association)
       await client.putResource(context, assocDescriptor, {});
