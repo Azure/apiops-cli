@@ -40,113 +40,6 @@ export interface ApiExtractionResult {
   policies: string[];
 }
 
-function getApiProperties(apiJson: Record<string, unknown>): Record<string, unknown> | undefined {
-  return apiJson.properties as Record<string, unknown> | undefined;
-}
-
-function hasEmbeddedMcpConfiguration(apiJson: Record<string, unknown>): boolean {
-  const properties = getApiProperties(apiJson);
-  if (!properties) {
-    return false;
-  }
-
-  // Check if mcpTools has actual content (non-empty array), excluding null
-  const mcpTools = properties.mcpTools as unknown[] | undefined | null;
-  if (Array.isArray(mcpTools) && mcpTools.length > 0) {
-    return true;
-  }
-
-  // Check if mcpProperties exists and is not null or undefined
-  if (properties.mcpProperties != null) {
-    return true;
-  }
-
-  // MCP APIs created from an existing MCP server are wired purely via
-  // backendId + (optionally absent) mcpProperties. A non-null backendId on a
-  // type='mcp' API is itself an MCP server configuration we must capture.
-  if (typeof properties.backendId === 'string' && properties.backendId.length > 0) {
-    return true;
-  }
-
-  return false;
-}
-
-function buildEmbeddedMcpServerResource(
-  apiJson: Record<string, unknown>,
-  backendUrl?: string
-): Record<string, unknown> {
-  const properties = getApiProperties(apiJson) ?? {};
-  const resourceProperties: Record<string, unknown> = {};
-
-  // Clone mcpProperties so we can augment it with serverUrl without mutating
-  // the caller's apiJson.
-  let mcpProperties: Record<string, unknown> | undefined;
-  if (properties.mcpProperties && typeof properties.mcpProperties === 'object') {
-    mcpProperties = { ...(properties.mcpProperties as Record<string, unknown>) };
-  } else if (backendUrl) {
-    mcpProperties = {};
-  }
-
-  if (mcpProperties && backendUrl && mcpProperties.serverUrl === undefined) {
-    mcpProperties.serverUrl = backendUrl;
-  }
-
-  if (mcpProperties !== undefined) {
-    resourceProperties.mcpProperties = mcpProperties;
-  }
-  if (properties.mcpTools !== undefined) {
-    resourceProperties.mcpTools = properties.mcpTools;
-  }
-  // Preserve the link to the upstream backend so the MCP server sidecar is
-  // self-describing for MCP-from-existing-MCP-server APIs.
-  if (typeof properties.backendId === 'string' && properties.backendId.length > 0) {
-    resourceProperties.backendId = properties.backendId;
-  }
-
-  return {
-    name: 'default',
-    properties: resourceProperties,
-  };
-
-}
-
-/**
- * For an MCP API wired to a backend via `backendId`, fetch that backend and
- * return its `properties.url` so the MCP sidecar can carry the actual upstream
- * server URL. Returns undefined when the API has no backendId, the backend
- * cannot be fetched, or the backend has no url.
- */
-async function resolveLinkedBackendUrl(
-  client: IApimClient,
-  context: ApimServiceContext,
-  apiJson: Record<string, unknown>,
-  workspace?: string
-): Promise<string | undefined> {
-  const properties = getApiProperties(apiJson);
-  const backendId = properties?.backendId;
-  if (typeof backendId !== 'string' || backendId.length === 0) {
-    return undefined;
-  }
-
-  // backendId may be either a bare resource name or a full ARM resource id.
-  // We only consume the trailing name segment for descriptor lookup.
-  const backendName = backendId.includes('/') ? backendId.split('/').pop()! : backendId;
-
-  try {
-    const backendJson = await client.getResource(context, {
-      type: ResourceType.Backend,
-      nameParts: [backendName],
-      workspace,
-    });
-    const url = (backendJson?.properties as Record<string, unknown> | undefined)?.url;
-    return typeof url === 'string' && url.length > 0 ? url : undefined;
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.debug(`Could not resolve backend "${backendName}" for MCP server URL: ${errorMessage}`);
-    return undefined;
-  }
-}
-
 /**
  * Extract all API-specific resources for a single API.
  * This includes revisions, specifications, operations, policies, etc.
@@ -257,11 +150,6 @@ export async function extractApiResources(
   // Extract API wiki
   result.wiki = await extractApiWiki(
     client, store, context, apiDescriptor, outputDir
-  );
-
-  // Extract MCP server configuration (singleton per API; silently skipped when not present)
-  result.mcpServer = await extractApiMcpServer(
-    client, store, context, apiDescriptor, apiJson, outputDir
   );
 
   // Extract GraphQL resolvers and their policies
@@ -585,7 +473,7 @@ async function extractGraphQLResolvers(
   const policies: string[] = [];
 
   // Only extract resolvers for GraphQL APIs — use the already-fetched apiJson
-  const properties = getApiProperties(apiJson);
+  const properties = apiJson.properties as Record<string, unknown> | undefined;
   const apiType = properties?.type as string | undefined;
   if (apiType?.toLowerCase() !== 'graphql') {
     return { resolvers, resolverPolicies, policies };
@@ -627,58 +515,6 @@ async function extractGraphQLResolvers(
   }
 
   return { resolvers, resolverPolicies, policies };
-}
-
-/**
- * Extract MCP (Model Context Protocol) server configuration for an API.
- *
- * MCP configuration is embedded directly on the API resource
- * (`properties.mcpTools`, `properties.mcpProperties`, `properties.backendId`).
- * There is no separate child resource served by ARM — the
- * `apis/{id}/mcpServers/default` endpoint returns 404 even on working MCP APIs,
- * and `apis/{id}/mcpServers` returns 500 (no such collection). All MCP data
- * therefore comes from the API JSON itself.
- *
- * For MCP APIs created from an existing MCP server (the `backendId` pattern),
- * the upstream URL lives on the linked backend, not on the API. To make the
- * extracted `mcpServerInformation.json` self-describing, the extractor
- * resolves that backend and surfaces its URL as `mcpProperties.serverUrl`.
- */
-async function extractApiMcpServer(
-  client: IApimClient,
-  store: IArtifactStore,
-  context: ApimServiceContext,
-  apiDescriptor: ResourceDescriptor,
-  apiJson: Record<string, unknown>,
-  outputDir: string
-): Promise<boolean> {
-  const apiType = (getApiProperties(apiJson)?.type as string | undefined)?.toLowerCase();
-
-  // Avoid creating MCP artifacts for non-MCP APIs unless they carry meaningful MCP metadata.
-  if (apiType !== 'mcp' && !hasEmbeddedMcpConfiguration(apiJson)) {
-    return false;
-  }
-
-  if (!hasEmbeddedMcpConfiguration(apiJson)) {
-    return false;
-  }
-
-  const mcpDescriptor: ResourceDescriptor = {
-    type: ResourceType.McpServer,
-    nameParts: [...apiDescriptor.nameParts],
-    workspace: apiDescriptor.workspace,
-  };
-
-  // Resolve the upstream backend URL so the MCP sidecar carries the actual
-  // server URL (not just a backendId reference + uri template).
-  const backendUrl = await resolveLinkedBackendUrl(client, context, apiJson, apiDescriptor.workspace);
-  await store.writeResource(
-    outputDir,
-    mcpDescriptor,
-    buildEmbeddedMcpServerResource(apiJson, backendUrl)
-  );
-  logger.info(`Extracted ${buildResourceLabel(mcpDescriptor)} from API metadata`);
-  return true;
 }
 
 /**

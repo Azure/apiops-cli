@@ -13,7 +13,11 @@ import type { ApimServiceContext, ResourceDescriptor } from '../models/types.js'
 import type { PublishConfig } from '../models/config.js';
 import * as yaml from 'js-yaml';
 import { ResourceType } from '../models/resource-types.js';
-import { publishResource, type ResourcePublishResult } from './resource-publisher.js';
+import {
+  normalizeMcpToolOperationIds,
+  publishResource,
+  type ResourcePublishResult,
+} from './resource-publisher.js';
 import { runParallel } from '../lib/parallel-runner.js';
 import { applyOverrides } from './override-merger.js';
 import { logger } from '../lib/logger.js';
@@ -33,7 +37,6 @@ const API_CHILD_TYPES: ResourceType[] = [
   ResourceType.ApiRelease,
   ResourceType.ApiTagDescription,
   ResourceType.ApiWiki,
-  ResourceType.McpServer,
   ResourceType.GraphQLResolver,
   ResourceType.GraphQLResolverPolicy,
 ];
@@ -166,6 +169,11 @@ async function publishRootApi(
       specImported: false,
     };
   }
+
+  // Root APIs publish through api-publisher rather than publishResource, so
+  // they need the same pre-override MCP tool normalization here that revision
+  // APIs receive in resource-publisher.
+  json = normalizeMcpToolOperationIds(json, context);
 
   // Apply overrides
   json = applyOverrides(descriptor, json, config.overrides);

@@ -850,7 +850,7 @@ describe('api-extractor', () => {
       );
     });
 
-    it('should extract MCP server configuration from embedded API metadata when present', async () => {
+    it('should keep embedded MCP configuration in apiInformation.json without writing a sidecar file', async () => {
       const client = createMockClient({
         getApiSpecification: vi.fn().mockResolvedValue(undefined),
         getResource: vi.fn().mockResolvedValue(undefined),
@@ -873,21 +873,15 @@ describe('api-extractor', () => {
         client, store, testContext, apiDescriptor, apiJson, '/output'
       );
 
-      expect(result.mcpServer).toBe(true);
+      expect(result.mcpServer).toBe(false);
       expect(client.getResource).not.toHaveBeenCalledWith(
         testContext,
         expect.objectContaining({ type: ResourceType.McpServer })
       );
-      expect(store.writeResource).toHaveBeenCalledWith(
+      expect(store.writeResource).not.toHaveBeenCalledWith(
         '/output',
         expect.objectContaining({ type: ResourceType.McpServer, nameParts: ['my-api'] }),
-        {
-          name: 'default',
-          properties: {
-            mcpProperties: { serverUrl: 'https://example.com/mcp' },
-            mcpTools: [{ name: 'invokeTool' }],
-          },
-        }
+        expect.anything()
       );
     });
 
@@ -895,31 +889,6 @@ describe('api-extractor', () => {
       const client = createMockClient({
         getApiSpecification: vi.fn().mockResolvedValue(undefined),
         getResource: vi.fn().mockResolvedValue(undefined),
-      });
-      const store = createMockStore();
-      const apiDescriptor: ResourceDescriptor = {
-        type: ResourceType.Api,
-        nameParts: ['my-api'],
-      };
-
-      const result = await extractApiResources(
-        client, store, testContext, apiDescriptor,
-        { name: 'my-api' },
-        '/output'
-      );
-
-      expect(result.mcpServer).toBe(false);
-    });
-
-    it('should return mcpServer=false and not throw when getResource throws for McpServer', async () => {
-      const client = createMockClient({
-        getApiSpecification: vi.fn().mockResolvedValue(undefined),
-        getResource: vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
-          if (desc.type === ResourceType.McpServer) {
-            throw new Error('404 Not Found');
-          }
-          return undefined;
-        }),
       });
       const store = createMockStore();
       const apiDescriptor: ResourceDescriptor = {

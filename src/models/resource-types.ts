@@ -313,10 +313,12 @@ export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> 
   },
   [ResourceType.McpServer]: {
     // Singleton MCP (Model Context Protocol) server configuration per API.
-    // ARM path: apis/{apiId}/mcpServers/default
+    // Artifact data is embedded in apiInformation.json; retain the descriptor
+    // only for ARM URI/dependency modeling. With infoFile unset, extract/publish
+    // no longer read or write the legacy mcpServerInformation.json sidecar.
     armPathSuffix: 'apis/{0}/mcpServers/default',
     artifactDirectory: 'apis/{0}',
-    infoFile: 'mcpServerInformation.json',
+    infoFile: null, // Embedded in apiInformation.json
     supportsGet: true,
   },
   [ResourceType.Workspace]: {
