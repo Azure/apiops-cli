@@ -231,7 +231,8 @@ $postArgs = @(
 ) + $azVerbosity
 
 Write-Host "Applying post-activation APIM resources..." -ForegroundColor Cyan
-Invoke-MaskedAzCommand -Replacements $postReplacements -Arguments $postArgs
+# Out-Null — else the az JSON leaks, making the job return an array (breaks strict-mode member access).
+Invoke-MaskedAzCommand -Replacements $postReplacements -Arguments $postArgs | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-DeploymentFailureDetails `
         -ResourceGroupName $ResourceGroupName `

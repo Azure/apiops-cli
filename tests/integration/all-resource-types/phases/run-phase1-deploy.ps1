@@ -163,9 +163,7 @@ $jobs = @($sourceJob, $targetJob)
 $sourceLastPos = 0
 $targetLastPos = 0
 
-# Wrap the filtered pipeline in @() — Where-Object emits a scalar for a single
-# match, which would make .Count throw under Set-StrictMode -Version Latest once
-# one of the two deploy jobs finishes and exactly one is still running.
+# @() — Where-Object emits a scalar for a single match, so .Count throws under strict mode.
 while (@($jobs | Where-Object { $_.State -eq 'Running' }).Count -gt 0) {
     if (Test-Path $sourceLogFile) {
         $content = Get-Content $sourceLogFile -Raw -ErrorAction SilentlyContinue
@@ -201,7 +199,8 @@ if ($sourceJob.State -eq 'Failed') {
     }
     $exitCode = 2
 } else {
-    $sourceOutputs = Receive-Job $sourceJob
+    # -Last 1: deploy result is emitted last; guards against stray output making this an array.
+    $sourceOutputs = Receive-Job $sourceJob | Select-Object -Last 1
     Write-Host "   ✅ Source deployed: $(Protect-ApimName -Value $sourceOutputs.apimServiceName)"
 }
 Remove-Job $sourceJob
@@ -215,7 +214,8 @@ if ($targetJob.State -eq 'Failed') {
     }
     $exitCode = 2
 } else {
-    $targetOutputs = Receive-Job $targetJob
+    # Select-Object -Last 1: see source note above — defend against stray output.
+    $targetOutputs = Receive-Job $targetJob | Select-Object -Last 1
     Write-Host "   ✅ Target deployed: $(Protect-ApimName -Value $targetOutputs.apimServiceName.value)"
 }
 Remove-Job $targetJob
