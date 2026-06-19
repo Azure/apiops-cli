@@ -666,21 +666,6 @@
               }
             ]
           },
-          "groups": {
-            "minCount": 1,
-            "expected": [
-              {
-                "name": "src-ws-group-internal",
-                "files": ["groupInformation.json"],
-                "spotChecks": {
-                  "groupInformation.json": {
-                    "properties.displayName": "Kitchen Sink Workspace Group",
-                    "properties.type": "custom"
-                  }
-                }
-              }
-            ]
-          },
           "backends": {
             "minCount": 1,
             "expected": [
@@ -701,20 +686,12 @@
             "expected": [
               {
                 "name": "src-ws-product",
-                "files": ["productInformation.json", "apis.json", "tags.json", "groups.json"],
+                "files": ["productInformation.json", "apis.json", "tags.json"],
                 "spotChecks": {
                   "productInformation.json": {
                     "properties.displayName": "Workspace Product",
                     "properties.subscriptionRequired": false,
                     "properties.state": "published"
-                  },
-                  "groups.json": {
-                    "minLength": 2,
-                    "contains": ["administrators", "src-ws-group-internal"],
-                    "containsEntry": [
-                      { "name": "administrators", "scope": "service" },
-                      { "name": "src-ws-group-internal", "scope": "workspace" }
-                    ]
                   }
                 }
               }
