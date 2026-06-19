@@ -31,6 +31,16 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * Returns true when the error indicates an association link already exists.
+ * APIM returns HTTP 409 Conflict ("Link already exists between specified ...")
+ * when an association is re-created; the desired end state is already in place,
+ * so callers treat it as an idempotent success rather than a failure.
+ */
+export function isLinkAlreadyExistsError(error: unknown): boolean {
+  return error instanceof HttpError && error.status === 409;
+}
+
 export class ApimClient implements IApimClient {
   private credential: DefaultAzureCredential;
   private readonly authScope: string;

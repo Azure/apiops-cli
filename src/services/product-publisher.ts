@@ -15,6 +15,7 @@ import { logger } from '../lib/logger.js';
 import { getNamePart } from '../lib/resource-path.js';
 import { parseArmUri } from '../lib/resource-uri.js';
 import { isWorkspaceScope, buildLinkPayload } from '../lib/workspace-link.js';
+import { isLinkAlreadyExistsError } from '../clients/apim-client.js';
 
 /**
  * Publish a Product with all its associations (APIs, Groups, Tags).
@@ -206,6 +207,10 @@ async function publishProductAssociations(
       await client.putResource(context, assocDescriptor, payload);
       logger.debug(`Created ${resourceType} association: ${productName}/${name}`);
     } catch (error) {
+      if (isLinkAlreadyExistsError(error)) {
+        logger.debug(`${resourceType} association already exists: ${productName}/${name}`);
+        continue;
+      }
       logger.warn(`Failed to create ${resourceType} association ${productName}/${name}: ${String(error)}`);
     }
   }
@@ -259,6 +264,10 @@ async function publishProductTags(
       await client.putResource(context, tagDescriptor, payload);
       logger.debug(`Created ProductTag association: ${productName}/${tagName}`);
     } catch (error) {
+      if (isLinkAlreadyExistsError(error)) {
+        logger.debug(`ProductTag association already exists: ${productName}/${tagName}`);
+        continue;
+      }
       logger.warn(`Failed to create ProductTag association ${productName}/${tagName}: ${String(error)}`);
     }
   }
