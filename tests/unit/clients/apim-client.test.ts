@@ -1146,6 +1146,51 @@ describe('ApimClient.getApiSpecification', () => {
     expect(apimCallUrl).toContain('format=openapi-link');
   });
 
+  it('should use swagger-link format when source dialect is swagger2', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ value: {} }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    await client.getApiSpecification(testContext, 'rest-api', 'http', 'swagger2');
+
+    const apimCallUrl = fetchSpy.mock.calls[0][0] as string;
+    expect(apimCallUrl).toContain('format=swagger-link');
+    expect(apimCallUrl).not.toContain('format=openapi-link');
+  });
+
+  it('should still use openapi-link when source dialect is openapi3', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ value: {} }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    await client.getApiSpecification(testContext, 'rest-api', 'http', 'openapi3');
+
+    const apimCallUrl = fetchSpy.mock.calls[0][0] as string;
+    expect(apimCallUrl).toContain('format=openapi-link');
+    expect(apimCallUrl).not.toContain('format=swagger-link');
+  });
+
+  it('should ignore specDialect for non-REST apiTypes (graphql stays graphql-link)', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ value: {} }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    await client.getApiSpecification(testContext, 'gql-api', 'graphql', 'swagger2');
+
+    const apimCallUrl = fetchSpy.mock.calls[0][0] as string;
+    expect(apimCallUrl).toContain('format=graphql-link');
+    expect(apimCallUrl).not.toContain('format=swagger-link');
+  });
+
   it('should return undefined for websocket apiType without making an HTTP request', async () => {
     // WebSocket APIs have no traditional API specification. getExportFormat returns
     // undefined for websocket, causing getApiSpecification to short-circuit.

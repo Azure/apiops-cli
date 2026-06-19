@@ -813,6 +813,36 @@ describe('api-publisher', () => {
       );
     });
 
+    it('should use swagger-json format for Swagger 2.0 JSON specs', async () => {
+      const client = createMockClient();
+      const store = createMockStore([]);
+      store.readResource.mockResolvedValue({
+        name: 'petstore',
+        properties: { path: 'petstore' },
+      });
+      store.readContent.mockResolvedValue({
+        content: '{"swagger":"2.0","info":{"title":"Pet Store","version":"1.0"}}',
+        format: 'json',
+      });
+
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['petstore'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        apiDescriptor,
+        expect.objectContaining({
+          properties: expect.objectContaining({
+            format: 'swagger-json',
+          }),
+        })
+      );
+    });
+
     it('should set imported operation descriptions to null when OpenAPI operation omits description', async () => {
       const client = createMockClient();
       const store = createMockStore([]);

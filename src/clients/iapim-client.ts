@@ -8,6 +8,16 @@
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import { ResourceType } from '../models/resource-types.js';
 
+/**
+ * Spec dialect for a REST (type=http) API. Both dialects share APIM's
+ * `type=http`, so the dialect is an orthogonal axis to {@link ResourceType}/
+ * `apiType` and is detected from the API's schema content type rather than
+ * stored on the resource type.
+ *   - 'openapi3': OpenAPI 3.x
+ *   - 'swagger2': Swagger / OpenAPI 2.0
+ */
+export type ApiSpecDialect = 'openapi3' | 'swagger2';
+
 export interface IApimClient {
   /**
    * List all resources of a given type. Handles ARM pagination (nextLink).
@@ -74,11 +84,15 @@ export interface IApimClient {
    * Returns the raw content string and detected format.
    * @param apiType - Optional API type from properties.type (e.g. 'graphql', 'soap', 'http').
    *   Used to select the correct APIM export format. Defaults to OpenAPI link export.
+   * @param specDialect - For a REST (http) API, the spec dialect to export so the
+   *   exported spec matches the API's native source format: 'swagger2' exports via
+   *   `swagger-link`, 'openapi3' (default) via `openapi-link`.
    */
   getApiSpecification(
     context: ApimServiceContext,
     apiName: string,
-    apiType?: string
+    apiType?: string,
+    specDialect?: ApiSpecDialect
   ): Promise<
     | { content: string; format: 'yaml' | 'json' | 'graphql' | 'wsdl' | 'wadl' }
     | undefined

@@ -7,7 +7,7 @@
  * Handle SOAP/WSDL import via ?import=true&format=wsdl-link query parameter.
  */
 
-import type { IApimClient } from '../clients/iapim-client.js';
+import type { IApimClient, ApiSpecDialect } from '../clients/iapim-client.js';
 import type { IArtifactStore } from '../clients/iartifact-store.js';
 import type { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import type { PublishConfig } from '../models/config.js';
@@ -105,8 +105,11 @@ export async function publishApi(
 
 /**
  * Maps spec file format to APIM ContentFormat for inline import.
+ * @param specDialect - The spec dialect of a JSON spec. Swagger 2.0 ('swagger2')
+ *   must be imported via `swagger-json` so its native format (and schema/operation
+ *   metadata) is preserved; OpenAPI 3.x ('openapi3') uses `openapi+json`.
  */
-function getImportFormat(specFormat: string, _apiType?: string): string | undefined {
+function getImportFormat(specFormat: string, _apiType?: string, specDialect?: ApiSpecDialect): string | undefined {
   const apiType = _apiType?.toLowerCase();
   if (apiType === 'a2a') {
     return undefined;
@@ -116,9 +119,10 @@ function getImportFormat(specFormat: string, _apiType?: string): string | undefi
     case 'yaml':
       return 'openapi';
     case 'json':
-      // Swagger 2.0 uses swagger-json, OpenAPI 3.x uses openapi+json.
-      // Default to openapi+json as the more modern format — APIM accepts both.
-      return 'openapi+json';
+      // Match the source dialect: Swagger 2.0 uses swagger-json, OpenAPI 3.x uses
+      // openapi+json. APIM accepts both, but importing a Swagger 2.0 document as
+      // openapi+json would convert it to OpenAPI 3.0 and lose fidelity.
+      return specDialect === 'swagger2' ? 'swagger-json' : 'openapi+json';
     case 'wsdl':
       return 'wsdl';
     case 'wadl':
@@ -181,7 +185,8 @@ async function publishRootApi(
   if (specResult) {
     const properties = json.properties as Record<string, unknown> | undefined;
     const apiType = properties?.type as string | undefined;
-    const importFormat = getImportFormat(specResult.format ?? 'yaml', apiType);
+    const specDialect = detectSpecDialect(specResult.content, specResult.format);
+    const importFormat = getImportFormat(specResult.format ?? 'yaml', apiType, specDialect);
 
     if (importFormat) {
       // Strip null-valued properties that cause validation errors in
@@ -213,7 +218,7 @@ async function publishRootApi(
         },
       };
 
-      if (importFormat === 'openapi' || importFormat === 'openapi+json') {
+      if (importFormat === 'openapi' || importFormat === 'openapi+json' || importFormat === 'swagger-json') {
         operationIdsWithNullDescription = getOpenApiOperationIdsWithNullDescription(
           specResult.content,
           specResult.format
@@ -610,13 +615,35 @@ function getOpenApiOperationIdsWithNullDescription(
 }
 
 /**
+ * Detects the spec dialect of a JSON spec document. Returns 'swagger2' when the
+ * content is a Swagger 2.0 JSON document (top-level `"swagger": "2.0"`),
+ * otherwise 'openapi3'. Only JSON specs are inspected because APIM's Swagger 2.0
+ * inline import (`swagger-json`) accepts JSON only; YAML specs are treated as
+ * OpenAPI 3.x.
+ */
+function detectSpecDialect(content: string, format: string | undefined): ApiSpecDialect {
+  const isJson =
+    !format ||
+    format.toLowerCase().includes('json') ||
+    content.trimStart().startsWith('{');
+  if (!isJson) return 'openapi3';
+  try {
+    const spec = JSON.parse(content) as Record<string, unknown>;
+    return spec.swagger === '2.0' ? 'swagger2' : 'openapi3';
+  } catch {
+    return 'openapi3';
+  }
+}
+
+/**
  * Sanitize an OpenAPI spec before importing into APIM.
  * Currently handles:
  *  - Missing path parameter declarations: APIM rejects specs where a URL
  *    template contains `{param}` placeholders that are not declared in the
  *    operation's `parameters` array.  We auto-inject the missing declarations
- *    as `{ name, in: "path", required: true, schema: { type: "string" } }`
- *    and log a warning for each one.
+ *    using the document's native parameter shape — OpenAPI 3.x uses
+ *    `{ ..., schema: { type: "string" } }` while Swagger 2.0 uses
+ *    `{ ..., type: "string" }` — and log a warning for each one.
  */
 function sanitizeOpenApiSpec(
   content: string,
@@ -636,6 +663,11 @@ function sanitizeOpenApiSpec(
   } catch {
     return content; // Not valid JSON — return as-is
   }
+
+  // Swagger 2.0 path parameters are declared inline (`type: string`) rather
+  // than wrapped in a `schema` object as in OpenAPI 3.x. Inject the matching
+  // shape so the document stays valid for its native import format.
+  const isSwagger2 = spec.swagger === '2.0';
 
   const paths = spec.paths as Record<string, Record<string, unknown>> | undefined;
   if (!paths) return content;
@@ -664,13 +696,11 @@ function sanitizeOpenApiSpec(
 
       for (const name of placeholderNames) {
         if (!declaredPathParams.has(name)) {
-          // Inject the missing parameter declaration
-          const newParam: Record<string, unknown> = {
-            name,
-            in: 'path',
-            required: true,
-            schema: { type: 'string' },
-          };
+          // Inject the missing parameter declaration using the document's
+          // native parameter shape (Swagger 2.0 vs OpenAPI 3.x).
+          const newParam: Record<string, unknown> = isSwagger2
+            ? { name, in: 'path', required: true, type: 'string' }
+            : { name, in: 'path', required: true, schema: { type: 'string' } };
           const updatedParams = [...params, newParam];
           op.parameters = updatedParams;
           // Update params reference for subsequent placeholder checks on this operation
