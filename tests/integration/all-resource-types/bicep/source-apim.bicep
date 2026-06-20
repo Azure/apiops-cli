@@ -971,6 +971,31 @@ resource apiMcpExistingServer 'Microsoft.ApiManagement/service/apis@2025-09-01-p
   })
 }
 
+// 8b. Policy-based MCP server exposing DummyJSON todo tools
+// Kept on its own API (separate from the Petstore tools on src-mcp-from-api) so
+// the two tool sets are isolated. The MCP behaviour is implemented entirely in
+// the api-level policy (mcpTodosPolicyXml in source-apim-post-activation.bicep),
+// so no mcpTools or backend are required here.
+resource apiMcpTodos 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
+  parent: apim
+  name: 'src-mcp-todos'
+  properties: any({
+    displayName: 'KS MCP Todos Server'
+    description: 'Policy-based MCP server exposing DummyJSON todo tools (listItems, getItem, createItem, healthCheck)'
+    path: 'ks/mcp-todos'
+    protocols: ['https']
+    subscriptionRequired: false
+    type: 'mcp'
+    mcpProperties: {
+      endpoints: {
+        mcp: {
+          uriTemplate: '/mcp'
+        }
+      }
+    }
+  })
+}
+
 resource apiA2aRuntimeMock 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-a2a-runtime-mock'
