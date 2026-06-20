@@ -76,7 +76,7 @@ An apim instance with the following apis
 - **Service Policy**: Global CORS policy
 - **Products**: Starter + Premium with policies, API/group associations, tags, wikis
 - **Subscriptions**: All-APIs + product-scoped
-- **Workspace** (Developer v2 only): Workspace with backend, named value, tag, product, API
+- **Workspace** (Premium/StandardV2/PremiumV2 only): Workspace with backend, named value, tag, group, product, API. The workspace product links groups at **both** scopes to cover the group-link scope round-trip: the service-level `administrators` group (scope `service`, auto-linked by APIM) and a workspace-scoped custom group `src-ws-group-internal` (scope `workspace`).
 
 ## Round-Trip Phases
 

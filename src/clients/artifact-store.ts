@@ -9,7 +9,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import he from 'he';
 import { IArtifactStore } from './iartifact-store.js';
-import { ResourceDescriptor } from '../models/types.js';
+import { AssociationEntry, ResourceDescriptor } from '../models/types.js';
 import {
   buildArtifactDirectory,
   buildArtifactFilePath,
@@ -73,13 +73,19 @@ export class ArtifactStore implements IArtifactStore {
     baseDir: string,
     descriptor: ResourceDescriptor,
     associationType: 'apis' | 'groups' | 'tags',
-    names: string[]
+    entries: Array<AssociationEntry | string>
   ): Promise<void> {
     const filePath = buildAssociationFilePath(baseDir, descriptor, associationType);
     
     await this.ensureDirectory(path.dirname(filePath));
     
-    const content = JSON.stringify(names.map(name => ({ name })), null, 2);
+    // Normalize plain string names into entries; only emit `scope` when set so
+    // service-scoped associations and legacy callers keep the minimal shape.
+    const normalized = entries.map(entry => {
+      const item = typeof entry === 'string' ? { name: entry } : entry;
+      return item.scope ? { name: item.name, scope: item.scope } : { name: item.name };
+    });
+    const content = JSON.stringify(normalized, null, 2);
     await fs.writeFile(filePath, content, 'utf-8');
     
     logger.debug(`Wrote ${associationType} association to ${filePath}`);
@@ -161,14 +167,14 @@ export class ArtifactStore implements IArtifactStore {
     baseDir: string,
     descriptor: ResourceDescriptor,
     associationType: 'apis' | 'groups' | 'tags'
-  ): Promise<string[]> {
+  ): Promise<AssociationEntry[]> {
     const filePath = buildAssociationFilePath(baseDir, descriptor, associationType);
     
     try {
       const content = await fs.readFile(filePath, 'utf-8');
-      const json = JSON.parse(content) as Array<{ name: string }>;
+      const json = JSON.parse(content) as Array<{ name: string; scope?: 'service' | 'workspace' }>;
       logger.debug(`Read ${associationType} association from ${filePath}`);
-      return json.map(item => item.name);
+      return json.map(item => item.scope ? { name: item.name, scope: item.scope } : { name: item.name });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         return [];

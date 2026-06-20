@@ -5,7 +5,7 @@
  * Abstraction over local filesystem for reading/writing APIM artifact files
  */
 
-import { ResourceDescriptor } from '../models/types.js';
+import { AssociationEntry, ResourceDescriptor } from '../models/types.js';
 
 export interface IArtifactStore {
   /**
@@ -33,12 +33,16 @@ export interface IArtifactStore {
 
   /**
    * Write an association file (e.g., product → apis.json, product → groups.json, product → tags.json).
+   *
+   * Entries may carry an optional `scope` recording whether each linked
+   * resource lives at service or workspace scope. Plain names are accepted for
+   * convenience and stored without a scope.
    */
   writeAssociation(
     baseDir: string,
     descriptor: ResourceDescriptor,
     associationType: 'apis' | 'groups' | 'tags',
-    names: string[]
+    entries: Array<AssociationEntry | string>
   ): Promise<void>;
 
   /**
@@ -62,13 +66,14 @@ export interface IArtifactStore {
 
   /**
    * Read an association file.
-   * Returns empty array if file doesn't exist.
+   * Returns empty array if file doesn't exist. Legacy files containing only
+   * `{ name }` are parsed with `scope` left undefined.
    */
   readAssociation(
     baseDir: string,
     descriptor: ResourceDescriptor,
     associationType: 'apis' | 'groups' | 'tags'
-  ): Promise<string[]>;
+  ): Promise<AssociationEntry[]>;
 
   /**
    * List all resource descriptors found in the artifact directory.

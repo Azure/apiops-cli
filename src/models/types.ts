@@ -30,6 +30,29 @@ export interface ResourcePayload {
   json: Record<string, unknown>;
 }
 
+/**
+ * Scope of a resource referenced by a workspace association link.
+ *
+ * Workspace products (and other workspace association parents) can link to
+ * resources that live either inside the workspace (`workspace`) or at the
+ * service level (`service`, e.g. the built-in `administrators`/`developers`/
+ * `guests` groups). The scope must be preserved so publish can rebuild the
+ * link target's ARM path at the correct scope.
+ */
+export type AssociationScope = 'service' | 'workspace';
+
+/**
+ * An entry in an association file (apis.json, groups.json, tags.json).
+ *
+ * `scope` is optional for backward compatibility: legacy artifacts and
+ * service-scoped associations store only `{ name }`. When present, it records
+ * whether the linked resource lives at service or workspace scope.
+ */
+export interface AssociationEntry {
+  name: string;
+  scope?: AssociationScope;
+}
+
 export interface ApimServiceContext {
   subscriptionId: string;
   resourceGroup: string;

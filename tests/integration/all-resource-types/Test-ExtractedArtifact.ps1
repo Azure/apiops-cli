@@ -81,12 +81,23 @@ function Write-Check([string]$name, [bool]$passed, [string]$details = '') {
     }
 }
 
+function Get-Prop($obj, [string]$name) {
+    # Strict-mode-safe optional property read: returns the property value, or
+    # $null when the property is absent (or the object is null). Direct member
+    # access ($obj.name) throws under Set-StrictMode -Version Latest when the
+    # property does not exist, which is common in our optional manifest fields.
+    if ($null -eq $obj) { return $null }
+    $prop = $obj.PSObject.Properties[$name]
+    if ($prop) { return $prop.Value }
+    return $null
+}
+
 function Get-JsonFieldValue([psobject]$obj, [string]$dotPath) {
     $segments = $dotPath -split '\.'
     $current = $obj
     foreach ($segment in $segments) {
         if ($null -eq $current) { return $null }
-        $current = $current.$segment
+        $current = Get-Prop $current $segment
     }
     return $current
 }
@@ -129,8 +140,9 @@ try {
 
 function Test-SkuFilter([psobject]$entry, [string]$sku) {
     # Returns $true if this entry should be SKIPPED for the given SKU
-    if ($entry.skuDependent -eq $true -and $entry.skuFilter) {
-        $allowed = @($entry.skuFilter)
+    $skuFilter = Get-Prop $entry 'skuFilter'
+    if ((Get-Prop $entry 'skuDependent') -eq $true -and $skuFilter) {
+        $allowed = @($skuFilter)
         return ($allowed -notcontains $sku)
     }
     return $false
@@ -188,7 +200,7 @@ function Invoke-SpotCheck([string]$basePath, [psobject]$spotChecks, [string]$lab
             if ($field -eq 'contains') {
                 try {
                     $arr = $content | ConvertFrom-Json
-                    $names = @($arr) | ForEach-Object { if ($_.name) { $_.name } else { $_ } }
+                    $names = @($arr) | ForEach-Object { $n = Get-Prop $_ 'name'; if ($n) { $n } else { $_ } }
                     $targets = @($expected)
                     foreach ($t in $targets) {
                         $found = $t -in $names
@@ -196,6 +208,38 @@ function Invoke-SpotCheck([string]$basePath, [psobject]$spotChecks, [string]$lab
                     }
                 } catch {
                     Write-Check "Array contains [$label/$fileName]" $false "Failed to parse JSON: $_"
+                }
+                continue
+            }
+
+            # --- containsEntry: verify array file contains entries matching name + scope ---
+            # Association files store [{ name, scope? }]. `scope` distinguishes a
+            # service-level link target (e.g. the built-in `administrators` group)
+            # from a workspace-level one. A missing scope in the file matches an
+            # expected scope of 'service' (legacy/service-scoped entries omit it).
+            if ($field -eq 'containsEntry') {
+                try {
+                    $arr = @($content | ConvertFrom-Json)
+                    $targets = @($expected)
+                    foreach ($t in $targets) {
+                        $tScope = Get-Prop $t 'scope'
+                        $tName = Get-Prop $t 'name'
+                        $expectedScope = if ($tScope) { "$tScope" } else { 'service' }
+                        $match = $arr | Where-Object {
+                            $itemScope = Get-Prop $_ 'scope'
+                            (Get-Prop $_ 'name') -eq $tName -and (
+                                $(if ($itemScope) { "$itemScope" } else { 'service' }) -eq $expectedScope
+                            )
+                        }
+                        $found = @($match).Count -gt 0
+                        $detail = if (-not $found) {
+                            $seen = @($arr) | ForEach-Object { $sScope = Get-Prop $_ 'scope'; "$(Get-Prop $_ 'name')[$(if ($sScope) { $sScope } else { 'service' })]" }
+                            "Not found in: $($seen -join ', ')"
+                        } else { '' }
+                        Write-Check "Array entry [$label/$fileName]: name='$tName' scope='$expectedScope'" $found $detail
+                    }
+                } catch {
+                    Write-Check "Array entry [$label/$fileName]" $false "Failed to parse JSON: $_"
                 }
                 continue
             }
@@ -240,14 +284,16 @@ function Invoke-DirectoryValidation([string]$basePath, [psobject]$dirSpec, [stri
 
     # SKU filter check
     if (Test-SkuFilter $dirSpec $SkuName) {
-        Write-Host "  ⏭️  Skipping $label (SKU: supported in $($dirSpec.skuFilter -join ', '))"
+        Write-Host "  ⏭️  Skipping $label (SKU: supported in $((Get-Prop $dirSpec 'skuFilter') -join ', '))"
         return
     }
 
     # Directory exists — note-only entries (embedded in parent file) are informational
+    $dirNote = Get-Prop $dirSpec 'note'
+    $dirExpected = Get-Prop $dirSpec 'expected'
     $exists = Test-Path $dirPath -PathType Container
-    if (-not $exists -and $dirSpec.note -and -not $dirSpec.expected) {
-        Write-Host "  [info] $label`: $($dirSpec.note)"
+    if (-not $exists -and $dirNote -and -not $dirExpected) {
+        Write-Host "  [info] $label`: $dirNote"
         return
     }
     Write-Check "Directory: $label" $exists
@@ -255,16 +301,17 @@ function Invoke-DirectoryValidation([string]$basePath, [psobject]$dirSpec, [stri
     if (-not $exists) { return }
 
     # Min count (count subdirectories = resource instances)
-    if ($dirSpec.minCount -and $dirSpec.minCount -gt 0) {
+    $minCount = Get-Prop $dirSpec 'minCount'
+    if ($minCount -and $minCount -gt 0) {
         $subdirs = @(Get-ChildItem -Path $dirPath -Directory -ErrorAction SilentlyContinue)
         $count = $subdirs.Count
-        $passed = $count -ge $dirSpec.minCount
-        Write-Check "Count: $label >= $($dirSpec.minCount)" $passed $(if (-not $passed) { "Found $count" } else { '' })
+        $passed = $count -ge $minCount
+        Write-Check "Count: $label >= $minCount" $passed $(if (-not $passed) { "Found $count" } else { '' })
     }
 
     # Expected resources
-    if ($dirSpec.expected) {
-        foreach ($resource in $dirSpec.expected) {
+    if ($dirExpected) {
+        foreach ($resource in $dirExpected) {
             # Some expected entries are just strings (e.g., operation names)
             if ($resource -is [string]) {
                 $resPath = Join-Path $dirPath $resource
@@ -273,7 +320,7 @@ function Invoke-DirectoryValidation([string]$basePath, [psobject]$dirSpec, [stri
                 continue
             }
 
-            $resName = $resource.name
+            $resName = Get-Prop $resource 'name'
             $resPath = Join-Path $dirPath $resName
             $resExists = Test-Path $resPath -PathType Container
             Write-Check "Resource: $label/$resName" $resExists
@@ -281,8 +328,9 @@ function Invoke-DirectoryValidation([string]$basePath, [psobject]$dirSpec, [stri
             if (-not $resExists) { continue }
 
             # Files check
-            if ($resource.files) {
-                foreach ($f in $resource.files) {
+            $resFiles = Get-Prop $resource 'files'
+            if ($resFiles) {
+                foreach ($f in $resFiles) {
                     $fPath = Join-Path $resPath $f
                     $fExists = Test-Path $fPath -PathType Leaf
                     Write-Check "File: $label/$resName/$f" $fExists
@@ -290,13 +338,15 @@ function Invoke-DirectoryValidation([string]$basePath, [psobject]$dirSpec, [stri
             }
 
             # Spot checks
-            if ($resource.spotChecks) {
-                Invoke-SpotCheck -basePath $resPath -spotChecks $resource.spotChecks -label "$label/$resName"
+            $resSpotChecks = Get-Prop $resource 'spotChecks'
+            if ($resSpotChecks) {
+                Invoke-SpotCheck -basePath $resPath -spotChecks $resSpotChecks -label "$label/$resName"
             }
 
             # Recursive children (e.g., apis/src-rest-openapi/operations/)
-            if ($resource.children) {
-                foreach ($childProp in $resource.children.PSObject.Properties) {
+            $resChildren = Get-Prop $resource 'children'
+            if ($resChildren) {
+                foreach ($childProp in $resChildren.PSObject.Properties) {
                     Invoke-DirectoryValidation -basePath $resPath -dirSpec $childProp.Value -dirName $childProp.Name -parentLabel "$label/$resName"
                 }
             }
@@ -311,18 +361,21 @@ function Invoke-DirectoryValidation([string]$basePath, [psobject]$dirSpec, [stri
 Write-Host "📁 Section 1: Service-Level Artifacts"
 Write-Host ""
 
-if ($manifest.serviceLevelArtifacts) {
-    foreach ($artProp in $manifest.serviceLevelArtifacts.PSObject.Properties) {
+$serviceLevelArtifacts = Get-Prop $manifest 'serviceLevelArtifacts'
+if ($serviceLevelArtifacts) {
+    foreach ($artProp in $serviceLevelArtifacts.PSObject.Properties) {
         $fileName = $artProp.Name
         $artSpec = $artProp.Value
         $filePath = Join-Path $ExtractedDir $fileName
         $exists = Test-Path $filePath -PathType Leaf
         Write-Check "Service artifact: $fileName" $exists
 
-        if ($exists -and $artSpec.spotChecks) {
+        $artSpotChecks = Get-Prop $artSpec 'spotChecks'
+        if ($exists -and $artSpotChecks) {
             $content = Get-Content -Path $filePath -Raw
-            if ($artSpec.spotChecks.contentIncludes) {
-                foreach ($s in @($artSpec.spotChecks.contentIncludes)) {
+            $contentIncludes = Get-Prop $artSpotChecks 'contentIncludes'
+            if ($contentIncludes) {
+                foreach ($s in @($contentIncludes)) {
                     $found = $content -match [regex]::Escape($s)
                     Write-Check "Content [service/$fileName]: contains '$s'" $found $(if (-not $found) { "String not found" } else { '' })
                 }
@@ -340,8 +393,9 @@ Write-Host ""
 Write-Host "📂 Section 2: Resource Directories"
 Write-Host ""
 
-if ($manifest.directories) {
-    foreach ($dirProp in $manifest.directories.PSObject.Properties) {
+$directories = Get-Prop $manifest 'directories'
+if ($directories) {
+    foreach ($dirProp in $directories.PSObject.Properties) {
         Invoke-DirectoryValidation -basePath $ExtractedDir -dirSpec $dirProp.Value -dirName $dirProp.Name -parentLabel ''
     }
 }
@@ -355,20 +409,24 @@ Write-Host ""
 Write-Host "🏢 Section 3: Workspaces"
 Write-Host ""
 
-if ($manifest.workspaces) {
-    $wsSpec = $manifest.workspaces
+$workspaces = Get-Prop $manifest 'workspaces'
+if ($workspaces) {
+    $wsSpec = $workspaces
     if (Test-SkuFilter $wsSpec $SkuName) {
-        Write-Host "  ⏭️  Skipping workspaces (SKU: supported in $($wsSpec.skuFilter -join ', '))"
+        Write-Host "  ⏭️  Skipping workspaces (SKU: supported in $((Get-Prop $wsSpec 'skuFilter') -join ', '))"
     }
-    elseif ($wsSpec.expected) {
-        foreach ($ws in $wsSpec.expected) {
-            $wsPath = if ($ws.path) { Join-Path $ExtractedDir $ws.path } else { Join-Path $ExtractedDir "workspaces/$($ws.name)" }
+    elseif (Get-Prop $wsSpec 'expected') {
+        foreach ($ws in (Get-Prop $wsSpec 'expected')) {
+            $wsName = Get-Prop $ws 'name'
+            $wsRelPath = Get-Prop $ws 'path'
+            $wsPath = if ($wsRelPath) { Join-Path $ExtractedDir $wsRelPath } else { Join-Path $ExtractedDir "workspaces/$wsName" }
             $wsExists = Test-Path $wsPath -PathType Container
-            Write-Check "Workspace: $($ws.name)" $wsExists
+            Write-Check "Workspace: $wsName" $wsExists
 
-            if ($wsExists -and $ws.directories) {
-                foreach ($wsDirProp in $ws.directories.PSObject.Properties) {
-                    Invoke-DirectoryValidation -basePath $wsPath -dirSpec $wsDirProp.Value -dirName $wsDirProp.Name -parentLabel "workspaces/$($ws.name)"
+            $wsDirectories = Get-Prop $ws 'directories'
+            if ($wsExists -and $wsDirectories) {
+                foreach ($wsDirProp in $wsDirectories.PSObject.Properties) {
+                    Invoke-DirectoryValidation -basePath $wsPath -dirSpec $wsDirProp.Value -dirName $wsDirProp.Name -parentLabel "workspaces/$wsName"
                 }
             }
         }

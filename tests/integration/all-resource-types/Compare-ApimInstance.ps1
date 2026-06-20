@@ -329,8 +329,8 @@ function Compare-LinkResources {
         if ($armId) { ($armId -split '/')[-1] } else { $item.name }
     }
 
-    $srcNames = @($sourceItems | ForEach-Object { & $extractLinkedName $_ }) | Sort-Object
-    $tgtNames = @($targetItems | ForEach-Object { & $extractLinkedName $_ }) | Sort-Object
+    $srcNames = @($sourceItems | ForEach-Object { & $extractLinkedName $_ } | Sort-Object)
+    $tgtNames = @($targetItems | ForEach-Object { & $extractLinkedName $_ } | Sort-Object)
 
     $srcCount = $srcNames.Count
     $tgtCount = $tgtNames.Count
@@ -797,6 +797,21 @@ try {
                         -SourceUrl "$SourceBase/workspaces/$wsName/products/$wsProdName/apiLinks" `
                         -TargetUrl "$TargetBase/workspaces/$wsName/products/$wsProdName/apiLinks" `
                         -LinkProperty "apiId"
+                    $totalTypes++
+                    $totalDiffs += $result.Diffs
+                    $totalCompared += $result.Compared
+                    if ($result.Skipped) { $skippedTypes++ }
+
+                    # Product → Group associations via groupLinks.
+                    # Covers both service-scoped (built-in administrators) and
+                    # workspace-scoped group links. Compared by linked group name,
+                    # which is scope-independent, so a correctly re-scoped target
+                    # link still matches the source.
+                    $result = Compare-LinkResources `
+                        -TypeLabel "  Workspace/$wsName/Product/$wsProdName/groupLinks" `
+                        -SourceUrl "$SourceBase/workspaces/$wsName/products/$wsProdName/groupLinks" `
+                        -TargetUrl "$TargetBase/workspaces/$wsName/products/$wsProdName/groupLinks" `
+                        -LinkProperty "groupId"
                     $totalTypes++
                     $totalDiffs += $result.Diffs
                     $totalCompared += $result.Compared

@@ -1418,12 +1418,39 @@ resource wsApi 'Microsoft.ApiManagement/service/workspaces/apis@2025-09-01-previ
   }
 }
 
+// --- Workspace-scoped custom group ---
+resource wsGroup 'Microsoft.ApiManagement/service/workspaces/groups@2025-09-01-preview' = if (supportsWorkspaces) {
+  parent: workspace
+  name: 'src-ws-group-internal'
+  properties: {
+    displayName: 'Kitchen Sink Workspace Group'
+    description: 'Workspace-scoped custom group for BVT testing'
+    type: 'custom'
+  }
+}
+
 // --- Workspace Product ↔ API association (via apiLinks endpoint) ---
 resource wsProductApiLink 'Microsoft.ApiManagement/service/workspaces/products/apiLinks@2025-09-01-preview' = if (supportsWorkspaces) {
   parent: wsProduct
   name: 'src-ws-api-rest-link'
   properties: {
     apiId: wsApi.id
+  }
+}
+
+// --- Workspace Product ↔ service-level group association ---
+// APIM auto-links every product to the built-in `administrators` group with a
+// SERVICE-scoped groupId, so extract records scope='service' — the regression
+// guard. Not declared here: an explicit link fails with "Link already exists".
+
+// --- Workspace Product ↔ workspace-scoped group association (via groupLinks endpoint) ---
+// Links a workspace-scoped custom group. The groupId carries the /workspaces/ segment,
+// so extract must record scope='workspace' and publish must keep the workspace scope.
+resource wsProductGroupLinkWorkspace 'Microsoft.ApiManagement/service/workspaces/products/groupLinks@2025-09-01-preview' = if (supportsWorkspaces) {
+  parent: wsProduct
+  name: 'src-ws-group-internal-link'
+  properties: {
+    groupId: wsGroup.id
   }
 }
 
