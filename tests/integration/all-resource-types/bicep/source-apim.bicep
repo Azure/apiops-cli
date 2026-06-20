@@ -971,17 +971,19 @@ resource apiMcpExistingServer 'Microsoft.ApiManagement/service/apis@2025-09-01-p
   })
 }
 
-// 8b. Policy-based MCP server exposing DummyJSON todo tools
+// 8b. MCP server exposing the DummyJSON todo operations of src-rest-openapi
 // Kept on its own API (separate from the Petstore tools on src-mcp-from-api) so
-// the two tool sets are isolated. The MCP behaviour is implemented entirely in
-// the api-level policy (mcpTodosPolicyXml in source-apim-post-activation.bicep),
-// so no mcpTools or backend are required here.
+// the two tool sets are isolated. An MCP API must set exactly one of mcpTools or
+// backendId; here the todo operations of src-rest-openapi are surfaced as tools.
+// The api-level policy (mcpTodosPolicyXml in source-apim-post-activation.bicep)
+// implements the JSON-RPC behaviour against DummyJSON.
 resource apiMcpTodos 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-mcp-todos'
+  dependsOn: [apiRestOpenapi]
   properties: any({
     displayName: 'KS MCP Todos Server'
-    description: 'Policy-based MCP server exposing DummyJSON todo tools (listItems, getItem, createItem, healthCheck)'
+    description: 'MCP server exposing DummyJSON todo tools (listItems, getItem, createItem, healthCheck)'
     path: 'ks/mcp-todos'
     protocols: ['https']
     subscriptionRequired: false
@@ -993,6 +995,28 @@ resource apiMcpTodos 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' =
         }
       }
     }
+    mcpTools: [
+      {
+        name: 'listItems'
+        description: 'List todo items'
+        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-openapi', 'listItems')
+      }
+      {
+        name: 'getItem'
+        description: 'Get a todo item by id'
+        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-openapi', 'getItem')
+      }
+      {
+        name: 'createItem'
+        description: 'Create a todo item'
+        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-openapi', 'createItem')
+      }
+      {
+        name: 'healthCheck'
+        description: 'Return APIM MCP server health'
+        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-openapi', 'healthCheck')
+      }
+    ]
   })
 }
 

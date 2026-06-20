@@ -628,7 +628,8 @@
               "properties.subscriptionRequired": false
             },
             "mcpServerInformation.json": {
-              "properties.mcpProperties.endpoints.mcp.uriTemplate": "/mcp"
+              "properties.mcpProperties.endpoints.mcp.uriTemplate": "/mcp",
+              "properties.mcpTools": "exists"
             }
           },
           "notes": "Policy-based MCP server exposing DummyJSON todo tools (listItems, getItem, createItem, healthCheck), kept separate from the Petstore tools on src-mcp-from-api"
