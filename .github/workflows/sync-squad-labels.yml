@@ -1,6 +1,8 @@
-name: Sync Squad Labels
+name: Sync Labels
 
 on:
+  schedule:
+    - cron: '0 8 * * 1'   # Weekly on Monday at 08:00 UTC
   push:
     paths:
       - '.squad/team.md'
