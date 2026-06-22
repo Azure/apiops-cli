@@ -23,7 +23,7 @@ additional questions or comments.
 
 ## Getting started
 
-### VS Code (Recommended)
+### VS Code
 
 Open the repository in VS Code and click **Reopen in Container** when prompted (requires the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)). This starts a pre-configured environment with Node.js 22, Azure CLI, and GitHub CLI — no local tool installation needed.
 
@@ -158,6 +158,14 @@ export class ExtractCommand {
 4. **Open a pull request** against `main`. CI automatically runs lint, build, and the full test suite. All checks must pass before merge.
 
 5. **Address review feedback** promptly.
+
+## Monitoring stale issues
+
+The stale issue management workflow automatically warns inactive issues (30+ days) and closes them after 60+ days of inactivity, with exceptions for protected labels (`priority:p0`, `priority:p1`, `security-review`).
+
+Relevant queries:
+- [Open issues with the stale label](https://github.com/Azure/apiops-cli/issues?q=repo%3AAzure%2Fapiops-cli+is%3Aissue+is%3Aopen+label%3Astale)
+- [Issues closed due to staleness (closed with reason not_planned and previously stale)](https://github.com/Azure/apiops-cli/issues?q=repo%3AAzure%2Fapiops-cli+is%3Aissue+is%3Aclosed+reason%3Anot_planned)
 
 ## Questions or issues?
 

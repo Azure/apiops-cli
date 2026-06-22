@@ -2,6 +2,12 @@
 
 ## Learnings
 
+### 2026-06-22 — Prefer github-script@v8 in workflows
+
+**Context:** `stale-issues.yml` emitted a warning that Node.js 20 is deprecated because `actions/github-script@v7` targets Node 20 and is forced to run on Node 24.
+
+**Key pattern:** For GitHub workflow scripting steps, use `actions/github-script@v8` by default and avoid `@v7` to prevent deprecation warnings and keep runtime compatibility aligned with current runners.
+
 ### 2026-07-15 — Merge main into feature branch (shallow clone handling)
 
 **Context:** Branch `copilot/fix-github-issue-96` was a shallow clone (grafted). Merging main required `git fetch --unshallow` first, then `git fetch origin main:refs/remotes/origin/main` to create the remote tracking ref. PR #93 (`Fix unit test failure in workspace tests`) fixed the failing workspace-extractor test. After merge, all 910 tests pass.
