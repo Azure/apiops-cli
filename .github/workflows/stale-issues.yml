@@ -19,6 +19,9 @@ name: Stale Issue Management
 on:
   schedule:
     - cron: '0 9 * * *'   # Daily at 09:00 UTC
+  push:
+    branches:
+      - copilot/branch-management-stale-issue-workflow
   workflow_dispatch:
 
 # Protected labels are defined once here and shared by both jobs via the
