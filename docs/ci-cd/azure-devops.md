@@ -146,7 +146,8 @@ Each stage:
 3. **Loads per-environment variables** — Each stage uses its own variable group (`apim-dev`, `apim-prod`)
 4. **Authenticates per-environment** — Uses environment-specific service connections (`AZURE_SERVICE_CONNECTION_DEV`, `AZURE_SERVICE_CONNECTION_PROD`)
 5. **Substitutes tokens** — Replaces `{#[TOKEN_NAME]#}` placeholders in `configuration.<env>.yaml` with secret variable values before publishing
-6. **Applies overrides** — Passes `--overrides configuration.{env}.yaml` to apply [environment-specific overrides](../guides/environment-overrides.md)
+6. **Runs a dry-run validation** — Executes `apiops publish --dry-run` to verify the publish would succeed. If this step fails, the pipeline halts and the real publish is never attempted, preventing partial failures from leaving APIM in an inconsistent state.
+7. **Applies overrides** — Passes `--overrides configuration.{env}.yaml` to apply [environment-specific overrides](../guides/environment-overrides.md)
 
 ### Publish Pipeline Walkthrough
 

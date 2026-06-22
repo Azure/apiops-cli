@@ -71,8 +71,41 @@ export function generatePublishPipeline(config: PublishPipelineConfig): string {
                 displayName: 'Validate token substitution (${env})'
 
               - task: AzureCLI@2
+                displayName: 'Dry-run validation (${env}, incremental)'
+                condition: and(succeeded(), ne('\${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo'))
+                inputs:
+                  azureSubscription: 'AZURE_SERVICE_CONNECTION_${envUpper}'
+                  scriptType: 'bash'
+                  scriptLocation: 'inlineScript'
+                  inlineScript: |
+                    npx apiops publish \\
+                      --resource-group $(APIM_RESOURCE_GROUP_${envUpper}) \\
+                      --service-name $(APIM_SERVICE_NAME_${envUpper}) \\
+                      --source ${config.artifactDir} \\
+                      --overrides configuration.${env}.yaml \\
+                      --commit-id $(Build.SourceVersion) \\
+                      --subscription-id $(AZURE_SUBSCRIPTION_ID) \\
+                      --dry-run
+
+              - task: AzureCLI@2
+                displayName: 'Dry-run validation (${env}, all artifacts)'
+                condition: and(succeeded(), eq('\${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo'))
+                inputs:
+                  azureSubscription: 'AZURE_SERVICE_CONNECTION_${envUpper}'
+                  scriptType: 'bash'
+                  scriptLocation: 'inlineScript'
+                  inlineScript: |
+                    npx apiops publish \\
+                      --resource-group $(APIM_RESOURCE_GROUP_${envUpper}) \\
+                      --service-name $(APIM_SERVICE_NAME_${envUpper}) \\
+                      --source ${config.artifactDir} \\
+                      --overrides configuration.${env}.yaml \\
+                      --subscription-id $(AZURE_SUBSCRIPTION_ID) \\
+                      --dry-run
+
+              - task: AzureCLI@2
                 displayName: 'Publish to ${env} (incremental - last commit only)'
-                condition: ne('\${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo')
+                condition: and(succeeded(), ne('\${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo'))
                 inputs:
                   azureSubscription: 'AZURE_SERVICE_CONNECTION_${envUpper}'
                   scriptType: 'bash'
@@ -88,7 +121,7 @@ export function generatePublishPipeline(config: PublishPipelineConfig): string {
 
               - task: AzureCLI@2
                 displayName: 'Publish to ${env} (all artifacts)'
-                condition: eq('\${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo')
+                condition: and(succeeded(), eq('\${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo'))
                 inputs:
                   azureSubscription: 'AZURE_SERVICE_CONNECTION_${envUpper}'
                   scriptType: 'bash'

@@ -103,6 +103,29 @@ ${autoDeployComment}
             exit 1
           fi
 
+      - name: Dry-run validation (${env}, incremental)
+        if: \${{ github.event.inputs.COMMIT_ID_CHOICE != 'publish-all-artifacts-in-repo' }}
+        run: |
+          npx apiops publish \\
+            --subscription-id \${{ secrets.AZURE_SUBSCRIPTION_ID }} \\
+            --resource-group \${{ secrets.APIM_RESOURCE_GROUP_${envUpper} }} \\
+            --service-name \${{ secrets.APIM_SERVICE_NAME_${envUpper} }} \\
+            --source ${config.artifactDir} \\
+            --overrides configuration.${env}.yaml \\
+            --commit-id \${{ needs.get-commit.outputs.commit_id }} \\
+            --dry-run
+
+      - name: Dry-run validation (${env}, all artifacts)
+        if: \${{ github.event.inputs.COMMIT_ID_CHOICE == 'publish-all-artifacts-in-repo' }}
+        run: |
+          npx apiops publish \\
+            --subscription-id \${{ secrets.AZURE_SUBSCRIPTION_ID }} \\
+            --resource-group \${{ secrets.APIM_RESOURCE_GROUP_${envUpper} }} \\
+            --service-name \${{ secrets.APIM_SERVICE_NAME_${envUpper} }} \\
+            --source ${config.artifactDir} \\
+            --overrides configuration.${env}.yaml \\
+            --dry-run
+
       - name: Publish to ${env} (incremental - last commit only)
         if: \${{ github.event.inputs.COMMIT_ID_CHOICE != 'publish-all-artifacts-in-repo' }}
         run: |

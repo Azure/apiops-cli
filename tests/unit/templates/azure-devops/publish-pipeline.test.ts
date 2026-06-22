@@ -147,8 +147,8 @@ describe('azure-devops/publish-pipeline', () => {
       });
       expect(pipeline).toContain('incremental - last commit only');
       expect(pipeline).toContain('all artifacts');
-      expect(pipeline).toContain("ne('${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo')");
-      expect(pipeline).toContain("eq('${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo')");
+      expect(pipeline).toContain("and(succeeded(), ne('${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo'))");
+      expect(pipeline).toContain("and(succeeded(), eq('${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo'))");
     });
 
     it('should pass Build.SourceVersion as commit-id in incremental step', () => {
@@ -254,6 +254,74 @@ describe('azure-devops/publish-pipeline', () => {
       const publishIdx = pipeline.indexOf('npx apiops publish');
       expect(tokenIdx).toBeGreaterThan(0);
       expect(tokenIdx).toBeLessThan(publishIdx);
+    });
+
+    it('should include dry-run validation steps before publish steps', () => {
+      const pipeline = generatePublishPipeline({
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+      });
+      expect(pipeline).toContain('Dry-run validation (dev, incremental)');
+      expect(pipeline).toContain('Dry-run validation (dev, all artifacts)');
+    });
+
+    it('should include --dry-run flag in dry-run validation steps', () => {
+      const pipeline = generatePublishPipeline({
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+      });
+      const lines = pipeline.split('\n');
+      const dryRunIncrIdx = lines.findIndex((l) => l.includes('Dry-run validation (dev, incremental)'));
+      const dryRunSection = lines.slice(dryRunIncrIdx, dryRunIncrIdx + 20).join('\n');
+      expect(dryRunSection).toContain('--dry-run');
+    });
+
+    it('should place dry-run validation before actual publish steps', () => {
+      const pipeline = generatePublishPipeline({
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+      });
+      const dryRunIdx = pipeline.indexOf('Dry-run validation (dev, incremental)');
+      const publishIdx = pipeline.indexOf("Publish to dev (incremental");
+      expect(dryRunIdx).toBeGreaterThan(0);
+      expect(dryRunIdx).toBeLessThan(publishIdx);
+    });
+
+    it('should include dry-run validation for each environment', () => {
+      const pipeline = generatePublishPipeline({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+      });
+      expect(pipeline).toContain('Dry-run validation (dev, incremental)');
+      expect(pipeline).toContain('Dry-run validation (dev, all artifacts)');
+      expect(pipeline).toContain('Dry-run validation (prod, incremental)');
+      expect(pipeline).toContain('Dry-run validation (prod, all artifacts)');
+    });
+
+    it('should pass commit-id in incremental dry-run step', () => {
+      const pipeline = generatePublishPipeline({
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+      });
+      const lines = pipeline.split('\n');
+      const dryRunIncrIdx = lines.findIndex((l) => l.includes('Dry-run validation (dev, incremental)'));
+      const nextTaskIdx = lines.findIndex((l, i) => i > dryRunIncrIdx + 1 && l.includes("- task:"));
+      const dryRunSection = lines.slice(dryRunIncrIdx, nextTaskIdx).join('\n');
+      expect(dryRunSection).toContain('--commit-id');
+      expect(dryRunSection).toContain('--dry-run');
+    });
+
+    it('should not pass commit-id in all-artifacts dry-run step', () => {
+      const pipeline = generatePublishPipeline({
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+      });
+      const lines = pipeline.split('\n');
+      const dryRunAllIdx = lines.findIndex((l) => l.includes('Dry-run validation (dev, all artifacts)'));
+      const nextTaskIdx = lines.findIndex((l, i) => i > dryRunAllIdx + 1 && l.includes("- task:"));
+      const dryRunSection = lines.slice(dryRunAllIdx, nextTaskIdx).join('\n');
+      expect(dryRunSection).not.toContain('--commit-id');
+      expect(dryRunSection).toContain('--dry-run');
     });
   });
 });

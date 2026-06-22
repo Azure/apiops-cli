@@ -101,7 +101,8 @@ The workflow runs automatically when changes are pushed to `main` in these paths
 2. **Checks out the repository** with `fetch-depth: 2` (needed for git diff).
 3. **Authenticates with Azure** using OIDC federated credentials.
 4. **Substitutes tokens** — replaces `{#[TOKEN_NAME]#}` placeholders in `configuration.<env>.yaml` with pipeline secret values.
-5. **Runs `apiops publish`** in one of two modes:
+5. **Runs a dry-run validation** — executes `apiops publish --dry-run` to verify the publish would succeed. If this fails, the workflow halts and the real publish is never attempted. This prevents partial failures from leaving APIM in an inconsistent state.
+6. **Runs `apiops publish`** in one of two modes:
    - **Incremental** (default): uses `--commit-id` to publish only changed files.
    - **Full**: publishes all artifacts in the repository (useful for recovery or initial setup).
 

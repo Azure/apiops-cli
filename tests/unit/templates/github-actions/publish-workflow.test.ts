@@ -265,5 +265,73 @@ describe('github-actions/publish-workflow', () => {
       expect(substituteIdx).toBeLessThan(validateSubstitutionIdx);
       expect(validateSubstitutionIdx).toBeLessThan(publishIdx);
     });
+
+    it('should include dry-run validation steps before publish steps', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+      });
+      expect(workflow).toContain('Dry-run validation (dev, incremental)');
+      expect(workflow).toContain('Dry-run validation (dev, all artifacts)');
+    });
+
+    it('should include --dry-run flag in dry-run validation steps', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+      });
+      const lines = workflow.split('\n');
+      const dryRunIncrIdx = lines.findIndex((l) => l.includes('Dry-run validation (dev, incremental)'));
+      const dryRunSection = lines.slice(dryRunIncrIdx, dryRunIncrIdx + 15).join('\n');
+      expect(dryRunSection).toContain('--dry-run');
+    });
+
+    it('should place dry-run validation before actual publish steps', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+      });
+      const dryRunIdx = workflow.indexOf('Dry-run validation (dev, incremental)');
+      const publishIdx = workflow.indexOf('Publish to dev (incremental');
+      expect(dryRunIdx).toBeGreaterThan(0);
+      expect(dryRunIdx).toBeLessThan(publishIdx);
+    });
+
+    it('should include dry-run validation for each environment', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+      });
+      expect(workflow).toContain('Dry-run validation (dev, incremental)');
+      expect(workflow).toContain('Dry-run validation (dev, all artifacts)');
+      expect(workflow).toContain('Dry-run validation (prod, incremental)');
+      expect(workflow).toContain('Dry-run validation (prod, all artifacts)');
+    });
+
+    it('should pass commit-id in incremental dry-run step', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+      });
+      const lines = workflow.split('\n');
+      const dryRunIncrIdx = lines.findIndex((l) => l.includes('Dry-run validation (dev, incremental)'));
+      const nextStepIdx = lines.findIndex((l, i) => i > dryRunIncrIdx + 1 && l.includes('- name:'));
+      const dryRunSection = lines.slice(dryRunIncrIdx, nextStepIdx).join('\n');
+      expect(dryRunSection).toContain('--commit-id');
+      expect(dryRunSection).toContain('--dry-run');
+    });
+
+    it('should not pass commit-id in all-artifacts dry-run step', () => {
+      const workflow = generatePublishWorkflow({
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+      });
+      const lines = workflow.split('\n');
+      const dryRunAllIdx = lines.findIndex((l) => l.includes('Dry-run validation (dev, all artifacts)'));
+      const nextStepIdx = lines.findIndex((l, i) => i > dryRunAllIdx + 1 && l.includes('- name:'));
+      const dryRunSection = lines.slice(dryRunAllIdx, nextStepIdx).join('\n');
+      expect(dryRunSection).not.toContain('--commit-id');
+      expect(dryRunSection).toContain('--dry-run');
+    });
   });
 });
