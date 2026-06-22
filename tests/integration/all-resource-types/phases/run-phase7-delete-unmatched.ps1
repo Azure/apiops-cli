@@ -3,7 +3,7 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-    Phase 6b - Validate publish --delete-unmatched with revisioned APIs.
+    Phase 7 - Validate publish --delete-unmatched with revisioned APIs.
 .DESCRIPTION
     Removes a revisioned API from extracted artifacts, runs publish with
     --delete-unmatched, and verifies the revisioned API resources are deleted
