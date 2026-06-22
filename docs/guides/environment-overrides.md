@@ -145,12 +145,12 @@ namedValues:
   - name: stripe-webhook-secret
     properties:
       secret: true
-      value: "{#[STRIPE_WEBHOOK_SECRET]#}"
+      value: "{#[WEBHOOK_SECRET]#}"
 ```
 
 Store the actual secret values in:
-- **GitHub Actions:** Environment secrets (Settings → Environments → Add secret)
-- **Azure DevOps:** Variable groups marked as secret (Pipelines → Library)
+- **GitHub Actions:** Environment secrets (Settings → Environments → Add secret). See [Using secrets in GitHub Actions](https://docs.github.com/actions/security-guides/using-secrets-in-github-actions#creating-secrets-for-an-environment).
+- **Azure DevOps:** Variable groups marked as secret (Pipelines → Library). See [Use variable groups in pipelines](https://learn.microsoft.com/azure/devops/pipelines/library/variable-groups) and [Set secret variables](https://learn.microsoft.com/azure/devops/pipelines/process/set-secret-variables).
 
 See the [Token Substitution guide](token-substitution.md) for complete setup instructions.
 
