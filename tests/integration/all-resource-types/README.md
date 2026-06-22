@@ -181,6 +181,18 @@ Compares source and target APIM resources and reports differences or parity.
 ./phases/run-phase6-compare.ps1 -SourceSubscriptionId 11111111-1111-1111-1111-111111111111 -SourceResourceGroup rg-src -SourceApimName src-apim -TargetSubscriptionId 22222222-2222-2222-2222-222222222222 -TargetResourceGroup rg-tgt -TargetApimName tgt-apim -LogLevel Verbose
 ```
 
+**Phase 6b: Delete-unmatched validation** (`phases/run-phase6-delete-unmatched.ps1`).
+
+Removes a revisioned API from extracted artifacts, runs `apiops publish --delete-unmatched`, and verifies the removed API revisions are deleted from target APIM.
+
+```powershell
+# Minimum parameters
+./phases/run-phase6-delete-unmatched.ps1 -TargetResourceGroup rg-tgt -TargetApimName tgt-apim -OverrideFile ./phases/extracted-artifacts/.overrides.yaml
+
+# All parameters
+./phases/run-phase6-delete-unmatched.ps1 -TargetSubscriptionId 22222222-2222-2222-2222-222222222222 -TargetResourceGroup rg-tgt -TargetApimName tgt-apim -LogLevel Verbose -OverrideFile ./phases/extracted-artifacts/.overrides.yaml -ExtractOutputDir ./phases/extracted-artifacts
+```
+
 **Phase 7: Teardown** (`phases/run-phase7-teardown.ps1`).
 
 Deletes source and target resource groups and purges soft-deleted APIM services. This phase always run, regardless of the success of previous phases, unles `-SkipTeardown` switch is specified.

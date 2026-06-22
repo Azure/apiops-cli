@@ -2,7 +2,7 @@
 # Licensed under the MIT license.
 <#
 .SYNOPSIS
-    Master orchestrator for the 7-phase round-trip integration workflow.
+    Master orchestrator for the round-trip integration workflow.
 .DESCRIPTION
     Single entry point that runs the full round-trip sequence:
         1) deploy source + target APIM instances,
@@ -11,6 +11,7 @@
         4) generate target environment overrides,
         5) publish artifacts to target,
         6) compare source and target,
+        6b) validate --delete-unmatched behavior,
         7) teardown.
 
     Works both locally and in CI (writes to GITHUB_OUTPUT when available).
@@ -115,9 +116,10 @@ $phase3ValidateExtractScript = Join-Path $PSScriptRoot 'phases/run-phase3-valida
 $phase4CreateOverridesScript = Join-Path $PSScriptRoot 'phases/run-phase4-create-overrides.ps1'
 $phase5PublishScript = Join-Path $PSScriptRoot 'phases/run-phase5-publish.ps1'
 $phase6CompareScript = Join-Path $PSScriptRoot 'phases/run-phase6-compare.ps1'
+$phase6bDeleteUnmatchedScript = Join-Path $PSScriptRoot 'phases/run-phase6-delete-unmatched.ps1'
 $phase7TeardownScript = Join-Path $PSScriptRoot 'phases/run-phase7-teardown.ps1'
 
-foreach ($requiredFile in @($phase1DeployScript, $phase2ExtractScript, $phase3ValidateExtractScript, $phase4CreateOverridesScript, $phase5PublishScript, $phase6CompareScript, $phase7TeardownScript)) {
+foreach ($requiredFile in @($phase1DeployScript, $phase2ExtractScript, $phase3ValidateExtractScript, $phase4CreateOverridesScript, $phase5PublishScript, $phase6CompareScript, $phase6bDeleteUnmatchedScript, $phase7TeardownScript)) {
     if (-not (Test-Path $requiredFile)) {
         Write-Error "Required file not found: $requiredFile"
         exit 2
@@ -243,6 +245,24 @@ try {
     }
     $global:LASTEXITCODE = 0
     & $phase6CompareScript @phase6Args
+
+    if ($LASTEXITCODE -ne 0) {
+        $exitCode = $LASTEXITCODE
+        exit $exitCode
+    }
+
+    # Phase 6b: Validate delete-unmatched for revisioned APIs
+    $currentPhase = 'phase6-delete-unmatched'
+    $phase6bDeleteUnmatchedArgs = @{
+        TargetResourceGroup = $TargetResourceGroup
+        TargetApimName      = $TargetApimName
+        TargetSubscriptionId = $TargetSubscriptionId
+        OverrideFile        = $overrideFile
+        LogLevel            = $LogLevel
+    }
+    Add-ArgumentIfSet -Hashtable $phase6bDeleteUnmatchedArgs -Key 'ExtractOutputDir' -Value $extractOutputDirValue
+    $global:LASTEXITCODE = 0
+    & $phase6bDeleteUnmatchedScript @phase6bDeleteUnmatchedArgs
 
     $exitCode = $LASTEXITCODE
 }
