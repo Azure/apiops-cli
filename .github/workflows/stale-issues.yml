@@ -19,15 +19,13 @@ name: Stale Issue Management
 on:
   schedule:
     - cron: '0 9 * * *'   # Daily at 09:00 UTC
-  push:
-    branches:
-      - copilot/branch-management-stale-issue-workflow
   workflow_dispatch:
 
-# Protected labels are defined once here and shared by both jobs via the
-# PROTECTED_LABELS environment variable (JSON-encoded array).
+# Protected labels, thresholds, and workflow configuration defined at workflow level.
 env:
   PROTECTED_LABELS: '["priority:p0","priority:p1","security-review"]'
+  STALE_DAYS: '30'
+  STALE_CLOSE_DAYS: '60'
 
 permissions:
   issues: write
@@ -45,15 +43,16 @@ jobs:
 
     steps:
       - name: Warn stale issues
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             // Layer 2 — code guard: these labels make an issue untouchable regardless of
             // how it reached the candidate list.
             // PROTECTED_LABELS is defined at workflow level and shared with close-stale.
             const PROTECTED_LABELS = JSON.parse(process.env.PROTECTED_LABELS);
-            const MAX_WARN = 10;
-            const STALE_DAYS = 30;
+            const MAX_WARN = 20;
+            const STALE_DAYS = parseInt(process.env.STALE_DAYS, 10);
+            const STALE_CLOSE_DAYS = parseInt(process.env.STALE_CLOSE_DAYS, 10);
 
             const now = new Date();
             const cutoff = new Date(now.getTime() - STALE_DAYS * 24 * 60 * 60 * 1000);
@@ -116,7 +115,7 @@ jobs:
                 body: [
                   `⚠️ **Stale issue notice** — This issue has had no activity for **${inactiveDays} day(s)**.`,
                   '',
-                  'It will be automatically closed after **60 days** of inactivity.',
+                  `It will be automatically closed after **${STALE_CLOSE_DAYS} days** of inactivity.`,
                   '',
                   'To keep this issue open:',
                   '- Leave a comment describing the current status, or',
@@ -144,14 +143,14 @@ jobs:
 
     steps:
       - name: Close warned stale issues
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             // Layer 2 — code guard.
             // PROTECTED_LABELS is defined at workflow level and shared with warn-stale.
             const PROTECTED_LABELS = JSON.parse(process.env.PROTECTED_LABELS);
-            const MAX_CLOSE = 5;
-            const STALE_CLOSE_DAYS = 60;
+            const MAX_CLOSE = 10;
+            const STALE_CLOSE_DAYS = parseInt(process.env.STALE_CLOSE_DAYS, 10);
 
             const now = new Date();
             const cutoff = new Date(now.getTime() - STALE_CLOSE_DAYS * 24 * 60 * 60 * 1000);
