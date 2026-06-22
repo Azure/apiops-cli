@@ -1,6 +1,8 @@
-name: Sync Squad Labels
+name: Sync Labels
 
 on:
+  schedule:
+    - cron: '0 8 * * 1'   # Weekly on Monday at 08:00 UTC
   push:
     paths:
       - '.squad/team.md'
@@ -103,6 +105,12 @@ jobs:
               { name: 'priority:p2', color: 'FBCA04', description: 'Next sprint' }
             ];
 
+            // Lifecycle labels managed by automated workflows
+            const LIFECYCLE_LABELS = [
+              { name: 'stale', color: 'aaaaaa', description: 'No activity for 30+ days — will be closed if no further activity' },
+              { name: 'security-review', color: 'B60205', description: 'Requires security review — exempt from stale automation' }
+            ];
+
             function slugify(t) { return t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
 
             // Ensure the base "squad" triage label exists
@@ -127,12 +135,13 @@ jobs:
               });
             }
 
-            // Add go:, release:, type:, priority:, and high-signal labels
+            // Add go:, release:, type:, priority:, high-signal, and lifecycle labels
             labels.push(...GO_LABELS);
             labels.push(...RELEASE_LABELS);
             labels.push(...TYPE_LABELS);
             labels.push(...PRIORITY_LABELS);
             labels.push(...SIGNAL_LABELS);
+            labels.push(...LIFECYCLE_LABELS);
 
             // Sync labels (create or update)
             for (const label of labels) {
