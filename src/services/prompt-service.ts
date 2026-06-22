@@ -14,6 +14,26 @@ export interface PromptService {
   askCIProvider(): Promise<'github-actions' | 'azure-devops'>;
   askArtifactDir(defaultValue: string): Promise<string>;
   askEnvironments(defaultValue: string[]): Promise<string[]>;
+  /**
+   * Ask the user to select which APIs to include in the extractor filter.
+   * Returns the chosen names (or all names if the user accepts the default).
+   */
+  askApiFilter(allApiNames: string[]): Promise<string[]>;
+  /**
+   * Ask the user for the secret-token placeholder name to use for a named
+   * value in a specific environment.  Returns the token name without
+   * the `{#[...]#}` wrapper so callers can format as needed.
+   */
+  askSecretTokenName(namedValueName: string, environment: string, suggestedToken: string): Promise<string>;
+  /**
+   * Ask the user for the URL to use for a backend in a specific environment.
+   * Returns an empty string to signal "keep the default / don't override".
+   */
+  askBackendUrl(backendName: string, environment: string, currentUrl: string | undefined): Promise<string>;
+  /**
+   * Ask the user a yes/no question. Returns true for yes.
+   */
+  askYesNo(question: string, defaultYes?: boolean): Promise<boolean>;
 }
 
 class PromptServiceImpl implements PromptService {
@@ -69,6 +89,76 @@ class PromptServiceImpl implements PromptService {
       .split(',')
       .map((env) => env.trim())
       .filter((env) => env.length > 0);
+  }
+
+  /**
+   * Ask user to select APIs for the extractor filter.
+   */
+  async askApiFilter(allApiNames: string[]): Promise<string[]> {
+    if (allApiNames.length === 0) {
+      return [];
+    }
+
+    logger.info(`\nFound ${allApiNames.length} API(s):`);
+    allApiNames.forEach((name, i) => logger.info(`  ${i + 1}) ${name}`));
+    logger.info('');
+
+    const answer = await this.ask(
+      'Enter API names to include (comma-separated), or press Enter to include all: '
+    );
+
+    if (!answer.trim()) {
+      return allApiNames;
+    }
+
+    const selected = answer
+      .split(',')
+      .map((n) => n.trim())
+      .filter((n) => n.length > 0);
+
+    return selected;
+  }
+
+  /**
+   * Ask user for a secret token name for a named value override.
+   */
+  async askSecretTokenName(
+    namedValueName: string,
+    environment: string,
+    suggestedToken: string
+  ): Promise<string> {
+    const answer = await this.ask(
+      `  Token name for secret named-value "${namedValueName}" in ${environment} (default: ${suggestedToken}): `
+    );
+    return answer.trim() || suggestedToken;
+  }
+
+  /**
+   * Ask user for a backend URL override in a specific environment.
+   */
+  async askBackendUrl(
+    backendName: string,
+    environment: string,
+    currentUrl: string | undefined
+  ): Promise<string> {
+    const hint = currentUrl ? ` (current: ${currentUrl})` : '';
+    const answer = await this.ask(
+      `  URL for backend "${backendName}" in ${environment}${hint} (leave blank to keep default): `
+    );
+    return answer.trim();
+  }
+
+  /**
+   * Ask user a yes/no question.
+   */
+  async askYesNo(question: string, defaultYes = true): Promise<boolean> {
+    const hint = defaultYes ? '[Y/n]' : '[y/N]';
+    const answer = await this.ask(`${question} ${hint}: `);
+    const trimmed = answer.trim().toLowerCase();
+    if (!trimmed) {
+      return defaultYes;
+    }
+    return trimmed === 'y' || trimmed === 'yes';
   }
 
   /**

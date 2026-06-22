@@ -128,3 +128,11 @@ export interface InitConfig {
   cliPackage?: string;
   force: boolean;
 }
+
+export interface ConfigureConfig {
+  artifactDir: string;
+  environments: string[];
+  outputDir: string;
+  nonInteractive: boolean;
+  force: boolean;
+}

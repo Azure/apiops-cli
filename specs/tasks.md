@@ -136,6 +136,27 @@
 
 ---
 
+## Phase 6b: User Story 6 — Interactive Configure Command (Priority: P2)
+
+**Goal**: `apiops configure` scans extracted artifacts and generates filter + per-environment override configuration files with an interactive guided experience.
+
+**Independent Test**: Run `apiops configure` against an extracted artifacts directory. Verify generated `configuration.extractor.yaml` and `configuration.<env>.yaml` files contain correct resource names and secret placeholders.
+
+### Implementation for User Story 6
+
+- [x] T060 [US6] Add ConfigureConfig interface to src/models/config.ts
+- [x] T061 [US6] Implement artifact scanner in src/services/artifact-scanner.ts (scan APIs, named values with secret flag, backends with URLs, loggers, diagnostics, products)
+- [x] T062 [US6] Extend prompt service in src/services/prompt-service.ts (askApiFilter, askSecretTokenName, askBackendUrl, askYesNo)
+- [x] T063 [US6] Implement configure orchestrator in src/services/configure-service.ts (scan → interactive/non-interactive gather → generate filter + override config files)
+- [x] T064 [US6] Register configure command in src/cli/configure-command.ts (--artifact-dir, --environments, --output, --non-interactive, --force flags)
+- [x] T065 [US6] Add configure command to src/cli/index.ts
+- [x] T066 [P] [US6] Create command documentation in docs/commands/configure.md
+- [x] T067 [P] [US6] Update specs/contracts/cli-commands.md with configure command contract
+
+**Checkpoint**: `apiops configure` generates filter and override config files with interactive guided experience
+
+---
+
 ## Phase 7: User Story 5 — Extensible Command Architecture (Priority: P3)
 
 **Goal**: Ensure new commands can be added without modifying existing code.

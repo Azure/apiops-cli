@@ -12,6 +12,7 @@ import { logger, parseLogLevel } from '../lib/logger.js';
 import { createExtractCommand } from './extract-command.js';
 import { createPublishCommand } from './publish-command.js';
 import { createInitCommand } from './init-command.js';
+import { createConfigureCommand } from './configure-command.js';
 import packageJson from '../../package.json' with { type: 'json' };
 
 const program = new Command();
@@ -69,6 +70,7 @@ program.hook('preAction', (thisCommand) => {
 program.addCommand(createExtractCommand());
 program.addCommand(createPublishCommand());
 program.addCommand(createInitCommand());
+program.addCommand(createConfigureCommand());
 
 // Apply help configuration to all subcommands so global options are visible
 program.commands.forEach((cmd) => cmd.configureHelp({ showGlobalOptions: true }));

@@ -102,6 +102,31 @@ Initialize repository structure and CI/CD pipeline configuration.
 
 ---
 
+### `apiops configure`
+
+Generate filter and per-environment override configuration files from extracted APIM artifacts.
+
+| Flag | Type | Required | Default | Description |
+|------|------|----------|---------|-------------|
+| `--artifact-dir <dir>` | string | no | `./apim-artifacts` | Directory containing extracted APIM artifacts |
+| `--environments <list>` | string | no | `dev,prod` | Comma-separated environment names to generate override files for |
+| `--output <dir>` | string | no | `.` | Directory where configuration files are written |
+| `--non-interactive` | boolean | no | `false` | Skip interactive prompts; use best-effort defaults |
+| `--force` | boolean | no | `false` | Overwrite existing files without prompting |
+
+**Interactive mode** (default): Scans artifacts, then prompts for API filter selection, secret-value token names per environment, and backend URL overrides per environment.  
+**Non-interactive mode**: Uses best-effort defaults — all APIs included in filter; secret named values get `{#[TOKEN_NAME]#}` placeholders derived from their resource names.
+
+**File conflict detection**: Before writing any files, the command checks whether target file paths already exist. If conflicts are found and `--force` is not set, the command lists the conflicting files and exits with exit code `1`. If `--force` is set, it logs a warning and overwrites existing files.
+
+**Generated files**:
+- `configuration.extractor.yaml` — filter configuration controlling which resources are extracted
+- `configuration.{env}.yaml` — per-environment override files (one per environment)
+
+**Secret placeholder syntax**: Secret named values are represented using `{#[TOKEN_NAME]#}` where `TOKEN_NAME` is an uppercase identifier the pipeline resolves from pipeline variables or Key Vault secrets.
+
+---
+
 ## Shared Environment Variables
 
 | Variable | Description | Used By |
