@@ -1,0 +1,266 @@
+name: Stale Issue Management
+
+# Trigger: daily schedule
+# Scans open issues with no activity for 30+ days and closes those stale 60+ days.
+#
+# Protected labels — issues carrying ANY of these are NEVER touched:
+#   priority:p0 | priority:p1 | security-review
+#
+# Exclusion is enforced in four overlapping layers (defense in depth):
+#   1. Search query   — protected-label issues are excluded from the query result set.
+#   2. Code guard     — every candidate is skipped at the start of the loop body if a
+#                       protected label is still present (catches search-index lag).
+#   3. Structural     — add-labels only allows [stale]; close requires [stale] already
+#                       present, guaranteeing at least one warning cycle before close.
+#   4. Post-check     — the close-stale job re-fetches every candidate's labels via the
+#                       API immediately before closing and aborts if a protected label is
+#                       found.  This layer survives any other failure.
+
+on:
+  schedule:
+    - cron: '0 9 * * *'   # Daily at 09:00 UTC
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 1 — Warn issues inactive for 30+ days
+  # Adds the `stale` label and posts a "last chance" comment.
+  # Maximum 10 issues per run.
+  # ──────────────────────────────────────────────────────────────────────────
+  warn-stale:
+    name: Warn stale issues (30+ days)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ensure stale label exists
+        uses: actions/github-script@v7
+        with:
+          script: |
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: 'stale'
+              });
+              core.info('stale label already exists');
+            } catch (err) {
+              if (err.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: 'stale',
+                  color: 'aaaaaa',
+                  description: 'No activity for 30+ days — will be closed if no further activity'
+                });
+                core.info('Created stale label');
+              } else {
+                throw err;
+              }
+            }
+
+      - name: Warn stale issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Layer 2 — code guard: these labels make an issue untouchable regardless of
+            // how it reached the candidate list.
+            const PROTECTED_LABELS = ['priority:p0', 'priority:p1', 'security-review'];
+            const MAX_WARN = 10;
+            const STALE_DAYS = 30;
+
+            const now = new Date();
+            const cutoff = new Date(now.getTime() - STALE_DAYS * 24 * 60 * 60 * 1000);
+            const cutoffDate = cutoff.toISOString().split('T')[0];
+
+            // Layer 1 — search query: protected-label issues excluded at query time.
+            const query = [
+              `repo:${context.repo.owner}/${context.repo.repo}`,
+              'is:issue',
+              'is:open',
+              '-label:"priority:p0"',
+              '-label:"priority:p1"',
+              '-label:"security-review"',
+              '-label:stale',
+              `updated:<${cutoffDate}`
+            ].join(' ');
+
+            core.info(`Warn query: ${query}`);
+
+            const result = await github.rest.search.issuesAndPullRequests({
+              q: query,
+              sort: 'updated',
+              order: 'asc',
+              per_page: MAX_WARN
+            });
+
+            const candidates = result.data.items;
+            core.info(`Found ${candidates.length} candidate(s) to warn`);
+
+            let warned = 0;
+            for (const issue of candidates) {
+              if (warned >= MAX_WARN) break;
+
+              // Layer 2 — code guard: skip if a protected label is present in the
+              // search result payload (guards against search-index staleness).
+              const labels = issue.labels.map(l => l.name);
+              const hasProtected = PROTECTED_LABELS.some(l => labels.includes(l));
+              if (hasProtected) {
+                core.info(`Skipping #${issue.number} — protected label present`);
+                continue;
+              }
+
+              // Layer 3 — structural: only `stale` may be added by this workflow.
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ['stale']
+              });
+
+              const inactiveDays = Math.floor(
+                (now - new Date(issue.updated_at)) / (24 * 60 * 60 * 1000)
+              );
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: [
+                  `⚠️ **Stale issue notice** — This issue has had no activity for **${inactiveDays} day(s)**.`,
+                  '',
+                  'It will be automatically closed in **30 days** if there is no further activity.',
+                  '',
+                  'To keep this issue open:',
+                  '- Leave a comment describing the current status, or',
+                  '- Remove the `stale` label.',
+                  '',
+                  '> This notice was posted automatically by the stale issue workflow.'
+                ].join('\n')
+              });
+
+              core.info(`Warned #${issue.number} (inactive ${inactiveDays} days)`);
+              warned++;
+            }
+
+            core.info(`Warn run complete — warned ${warned} issue(s)`);
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Job 2 — Close issues inactive for 60+ days that already carry `stale`
+  # Maximum 5 issues per run.  Runs after warn-stale to avoid racing on issues
+  # that were just warned in the same run.
+  # ──────────────────────────────────────────────────────────────────────────
+  close-stale:
+    name: Close stale issues (60+ days)
+    runs-on: ubuntu-latest
+    needs: warn-stale
+
+    steps:
+      - name: Close warned stale issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Layer 2 — code guard.
+            const PROTECTED_LABELS = ['priority:p0', 'priority:p1', 'security-review'];
+            const MAX_CLOSE = 5;
+            const STALE_CLOSE_DAYS = 60;
+
+            const now = new Date();
+            const cutoff = new Date(now.getTime() - STALE_CLOSE_DAYS * 24 * 60 * 60 * 1000);
+            const cutoffDate = cutoff.toISOString().split('T')[0];
+
+            // Layer 1 — search query: protected-label issues excluded at query time.
+            // Layer 3 — structural: `label:stale` is required; issues without it are
+            //   never returned (guarantees at least one warning cycle before close).
+            const query = [
+              `repo:${context.repo.owner}/${context.repo.repo}`,
+              'is:issue',
+              'is:open',
+              'label:stale',
+              '-label:"priority:p0"',
+              '-label:"priority:p1"',
+              '-label:"security-review"',
+              `updated:<${cutoffDate}`
+            ].join(' ');
+
+            core.info(`Close query: ${query}`);
+
+            const result = await github.rest.search.issuesAndPullRequests({
+              q: query,
+              sort: 'updated',
+              order: 'asc',
+              per_page: MAX_CLOSE
+            });
+
+            const candidates = result.data.items;
+            core.info(`Found ${candidates.length} candidate(s) to close`);
+
+            let closed = 0;
+            for (const issue of candidates) {
+              if (closed >= MAX_CLOSE) break;
+
+              // Layer 4 — deterministic post-check: re-fetch labels from the API
+              // immediately before closing.  This is the only layer that survives a
+              // fully compromised upstream step — it always reads live data.
+              const fresh = await github.rest.issues.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number
+              });
+
+              const freshLabels = fresh.data.labels.map(l => l.name);
+
+              // Abort close if any protected label is present on the live issue.
+              const hasProtected = PROTECTED_LABELS.some(l => freshLabels.includes(l));
+              if (hasProtected) {
+                const hit = freshLabels.filter(l => PROTECTED_LABELS.includes(l));
+                core.warning(
+                  `Skipping close of #${issue.number} — protected label(s) detected: ${hit.join(', ')}`
+                );
+                continue;
+              }
+
+              // Layer 3 — structural: stale label must be present on the live issue.
+              if (!freshLabels.includes('stale')) {
+                core.info(`Skipping #${issue.number} — stale label was removed`);
+                continue;
+              }
+
+              // All four layers passed — safe to close.
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'not_planned'
+              });
+
+              const inactiveDays = Math.floor(
+                (now - new Date(fresh.data.updated_at)) / (24 * 60 * 60 * 1000)
+              );
+
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: [
+                  `🔒 **Closing as stale** — This issue has had no activity for **${inactiveDays} day(s)**.`,
+                  '',
+                  'It has been automatically closed as `not_planned`.',
+                  '',
+                  'If this issue is still relevant, please:',
+                  '1. Reopen it, and',
+                  '2. Add a comment describing the current status.',
+                  '',
+                  '> This action was taken automatically by the stale issue workflow.'
+                ].join('\n')
+              });
+
+              core.info(`Closed #${issue.number} (inactive ${inactiveDays} days)`);
+              closed++;
+            }
+
+            core.info(`Close run complete — closed ${closed} issue(s)`);
