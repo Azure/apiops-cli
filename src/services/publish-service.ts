@@ -292,11 +292,22 @@ async function executePuts(
         tier2Descriptors
       );
 
-      await publishAndOutput(client, store, context, config, regularTier2, results);
+      const regularApis = regularTier2.filter((d) => d.type === ResourceType.Api);
+      const nonApiTier2 = regularTier2.filter((d) => d.type !== ResourceType.Api);
+
+      if (regularApis.length > 0) {
+        logger.debug(`Publishing ${regularApis.length} regular API resource(s) first (wave 1 of tier 2)`);
+        await publishAndOutput(client, store, context, config, regularApis, results);
+      }
 
       if (mcpApis.length > 0) {
-        logger.debug(`Publishing ${mcpApis.length} MCP API resource(s) after regular tier 2 resources`);
+        logger.debug(`Publishing ${mcpApis.length} MCP API resource(s) after regular APIs (wave 1 of tier 2)`);
         await publishAndOutput(client, store, context, config, mcpApis, results);
+      }
+
+      if (nonApiTier2.length > 0) {
+        logger.debug(`Publishing ${nonApiTier2.length} non-API tier 2 resource(s) after APIs (wave 2 of tier 2)`);
+        await publishAndOutput(client, store, context, config, nonApiTier2, results);
       }
     } else {
       // For tiers 3/4, exclude child resources whose parent is being published

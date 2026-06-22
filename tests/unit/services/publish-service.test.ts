@@ -248,6 +248,66 @@ describe('publish-service', () => {
       expect(apiCallOrder).toEqual(['src-rest-openapi', 'src-mcp-from-api']);
     });
 
+    it('should publish all APIs before products in tier 2', async () => {
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.Product, nameParts: ['petstore'] },
+        { type: ResourceType.Api, nameParts: ['swagger-petstore'] },
+        { type: ResourceType.Api, nameParts: ['swagger-mcp'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+
+      store.readResource.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) => {
+        const name = descriptor.nameParts[descriptor.nameParts.length - 1] ?? '';
+        if (name === 'swagger-mcp') {
+          return { name, properties: { mcpTools: [{ operationId: '/apis/swagger-petstore/operations/get' }] } };
+        }
+        return { name, properties: {} };
+      });
+
+      const callOrder: string[] = [];
+      vi.mocked(publishApi).mockImplementation(async (_client, _store, _context, descriptor) => {
+        callOrder.push(`api:${descriptor.nameParts[0] ?? ''}`);
+        return {
+          descriptor,
+          status: 'success',
+          action: 'put',
+        };
+      });
+      vi.mocked(publishProduct).mockImplementation(async (_client, _store, _context, descriptor) => {
+        callOrder.push(`product:${descriptor.nameParts[0] ?? ''}`);
+        return {
+          descriptor,
+          status: 'success',
+          action: 'put',
+        };
+      });
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      await runPublish(client, store, config);
+
+      const firstProductIndex = callOrder.findIndex((entry) => entry.startsWith('product:'));
+      const lastApiIndex = callOrder.reduce(
+        (lastIndex, entry, index) => entry.startsWith('api:') ? index : lastIndex,
+        -1
+      );
+
+      expect(firstProductIndex).toBeGreaterThan(-1);
+      expect(lastApiIndex).toBeGreaterThan(-1);
+      expect(lastApiIndex).toBeLessThan(firstProductIndex);
+      expect(callOrder).toContain('api:swagger-petstore');
+      expect(callOrder).toContain('api:swagger-mcp');
+      expect(callOrder).toContain('product:petstore');
+    });
+
     it('should not publish revision APIs as standalone resources when root API is in the same batch', async () => {
       const resources: ResourceDescriptor[] = [
         { type: ResourceType.Api, nameParts: ['orders-api;rev=2'] },
