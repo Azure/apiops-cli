@@ -117,3 +117,18 @@ All new `.ts` files in `src/` and `tests/` must include:
 **Constitution compliance:** §I, §III, §IV, §V, §VI, §VII, §VIII
 
 ---
+
+### 2026-06-19: Spec dialect (Swagger 2.0 vs OpenAPI 3.0) is orthogonal to APIM `apiType`
+**By:** CodeReviewer  
+**Status:** Approved  
+**Context:** Round-trip extract→publish produced diffs on a natively Swagger 2.0 REST API.  
+**Learned:**
+- APIM's `properties.type` (`http`/`soap`/`graphql`/…) does **not** encode spec dialect — both Swagger 2.0 and OpenAPI 3.0 REST APIs are `type=http`. Dialect is a separate axis and must be detected, not inferred from type.
+- Detect dialect from the auto-generated schema's content type: `application/vnd.ms-azure-apim.swagger.definitions+json` ⇒ Swagger 2.0, `application/vnd.oai.openapi.components+json` ⇒ OpenAPI 3.0. (Spec body itself: top-level `"swagger":"2.0"`.)
+- APIM's `openapi-link` export **silently converts** Swagger 2.0 → OpenAPI 3.0, dropping parameter-level metadata (e.g. `format: int64`) and rewriting schema content types — a §VII silent-data-loss trap. Fidelity requires exporting via `swagger-link` and importing via `swagger-json` (JSON only; there is no inline Swagger YAML import format).
+- Do **not** overload `apiType` with a synthetic value like `'Swagger2'`: `apiType` is a real APIM property echoed back on PUT and validated, so it must stay within the type enum. Carry dialect as its own parameter/type instead.
+- Swagger 2.0 path parameters use the inline shape `{ name, in, required, type }`; OpenAPI 3.x wraps it as `{ ..., schema: { type } }`. Any injected/sanitized params must match the document's dialect.
+**Decision:** Introduced `ApiSpecDialect = 'openapi3' | 'swagger2'` as a first-class, detected axis threaded through export and import; preferred an explicit dialect type over a boolean or an overloaded `apiType`.  
+**Constitution compliance:** §II (APIM-native formats), §VII (no silent round-trip loss)
+
+---

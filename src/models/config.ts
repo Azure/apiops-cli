@@ -13,7 +13,6 @@ export interface ExtractConfig {
   outputDir: string;
   filter?: FilterConfig;
   includeTransitive: boolean;
-  specFormat?: string;
   logLevel: LogLevel;
   otelConfigPath?: string;
 }

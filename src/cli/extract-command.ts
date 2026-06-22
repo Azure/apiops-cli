@@ -3,7 +3,7 @@
 /**
  * Extract command CLI registration
  * Commander subcommand with --resource-group, --service-name, --output,
- * --filter, --no-transitive, --spec-format flags.
+ * --filter, --no-transitive flags.
  * Includes --format json: machine-readable JSON output mode.
  */
 
@@ -26,7 +26,6 @@ interface ExtractOptions {
   output: string;
   filter?: string;
   transitive: boolean;
-  specFormat?: string;
 }
 
 /**
@@ -40,7 +39,6 @@ export function createExtractCommand(): Command {
     .option('--output <dir>', 'Output directory path', './apim-artifacts')
     .option('--filter <path>', 'Filter configuration YAML file')
     .option('--no-transitive', 'Disable transitive dependency inclusion')
-    .option('--spec-format <format>', 'API specification format (openapi-v2-json, openapi-v3-json, openapi-v3-yaml)')
     .action(async (options: ExtractOptions, command: Command) => {
       const globalOpts = command.optsWithGlobals<{
         logLevel?: string;
@@ -109,7 +107,6 @@ async function executeExtract(
     outputDir: options.output,
     filter: filterConfig,
     includeTransitive: options.transitive,
-    specFormat: options.specFormat,
     logLevel: parseLogLevel(globalOpts.logLevel ?? 'info'),
   };
 

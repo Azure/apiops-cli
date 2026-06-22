@@ -7,7 +7,7 @@
  * releases, tag descriptions, wikis.
  */
 
-import { IApimClient } from '../clients/iapim-client.js';
+import { IApimClient, ApiSpecDialect } from '../clients/iapim-client.js';
 import { IArtifactStore } from '../clients/iartifact-store.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
@@ -268,8 +268,17 @@ async function extractApiSpecification(
     return false;
   }
 
+  // REST APIs natively imported as Swagger 2.0 expose auto-generated schemas
+  // with the Swagger-definitions content type. Export them in their native
+  // dialect so the exported spec matches the API's source format (OpenAPI 3.0
+  // export would convert schema content types and drop parameter-level metadata
+  // like `format`).
+  const specDialect: ApiSpecDialect = hasSwaggerDefinitionSchema(extractedSchemas)
+    ? 'swagger2'
+    : 'openapi3';
+
   try {
-    const spec = await client.getApiSpecification(context, getNamePart(apiDescriptor.nameParts, 0), apiType);
+    const spec = await client.getApiSpecification(context, getNamePart(apiDescriptor.nameParts, 0), apiType, specDialect);
     if (!spec) {
       logger.debug(`No specification found for API "${getNamePart(apiDescriptor.nameParts, 0)}"`);
       return false;
@@ -304,6 +313,25 @@ function hasGraphQLSchema(schemas: ExtractedResource[]): boolean {
     const props = schema.json.properties as Record<string, unknown> | undefined;
     const contentType = (props?.contentType as string | undefined)?.toLowerCase() ?? '';
     if (contentType.includes('graphql')) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Returns true if any already-extracted ApiSchema resource has the Swagger 2.0
+ * definitions content type (`application/vnd.ms-azure-apim.swagger.definitions+json`).
+ * APIM stamps this content type on the auto-generated schema of APIs that were
+ * natively imported as Swagger 2.0, whereas OpenAPI 3.0 APIs use
+ * `application/vnd.oai.openapi.components+json`. Used to select Swagger 2.0
+ * export so the original spec format round-trips faithfully.
+ */
+function hasSwaggerDefinitionSchema(schemas: ExtractedResource[]): boolean {
+  for (const schema of schemas) {
+    const props = schema.json.properties as Record<string, unknown> | undefined;
+    const contentType = (props?.contentType as string | undefined)?.toLowerCase() ?? '';
+    if (contentType.includes('swagger.definitions')) {
       return true;
     }
   }

@@ -190,7 +190,7 @@ describe('api-extractor', () => {
       );
 
       expect(result.specification).toBe(true);
-      expect(getApiSpecification).toHaveBeenCalledWith(testContext, 'linked-gql', 'graphql');
+      expect(getApiSpecification).toHaveBeenCalledWith(testContext, 'linked-gql', 'graphql', 'openapi3');
       expect(store.writeContent).toHaveBeenCalledWith(
         '/output',
         expect.objectContaining({ nameParts: ['linked-gql'] }),
@@ -198,6 +198,67 @@ describe('api-extractor', () => {
         'specification',
         'graphql'
       );
+    });
+
+    it('should export the swagger2 dialect when the API has a Swagger-definitions schema', async () => {
+      const getApiSpecification = vi.fn().mockResolvedValue({
+        content: '{"swagger":"2.0"}',
+        format: 'json',
+      });
+      const client = createMockClient({
+        getApiSpecification,
+        // Yield a Swagger 2.0 auto-generated schema for the ApiSchema list step
+        listResources: async function* (_ctx: ApimServiceContext, type: ResourceType) {
+          if (type === ResourceType.ApiSchema) {
+            yield {
+              name: 'swagger-defs',
+              properties: { contentType: 'application/vnd.ms-azure-apim.swagger.definitions+json' },
+            };
+          }
+        },
+        getResource: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+
+      const result = await extractApiResources(
+        client, store, testContext,
+        { type: ResourceType.Api, nameParts: ['swagger-rest'] },
+        { name: 'swagger-rest', properties: { type: 'http' } },
+        '/output'
+      );
+
+      expect(result.specification).toBe(true);
+      expect(getApiSpecification).toHaveBeenCalledWith(testContext, 'swagger-rest', 'http', 'swagger2');
+    });
+
+    it('should export the openapi3 dialect when the API has an OpenAPI components schema', async () => {
+      const getApiSpecification = vi.fn().mockResolvedValue({
+        content: '{"openapi":"3.0.1"}',
+        format: 'json',
+      });
+      const client = createMockClient({
+        getApiSpecification,
+        listResources: async function* (_ctx: ApimServiceContext, type: ResourceType) {
+          if (type === ResourceType.ApiSchema) {
+            yield {
+              name: 'openapi-defs',
+              properties: { contentType: 'application/vnd.oai.openapi.components+json' },
+            };
+          }
+        },
+        getResource: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+
+      const result = await extractApiResources(
+        client, store, testContext,
+        { type: ResourceType.Api, nameParts: ['openapi-rest'] },
+        { name: 'openapi-rest', properties: { type: 'http' } },
+        '/output'
+      );
+
+      expect(result.specification).toBe(true);
+      expect(getApiSpecification).toHaveBeenCalledWith(testContext, 'openapi-rest', 'http', 'openapi3');
     });
 
     it('should extract API policy and collect content', async () => {

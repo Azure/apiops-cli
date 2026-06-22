@@ -45,6 +45,230 @@ var mcpApiPolicyXml = '''
 		<set-variable name="rpcMethod" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?[&quot;method&quot;]?.ToString()) ?? string.Empty)" />
 		<set-variable name="rpcId" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?[&quot;id&quot;]?.ToString()) ?? &quot;1&quot;)" />
 		<set-variable name="toolName" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?.SelectToken(&quot;params.name&quot;)?.ToString()) ?? string.Empty)" />
+		<set-variable name="petStatus" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?.SelectToken(&quot;params.arguments.status&quot;)?.ToString()) ?? &quot;available&quot;)" />
+		<set-variable name="petId" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?.SelectToken(&quot;params.arguments.petId&quot;)?.ToString()) ?? &quot;1&quot;)" />
+		<choose>
+			<when condition="@((string)context.Variables[&quot;rpcMethod&quot;] == &quot;initialize&quot;)">
+				<return-response>
+					<set-status code="200" reason="OK" />
+					<set-header name="Content-Type" exists-action="override">
+						<value>application/json</value>
+					</set-header>
+					<set-header name="MCP-Protocol-Version" exists-action="override">
+						<value>2025-03-26</value>
+					</set-header>
+					<set-body>@{
+            var req = context.Request.Body?.As<Newtonsoft.Json.Linq.JObject>(preserveContent: true) ?? new Newtonsoft.Json.Linq.JObject();
+            var idRaw = req["id"]?.ToString() ?? "1";
+            long idLong;
+            Newtonsoft.Json.Linq.JToken idToken = long.TryParse(idRaw, out idLong) ? (Newtonsoft.Json.Linq.JToken)new Newtonsoft.Json.Linq.JValue(idLong) : new Newtonsoft.Json.Linq.JValue(idRaw);
+            var response = new Newtonsoft.Json.Linq.JObject
+            {
+              ["jsonrpc"] = "2.0",
+              ["id"] = idToken,
+              ["result"] = new Newtonsoft.Json.Linq.JObject
+              {
+                ["protocolVersion"] = "2025-03-26",
+                ["serverInfo"] = new Newtonsoft.Json.Linq.JObject
+                {
+                  ["name"] = "apim-mcp-demo",
+                  ["version"] = "1.1.0"
+                },
+                ["capabilities"] = new Newtonsoft.Json.Linq.JObject
+                {
+                  ["tools"] = new Newtonsoft.Json.Linq.JObject()
+                }
+              }
+            };
+            return response.ToString(Newtonsoft.Json.Formatting.None);
+          }</set-body>
+				</return-response>
+			</when>
+			<when condition="@((string)context.Variables[&quot;rpcMethod&quot;] == &quot;tools/list&quot;)">
+				<return-response>
+					<set-status code="200" reason="OK" />
+					<set-header name="Content-Type" exists-action="override">
+						<value>application/json</value>
+					</set-header>
+					<set-body>@{
+            var req = context.Request.Body?.As<Newtonsoft.Json.Linq.JObject>(preserveContent: true) ?? new Newtonsoft.Json.Linq.JObject();
+            var idRaw = req["id"]?.ToString() ?? "1";
+            long idLong;
+            Newtonsoft.Json.Linq.JToken idToken = long.TryParse(idRaw, out idLong) ? (Newtonsoft.Json.Linq.JToken)new Newtonsoft.Json.Linq.JValue(idLong) : new Newtonsoft.Json.Linq.JValue(idRaw);
+            var tools = new Newtonsoft.Json.Linq.JArray
+            {
+              new Newtonsoft.Json.Linq.JObject
+              {
+                ["name"] = "findPetsByStatus",
+                ["description"] = "Find pets by status from the Petstore API",
+                ["inputSchema"] = new Newtonsoft.Json.Linq.JObject
+                {
+                  ["type"] = "object",
+                  ["properties"] = new Newtonsoft.Json.Linq.JObject
+                  {
+                    ["status"] = new Newtonsoft.Json.Linq.JObject
+                    {
+                      ["type"] = "string",
+                      ["enum"] = new Newtonsoft.Json.Linq.JArray { "available", "pending", "sold" }
+                    }
+                  },
+                  ["required"] = new Newtonsoft.Json.Linq.JArray { "status" }
+                }
+              },
+              new Newtonsoft.Json.Linq.JObject
+              {
+                ["name"] = "getPetById",
+                ["description"] = "Get a pet by ID from the Petstore API",
+                ["inputSchema"] = new Newtonsoft.Json.Linq.JObject
+                {
+                  ["type"] = "object",
+                  ["properties"] = new Newtonsoft.Json.Linq.JObject
+                  {
+                    ["petId"] = new Newtonsoft.Json.Linq.JObject
+                    {
+                      ["type"] = "integer"
+                    }
+                  },
+                  ["required"] = new Newtonsoft.Json.Linq.JArray { "petId" }
+                }
+              }
+            };
+
+            var response = new Newtonsoft.Json.Linq.JObject
+            {
+              ["jsonrpc"] = "2.0",
+              ["id"] = idToken,
+              ["result"] = new Newtonsoft.Json.Linq.JObject { ["tools"] = tools }
+            };
+            return response.ToString(Newtonsoft.Json.Formatting.None);
+          }</set-body>
+				</return-response>
+			</when>
+			<when condition="@((string)context.Variables[&quot;rpcMethod&quot;] == &quot;tools/call&quot; &amp;&amp; (string)context.Variables[&quot;toolName&quot;] == &quot;findPetsByStatus&quot;)">
+				<send-request mode="new" response-variable-name="petstoreResp" timeout="20" ignore-error="false">
+					<set-url>@($"https://petstore3.swagger.io/api/v3/pet/findByStatus?status={(string)context.Variables[&quot;petStatus&quot;]}")</set-url>
+					<set-method>GET</set-method>
+				</send-request>
+				<set-variable name="petstoreBody" value="@(((IResponse)context.Variables[&quot;petstoreResp&quot;]).Body.As&lt;string&gt;(preserveContent: true))" />
+				<return-response>
+					<set-status code="200" reason="OK" />
+					<set-header name="Content-Type" exists-action="override">
+						<value>application/json</value>
+					</set-header>
+					<set-body>@{
+            var req = context.Request.Body?.As<Newtonsoft.Json.Linq.JObject>(preserveContent: true) ?? new Newtonsoft.Json.Linq.JObject();
+            var idRaw = req["id"]?.ToString() ?? "1";
+            long idLong;
+            Newtonsoft.Json.Linq.JToken idToken = long.TryParse(idRaw, out idLong) ? (Newtonsoft.Json.Linq.JToken)new Newtonsoft.Json.Linq.JValue(idLong) : new Newtonsoft.Json.Linq.JValue(idRaw);
+            var text = (string)context.Variables["petstoreBody"];
+            var response = new Newtonsoft.Json.Linq.JObject
+            {
+              ["jsonrpc"] = "2.0",
+              ["id"] = idToken,
+              ["result"] = new Newtonsoft.Json.Linq.JObject
+              {
+                ["content"] = new Newtonsoft.Json.Linq.JArray
+                {
+                  new Newtonsoft.Json.Linq.JObject
+                  {
+                    ["type"] = "text",
+                    ["text"] = text
+                  }
+                }
+              }
+            };
+            return response.ToString(Newtonsoft.Json.Formatting.None);
+          }</set-body>
+				</return-response>
+			</when>
+			<when condition="@((string)context.Variables[&quot;rpcMethod&quot;] == &quot;tools/call&quot; &amp;&amp; (string)context.Variables[&quot;toolName&quot;] == &quot;getPetById&quot;)">
+				<send-request mode="new" response-variable-name="petstoreResp" timeout="20" ignore-error="false">
+					<set-url>@($"https://petstore3.swagger.io/api/v3/pet/{(string)context.Variables[&quot;petId&quot;]}")</set-url>
+					<set-method>GET</set-method>
+				</send-request>
+				<set-variable name="petstoreBody" value="@(((IResponse)context.Variables[&quot;petstoreResp&quot;]).Body.As&lt;string&gt;(preserveContent: true))" />
+				<return-response>
+					<set-status code="200" reason="OK" />
+					<set-header name="Content-Type" exists-action="override">
+						<value>application/json</value>
+					</set-header>
+					<set-body>@{
+            var req = context.Request.Body?.As<Newtonsoft.Json.Linq.JObject>(preserveContent: true) ?? new Newtonsoft.Json.Linq.JObject();
+            var idRaw = req["id"]?.ToString() ?? "1";
+            long idLong;
+            Newtonsoft.Json.Linq.JToken idToken = long.TryParse(idRaw, out idLong) ? (Newtonsoft.Json.Linq.JToken)new Newtonsoft.Json.Linq.JValue(idLong) : new Newtonsoft.Json.Linq.JValue(idRaw);
+            var text = (string)context.Variables["petstoreBody"];
+            var response = new Newtonsoft.Json.Linq.JObject
+            {
+              ["jsonrpc"] = "2.0",
+              ["id"] = idToken,
+              ["result"] = new Newtonsoft.Json.Linq.JObject
+              {
+                ["content"] = new Newtonsoft.Json.Linq.JArray
+                {
+                  new Newtonsoft.Json.Linq.JObject
+                  {
+                    ["type"] = "text",
+                    ["text"] = text
+                  }
+                }
+              }
+            };
+            return response.ToString(Newtonsoft.Json.Formatting.None);
+          }</set-body>
+				</return-response>
+			</when>
+			<when condition="@((string)context.Variables[&quot;rpcMethod&quot;] == &quot;notifications/initialized&quot;)">
+				<return-response>
+					<set-status code="202" reason="Accepted" />
+				</return-response>
+			</when>
+			<otherwise>
+				<return-response>
+					<set-status code="200" reason="OK" />
+					<set-header name="Content-Type" exists-action="override">
+						<value>application/json</value>
+					</set-header>
+					<set-body>@{
+            var req = context.Request.Body?.As<Newtonsoft.Json.Linq.JObject>(preserveContent: true) ?? new Newtonsoft.Json.Linq.JObject();
+            var idRaw = req["id"]?.ToString() ?? "1";
+            long idLong;
+            Newtonsoft.Json.Linq.JToken idToken = long.TryParse(idRaw, out idLong) ? (Newtonsoft.Json.Linq.JToken)new Newtonsoft.Json.Linq.JValue(idLong) : new Newtonsoft.Json.Linq.JValue(idRaw);
+            var response = new Newtonsoft.Json.Linq.JObject
+            {
+              ["jsonrpc"] = "2.0",
+              ["id"] = idToken,
+              ["error"] = new Newtonsoft.Json.Linq.JObject
+              {
+                ["code"] = -32601,
+                ["message"] = "Method not found"
+              }
+            };
+            return response.ToString(Newtonsoft.Json.Formatting.None);
+          }</set-body>
+				</return-response>
+			</otherwise>
+		</choose>
+	</inbound>
+	<backend>
+		<base />
+	</backend>
+	<outbound>
+		<base />
+	</outbound>
+	<on-error>
+		<base />
+	</on-error>
+</policies>
+'''
+
+var mcpTodosPolicyXml = '''
+<policies>
+	<inbound>
+		<base />
+		<set-variable name="rpcMethod" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?[&quot;method&quot;]?.ToString()) ?? string.Empty)" />
+		<set-variable name="rpcId" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?[&quot;id&quot;]?.ToString()) ?? &quot;1&quot;)" />
+		<set-variable name="toolName" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?.SelectToken(&quot;params.name&quot;)?.ToString()) ?? string.Empty)" />
 		<set-variable name="toolId" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?.SelectToken(&quot;params.arguments.id&quot;)?.ToString()) ?? &quot;1&quot;)" />
 		<set-variable name="createTodoText" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?.SelectToken(&quot;params.arguments.text&quot;)?.ToString()) ?? &quot;Prepare APIOps demo&quot;)" />
 		<set-variable name="createCompleted" value="@((context.Request.Body?.As&lt;Newtonsoft.Json.Linq.JObject&gt;(preserveContent: true)?.SelectToken(&quot;params.arguments.completed&quot;)?.ToString()) ?? &quot;false&quot;)" />
@@ -431,6 +655,11 @@ resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview'
   name: 'src-mcp-from-api'
 }
 
+resource apiMcpTodos 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' existing = {
+  parent: apim
+  name: 'src-mcp-todos'
+}
+
 resource apiMcpExistingServer 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' existing = {
   parent: apim
   name: 'src-mcp-existing-server'
@@ -469,6 +698,15 @@ resource apiMcpFromApiPolicy 'Microsoft.ApiManagement/service/apis/policies@2025
   properties: {
     format: 'rawxml'
     value: mcpApiPolicyXml
+  }
+}
+
+resource apiMcpTodosPolicy 'Microsoft.ApiManagement/service/apis/policies@2025-09-01-preview' = {
+  parent: apiMcpTodos
+  name: 'policy'
+  properties: {
+    format: 'rawxml'
+    value: mcpTodosPolicyXml
   }
 }
 

@@ -690,7 +690,7 @@ resource productPremium 'Microsoft.ApiManagement/service/products@2025-09-01-pre
 // APIs
 // ---------------------------------------------------------------------------
 
-// 1. REST API with OpenAPI spec
+// 1. REST API with OpenAPI 3.0 spec (inline)
 resource apiRestOpenapi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-rest-openapi'
@@ -702,6 +702,54 @@ resource apiRestOpenapi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview
     format: 'openapi'
     value: openApiSpec
     serviceUrl: 'https://dummyjson.com'
+    subscriptionRequired: false
+    apiType: 'http'
+  }
+}
+
+// 1b. REST API with Petstore Swagger 2.0 (v2) spec (imported from URL)
+//     Exists alongside the OpenAPI 3.0 APIs so the round-trip test covers BOTH
+//     spec dialects. Swagger 2.0 extracts natively as specification.json
+//     (top-level "swagger": "2.0"); APIM imports swagger-link-json via
+//     swagger-link, preserving the Swagger 2.0 dialect.
+resource apiRestSwagger 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
+  parent: apim
+  name: 'src-rest-swagger'
+  properties: {
+    displayName: 'KS REST Petstore v2'
+    description: 'Kitchen sink REST API imported from Petstore Swagger 2.0 (v2)'
+    path: 'ks/rest-swagger'
+    protocols: ['https']
+    format: 'swagger-link-json'
+    value: 'https://petstore.swagger.io/v2/swagger.json'
+    serviceUrl: 'https://petstore.swagger.io/v2'
+    subscriptionRequired: false
+    apiType: 'http'
+  }
+}
+
+// 1c. REST API with Petstore OpenAPI 3.0 (v3) spec (imported from URL)
+//     The OpenAPI 3.0 counterpart of the v2 Petstore API. Extracts as
+//     specification.yaml (openapi: 3.x). Also serves as the backing API for the
+//     MCP-from-API server below (its findPetsByStatus / getPetById operations
+//     are surfaced as MCP tools).
+// dependsOn apiRestSwagger: both import the Petstore spec, which defines the
+// same tags (pet/store/user). APIM auto-creates those service-level tags during
+// import; deploying both APIs in parallel races to create identical tags and
+// fails with "Tag with the same name already exists". Serializing the imports
+// lets the second API reuse the tags created by the first.
+resource apiRestPetstoreV3 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
+  parent: apim
+  name: 'src-rest-petstore-v3'
+  dependsOn: [apiRestSwagger]
+  properties: {
+    displayName: 'KS REST Petstore v3'
+    description: 'Kitchen sink REST API imported from Petstore OpenAPI 3.0 (v3)'
+    path: 'ks/rest-petstore-v3'
+    protocols: ['https']
+    format: 'openapi-link'
+    value: 'https://petstore3.swagger.io/api/v3/openapi.json'
+    serviceUrl: 'https://petstore3.swagger.io/api/v3'
     subscriptionRequired: false
     apiType: 'http'
   }
@@ -854,7 +902,7 @@ resource apiRevisionedRev2 'Microsoft.ApiManagement/service/apis@2025-09-01-prev
 resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
   parent: apim
   name: 'src-mcp-from-api'
-  dependsOn: [apiRestOpenapi]
+  dependsOn: [apiRestPetstoreV3]
   properties: any({
     displayName: 'KS MCP from Existing API'
     description: 'MCP server created by exposing an existing REST API in the instance as MCP tools'
@@ -871,14 +919,14 @@ resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview'
     }
     mcpTools: [
       {
-        name: 'healthCheck'
-        description: 'Health check endpoint'
-        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-openapi', 'healthCheck')
+        name: 'findPetsByStatus'
+        description: 'Find pets by status'
+        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-petstore-v3', 'findPetsByStatus')
       }
       {
-        name: 'listItems'
-        description: 'List all items'
-        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-openapi', 'listItems')
+        name: 'getPetById'
+        description: 'Get pet by ID'
+        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-petstore-v3', 'getPetById')
       }
     ]
   })
@@ -889,7 +937,7 @@ resource apiMcpFromApi 'Microsoft.ApiManagement/service/apis@2025-09-01-preview'
 // "Operation entity cannot be defined for MCP API type".
 // MCP tools are surfaced via the parent API's properties.mcpTools array
 // (each entry's operationId references operations on a different,
-// non-MCP API \u2014 e.g. src-rest-openapi above). ApiOperation BVT coverage
+// non-MCP API — e.g. src-rest-petstore-v3 above). ApiOperation BVT coverage
 // is therefore provided by the REST APIs in this template, not by the MCP APIs.
 
 resource backendMcpLearn 'Microsoft.ApiManagement/service/backends@2025-09-01-preview' = {
@@ -920,6 +968,55 @@ resource apiMcpExistingServer 'Microsoft.ApiManagement/service/apis@2025-09-01-p
         }
       }
     }
+  })
+}
+
+// 8b. MCP server exposing the DummyJSON todo operations of src-rest-openapi
+// Kept on its own API (separate from the Petstore tools on src-mcp-from-api) so
+// the two tool sets are isolated. An MCP API must set exactly one of mcpTools or
+// backendId; here the todo operations of src-rest-openapi are surfaced as tools.
+// The api-level policy (mcpTodosPolicyXml in source-apim-post-activation.bicep)
+// implements the JSON-RPC behaviour against DummyJSON.
+resource apiMcpTodos 'Microsoft.ApiManagement/service/apis@2025-09-01-preview' = {
+  parent: apim
+  name: 'src-mcp-todos'
+  dependsOn: [apiRestOpenapi]
+  properties: any({
+    displayName: 'KS MCP Todos Server'
+    description: 'MCP server exposing DummyJSON todo tools (listItems, getItem, createItem, healthCheck)'
+    path: 'ks/mcp-todos'
+    protocols: ['https']
+    subscriptionRequired: false
+    type: 'mcp'
+    mcpProperties: {
+      endpoints: {
+        mcp: {
+          uriTemplate: '/mcp'
+        }
+      }
+    }
+    mcpTools: [
+      {
+        name: 'listItems'
+        description: 'List todo items'
+        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-openapi', 'listItems')
+      }
+      {
+        name: 'getItem'
+        description: 'Get a todo item by id'
+        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-openapi', 'getItem')
+      }
+      {
+        name: 'createItem'
+        description: 'Create a todo item'
+        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-openapi', 'createItem')
+      }
+      {
+        name: 'healthCheck'
+        description: 'Return APIM MCP server health'
+        operationId: resourceId('Microsoft.ApiManagement/service/apis/operations', apimName, 'src-rest-openapi', 'healthCheck')
+      }
+    ]
   })
 }
 
@@ -1245,7 +1342,7 @@ resource apiRestDiagnostic 'Microsoft.ApiManagement/service/apis/diagnostics@202
 
 // --- API Operation Policy (on healthCheck operation) ---
 // Note: Operations are created automatically from the OpenAPI spec import.
-// We apply a policy to the GET /healthz operation (operationId: healthCheck).
+// We apply a policy to the GET /todos/1 operation (operationId: healthCheck).
 resource apiRestOpPolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2025-09-01-preview' = {
   name: '${apim.name}/src-rest-openapi/healthCheck/policy'
   dependsOn: [apiRestOpenapi]

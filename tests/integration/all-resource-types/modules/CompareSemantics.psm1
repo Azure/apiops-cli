@@ -194,7 +194,8 @@ function New-CompareNormalizationContext {
         [string[]] $StripTimestampProperties = @(),
         [string[]] $RequestResponseIgnoredProperties = @(),
         [string[]] $RepresentationIgnoredProperties = @(),
-        [string[]] $RepresentationSchemaRefIgnoredProperties = @()
+        [string[]] $RepresentationSchemaRefIgnoredProperties = @(),
+        [string[]] $ParameterIgnoredProperties = @()
     )
 
     return [ordered]@{
@@ -210,6 +211,7 @@ function New-CompareNormalizationContext {
         RequestResponseIgnoredProperties = $RequestResponseIgnoredProperties
         RepresentationIgnoredProperties = $RepresentationIgnoredProperties
         RepresentationSchemaRefIgnoredProperties = $RepresentationSchemaRefIgnoredProperties
+        ParameterIgnoredProperties = $ParameterIgnoredProperties
     }
 }
 
@@ -253,20 +255,31 @@ function ConvertTo-NormalizedPropertyValue {
         $normalized = @(foreach ($item in $Value) {
             ConvertTo-NormalizedPropertyValue -Value $item -Context $Context -IgnoreRepresentationSchemaRefs:$IgnoreRepresentationSchemaRefs
         })
-        $sorted = $normalized | Sort-Object { ($_ | ConvertTo-Json -Depth 50 -Compress) }
-        return @($sorted)
+        $sorted = @($normalized | Sort-Object { ($_ | ConvertTo-Json -Depth 50 -Compress) })
+        # Use the unary comma to return the array intact. Without it, PowerShell
+        # unwraps a single-element array to its inner element, so a one-item
+        # collection (e.g. an operation with a single templateParameter) would be
+        # compared as a bare object — producing misleading per-field MISSING/EXTRA
+        # diffs instead of a single array-level DIFF.
+        return ,$sorted
     }
 
     if ($Value -is [System.Collections.IDictionary]) {
         $out = [ordered]@{}
         $isRequestResponse = $Value.Contains('representations')
         $isRepresentation = $Value.Contains('contentType') -or $Value.Contains('schemaId')
+        # Parameter/header objects (templateParameters, queryParameters, response
+        # headers) are shaped as { name, type, values, ... } with no representations
+        # and no contentType/schemaId.
+        $isParameter = (-not $isRequestResponse) -and (-not $isRepresentation) -and `
+            $Value.Contains('name') -and $Value.Contains('values')
         foreach ($key in ($Value.Keys | Sort-Object)) {
             if ($IsRoot -and $key -in $Context.StripReadOnlyProperties) { continue }
             if ($key -in $Context.StripTimestampProperties) { continue }
             if ($isRequestResponse -and $key -in $Context.RequestResponseIgnoredProperties) { continue }
             if ($isRepresentation -and $key -in $Context.RepresentationIgnoredProperties) { continue }
             if ($IgnoreRepresentationSchemaRefs -and $isRepresentation -and $key -in $Context.RepresentationSchemaRefIgnoredProperties) { continue }
+            if ($isParameter -and $key -in $Context.ParameterIgnoredProperties) { continue }
             $out[$key] = ConvertTo-NormalizedPropertyValue -Value $Value[$key] -Context $Context -IgnoreRepresentationSchemaRefs:$IgnoreRepresentationSchemaRefs
         }
         return $out
@@ -276,12 +289,19 @@ function ConvertTo-NormalizedPropertyValue {
         $out = [ordered]@{}
         $isRequestResponse = $null -ne ($Value.PSObject.Properties | Where-Object { $_.Name -eq 'representations' })
         $isRepresentation = $null -ne ($Value.PSObject.Properties | Where-Object { $_.Name -eq 'contentType' -or $_.Name -eq 'schemaId' })
+        # Parameter/header objects (templateParameters, queryParameters, response
+        # headers) are shaped as { name, type, values, ... } with no representations
+        # and no contentType/schemaId.
+        $hasName = $null -ne ($Value.PSObject.Properties | Where-Object { $_.Name -eq 'name' })
+        $hasValues = $null -ne ($Value.PSObject.Properties | Where-Object { $_.Name -eq 'values' })
+        $isParameter = (-not $isRequestResponse) -and (-not $isRepresentation) -and $hasName -and $hasValues
         foreach ($prop in ($Value.PSObject.Properties | Sort-Object Name)) {
             if ($IsRoot -and $prop.Name -in $Context.StripReadOnlyProperties) { continue }
             if ($prop.Name -in $Context.StripTimestampProperties) { continue }
             if ($isRequestResponse -and $prop.Name -in $Context.RequestResponseIgnoredProperties) { continue }
             if ($isRepresentation -and $prop.Name -in $Context.RepresentationIgnoredProperties) { continue }
             if ($IgnoreRepresentationSchemaRefs -and $isRepresentation -and $prop.Name -in $Context.RepresentationSchemaRefIgnoredProperties) { continue }
+            if ($isParameter -and $prop.Name -in $Context.ParameterIgnoredProperties) { continue }
             $out[$prop.Name] = ConvertTo-NormalizedPropertyValue -Value $prop.Value -Context $Context -IgnoreRepresentationSchemaRefs:$IgnoreRepresentationSchemaRefs
         }
         return $out

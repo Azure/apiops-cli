@@ -58,12 +58,19 @@ $StripTimestampProperties = @(
 $RequestResponseIgnoredProperties = @('description')
 
 # Properties ignored on representation objects (have 'contentType' or 'schemaId'):
-# - description: SOAP/WSDL import generates descriptions that vary
-# - schemaId/typeName: Operation reconciliation strips these before PATCH because
-#   APIM rebinds representation schema refs during import. Values are therefore
-#   not stable for round-trip comparison and are ignored for operation resources.
+# - description: varies by import path.
+# - schemaId/typeName: unstable schema refs APIM rebinds on import; stripped for ops.
+# - __schemaSemantic: synthetic token from Add-RepresentationSchemaSemantics. Only
+#   link-imported source gets schemaId (and thus this token); inline-imported target
+#   doesn't. Schema content is compared separately via API-level Schemas, so strip it.
 $RepresentationIgnoredProperties = @('description')
-$RepresentationSchemaRefIgnoredProperties = @('schemaId', 'typeName')
+$RepresentationSchemaRefIgnoredProperties = @('schemaId', 'typeName', '__schemaSemantic')
+
+# Properties ignored on parameter/header objects (have 'name' + 'values':
+# templateParameters, queryParameters, response headers):
+# - description: link import (source) drops them; inline import (target) keeps them.
+#   Authoritative copies live in the API schema, compared separately.
+$ParameterIgnoredProperties = @('description')
 
 # Cache of normalized API schema semantics per instance/api, keyed as:
 # "{instance}|{apiName}" => @{ schemaId => normalizedSchemaJson }
@@ -78,7 +85,8 @@ $NormalizationContext = New-CompareNormalizationContext `
     -StripTimestampProperties $StripTimestampProperties `
     -RequestResponseIgnoredProperties $RequestResponseIgnoredProperties `
     -RepresentationIgnoredProperties $RepresentationIgnoredProperties `
-    -RepresentationSchemaRefIgnoredProperties $RepresentationSchemaRefIgnoredProperties
+    -RepresentationSchemaRefIgnoredProperties $RepresentationSchemaRefIgnoredProperties `
+    -ParameterIgnoredProperties $ParameterIgnoredProperties
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 

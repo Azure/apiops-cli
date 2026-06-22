@@ -344,7 +344,7 @@
       ]
     },
     "apis": {
-      "minCount": 10,
+      "minCount": 13,
       "expected": [
         {
           "name": "src-rest-openapi",
@@ -415,6 +415,38 @@
             }
           },
           "notes": "healthCheck operation has policy.xml"
+        },
+        {
+          "name": "src-rest-swagger",
+          "files": ["apiInformation.json", "specification.json"],
+          "spotChecks": {
+            "apiInformation.json": {
+              "properties.displayName": "KS REST Petstore v2",
+              "properties.path": "ks/rest-swagger",
+              "properties.protocols": ["https"],
+              "properties.subscriptionRequired": false
+            },
+            "specification.json": {
+              "contentIncludes": ["swagger", "Petstore"]
+            }
+          },
+          "notes": "Swagger 2.0 REST API (Petstore v2) — covers the swagger2 spec dialect alongside the OpenAPI 3.0 APIs"
+        },
+        {
+          "name": "src-rest-petstore-v3",
+          "files": ["apiInformation.json", "specification.yaml"],
+          "spotChecks": {
+            "apiInformation.json": {
+              "properties.displayName": "KS REST Petstore v3",
+              "properties.path": "ks/rest-petstore-v3",
+              "properties.protocols": ["https"],
+              "properties.subscriptionRequired": false
+            },
+            "specification.yaml": {
+              "contentIncludes": ["openapi:", "Petstore"]
+            }
+          },
+          "notes": "OpenAPI 3.0 REST API (Petstore v3) — covers the openapi3 spec dialect and backs the src-mcp-from-api MCP server"
         },
         {
           "name": "src-soap-passthrough",
@@ -579,6 +611,23 @@
             }
           },
           "notes": "Working existing-server MCP demo. APIM exposes a public Microsoft Learn MCP server through a policy-based MCP proxy so the API is extractable and demoable end to end."
+        },
+        {
+          "name": "src-mcp-todos",
+          "files": ["apiInformation.json", "mcpServerInformation.json", "policy.xml"],
+          "spotChecks": {
+            "apiInformation.json": {
+              "properties.displayName": "KS MCP Todos Server",
+              "properties.path": "ks/mcp-todos",
+              "properties.type": "mcp",
+              "properties.subscriptionRequired": false
+            },
+            "mcpServerInformation.json": {
+              "properties.mcpProperties.endpoints.mcp.uriTemplate": "/mcp",
+              "properties.mcpTools": "exists"
+            }
+          },
+          "notes": "Policy-based MCP server exposing DummyJSON todo tools (listItems, getItem, createItem, healthCheck), kept separate from the Petstore tools on src-mcp-from-api"
         },
         {
           "name": "src-a2a-weather-agent",
