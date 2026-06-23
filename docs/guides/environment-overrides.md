@@ -495,21 +495,19 @@ apiops publish --overrides configuration.prod.yaml --dry-run \
 
 ---
 
-## JSON Schema and Copilot Prompt
+## Copilot-Assisted Configuration
 
-### IDE Autocompletion with JSON Schema
+If you ran `apiops init`, a Copilot prompt file was generated at `.github/prompts/apiops-configure-overrides.prompt.md`. Open it in VS Code and ask GitHub Copilot to help you configure environment overrides — it will guide you through setting up environment-specific values interactively.
+
+## IDE Autocompletion with JSON Schema
 
 A JSON Schema is available for `configuration.{env}.yaml` override files. Add this comment at the top of your override file to enable autocompletion in VS Code (with the YAML extension):
 
 ```yaml
-# yaml-language-server: $schema=./schemas/override-config.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas/override-config.schema.json
 ```
 
 The schema provides:
 - Property name autocompletion for all resource sections
 - Validation of the override structure (name + properties format)
 - Inline documentation including token substitution syntax
-
-### Copilot-Assisted Configuration
-
-If you ran `apiops init`, a Copilot prompt file was generated at `.github/prompts/apiops-configure-overrides.prompt.md`. Open it in VS Code and ask GitHub Copilot to help you configure environment overrides — it will guide you through setting up environment-specific values interactively.

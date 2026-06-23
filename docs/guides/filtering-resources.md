@@ -351,21 +351,6 @@ backends:
 
 ---
 
-## JSON Schema and Copilot Prompt
-
-### IDE Autocompletion with JSON Schema
-
-A JSON Schema is available for `configuration.extractor.yaml` files. Add this comment at the top of your filter file to enable autocompletion in VS Code (with the YAML extension):
-
-```yaml
-# yaml-language-server: $schema=./schemas/extractor-config.schema.json
-```
-
-The schema provides:
-- Property name autocompletion for all resource types
-- Validation of the filter structure
-- Inline documentation for each field
-
-### Copilot-Assisted Configuration
+## Copilot-Assisted Configuration
 
 If you ran `apiops init`, a Copilot prompt file was generated at `.github/prompts/apiops-configure-filter.prompt.md`. Open it in VS Code and ask GitHub Copilot to help you configure your filter — it will walk you through selecting resources interactively.

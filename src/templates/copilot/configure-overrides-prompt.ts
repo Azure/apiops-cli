@@ -7,16 +7,10 @@
  */
 
 import { copilotConfigureOverridesPromptTemplate } from '../generated/embedded-markdown.js';
+import { renderTemplate } from '../shared/template-utils.js';
 
 export interface ConfigureOverridesPromptConfig {
   environments: string[];
-}
-
-function renderTemplate(template: string, tokens: Record<string, string>): string {
-  return Object.entries(tokens).reduce(
-    (rendered, [key, value]) => rendered.replaceAll(`{{${key}}}`, value),
-    template
-  );
 }
 
 export function generateConfigureOverridesPrompt(config: ConfigureOverridesPromptConfig): string {

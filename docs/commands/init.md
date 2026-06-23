@@ -83,8 +83,6 @@ In interactive mode (the default when running in a terminal), `apiops init` prom
 | `configuration.extractor.yaml` | Sample filter configuration for extraction |
 | `configuration.{env}.yaml` | Override templates per environment (e.g., `configuration.dev.yaml`, `configuration.prod.yaml`) |
 | `IDENTITY-SETUP-GITHUB.md` | Step-by-step guide for configuring federated credentials |
-| `.github/prompts/apiops-configure-filter.prompt.md` | Copilot prompt for configuring resource filters |
-| `.github/prompts/apiops-configure-overrides.prompt.md` | Copilot prompt for configuring environment overrides |
 
 ### Azure DevOps (`--ci azure-devops`)
 
@@ -95,8 +93,6 @@ In interactive mode (the default when running in a terminal), `apiops init` prom
 | `configuration.extractor.yaml` | Sample filter configuration for extraction |
 | `configuration.{env}.yaml` | Override templates per environment |
 | `IDENTITY-SETUP-AZDO.md` | Step-by-step guide for configuring service connections |
-| `.github/prompts/apiops-configure-filter.prompt.md` | Copilot prompt for configuring resource filters |
-| `.github/prompts/apiops-configure-overrides.prompt.md` | Copilot prompt for configuring environment overrides |
 
 ### Both platforms
 
@@ -128,18 +124,6 @@ If you pass `--cli-package <path>`, the tarball is copied into a `.apiops/` dire
 4. **Commit and push** — Check the generated files into version control.
 5. **Configure overrides** — Edit `configuration.{env}.yaml` files with environment-specific values. Use the `.github/prompts/apiops-configure-overrides.prompt.md` Copilot prompt for guided setup. See the [environment overrides guide](../guides/environment-overrides.md).
 6. **Run your pipeline** — Trigger the publish pipeline to deploy artifacts to your target APIM instance.
-
-## JSON Schemas for IDE Autocomplete
-
-Generated `configuration.extractor.yaml` and `configuration.{env}.yaml` files include a YAML language server schema comment that provides IDE autocomplete when editing:
-
-```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas/extractor-config.schema.json
-```
-
-The schemas are available at:
-- **Filter config:** [`schemas/extractor-config.schema.json`](https://github.com/Azure/apiops-cli/blob/main/schemas/extractor-config.schema.json)
-- **Override config:** [`schemas/override-config.schema.json`](https://github.com/Azure/apiops-cli/blob/main/schemas/override-config.schema.json)
 
 ## Related docs
 
