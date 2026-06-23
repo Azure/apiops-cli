@@ -7,15 +7,7 @@
  */
 
 import { copilotConfigureOverridesPromptTemplate } from '../generated/embedded-markdown.js';
-import { renderTemplate } from '../shared/template-utils.js';
 
-export interface ConfigureOverridesPromptConfig {
-  environments: string[];
-}
-
-export function generateConfigureOverridesPrompt(config: ConfigureOverridesPromptConfig): string {
-  const environmentList = config.environments.join(', ');
-  return renderTemplate(copilotConfigureOverridesPromptTemplate, {
-    ENVIRONMENT_LIST: environmentList,
-  });
+export function generateConfigureOverridesPrompt(): string {
+  return copilotConfigureOverridesPromptTemplate;
 }

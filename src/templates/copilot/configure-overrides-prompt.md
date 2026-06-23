@@ -14,25 +14,39 @@ Create one `configuration.{environment}.yaml` file per deployment environment
 so APIOps publish runs can promote the same artifacts across environments with
 environment-specific settings.
 
-Environments: {{ENVIRONMENT_LIST}}
+---
+
+## Step 0 — Detect Environments
+
+Before asking the user anything, look for existing environment configuration
+files in the repository:
+
+1. Search for files matching `configuration.*.yaml` (excluding
+   `configuration.extractor.yaml`). The `*` portion is the environment name.
+2. Also check CI/CD workflow files (`.github/workflows/` or
+   `.azdo/pipelines/`) for environment references.
+
+If existing config files are found, present the detected environments to the
+user and ask them to confirm or update the list.
+
+If no config files are found, ask the user:
+> "What environments do you deploy to? Common patterns include `dev, stage, prod`
+> or `stage, prod` (if dev shares the same APIM instance as stage)."
+
+Once the environment list is confirmed, proceed.
 
 ---
 
 ## Step 1 — Gather Information
 
-Copilot, start by collecting the following from the user:
+Copilot, collect the following from the user:
 
-1. **Environment names** — Confirm or update the list: **{{ENVIRONMENT_LIST}}**.
-   Note that many teams only need `stage` and `prod` (dev may share the same
-   settings as stage, or dev may not be managed by APIOps at all).
+1. **Existing override config files** — If `configuration.{env}.yaml` files
+   already exist:
+   - Use those as the starting point.
+   - Ask whether the user wants to update them or start fresh.
 
-2. **Existing override config files** — Check whether
-   `configuration.{env}.yaml` files already exist in the repository:
-   - If they exist, use those as the starting point.
-   - If they don't, ask the user whether to create new ones or whether they
-     may already exist under a different name or location.
-
-3. **APIM artifacts location** — Ask the user where the APIOps artifact
+2. **APIM artifacts location** — Ask the user where the APIOps artifact
    directory is (default: `./apim-artifacts`). You will need to inspect the
    artifacts in the next step.
 
@@ -136,8 +150,7 @@ Once all values are confirmed, produce the final YAML files:
 Before finishing:
 
 1. Verify every generated override file matches the intended environment.
-2. Confirm no unresolved `{{ENVIRONMENT_LIST}}` placeholders remain.
-3. Verify all secrets use either `{#[TOKEN_NAME]#}` or Key Vault references.
+2. Verify all secrets use either `{#[TOKEN_NAME]#}` or Key Vault references.
 4. Remind the user to add any `{#[TOKEN_NAME]#}` tokens to their pipeline's
    secret store (GitHub Actions Secrets or Azure DevOps variable groups).
    Help the user with this step if they ask. Note that the pipeline will fail

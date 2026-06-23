@@ -8,14 +8,13 @@ import { describe, it, expect } from 'vitest';
 import { generateConfigureOverridesPrompt } from '../../../../src/templates/copilot/configure-overrides-prompt.js';
 
 describe('copilot/configure-overrides-prompt', () => {
-  it('should render the environment list into the prompt', () => {
-    const prompt = generateConfigureOverridesPrompt({
-      environments: ['dev', 'staging', 'prod'],
-    });
+  it('should produce a static prompt with environment auto-detection instructions', () => {
+    const prompt = generateConfigureOverridesPrompt();
 
     expect(prompt).toContain('# Configure APIOps Environment Overrides');
-    expect(prompt).toContain('Environments: dev, staging, prod');
     expect(prompt).toContain('configuration.{environment}.yaml');
+    expect(prompt).toContain('Detect Environments');
+    expect(prompt).toContain('configuration.*.yaml');
     expect(prompt).not.toMatch(/\{\{[^}]+\}\}/);
   });
 });

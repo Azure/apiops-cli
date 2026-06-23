@@ -415,9 +415,7 @@ class InitServiceImpl implements InitService {
     generatedFiles.configs.push('.github/prompts/apiops-configure-filter.prompt.md');
 
     // Override configuration prompt
-    const overridesPromptContent = generateConfigureOverridesPrompt({
-      environments: config.environments,
-    });
+    const overridesPromptContent = generateConfigureOverridesPrompt();
     const overridesPromptPath = path.join(promptsDir, 'apiops-configure-overrides.prompt.md');
     await fs.writeFile(overridesPromptPath, overridesPromptContent);
     generatedFiles.configs.push('.github/prompts/apiops-configure-overrides.prompt.md');
