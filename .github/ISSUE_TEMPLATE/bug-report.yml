@@ -30,9 +30,7 @@ body:
   - type: input
     id: version
     attributes:
-      label: npm package version
-      description: "Run `npm list @azure/apiops` or check your package.json to find the version."
-      placeholder: "1.0.0"
+      description: "Run `apiops --version` (or `npm list -g @peterhauge/apiops-cli`) to find the installed version."
     validations:
       required: true
 
