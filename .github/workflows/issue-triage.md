@@ -183,7 +183,7 @@ Your triage comment MUST include ALL of the following fields:
 **Uncertainty:** [explanation of what makes this triage uncertain, or "none" if high confidence]
 
 #### Reasoning
-[Brief explanation of why you chose these labels and this routing]
+[One or two sentences explaining why you chose these labels and this routing.]
 
 #### Recommended next steps
 [What a human reviewer should verify or decide]
