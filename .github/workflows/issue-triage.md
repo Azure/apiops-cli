@@ -179,8 +179,6 @@ Your triage comment MUST include ALL of the following fields:
 **Type:** [type label applied]
 **Effort:** [effort estimate with reasoning]
 **Domain:** [which area(s) of the codebase this touches]
-**Suggested assignee:** [team member name from routing policy, if determinable]
-
 **Confidence:** [high | medium | low] ([0-100]%)
 **Uncertainty:** [explanation of what makes this triage uncertain, or "none" if high confidence]
 
