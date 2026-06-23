@@ -49,6 +49,19 @@ body:
       required: true
 
   - type: dropdown
+    id: ci-cd
+    attributes:
+      label: CI/CD environment
+      description: If this bug occurs in a CI/CD pipeline, which platform are you using?
+      options:
+        - "N/A (running locally)"
+        - "GitHub Actions"
+        - "Azure DevOps"
+        - "Other"
+    validations:
+      required: false
+
+  - type: dropdown
     id: blocking
     attributes:
       label: Is this bug blocking you?
