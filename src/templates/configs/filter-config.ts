@@ -6,7 +6,8 @@
  */
 
 export function generateFilterConfig(): string {
-  return `# APIM Extract Filter Configuration
+  return `# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas/extractor-config.schema.json
+# APIM Extract Filter Configuration
 # Customize this file to control which resources are extracted
 # For full format details and examples, see:
 # https://github.com/Azure/apiops-cli/blob/main/docs/guides/filtering-resources.md

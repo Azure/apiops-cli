@@ -357,6 +357,35 @@ describe('init-service', () => {
       expect(content).toContain('gh secret set');
     });
 
+    it('should generate Copilot configuration prompts for GitHub Actions', async () => {
+      const config: InitConfig = {
+        ciProvider: 'github-actions',
+        nonInteractive: true,
+        artifactDir: './apim-artifacts',
+        environments: ['dev', 'prod'],
+        outputDir: '/test',
+        cliPackage: TEST_CLI_PACKAGE,
+        force: false,
+      };
+
+      const result = await initService.run(config);
+
+      expect(result.configs).toContain('.github/prompts/apiops-configure-filter.prompt.md');
+      expect(result.configs).toContain('.github/prompts/apiops-configure-overrides.prompt.md');
+
+      const filterPromptCalls = vi.mocked(fs.writeFile).mock.calls.filter(
+        (call) => call[0] === path.join('/test', '.github/prompts/apiops-configure-filter.prompt.md')
+      );
+      expect(filterPromptCalls).toHaveLength(1);
+      expect(filterPromptCalls[0][1]).toContain('Configure APIOps Extractor Filters');
+
+      const overridesPromptCalls = vi.mocked(fs.writeFile).mock.calls.filter(
+        (call) => call[0] === path.join('/test', '.github/prompts/apiops-configure-overrides.prompt.md')
+      );
+      expect(overridesPromptCalls).toHaveLength(1);
+      expect(overridesPromptCalls[0][1]).toContain('Configure APIOps Environment Overrides');
+    });
+
     it('should generate Copilot identity setup prompt for Azure DevOps', async () => {
       const config: InitConfig = {
         ciProvider: 'azure-devops',
@@ -378,6 +407,34 @@ describe('init-service', () => {
       const content = promptCalls[0][1] as string;
       expect(content).toContain('Setup Azure DevOps Identity for APIOps');
       expect(content).toContain('az devops service-endpoint create --service-endpoint-configuration');
+    });
+
+    it('should detect conflicts for Copilot configuration prompts', async () => {
+      vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
+        const p = filePath.toString();
+        if (
+          p === TEST_CLI_PACKAGE_RESOLVED ||
+          p.includes('apiops-configure-filter.prompt.md') ||
+          p.includes('apiops-configure-overrides.prompt.md')
+        ) {
+          return Promise.resolve();
+        }
+        throw new Error('ENOENT');
+      });
+
+      const config: InitConfig = {
+        ciProvider: 'azure-devops',
+        nonInteractive: true,
+        artifactDir: './apim-artifacts',
+        environments: ['dev'],
+        outputDir: '/test',
+        cliPackage: TEST_CLI_PACKAGE,
+        force: false,
+      };
+
+      await expect(initService.run(config)).rejects.toThrow(
+        'Use --force to overwrite existing files'
+      );
     });
 
     it('should copy CLI tarball into .apiops directory', async () => {
@@ -602,5 +659,6 @@ describe('init-service', () => {
       expect(pkg.dependencies.lodash).toBe('^4.17.21');
       expect(pkg.dependencies['@peterhauge/apiops-cli']).toBe('latest');
     });
+
   });
 });

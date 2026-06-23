@@ -6,7 +6,8 @@
  */
 
 export function generateOverrideConfig(environment: string): string {
-  return `# APIM Override Configuration for ${environment} environment
+  return `# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas/override-config.schema.json
+# APIM Override Configuration for ${environment} environment
 # Customize resource properties for this specific environment
 # For full format details and examples, see:
 # https://github.com/Azure/apiops-cli/blob/main/docs/guides/environment-overrides.md

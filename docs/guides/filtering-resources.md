@@ -36,6 +36,18 @@ Only `petstore-api`, `orders-api`, and their transitive dependencies are extract
 
 ---
 
+## IDE Autocomplete (JSON Schema)
+
+Add this comment as the first line of your filter file to enable autocomplete in VS Code and other YAML-aware editors:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas/extractor-config.schema.json
+```
+
+The schema validates field names, array structure, and sub-resource filters. It is published at [`schemas/extractor-config.schema.json`](https://github.com/Azure/apiops-cli/blob/main/schemas/extractor-config.schema.json).
+
+---
+
 ## Filter YAML Format
 
 The filter file is a YAML document where each key is a resource type and the value is an array of resource names:
@@ -336,3 +348,24 @@ backends:
 - [Environment Overrides](environment-overrides.md) — per-environment configuration
 - [Configuration Reference](../reference/configuration.md) — config priority chain
 - [APIM Glossary](../reference/apim-glossary.md) — APIM resource terminology
+
+---
+
+## JSON Schema and Copilot Prompt
+
+### IDE Autocompletion with JSON Schema
+
+A JSON Schema is available for `configuration.extractor.yaml` files. Add this comment at the top of your filter file to enable autocompletion in VS Code (with the YAML extension):
+
+```yaml
+# yaml-language-server: $schema=./schemas/extractor-config.schema.json
+```
+
+The schema provides:
+- Property name autocompletion for all resource types
+- Validation of the filter structure
+- Inline documentation for each field
+
+### Copilot-Assisted Configuration
+
+If you ran `apiops init`, a Copilot prompt file was generated at `.github/prompts/apiops-configure-filter.prompt.md`. Open it in VS Code and ask GitHub Copilot to help you configure your filter — it will walk you through selecting resources interactively.
