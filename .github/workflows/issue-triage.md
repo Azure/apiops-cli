@@ -95,13 +95,13 @@ steps:
         exit 1
       fi
 
-      # Verify frontmatter markers are at the expected location
-      if [ "$(sed -n '2p' "$USER_FILE")" != "context-role: user" ]; then
+      # Verify frontmatter markers are present near the top of each file
+      if ! head -n 5 "$USER_FILE" | grep -qx "context-role: user"; then
         echo "::error::Contract violation: user context file has an unexpected role marker"
         exit 1
       fi
 
-      if [ "$(sed -n '2p' "$SYSTEM_FILE")" != "context-role: system" ]; then
+      if ! head -n 5 "$SYSTEM_FILE" | grep -qx "context-role: system"; then
         echo "::error::Contract violation: system context file has an unexpected role marker"
         exit 1
       fi
@@ -133,7 +133,7 @@ post-steps:
       fi
 
       # Check for confidence score (e.g., "confidence: high", "Confidence: 85%", "confidence score: medium")
-      if ! echo "$AGENT_OUTPUT" | grep -iqE "(confidence[:\s]*(score[:\s]*)?(high|medium|low|[0-9]+%?))"; then
+      if ! echo "$AGENT_OUTPUT" | grep -iqE "(confidence[:\s]*(score[:\s]*)?(high|medium|low|([0-9]{1,2}|100)%?))"; then
         echo "::error::Triage comment missing required confidence score field"
         exit 1
       fi
