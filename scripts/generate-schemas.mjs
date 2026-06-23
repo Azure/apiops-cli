@@ -243,15 +243,30 @@ function buildOverrideProperties() {
         $ref: '#/definitions/apiOverrideSection',
         description: `API overrides. Each entry can override API properties and optionally define nested diagnostics, operations, policies, and releases. ${tokenNote}`,
       };
-    } else if (field === 'backends') {
-      props.backends = {
-        $ref: '#/definitions/overrideSection',
-        description: `Backend overrides. Use the properties object to deep-merge resource properties such as URLs or credentials. ${tokenNote}`,
-      };
     } else if (field === 'namedValues') {
       props.namedValues = {
-        $ref: '#/definitions/overrideSection',
+        $ref: '#/definitions/namedValueOverrideSection',
         description: `Named value overrides. Use the properties object to deep-merge resource properties. ${tokenNote}`,
+      };
+    } else if (field === 'backends') {
+      props.backends = {
+        $ref: '#/definitions/backendOverrideSection',
+        description: `Backend overrides. Use the properties object to deep-merge resource properties such as URLs or credentials. ${tokenNote}`,
+      };
+    } else if (field === 'loggers') {
+      props.loggers = {
+        $ref: '#/definitions/loggerOverrideSection',
+        description: `Loggers overrides. ${tokenNote}`,
+      };
+    } else if (field === 'diagnostics') {
+      props.diagnostics = {
+        $ref: '#/definitions/diagnosticOverrideSection',
+        description: `Diagnostics overrides. ${tokenNote}`,
+      };
+    } else if (field === 'policies') {
+      props.policies = {
+        $ref: '#/definitions/policyOverrideSection',
+        description: `Service-level policies overrides. ${tokenNote}`,
       };
     } else {
       props[field] = {
@@ -298,6 +313,88 @@ const overrideSchema = {
       description: 'A list of override entries for a resource type.',
       items: { $ref: '#/definitions/overrideEntry' },
     },
+
+    // --- Named value typed section ---
+    namedValueOverrideEntry: {
+      type: 'object',
+      required: ['name', 'properties'],
+      additionalProperties: false,
+      properties: {
+        name: { type: 'string', description: 'Named value name to match for this override entry.' },
+        properties: { $ref: '#/definitions/namedValuePropertiesObject' },
+      },
+    },
+    namedValueOverrideSection: {
+      type: 'array',
+      description: 'A list of named value override entries.',
+      items: { $ref: '#/definitions/namedValueOverrideEntry' },
+    },
+
+    // --- Backend typed section ---
+    backendOverrideEntry: {
+      type: 'object',
+      required: ['name', 'properties'],
+      additionalProperties: false,
+      properties: {
+        name: { type: 'string', description: 'Backend name to match for this override entry.' },
+        properties: { $ref: '#/definitions/backendPropertiesObject' },
+      },
+    },
+    backendOverrideSection: {
+      type: 'array',
+      description: 'A list of backend override entries.',
+      items: { $ref: '#/definitions/backendOverrideEntry' },
+    },
+
+    // --- Logger typed section ---
+    loggerOverrideEntry: {
+      type: 'object',
+      required: ['name', 'properties'],
+      additionalProperties: false,
+      properties: {
+        name: { type: 'string', description: 'Logger name to match for this override entry.' },
+        properties: { $ref: '#/definitions/loggerPropertiesObject' },
+      },
+    },
+    loggerOverrideSection: {
+      type: 'array',
+      description: 'A list of logger override entries.',
+      items: { $ref: '#/definitions/loggerOverrideEntry' },
+    },
+
+    // --- Diagnostic typed section ---
+    diagnosticOverrideEntry: {
+      type: 'object',
+      required: ['name', 'properties'],
+      additionalProperties: false,
+      properties: {
+        name: { type: 'string', description: 'Diagnostic name to match for this override entry.' },
+        properties: { $ref: '#/definitions/diagnosticPropertiesObject' },
+      },
+    },
+    diagnosticOverrideSection: {
+      type: 'array',
+      description: 'A list of diagnostic override entries.',
+      items: { $ref: '#/definitions/diagnosticOverrideEntry' },
+    },
+
+    // --- Policy typed section ---
+    policyOverrideEntry: {
+      type: 'object',
+      required: ['name', 'properties'],
+      additionalProperties: false,
+      properties: {
+        name: { type: 'string', description: 'Policy name to match for this override entry.' },
+        properties: { $ref: '#/definitions/policyPropertiesObject' },
+      },
+    },
+    policyOverrideSection: {
+      type: 'array',
+      description: 'A list of policy override entries.',
+      items: { $ref: '#/definitions/policyOverrideEntry' },
+    },
+
+    // --- Operation override ---
     operationOverrideEntry: {
       type: 'object',
       required: ['name', 'properties'],
@@ -309,7 +406,7 @@ const overrideSchema = {
         },
         properties: { $ref: '#/definitions/propertiesObject' },
         policies: {
-          $ref: '#/definitions/overrideSection',
+          $ref: '#/definitions/policyOverrideSection',
           description:
             'Policy overrides nested under this operation. Values may include {#[TOKEN_NAME]#} placeholders for CI/CD secret token substitution.',
         },
@@ -320,6 +417,8 @@ const overrideSchema = {
       description: 'A list of operation override entries.',
       items: { $ref: '#/definitions/operationOverrideEntry' },
     },
+
+    // --- API typed section ---
     apiOverrideEntry: {
       type: 'object',
       required: ['name', 'properties'],
@@ -329,9 +428,9 @@ const overrideSchema = {
           type: 'string',
           description: 'API name to match for this override entry.',
         },
-        properties: { $ref: '#/definitions/propertiesObject' },
+        properties: { $ref: '#/definitions/apiPropertiesObject' },
         diagnostics: {
-          $ref: '#/definitions/overrideSection',
+          $ref: '#/definitions/diagnosticOverrideSection',
           description:
             'Diagnostic overrides nested under this API. Values may include {#[TOKEN_NAME]#} placeholders for CI/CD secret token substitution.',
         },
@@ -341,7 +440,7 @@ const overrideSchema = {
             'Operation overrides nested under this API. Each operation can define its own nested policies. Values may include {#[TOKEN_NAME]#} placeholders for CI/CD secret token substitution.',
         },
         policies: {
-          $ref: '#/definitions/overrideSection',
+          $ref: '#/definitions/policyOverrideSection',
           description:
             'Policy overrides nested directly under this API. Values may include {#[TOKEN_NAME]#} placeholders for CI/CD secret token substitution.',
         },
@@ -356,6 +455,182 @@ const overrideSchema = {
       type: 'array',
       description: 'A list of API override entries.',
       items: { $ref: '#/definitions/apiOverrideEntry' },
+    },
+
+    // --- Typed properties objects ---
+    apiPropertiesObject: {
+      type: 'object',
+      description: 'Common API properties with editor autocomplete. Additional API properties are allowed.',
+      properties: {
+        displayName: { type: 'string', description: 'Friendly API display name in the APIM portal.' },
+        description: { type: ['string', 'null'], description: 'Optional API description.' },
+        path: { type: 'string', description: 'API URL suffix/path.' },
+        serviceUrl: { type: ['string', 'null'], description: 'Backend service URL for this API.' },
+        apiType: {
+          type: 'string',
+          description: 'API kind used by APIM import/export logic.',
+          enum: ['http', 'soap', 'graphql', 'websocket', 'odata', 'grpc', 'mcp', 'a2a'],
+        },
+        type: {
+          type: 'string',
+          description: 'Source API type from extracted API metadata. Use the same values as apiType.',
+          enum: ['http', 'soap', 'graphql', 'websocket', 'odata', 'grpc', 'mcp', 'a2a'],
+        },
+        protocols: {
+          type: 'array',
+          description: 'Supported frontend protocols for this API.',
+          items: { type: 'string', enum: ['http', 'https', 'ws', 'wss'] },
+          uniqueItems: true,
+        },
+        subscriptionRequired: { type: 'boolean', description: 'Whether a subscription key is required to call this API.' },
+        subscriptionKeyParameterNames: {
+          type: 'object',
+          description: 'Custom subscription key header/query names.',
+          properties: {
+            header: { type: 'string' },
+            query: { type: 'string' },
+          },
+          additionalProperties: false,
+        },
+        apiRevision: { type: 'string', description: 'API revision identifier.' },
+        apiRevisionDescription: { type: ['string', 'null'], description: 'Description for the API revision.' },
+        apiVersion: { type: 'string', description: 'API version label.' },
+        isCurrent: { type: 'boolean', description: 'Marks this API revision as current.' },
+        apiVersionSetId: { type: 'string', description: 'Reference to the API version set resource.' },
+        format: {
+          type: 'string',
+          description: 'Specification format used for API import/export payloads.',
+          enum: [
+            'openapi', 'openapi+json', 'openapi-link',
+            'swagger-json', 'swagger-link',
+            'wsdl', 'wsdl-link',
+            'wadl-xml', 'wadl-link',
+            'graphql-link',
+          ],
+        },
+        value: { type: 'string', description: 'Inline specification content or URL depending on format.' },
+        authenticationSettings: {
+          type: 'object',
+          description: 'Authentication settings for backend authorization.',
+          additionalProperties: true,
+        },
+      },
+      additionalProperties: true,
+    },
+
+    namedValuePropertiesObject: {
+      type: 'object',
+      description: 'Common named value properties with editor autocomplete. Additional named value properties are allowed.',
+      properties: {
+        displayName: { type: 'string', description: 'Friendly named value display name in the APIM portal.' },
+        value: { type: ['string', 'null'], description: 'Literal named value content (avoid putting secrets directly in source control).' },
+        secret: { type: 'boolean', description: 'Whether the named value is treated as a secret.' },
+        tags: { type: 'array', description: 'Named value tags.', items: { type: 'string' }, uniqueItems: true },
+        keyVault: {
+          type: 'object',
+          description: 'Key Vault secret reference for this named value.',
+          properties: {
+            secretIdentifier: { type: 'string', description: 'Full Key Vault secret identifier URL.' },
+            identityClientId: { type: ['string', 'null'], description: 'User-assigned managed identity client ID used to access the secret.' },
+          },
+          additionalProperties: true,
+        },
+      },
+      additionalProperties: true,
+    },
+
+    backendPropertiesObject: {
+      type: 'object',
+      description: 'Common backend properties with editor autocomplete. Additional backend properties are allowed.',
+      properties: {
+        title: { type: ['string', 'null'], description: 'Optional backend title.' },
+        description: { type: ['string', 'null'], description: 'Optional backend description.' },
+        url: { type: ['string', 'null'], description: 'Backend runtime URL.' },
+        protocol: { type: 'string', description: 'Backend protocol.', enum: ['http', 'soap'] },
+        resourceId: { type: ['string', 'null'], description: 'Linked Azure resource ID, when applicable.' },
+        credentials: { type: 'object', description: 'Backend authentication credentials object.', additionalProperties: true },
+        proxy: { type: 'object', description: 'Proxy settings for backend connectivity.', additionalProperties: true },
+        tls: { type: 'object', description: 'TLS settings for backend connectivity.', additionalProperties: true },
+      },
+      additionalProperties: true,
+    },
+
+    loggerPropertiesObject: {
+      type: 'object',
+      description: 'Common logger properties with editor autocomplete. Additional logger properties are allowed.',
+      properties: {
+        loggerType: {
+          type: 'string',
+          description: 'Logger type.',
+          enum: ['applicationInsights', 'azureEventHub'],
+        },
+        description: { type: ['string', 'null'], description: 'Optional logger description.' },
+        resourceId: { type: ['string', 'null'], description: 'Linked Azure resource ID for the logger target.' },
+        isBuffered: { type: 'boolean', description: 'Whether messages are buffered before being sent.' },
+        credentials: {
+          type: 'object',
+          description: 'Logger credentials (for example instrumentationKey or connection string).',
+          properties: {
+            instrumentationKey: { type: 'string', description: 'Application Insights instrumentation key or named value reference.' },
+            name: { type: 'string', description: 'Event Hub name, where applicable.' },
+            connectionString: { type: 'string', description: 'Event Hub connection string or named value reference.' },
+          },
+          additionalProperties: true,
+        },
+      },
+      additionalProperties: true,
+    },
+
+    diagnosticPropertiesObject: {
+      type: 'object',
+      description: 'Common diagnostic properties with editor autocomplete. Additional diagnostic properties are allowed.',
+      properties: {
+        alwaysLog: {
+          type: ['string', 'null'],
+          description: 'Diagnostic always-log behavior.',
+          enum: ['allErrors', 'always', null],
+        },
+        httpCorrelationProtocol: {
+          type: ['string', 'null'],
+          description: 'HTTP correlation protocol for tracing.',
+          enum: ['Legacy', 'W3C', 'None', null],
+        },
+        logClientIp: { type: 'boolean', description: 'Whether client IP address is logged.' },
+        verbosity: {
+          type: 'string',
+          description: 'Diagnostic verbosity level.',
+          enum: ['verbose', 'information', 'error', 'Verbose', 'Information', 'Error'],
+        },
+        loggerId: { type: ['string', 'null'], description: 'Target logger ARM resource ID.' },
+        sampling: {
+          type: 'object',
+          description: 'Diagnostic sampling configuration.',
+          properties: {
+            samplingType: { type: 'string', enum: ['fixed'] },
+            percentage: { type: 'number' },
+          },
+          additionalProperties: true,
+        },
+        frontend: { type: ['object', 'null'], description: 'Frontend request/response diagnostic settings.', additionalProperties: true },
+        backend: { type: ['object', 'null'], description: 'Backend request/response diagnostic settings.', additionalProperties: true },
+        largeLanguageModel: { type: ['object', 'null'], description: 'LLM diagnostic settings.', additionalProperties: true },
+        tags: { type: ['object', 'null'], description: 'Diagnostic tags.', additionalProperties: true },
+      },
+      additionalProperties: true,
+    },
+
+    policyPropertiesObject: {
+      type: 'object',
+      description: 'Common policy properties with editor autocomplete. Additional policy properties are allowed.',
+      properties: {
+        format: {
+          type: 'string',
+          description: 'Policy content format.',
+          enum: ['rawxml', 'rawxml-link', 'xml', 'xml-link'],
+        },
+        value: { type: 'string', description: 'Inline policy XML or linked value, depending on format.' },
+      },
+      additionalProperties: true,
     },
   },
 };

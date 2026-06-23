@@ -38,6 +38,7 @@
         "vitest.dev",
         "ms-vscode.powershell",
         "ms-azuretools.vscode-bicep",
+        "redhat.vscode-yaml",
         "bierner.markdown-preview-github-styles"
       ]
     }
