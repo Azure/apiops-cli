@@ -87,10 +87,20 @@ jobs:
             const TYPE_LABELS = [
               { name: 'type:feature', color: 'DDD1F2', description: 'New capability' },
               { name: 'type:bug', color: 'FF0422', description: 'Something broken' },
+              { name: 'type:enhancement', color: 'DDD1F2', description: 'Feature requests or improvements' },
+              { name: 'type:question', color: 'd876e3', description: 'Questions about usage or behavior' },
+              { name: 'type:documentation', color: 'D4E5F7', description: 'Documentation issues or requests' },
               { name: 'type:spike', color: 'F2DDD4', description: 'Research/investigation — produces a plan, not code' },
               { name: 'type:docs', color: 'D4E5F7', description: 'Documentation work' },
               { name: 'type:chore', color: 'D4E5F7', description: 'Maintenance, refactoring, cleanup' },
               { name: 'type:epic', color: 'CC4455', description: 'Parent issue that decomposes into sub-issues' }
+            ];
+
+            const EFFORT_LABELS = [
+              { name: 'effort:S', color: '0E8A16', description: 'Small effort (< 1 day)' },
+              { name: 'effort:M', color: 'FBCA04', description: 'Medium effort (1-3 days)' },
+              { name: 'effort:L', color: 'D93F0B', description: 'Large effort (3-10 days)' },
+              { name: 'effort:XL', color: 'B60205', description: 'Extra-large effort (> 10 days)' }
             ];
 
             // High-signal labels — these MUST visually dominate all others
@@ -135,10 +145,11 @@ jobs:
               });
             }
 
-            // Add go:, release:, type:, priority:, high-signal, and lifecycle labels
+            // Add go:, release:, type:, effort:, priority:, high-signal, and lifecycle labels
             labels.push(...GO_LABELS);
             labels.push(...RELEASE_LABELS);
             labels.push(...TYPE_LABELS);
+            labels.push(...EFFORT_LABELS);
             labels.push(...PRIORITY_LABELS);
             labels.push(...SIGNAL_LABELS);
             labels.push(...LIFECYCLE_LABELS);

@@ -14,7 +14,6 @@ safe-outputs:
       - "type:enhancement"
       - "type:question"
       - "type:documentation"
-      - "needs-info"
       - "duplicate"
       - "effort:S"
       - "effort:M"
@@ -32,27 +31,22 @@ safe-outputs:
 steps:
   - name: Prepare triage context
     id: context
+    env:
+      ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
+      ISSUE_BODY: ${{ github.event.issue.body || '' }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      ISSUE_TITLE: ${{ github.event.issue.title }}
     run: |
-      # Extract issue content for user context (title + body only)
-      ISSUE_TITLE="${{ github.event.issue.title }}"
-      ISSUE_BODY="${{ github.event.issue.body }}"
-
       # Write issue content as user context
       mkdir -p /tmp/gh-aw/agent
-      cat > /tmp/gh-aw/agent/issue-content.md << 'ISSUE_EOF'
-      ---
-      context-role: user
-      ---
-      # Issue to Triage
-
-      **Title:** ${{ github.event.issue.title }}
-      **Number:** #${{ github.event.issue.number }}
-      **Author:** @${{ github.event.issue.user.login }}
-
-      ## Body
-
-      ${{ github.event.issue.body }}
-      ISSUE_EOF
+      {
+        printf '%s\n' '---' 'context-role: user' '---' '# Issue to Triage' ''
+        printf '**Title:** %s\n' "$ISSUE_TITLE"
+        printf '**Number:** #%s\n' "$ISSUE_NUMBER"
+        printf '**Author:** @%s\n' "$ISSUE_AUTHOR"
+        printf '\n## Body\n\n'
+        printf '%s\n' "$ISSUE_BODY"
+      } > /tmp/gh-aw/agent/issue-content.md
 
       # Write routing + team policy as system context
       cat > /tmp/gh-aw/agent/system-policy.md << 'POLICY_EOF'
@@ -80,8 +74,9 @@ steps:
 
   - name: Contract test — verify context separation
     run: |
-      # Deterministic enforcement: issue text must only appear in user context file
-      # and routing/team policy must only appear in system context file.
+      # Deterministic enforcement: each context file must start with the
+      # expected role marker and preserve the expected structural markers for
+      # its content type.
       USER_FILE="/tmp/gh-aw/agent/issue-content.md"
       SYSTEM_FILE="/tmp/gh-aw/agent/system-policy.md"
 
@@ -97,16 +92,26 @@ steps:
         exit 1
       fi
 
-      # Verify routing policy is NOT in user context
-      if grep -q "## Routing Policy" "$USER_FILE" || grep -q "## Routing Table" "$USER_FILE"; then
-        echo "::error::Contract violation: routing policy leaked into user context"
+      # Verify frontmatter markers are at the expected location
+      if [ "$(sed -n '2p' "$USER_FILE")" != "context-role: user" ]; then
+        echo "::error::Contract violation: user context file has an unexpected role marker"
         exit 1
       fi
 
-      # Verify issue body is NOT in system context
-      ISSUE_TITLE="${{ github.event.issue.title }}"
-      if grep -qF "$ISSUE_TITLE" "$SYSTEM_FILE"; then
-        echo "::error::Contract violation: issue content leaked into system context"
+      if [ "$(sed -n '2p' "$SYSTEM_FILE")" != "context-role: system" ]; then
+        echo "::error::Contract violation: system context file has an unexpected role marker"
+        exit 1
+      fi
+
+      # Verify user context markers are present in user context
+      if ! grep -q "^# Issue to Triage$" "$USER_FILE" || ! grep -q '^\*\*Title:\*\* ' "$USER_FILE" || ! grep -q "^## Body$" "$USER_FILE"; then
+        echo "::error::Contract violation: user context file missing expected issue markers"
+        exit 1
+      fi
+
+      # Verify user context markers are NOT in system context
+      if grep -q "^# Issue to Triage$" "$SYSTEM_FILE" || grep -q '^\*\*Title:\*\* ' "$SYSTEM_FILE" || grep -q "^## Body$" "$SYSTEM_FILE" || grep -q "context-role: user" "$SYSTEM_FILE"; then
+        echo "::error::Contract violation: user context leaked into system context"
         exit 1
       fi
 
@@ -117,7 +122,7 @@ post-steps:
     run: |
       # Deterministic enforcement: verify the agent's triage comment includes
       # required confidence score and uncertainty indicator fields.
-      AGENT_OUTPUT="${GH_AW_AGENT_OUTPUT}"
+      AGENT_OUTPUT="${GH_AW_OUTPUT}"
 
       if [ -z "$AGENT_OUTPUT" ]; then
         echo "::error::No agent output found — cannot validate triage comment schema"
@@ -167,7 +172,6 @@ You may ONLY apply labels from this list (max 3):
 - `type:enhancement` — feature requests or improvements
 - `type:question` — questions about usage or behavior
 - `type:documentation` — documentation issues or requests
-- `needs-info` — issue lacks sufficient detail for triage
 - `duplicate` — appears to duplicate an existing issue
 - `effort:S` — small effort (< 1 day)
 - `effort:M` — medium effort (1-3 days)
