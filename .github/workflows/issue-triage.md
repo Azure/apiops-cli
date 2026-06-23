@@ -11,7 +11,7 @@ safe-outputs:
   add-labels:
     allowed:
       - "type:bug"
-      - "type:enhancement"
+      - "type:feature"
       - "type:question"
       - "type:documentation"
       - "duplicate"
@@ -149,7 +149,7 @@ analysis when the issue crosses specializations or requires expert judgment.
 1. Read the issue content from `/tmp/gh-aw/agent/issue-content.md` (user context).
 2. Read the routing policy and team configuration from `/tmp/gh-aw/agent/system-policy.md` (system context).
 3. Analyze the issue to determine:
-   - What type of work this represents (bug, enhancement, question, documentation)
+   - What type of work this represents (bug, feature, question, documentation)
    - The estimated effort level (S, M, L, XL)
    - Which team domain(s) the issue relates to
 4. If the issue spans multiple domains or you need expert input, call the relevant
@@ -162,7 +162,7 @@ analysis when the issue crosses specializations or requires expert judgment.
 
 You may ONLY apply labels from this list (max 3):
 - `type:bug` — confirmed or suspected bug reports
-- `type:enhancement` — feature requests or improvements
+- `type:feature` — feature requests or improvements
 - `type:question` — questions about usage or behavior
 - `type:documentation` — documentation issues or requests
 - `duplicate` — appears to duplicate an existing issue
