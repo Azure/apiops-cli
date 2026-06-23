@@ -361,33 +361,35 @@ workspaces:
 
 #### Workspace-scoped resource overrides
 
-Resources inside a workspace are extracted to `workspaces/<workspace-name>/` subdirectories. To override workspace-scoped resources, use the same top-level override sections (`apis`, `backends`, `namedValues`, etc.) with the resource name prefixed by the workspace name and a forward slash:
+Resources inside a workspace are extracted to `workspaces/<workspace-name>/` subdirectories. To override them, **nest** the child sections directly under the workspace entry (matching the APIOps Toolkit format):
 
 ```yaml
-# Override workspace-scoped resources by prefixing with "workspace-name/"
-apis:
-  - name: partner-workspace/orders-api
+workspaces:
+  - name: partner-workspace
     properties:
-      serviceUrl: "https://orders-prod.contoso.com/v1"
-
-backends:
-  - name: partner-workspace/orders-backend
-    properties:
-      url: "https://orders-prod.contoso.com"
-
-namedValues:
-  - name: partner-workspace/api-key
-    properties:
-      secret: true
-      value: "{#[PARTNER_API_KEY]#}"
-
-loggers:
-  - name: partner-workspace/appinsights-logger
-    properties:
-      resourceId: "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/microsoft.insights/components/prod-appinsights"
+      displayName: "Partner Workspace (Production)"
+    apis:
+      - name: orders-api
+        properties:
+          serviceUrl: "https://orders-prod.contoso.com/v1"
+    backends:
+      - name: orders-backend
+        properties:
+          url: "https://orders-prod.contoso.com"
+    namedValues:
+      - name: api-key
+        properties:
+          secret: true
+          value: "{#[PARTNER_API_KEY]#}"
+    loggers:
+      - name: appinsights-logger
+        properties:
+          resourceId: "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/microsoft.insights/components/prod-appinsights"
 ```
 
-Workspace-scoped resources that support overrides include: APIs, backends, named values, loggers, diagnostics, products, subscriptions, groups, tags, version sets, policy fragments, and global schemas.
+The supported workspace child sections are: `apis`, `backends`, `diagnostics`, `groups`, `loggers`, `namedValues`, `policyFragments`, `products`, `subscriptions`, `tags`, and `versionSets`.
+
+> ⚠️ **Known limitation — tracked in [#118](https://github.com/Azure/apiops-cli/issues/118):** workspace child overrides are *parsed* (the YAML above is accepted with no errors) but are **not yet applied at publish time**. Until #118 is fixed, only the workspace container's own `properties` are honored for workspace-scoped resources. Authoring overrides in this nested shape today is safe and forward-compatible — they will start taking effect automatically once the merger is updated.
 
 ## Override rules
 
