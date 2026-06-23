@@ -16,7 +16,7 @@ import {
   copilotGithubEnvironmentSecretCommandsTemplate,
   copilotGitHubActionsIdentitySetupPromptTemplate,
 } from '../generated/embedded-markdown.js';
-import { renderTemplate } from '../shared/template-utils.js';
+import { renderTemplate } from '../../lib/render-template.js';
 
 export interface IdentitySetupPromptConfig {
   environments: string[];

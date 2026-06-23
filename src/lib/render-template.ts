@@ -1,8 +1,8 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * Shared template rendering utility for Copilot prompt templates.
- * Replaces {{TOKEN}} placeholders with provided values.
+ * Template rendering utility.
+ * Replaces {{TOKEN}} placeholders in template strings with provided values.
  */
 
 /**

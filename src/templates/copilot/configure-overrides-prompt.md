@@ -72,18 +72,9 @@ Using the artifact directory identified in Step 1:
    > APIOps and do **not** need overrides.
 
 2. For each environment, create a **stub** `configuration.{env}.yaml` that
-   covers all the commonly-overridden items you found. Use placeholder example
-   values so the user can see the shape of the file.
-
-3. **Add everything as YAML comments initially** — a commented-out section is
-   safe because it will not cause a publish failure. The user can uncomment
-   and fill in values in Step 3. Example pattern:
-   ```yaml
-   # namedValues:
-   #   - name: payment-api-key
-   #     properties:
-   #       value: "{#[PAYMENT_API_KEY]#}"
-   ```
+   covers all the commonly-overridden items you found. Use placeholder values
+   (e.g., `TODO` or `{#[TOKEN_NAME]#}`) so the user can see the shape of the
+   file and fill in real values in Step 3.
 
 ---
 
