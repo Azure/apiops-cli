@@ -179,7 +179,7 @@ describe('copilot/identity-setup-prompt', () => {
       });
       expect(prompt).toContain('Build Service identity');
       expect(prompt).toContain('## UI Reference Context');
-      expect(prompt).toContain('APIOps Azure DevOps identity setup guide');
+      expect(prompt).toContain('Identity setup guide for APIOps extract and publish Azure DevOps Pipelines');
     });
 
     it('should ask Copilot to gather per-environment APIM info for each ADO environment', () => {

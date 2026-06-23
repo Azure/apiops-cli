@@ -30,6 +30,8 @@ Helpful documentation:
 
 ## Step 2: Create or choose an app registration in Azure portal
 
+> 📖 [Register an application in the Azure portal](https://learn.microsoft.com/entra/identity-platform/quickstart-register-app)
+
 1. Open the **Azure portal**.
 2. Go to **Microsoft Entra ID** → **App registrations** → **New registration**.
 3. Enter a friendly name such as `apiops-github-sp`.
@@ -40,6 +42,8 @@ Helpful documentation:
 
 ## Step 3: Grant the Azure identity access to APIM
 
+> 📖 [Assign Azure roles using the Azure portal](https://learn.microsoft.com/azure/role-based-access-control/role-assignments-portal)
+
 1. In the **Azure portal**, open your API Management service.
 2. Go to **Access control (IAM)** → **Add role assignment**.
 3. For every environment configured by `apiops init`, assign access to the app registration or service principal:
@@ -48,6 +52,8 @@ Helpful documentation:
 5. Wait a few minutes for RBAC changes to propagate before you test the workflow.
 
 ## Step 4: Add federated credentials in Azure portal
+
+> 📖 [Configure a federated identity credential on an app](https://learn.microsoft.com/entra/workload-id/workload-identity-federation-create-trust)
 
 1. Return to **Microsoft Entra ID** → **App registrations** → your app.
 2. Open **Certificates & secrets** → **Federated credentials** → **Add credential**.
@@ -66,11 +72,15 @@ Helpful documentation:
 
 ## Step 5: Create GitHub environments in the web UI
 
+> 📖 [Using environments for deployment](https://docs.github.com/actions/deployment/targeting-different-environments/using-environments-for-deployment)
+
 1. In GitHub, go to **Settings** → **Environments**.
 2. Create an environment for each deployment target used by `apiops init`.
 3. Add protection rules such as required reviewers for production environments if your process needs approvals.
 
 ## Step 6: Add repository and environment secrets in GitHub
+
+> 📖 [Using secrets in GitHub Actions](https://docs.github.com/actions/security-guides/using-secrets-in-github-actions)
 
 1. Go to **Settings** → **Secrets and variables** → **Actions**.
 2. Under **Repository secrets**, create:

@@ -29,6 +29,8 @@ Helpful documentation:
 
 ## Step 2: Create or choose an app registration in Azure portal
 
+> 📖 [Register an application in the Azure portal](https://learn.microsoft.com/entra/identity-platform/quickstart-register-app)
+
 1. Open the **Azure portal**.
 2. Go to **Microsoft Entra ID** → **App registrations** → **New registration**.
 3. Enter a friendly name such as `apiops-azdo-sp`.
@@ -40,6 +42,8 @@ Helpful documentation:
 
 ## Step 3: Grant the Azure identity access to each APIM environment
 
+> 📖 [Assign Azure roles using the Azure portal](https://learn.microsoft.com/azure/role-based-access-control/role-assignments-portal)
+
 For each environment, use the **Azure portal** to grant:
 
 - **Reader** on the resource group that contains the APIM instance
@@ -48,6 +52,8 @@ For each environment, use the **Azure portal** to grant:
 Use **Access control (IAM)** on each resource group and APIM instance to create the assignments.
 
 ## Step 4: Create one Azure service connection per environment
+
+> 📖 [Create an Azure Resource Manager service connection using workload identity federation](https://learn.microsoft.com/azure/devops/pipelines/library/connect-to-azure)
 
 1. In **Azure DevOps**, open **Project settings** → **Service connections** → **New service connection**.
 2. Choose **Azure Resource Manager**.
@@ -64,6 +70,8 @@ Use **Access control (IAM)** on each resource group and APIM instance to create 
 
 ## Step 5: Create variable groups in Azure DevOps
 
+> 📖 [Add and use variable groups in Azure Pipelines](https://learn.microsoft.com/azure/devops/pipelines/library/variable-groups)
+
 1. Go to **Pipelines** → **Library** → **+ Variable group**.
 2. Create one variable group per environment:
 
@@ -76,11 +84,15 @@ Use **Access control (IAM)** on each resource group and APIM instance to create 
 
 ## Step 6: Create Azure DevOps environments and approvals
 
+> 📖 [Create and target an environment](https://learn.microsoft.com/azure/devops/pipelines/process/environments)
+
 1. Go to **Pipelines** → **Environments**.
 2. Create an environment for each deployment target used by the publish pipeline.
 3. Add approvals and checks for production or other protected environments as needed by your release process.
 
 ## Step 7: Grant repository permissions to the Build Service identity
+
+> 📖 [Set repository permissions in Azure DevOps](https://learn.microsoft.com/azure/devops/repos/git/set-git-repository-permissions)
 
 1. In **Azure DevOps**, open **Project settings** → **Repositories** → your repository → **Security**.
 2. Find the entry named **`<Project Name> Build Service (<Organization Name>)`**.
@@ -91,6 +103,8 @@ Use **Access control (IAM)** on each resource group and APIM instance to create 
 4. If the pipeline can read APIM but cannot push extracted artifacts or open a PR, this is usually the missing step because the Build Service identity is separate from the Azure app registration.
 
 ## Step 8: Create the pipelines in Azure DevOps
+
+> 📖 [Create your first pipeline](https://learn.microsoft.com/azure/devops/pipelines/create-first-pipeline)
 
 1. Go to **Pipelines** → **Create Pipeline**.
 2. Choose your repository.
