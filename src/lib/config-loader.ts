@@ -2,7 +2,7 @@
 // Licensed under the MIT license.
 /**
  * YAML config loader with validation
- * Parse filter YAML, override YAML, and OTel config files
+ * Parse filter YAML and override YAML config files
  */
 
 import * as fs from 'node:fs/promises';
@@ -427,24 +427,4 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
     !Array.isArray(value) &&
     Object.prototype.toString.call(value) === '[object Object]'
   );
-}
-
-/**
- * Load and parse an OpenTelemetry configuration YAML file.
- * Returns undefined if file doesn't exist.
- */
-export async function loadOTelConfig(filePath: string): Promise<Record<string, unknown> | undefined> {
-  try {
-    const content = await fs.readFile(filePath, 'utf-8');
-    const parsed = (yaml.load(content) ?? {}) as Record<string, unknown>;
-    
-    logger.debug(`Loaded OTel config from ${filePath}`);
-    return parsed;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      logger.debug(`OTel config file not found: ${filePath}`);
-      return undefined;
-    }
-    throw new Error(`Failed to load OTel config from ${filePath}: ${(error as Error).message}`, { cause: error });
-  }
 }

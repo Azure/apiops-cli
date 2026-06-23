@@ -42,11 +42,11 @@
 - [x] T012 Implement resource descriptor ↔ ARM URI mapping in src/lib/resource-uri.ts (builds full ARM URL from ApimServiceContext + ResourceDescriptor, including workspace prefix)
 - [x] T013 Implement resource descriptor ↔ artifact file path mapping in src/lib/resource-path.ts (maps descriptor to directory/file paths per data-model.md artifact conventions)
 - [x] T014 [P] Implement structured logger in src/lib/logger.ts (stderr output, timestamps, log levels, --verbose support per FR-023/FR-026)
-- [x] T015 [P] Implement YAML config loader in src/lib/config-loader.ts (parse filter YAML, override YAML, OTel config with js-yaml; validate against FilterConfig/OverrideConfig schemas)
+- [x] T015 [P] Implement YAML config loader in src/lib/config-loader.ts (parse filter YAML, override YAML with js-yaml; validate against FilterConfig/OverrideConfig schemas)
 - [x] T016 Implement Azure REST HTTP client in src/clients/apim-client.ts (implements IApimClient: DefaultAzureCredential auth, nextLink pagination, Retry-After/429 handling, exponential backoff, provisioningState polling per research.md R1)
 - [x] T017 Implement filesystem artifact store in src/clients/artifact-store.ts (implements IArtifactStore: read/write resource JSON, policy XML, API specs, association files, wiki markdown; UTF-8 encoding; directory creation per contracts/iartifact-store.md)
 - [x] T018 [P] Implement parallel execution runner in src/lib/parallel-runner.ts (p-limit based concurrency control, Promise.allSettled, configurable concurrency per research.md R8)
-- [x] T019 Set up Commander program entry point in src/cli/index.ts (program name, version, global options --verbose/--otel/--format/--subscription-id/--cloud, subcommand registration pattern per FR-018)
+- [x] T019 Set up Commander program entry point in src/cli/index.ts (program name, version, global options --verbose/--format/--subscription-id/--cloud, subcommand registration pattern per FR-018)
 
 **Checkpoint**: Foundation ready — user story implementation can now begin
 
@@ -68,7 +68,7 @@
 - [ ] T025 [US1] Implement transitive dependency resolver in src/services/transitive-resolver.ts (scan policies for named value refs \{\{name\}\}, backend refs set-backend-service, policy fragment refs include-fragment; scan apiInformation.json for apiVersionSetId; fixed-point expansion; --no-transitive bypass per research.md R4)
 - [ ] T026 [US1] Implement secret redaction in src/services/secret-redactor.ts (detect properties.secret === true on named values, replace properties.value with redaction marker per research.md R5)
 - [ ] T027 [US1] Implement workspace-scoped extraction in src/services/workspace-extractor.ts (list workspaces, extract workspace-scoped resources under workspaces/{name}/ using same resource-extractor with workspace context prefix per FR-010)
-- [ ] T028 [US1] Register extract command in src/cli/extract-command.ts (Commander subcommand with --resource-group, --service-name, --output, --filter, --no-transitive, --spec-format flags; wire to extract-service per contracts/cli-commands.md)
+- [ ] T028 [US1] Register extract command in src/cli/extract-command.ts (Commander subcommand with --resource-group, --service-name, --output, --filter, --no-transitive flags; wire to extract-service per contracts/cli-commands.md)
 - [ ] T029 [US1] Implement JSON output mode for extract in src/cli/extract-command.ts (--format json: machine-readable JSON to stdout with resource counts and file paths per FR-013)
 
 **Checkpoint**: `apiops extract` works end-to-end for all 33 resource types with filtering, parallelism, and secret redaction
@@ -145,7 +145,7 @@
 ### Implementation for User Story 5
 
 - [ ] T052 [US5] Implement command auto-discovery in src/cli/index.ts (scan src/cli/*-command.ts files or use explicit registration array; new commands appear in --help automatically per FR-018/SC-007)
-- [ ] T053 [US5] Extract shared command infrastructure in src/cli/shared.ts (common option builders for --resource-group/--service-name/--subscription-id/--verbose/--otel; shared APIM client factory; shared artifact store factory)
+- [ ] T053 [US5] Extract shared command infrastructure in src/cli/shared.ts (common option builders for --resource-group/--service-name/--subscription-id/--verbose; shared APIM client factory; shared artifact store factory)
 - [ ] T054 [US5] Create command developer guide in src/cli/README.md (document how to add a new command: file naming, interface shape, option reuse, testing pattern)
 
 **Checkpoint**: Adding a new command requires only creating one file in src/cli/
@@ -156,9 +156,7 @@
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] T055 [P] Implement OTel integration in src/lib/otel-setup.ts (load --otel config YAML, initialize NodeSDK with OTLP exporter, create spans per resource type/resource, metrics for counts/duration per research.md R9)
 - [ ] T056 [P] Add --api-version global flag support in src/cli/index.ts and src/clients/apim-client.ts (override default 2024-05-01 per FR-012)
-- [ ] T057 [P] Implement --spec-format option for extract in src/services/api-extractor.ts (request specific format from APIM export API where conversion supported; fallback to native with warning per FR-011)
 - [ ] T058 Run quickstart.md validation (execute each quickstart command against a test APIM instance, verify expected outputs)
 - [ ] T059 Add bin entry to package.json and shebang to src/cli/index.ts for global npm install (`npx apiops` / `npm install -g`)
 
@@ -248,4 +246,4 @@ T029: JSON output mode         → src/cli/extract-command.ts
 4. Add US3 (CI/CD) → Test in GitHub Actions pipeline
 5. Add US4 (Init) → Test scaffold generation in empty repo
 6. Add US5 (Extensibility) → Verify new command pattern
-7. Polish → OTel, spec-format, quickstart validation
+7. Polish → quickstart validation

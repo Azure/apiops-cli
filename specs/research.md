@@ -242,7 +242,6 @@ program
   .option('--api-version <version>', 'APIM REST API version', '2024-05-01')
   .option('--format <mode>', 'Output format (text|json)', 'text')
   .option('--verbose', 'Enable verbose output')
-  .option('--otel <path>', 'OpenTelemetry configuration file')
   .option('--client-id <id>', 'Service principal client ID')
   .option('--client-secret <secret>', 'Service principal client secret')
   .option('--tenant-id <id>', 'Azure AD tenant ID')
@@ -254,7 +253,6 @@ program.command('extract')
   .option('--output <dir>', 'Output directory', './apim-artifacts')
   .option('--filter <path>', 'Filter configuration YAML file')
   .option('--no-transitive', 'Disable transitive dependency inclusion')
-  .option('--spec-format <format>', 'API specification format')
   .action(extractAction)
 
 program.command('publish')
@@ -292,25 +290,6 @@ program.command('init')
 - Within a type: sequential (list + paginate for each item)
 - Rate limit handling: 429 response → respect `Retry-After`, retry with backoff
 - Error isolation: `Promise.allSettled` — one type failing doesn't abort others; errors collected and reported at end
-
----
-
-## R9: OpenTelemetry Integration
-
-**Decision**: `@opentelemetry/sdk-node` with auto-instrumentation for HTTP; `--otel <path>` accepts standard OTel config YAML file.
-
-**Rationale**:
-- spec requires structured logging to stderr + optional OTel export (clarification C5)
-- Standard OTel env vars (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`) for server config
-- Config file can set resource attributes, exporter endpoint, and custom headers
-- `--otel <path>` flag consistent with `--filter <path>` and `--overrides <path>` pattern
-
-**Implementation**:
-- When `--otel` not specified: No OTel SDK initialized, no overhead
-- When `--otel <path>` specified: Read YAML config, initialize `NodeSDK` with OTLP exporter
-- Traces: One span per resource type extraction/publish, child spans per individual resource
-- Metrics: Resource count, duration, error count
-- Azure Monitor: Users set `APPLICATIONINSIGHTS_CONNECTION_STRING` env var + use Azure Monitor OTel exporter in config
 
 ---
 
