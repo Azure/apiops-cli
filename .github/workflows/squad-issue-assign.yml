@@ -4,6 +4,24 @@ name: Squad Issue Assign
 # Trigger: maintainer applies "go:yes" label to approve an issue for work.
 # The agent assigns the issue to the label sender, reads the prior triage
 # analysis and routing table, then applies squad labels for matched areas.
+#
+# ─── SECURITY CONSTRAINTS ───────────────────────────────────────────────
+# The agent MUST NOT:
+#   - Assign the issue to anyone other than the go:yes label sender.
+#     The assignee is deterministic — always context.payload.sender.login.
+#   - Apply labels outside the allowed set (squad, squad:*).
+#     Blocked patterns: go:*, priority:*, override:*, type:*.
+#   - Remove existing labels, milestones, or project associations.
+#   - Close, lock, or transfer the issue.
+#   - Modify issue title or body content.
+#   - Create branches, PRs, or trigger deployments.
+#   - Invoke external APIs, webhooks, or services beyond the GitHub API.
+#   - Expose secrets, tokens, or internal routing logic in comments.
+#   - Override or skip the post-check verification job.
+#   - Escalate its own permissions (e.g., request write access to contents).
+#   - Process label events from forks or untrusted senders without
+#     verifying repository_owner matches the expected org.
+# ────────────────────────────────────────────────────────────────────────
 
 on:
   issues:
