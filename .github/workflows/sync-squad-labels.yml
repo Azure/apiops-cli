@@ -88,7 +88,7 @@ jobs:
               { name: 'type:feature', color: 'DDD1F2', description: 'New capability' },
               { name: 'type:bug', color: 'FF0422', description: 'Something broken' },
               { name: 'type:enhancement', color: 'DDD1F2', description: 'Feature requests or improvements' },
-              { name: 'type:question', color: 'd876e3', description: 'Questions about usage or behavior' },
+              { name: 'type:question', color: 'D876E3', description: 'Questions about usage or behavior' },
               { name: 'type:documentation', color: 'D4E5F7', description: 'Documentation issues or requests' },
               { name: 'type:spike', color: 'F2DDD4', description: 'Research/investigation — produces a plan, not code' },
               { name: 'type:docs', color: 'D4E5F7', description: 'Documentation work' },
