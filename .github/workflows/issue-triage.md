@@ -79,6 +79,9 @@ steps:
       # its content type.
       USER_FILE="/tmp/gh-aw/agent/issue-content.md"
       SYSTEM_FILE="/tmp/gh-aw/agent/system-policy.md"
+      USER_CONTEXT_HEADER="^# Issue to Triage$"
+      USER_TITLE_HEADER='^\*\*Title:\*\* '
+      USER_BODY_HEADER="^## Body$"
 
       # Verify user file contains context-role: user
       if ! grep -q "context-role: user" "$USER_FILE"; then
@@ -104,13 +107,13 @@ steps:
       fi
 
       # Verify user context markers are present in user context
-      if ! grep -q "^# Issue to Triage$" "$USER_FILE" || ! grep -q '^\*\*Title:\*\* ' "$USER_FILE" || ! grep -q "^## Body$" "$USER_FILE"; then
+      if ! grep -q "$USER_CONTEXT_HEADER" "$USER_FILE" || ! grep -q "$USER_TITLE_HEADER" "$USER_FILE" || ! grep -q "$USER_BODY_HEADER" "$USER_FILE"; then
         echo "::error::Contract violation: user context file missing expected issue markers"
         exit 1
       fi
 
       # Verify user context markers are NOT in system context
-      if grep -q "^# Issue to Triage$" "$SYSTEM_FILE" || grep -q '^\*\*Title:\*\* ' "$SYSTEM_FILE" || grep -q "^## Body$" "$SYSTEM_FILE" || grep -q "context-role: user" "$SYSTEM_FILE"; then
+      if grep -q "$USER_CONTEXT_HEADER" "$SYSTEM_FILE" || grep -q "$USER_TITLE_HEADER" "$SYSTEM_FILE" || grep -q "$USER_BODY_HEADER" "$SYSTEM_FILE" || grep -q "context-role: user" "$SYSTEM_FILE"; then
         echo "::error::Contract violation: user context leaked into system context"
         exit 1
       fi
