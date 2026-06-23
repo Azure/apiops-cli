@@ -98,6 +98,24 @@ jobs:
               routingContent = fs.readFileSync(routingFile, 'utf8');
             }
 
+            // Enrich routingContent with structured JSON data
+            const routingTablePath = '.squad/routing-table.json';
+            const issueRoutingPath = '.squad/issue-routing.json';
+            if (fs.existsSync(routingTablePath)) {
+              const routingTable = JSON.parse(fs.readFileSync(routingTablePath, 'utf8'));
+              routingContent += '\n\n## Routing Table (parsed)\n';
+              for (const entry of routingTable) {
+                routingContent += `- ${entry.workType} → ${entry.routeTo} (keywords: ${entry.examples.join(', ')})\n`;
+              }
+            }
+            if (fs.existsSync(issueRoutingPath)) {
+              const issueRouting = JSON.parse(fs.readFileSync(issueRoutingPath, 'utf8'));
+              routingContent += '\n\n## Issue Routing (parsed)\n';
+              for (const entry of issueRouting) {
+                routingContent += `- ${entry.label} → ${entry.who}: ${entry.action}\n`;
+              }
+            }
+
             // Find the Lead
             const lead = members.find(m =>
               m.role.toLowerCase().includes('lead') ||
