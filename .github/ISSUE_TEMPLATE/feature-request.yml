@@ -21,8 +21,6 @@ body:
   - type: input
     id: affected-command
     attributes:
-      label: Affected command
-      description: Which command does this relate to, if any?
-      placeholder: "apiops generate"
+      placeholder: "apiops extract"
     validations:
       required: false
