@@ -16,10 +16,10 @@ Each entry has `label`, `action`, and `who` (squad member name).
 
 ### How Issue Assignment Works
 
-1. When a GitHub issue gets the `squad` label, the **Lead** triages it — analyzing content, assigning the right `squad:{member}` label, and commenting with triage notes.
-2. When a `squad:{member}` label is applied, that member picks up the issue in their next session.
-3. Members can reassign by removing their label and adding another member's label.
-4. The `squad` label is the "inbox" — untriaged issues waiting for Lead review.
+1. A maintainer reviews the issue and applies a `go:*` decision label.
+2. When a maintainer applies `go:yes`, the issue assignment workflow assigns the issue to that maintainer.
+3. The assignment workflow reads the issue text, optionally uses the most recent `Squad Triage` comment from the last 50 issue comments, and applies `squad` plus matching `squad:{member}` labels from [`.squad/routing-table.json`](routing-table.json) and [`.squad/issue-routing.json`](issue-routing.json).
+4. The `squad` label marks the issue for squad routing, and each `squad:{member}` label identifies a matched follow-up area.
 
 ## Rules
 

@@ -19,8 +19,8 @@ name: Squad Issue Assign
 #   - Expose secrets, tokens, or internal routing logic in comments.
 #   - Override or skip the post-check verification job.
 #   - Escalate its own permissions (e.g., request write access to contents).
-#   - Process label events from forks or untrusted senders without
-#     verifying repository_owner matches the expected org.
+#   - Process go:* label events unless the repository owner is Azure and
+#     the sender has repository maintain/admin permission.
 # ────────────────────────────────────────────────────────────────────────
 
 on:
@@ -33,17 +33,34 @@ permissions:
 
 jobs:
   assign-issue:
-    if: github.event.label.name == 'go:yes'
+    if: github.event.label.name == 'go:yes' && github.repository_owner == 'Azure'
     runs-on: ubuntu-latest
-    outputs:
-      assignee: ${{ steps.assign.outputs.assignee }}
-      squad-labels: ${{ steps.route.outputs.squad-labels }}
     steps:
+      - name: Verify maintainer-triggered event
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const sender = context.payload.sender.login;
+            const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: sender
+            });
+            const allowedPermissions = new Set(['admin', 'maintain']);
+
+            if (!allowedPermissions.has(permission.permission)) {
+              core.setFailed(
+                `Only repository maintainers may apply go:* labels. ${sender} has ${permission.permission} permission.`
+              );
+              return;
+            }
+
+            core.info(`Verified ${sender} as a ${permission.permission} collaborator`);
+
       - uses: actions/checkout@v4
 
       # Step 1: Assign issue to the maintainer who applied "go:yes"
       - name: Assign to label sender
-        id: assign
         uses: actions/github-script@v8
         with:
           script: |
@@ -57,12 +74,10 @@ jobs:
               assignees: [sender]
             });
 
-            core.setOutput('assignee', sender);
             core.info(`Assigned issue #${issue_number} to ${sender} (go:yes sender)`);
 
       # Step 2: Read triage analysis and route to squad areas
       - name: Route to squad areas
-        id: route
         uses: actions/github-script@v8
         with:
           script: |
@@ -98,13 +113,28 @@ jobs:
 
             // Fetch prior triage analysis comment
             let triageAnalysis = '';
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: issue.number,
-              per_page: 100
-            });
-            const triageComment = comments.find(c =>
+            const perPage = 50;
+            const commentCount = issue.comments || 0;
+            const lastPage = Math.max(1, Math.ceil(commentCount / perPage));
+            const pagesToFetch = new Set([lastPage]);
+            if (commentCount > perPage && commentCount % perPage !== 0) {
+              pagesToFetch.add(lastPage - 1);
+            }
+
+            const commentPages = await Promise.all(
+              [...pagesToFetch]
+                .filter(page => page > 0)
+                .sort((left, right) => left - right)
+                .map(page => github.rest.issues.listComments({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  per_page: perPage,
+                  page
+                }))
+            );
+            const comments = commentPages.flatMap(response => response.data).slice(-perPage);
+            const triageComment = [...comments].reverse().find(c =>
               c.body && c.body.includes('Squad Triage')
             );
             if (triageComment) {
@@ -139,7 +169,7 @@ jobs:
               }
             }
 
-            // If no specific routing match, check if copilot is appropriate
+            // If no specific routing match, fall back to ApiOpsLead
             if (matchedAreas.length === 0) {
               matchedAreas.push({
                 workType: 'general',
@@ -168,8 +198,6 @@ jobs:
               issue_number: issue.number,
               labels: safeLabels
             });
-
-            core.setOutput('squad-labels', JSON.stringify(squadMemberLabels));
 
             // Post assignment rationale comment (max: 1)
             const areaList = matchedAreas.map(a =>
@@ -213,8 +241,6 @@ jobs:
           script: |
             const fs = require('fs');
             const issue_number = context.payload.issue.number;
-            const expectedAssignee = '${{ needs.assign-issue.outputs.assignee }}';
-            const expectedLabels = JSON.parse('${{ needs.assign-issue.outputs.squad-labels }}');
             const sender = context.payload.sender.login;
 
             // Verify: assignee equals the go:yes label sender
@@ -256,7 +282,7 @@ jobs:
             const invalidLabels = squadLabels.filter(l => !validMembers.has(l));
             if (invalidLabels.length > 0) {
               core.setFailed(
-                `Invalid squad labels not in .squad/routing.md: [${invalidLabels.join(', ')}]`
+                `Invalid squad labels not in .squad/routing-table.json or .squad/issue-routing.json: [${invalidLabels.join(', ')}]`
               );
               return;
             }
