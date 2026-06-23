@@ -52,66 +52,26 @@ jobs:
             const issue = context.payload.issue;
             const sender = context.payload.sender.login;
 
-            // --- System context: routing table and team roster ---
-            const routingPath = '.squad/routing.md';
-            const teamPath = '.squad/team.md';
+            // --- System context: routing table and issue routing (JSON) ---
+            const routingTablePath = '.squad/routing-table.json';
+            const issueRoutingPath = '.squad/issue-routing.json';
 
-            if (!fs.existsSync(routingPath)) {
-              core.setFailed('.squad/routing.md not found — cannot route issue');
+            if (!fs.existsSync(routingTablePath)) {
+              core.setFailed('.squad/routing-table.json not found — cannot route issue');
               return;
             }
-            if (!fs.existsSync(teamPath)) {
-              core.setFailed('.squad/team.md not found — cannot route issue');
+            if (!fs.existsSync(issueRoutingPath)) {
+              core.setFailed('.squad/issue-routing.json not found — cannot route issue');
               return;
             }
 
-            const routingContent = fs.readFileSync(routingPath, 'utf8');
-            const teamContent = fs.readFileSync(teamPath, 'utf8');
+            const routingEntries = JSON.parse(fs.readFileSync(routingTablePath, 'utf8'));
+            const issueRouting = JSON.parse(fs.readFileSync(issueRoutingPath, 'utf8'));
 
-            // Parse routing table entries (Work Type → Route To)
-            const routingEntries = [];
-            const routingLines = routingContent.split('\n');
-            let inRoutingTable = false;
-            for (const line of routingLines) {
-              if (line.match(/^\|\s*Work Type\s*\|/i)) {
-                inRoutingTable = true;
-                continue;
-              }
-              if (inRoutingTable && line.match(/^\|[-\s|]+\|$/)) {
-                continue; // separator row
-              }
-              if (inRoutingTable && line.startsWith('|')) {
-                const cells = line.split('|').map(c => c.trim()).filter(Boolean);
-                if (cells.length >= 3) {
-                  routingEntries.push({
-                    workType: cells[0].toLowerCase(),
-                    routeTo: cells[1],
-                    examples: cells[2].toLowerCase()
-                  });
-                }
-              } else if (inRoutingTable && !line.startsWith('|')) {
-                inRoutingTable = false;
-              }
-            }
-
-            // Parse valid squad labels from team roster
-            const validSquadLabels = new Set();
-            const teamLines = teamContent.split('\n');
-            let inTeamLabels = false;
-            for (const line of teamLines) {
-              if (line.match(/^##\s*Team Labels/i)) {
-                inTeamLabels = true;
-                continue;
-              }
-              if (inTeamLabels && line.startsWith('## ')) break;
-              if (inTeamLabels && line.startsWith('|') && !line.includes('---') && !line.includes('Member')) {
-                const cells = line.split('|').map(c => c.trim()).filter(Boolean);
-                if (cells.length >= 2) {
-                  const labelMatch = cells[1].match(/`(squad:[^`]+)`/);
-                  if (labelMatch) validSquadLabels.add(labelMatch[1]);
-                }
-              }
-            }
+            // Build valid squad labels from issue routing entries
+            const validSquadLabels = new Set(
+              issueRouting.map(r => r.label).filter(l => l.startsWith('squad:'))
+            );
             // Always allow squad:copilot
             validSquadLabels.add('squad:copilot');
 
@@ -140,8 +100,8 @@ jobs:
             const matchedLabels = new Set();
 
             for (const entry of routingEntries) {
-              const keywords = entry.examples.split(',').map(k => k.trim()).filter(Boolean);
-              const workTypeWords = entry.workType.split(',').map(k => k.trim()).filter(Boolean);
+              const keywords = entry.examples.map(k => k.toLowerCase().trim());
+              const workTypeWords = entry.workType.toLowerCase().split(',').map(k => k.trim()).filter(Boolean);
               const allKeywords = [...keywords, ...workTypeWords];
 
               const matched = allKeywords.some(kw => combinedText.includes(kw));
@@ -254,27 +214,19 @@ jobs:
               return;
             }
 
-            // Verify: every squad:{member} label corresponds to routing.md
-            const routingContent = fs.readFileSync('.squad/routing.md', 'utf8');
-            const routingLines = routingContent.split('\n');
+            // Verify: every squad:{member} label corresponds to routing-table.json
+            const routingEntries = JSON.parse(fs.readFileSync('.squad/routing-table.json', 'utf8'));
+            const issueRouting = JSON.parse(fs.readFileSync('.squad/issue-routing.json', 'utf8'));
 
-            // Extract all valid route-to members from routing table
+            // Extract all valid route-to members from routing table + issue routing
             const validMembers = new Set();
-            let inTable = false;
-            for (const line of routingLines) {
-              if (line.match(/^\|\s*Work Type\s*\|/i)) {
-                inTable = true;
-                continue;
-              }
-              if (inTable && line.match(/^\|[-\s|]+\|$/)) continue;
-              if (inTable && line.startsWith('|')) {
-                const cells = line.split('|').map(c => c.trim()).filter(Boolean);
-                if (cells.length >= 2) {
-                  const slug = cells[1].toLowerCase().replace(/[^a-z0-9]+/g, '');
-                  validMembers.add(`squad:${slug}`);
-                }
-              } else if (inTable && !line.startsWith('|')) {
-                inTable = false;
+            for (const entry of routingEntries) {
+              const slug = entry.routeTo.toLowerCase().replace(/[^a-z0-9]+/g, '');
+              validMembers.add(`squad:${slug}`);
+            }
+            for (const entry of issueRouting) {
+              if (entry.label.startsWith('squad:')) {
+                validMembers.add(entry.label);
               }
             }
             // Always valid

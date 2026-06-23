@@ -1,0 +1,67 @@
+[
+  {
+    "label": "squad",
+    "action": "Triage: analyze issue, assign squad:{member} label",
+    "who": "ApiOpsLead"
+  },
+  {
+    "label": "squad:apiopslead",
+    "action": "Pick up issue — architecture or scope decision",
+    "who": "ApiOpsLead"
+  },
+  {
+    "label": "squad:apimexpert",
+    "action": "Pick up issue — APIM REST API work",
+    "who": "ApimExpert"
+  },
+  {
+    "label": "squad:apicexpert",
+    "action": "Pick up issue — APIC REST API work",
+    "who": "ApicExpert"
+  },
+  {
+    "label": "squad:typescriptdev",
+    "action": "Pick up issue — TypeScript types or build",
+    "who": "TypeScriptDev"
+  },
+  {
+    "label": "squad:nodejsdev",
+    "action": "Pick up issue — CLI wiring, packaging, init",
+    "who": "NodeJsDev"
+  },
+  {
+    "label": "squad:testengineer",
+    "action": "Pick up issue — tests or coverage",
+    "who": "TestEngineer"
+  },
+  {
+    "label": "squad:opensourceexpert",
+    "action": "Pick up issue — license or OSS compliance",
+    "who": "OpenSourceExpert"
+  },
+  {
+    "label": "squad:codereviewer",
+    "action": "Pick up issue — code review or standards enforcement",
+    "who": "CodeReviewer"
+  },
+  {
+    "label": "squad:azdoexpert",
+    "action": "Pick up issue — Azure DevOps pipelines or CLI",
+    "who": "AzdoExpert"
+  },
+  {
+    "label": "squad:githubexpert",
+    "action": "Pick up issue — GitHub Actions or CLI",
+    "who": "GitHubExpert"
+  },
+  {
+    "label": "squad:docwriter",
+    "action": "Pick up issue — documentation or diagrams",
+    "who": "DocWriter"
+  },
+  {
+    "label": "squad:securityexpert",
+    "action": "Pick up issue — security, supply-chain, threat modeling",
+    "who": "SecurityExpert"
+  }
+]
