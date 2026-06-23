@@ -122,14 +122,14 @@ post-steps:
 
       # Check for confidence field in the documented format:
       # **Confidence:** high|medium|low (0-100%)
-      if ! echo "$AGENT_OUTPUT" | grep -iqE '^\*\*Confidence:\*\*\s*(high|medium|low)\s*\(((100|[1-9]?[0-9])%)\)$'; then
+      if ! echo "$AGENT_OUTPUT" | grep -qE '^\*\*Confidence:\*\*\s*(high|medium|low)\s*\(((100|[1-9]?[0-9])%)\)$'; then
         echo "::error::Triage comment missing required confidence score field"
         exit 1
       fi
 
       # Check for uncertainty field in the documented format:
       # **Uncertainty:** <non-empty explanation or "none">
-      if ! echo "$AGENT_OUTPUT" | grep -iqE '^\*\*Uncertainty:\*\*\s+\S.+'; then
+      if ! echo "$AGENT_OUTPUT" | grep -qE '^\*\*Uncertainty:\*\*\s+\S.+'; then
         echo "::error::Triage comment missing required uncertainty indicator"
         exit 1
       fi
