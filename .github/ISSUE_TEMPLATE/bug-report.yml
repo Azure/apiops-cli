@@ -31,7 +31,7 @@ body:
     id: version
     attributes:
       label: npm package version
-      description: Which version of apiops are you using?
+      description: "Run `npm list @azure/apiops` or check your package.json to find the version."
       placeholder: "1.0.0"
     validations:
       required: true
