@@ -187,8 +187,8 @@ jobs:
               areaList,
               '',
               triageComment
-                ? `> Routing based on prior [triage analysis](${triageComment.html_url}) and \`.squad/routing.md\`.`
-                : `> Routing based on issue content and \`.squad/routing.md\`.`,
+                ? `> Routing based on prior [triage analysis](${triageComment.html_url}) and routing rules in \`.squad/routing-table.json\` / \`.squad/issue-routing.json\`.`
+                : `> Routing based on issue content and routing rules in \`.squad/routing-table.json\` / \`.squad/issue-routing.json\`.`,
             ].join('\n');
 
             await github.rest.issues.createComment({
