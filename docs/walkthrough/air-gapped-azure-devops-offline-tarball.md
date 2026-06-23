@@ -78,11 +78,11 @@ This command generates:
 | File | Purpose |
 |------|---------|
 | `package.json` | Declares the CLI as a `file:` dependency pointing at the tarball |
-| `pipelines/run-extractor.yaml` | Extract pipeline |
-| `pipelines/run-publisher.yaml` | Publish pipeline |
+| `.azdo/pipelines/run-apim-extractor.yml` | Extract pipeline |
+| `.azdo/pipelines/run-apim-publisher.yml` | Publish pipeline |
 | `configuration.*.yaml` | Override templates |
 
-Follow the remaining instructions listed in created `IDENTITY-SETUP-AZDO.md` or run `/apiops-setup-identity` prompt. This creates the necessary variable groups and and service connections.
+Follow the remaining instructions listed in created `APIOPS-PIPELINE-IDENTITY-SETUP.md` or run `/apiops-setup-pipeline-identity` prompt. This creates the necessary variable groups and and service connections.
 
 ### 2.2 Generate the Lock File and Pre-Stage the npm Cache
 
@@ -97,7 +97,7 @@ npm ci        # populates ~/.npm/_cacache/ with every package the lock file refe
 
 ### 2.3 Modify Pipelines for Air-Gapped Operation
 
-The generated pipelines (`pipelines/run-extractor.yaml` and `pipelines/run-publisher.yaml`) need the following edits:
+The generated pipelines (`.azdo/pipelines/run-apim-extractor.yml` and `.azdo/pipelines/run-apim-publisher.yml`) need the following edits:
 
 | Edit | What to Change |
 |------|----------------|
@@ -114,8 +114,8 @@ For the offline-tarball workflow, commit the files that make the pipeline fully 
 | `.apiops/peterhauge-apiops-cli-<version>.tgz` | CLI package consumed by the pipelines. |
 | `package.json` | Contains the `file:` dependency pointing to the tarball. |
 | `package-lock.json` | Required for deterministic offline installs with `npm ci --offline`. |
-| `pipelines/run-extractor.yaml` | Azure DevOps extract pipeline definition. |
-| `pipelines/run-publisher.yaml` | Azure DevOps publish pipeline definition. |
+| `.azdo/pipelines/run-apim-extractor.yml` | Azure DevOps extract pipeline definition. |
+| `.azdo/pipelines/run-apim-publisher.yml` | Azure DevOps publish pipeline definition. |
 | `configuration.*.yaml` | Generated environment override templates. |
 
 ```bash
@@ -123,8 +123,8 @@ git add \
     .apiops/peterhauge-apiops-cli-*.tgz \
     package.json \
     package-lock.json \
-    pipelines/run-extractor.yaml \
-    pipelines/run-publisher.yaml \
+    .azdo/pipelines/run-apim-extractor.yml \
+    .azdo/pipelines/run-apim-publisher.yml \
     configuration.*.yaml
 git commit -m "chore: commit offline-tarball apiops bootstrap files"
 git push
@@ -164,7 +164,7 @@ tar -xzf npm-cacache.tar.gz -C ~/.npm
 
 ## 4 - Finish `apiops init` for pipeline
 
-If not already done, while on the air-gapped network, follow the remaining instructions listed in created `IDENTITY-SETUP-AZDO.md`. This creates the necessary variable groups and and service connections.
+If not already done, while on the air-gapped network, follow the remaining instructions listed in created `APIOPS-PIPELINE-IDENTITY-SETUP.md`. This creates the necessary variable groups and and service connections.
 
 ## 5 — Commit and Validate
 

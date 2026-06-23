@@ -146,6 +146,10 @@ class InitServiceImpl implements InitService {
       );
       const promptFile = path.join(
         config.outputDir,
+        '.github/prompts/apiops-setup-workflow-identity.prompt.md'
+      );
+      const legacyPromptFile = path.join(
+        config.outputDir,
         '.github/prompts/apiops-setup-identity.prompt.md'
       );
       const filterPromptFile = path.join(
@@ -157,6 +161,10 @@ class InitServiceImpl implements InitService {
         '.github/prompts/apiops-configure-overrides.prompt.md'
       );
       const identityGuide = path.join(
+        config.outputDir,
+        'APIOPS-WORKFLOW-IDENTITY-SETUP.md'
+      );
+      const legacyIdentityGuide = path.join(
         config.outputDir,
         'IDENTITY-SETUP-GITHUB.md'
       );
@@ -176,8 +184,14 @@ class InitServiceImpl implements InitService {
       if (await this.fileExists(overridesPromptFile)) {
         conflictingFiles.push(overridesPromptFile);
       }
+      if (await this.fileExists(legacyPromptFile)) {
+        conflictingFiles.push(legacyPromptFile);
+      }
       if (await this.fileExists(identityGuide)) {
         conflictingFiles.push(identityGuide);
+      }
+      if (await this.fileExists(legacyIdentityGuide)) {
+        conflictingFiles.push(legacyIdentityGuide);
       }
     } else if (config.ciProvider === 'azure-devops') {
       const extractPipeline = path.join(
@@ -190,9 +204,17 @@ class InitServiceImpl implements InitService {
       );
       const identityGuide = path.join(
         config.outputDir,
+        'APIOPS-PIPELINE-IDENTITY-SETUP.md'
+      );
+      const legacyIdentityGuide = path.join(
+        config.outputDir,
         'IDENTITY-SETUP-AZDO.md'
       );
       const promptFile = path.join(
+        config.outputDir,
+        '.github/prompts/apiops-setup-pipeline-identity.prompt.md'
+      );
+      const legacyPromptFile = path.join(
         config.outputDir,
         '.github/prompts/apiops-setup-identity.prompt.md'
       );
@@ -214,6 +236,9 @@ class InitServiceImpl implements InitService {
       if (await this.fileExists(identityGuide)) {
         conflictingFiles.push(identityGuide);
       }
+      if (await this.fileExists(legacyIdentityGuide)) {
+        conflictingFiles.push(legacyIdentityGuide);
+      }
       if (await this.fileExists(promptFile)) {
         conflictingFiles.push(promptFile);
       }
@@ -222,6 +247,9 @@ class InitServiceImpl implements InitService {
       }
       if (await this.fileExists(overridesPromptFile)) {
         conflictingFiles.push(overridesPromptFile);
+      }
+      if (await this.fileExists(legacyPromptFile)) {
+        conflictingFiles.push(legacyPromptFile);
       }
     }
 
@@ -394,9 +422,12 @@ class InitServiceImpl implements InitService {
     });
     const promptsDir = path.join(config.outputDir, '.github/prompts');
     await fs.mkdir(promptsDir, { recursive: true });
-    const promptPath = path.join(promptsDir, 'apiops-setup-identity.prompt.md');
+    const promptFileName = config.ciProvider === 'github-actions'
+      ? 'apiops-setup-workflow-identity.prompt.md'
+      : 'apiops-setup-pipeline-identity.prompt.md';
+    const promptPath = path.join(promptsDir, promptFileName);
     await fs.writeFile(promptPath, promptContent);
-    generatedFiles.configs.push('.github/prompts/apiops-setup-identity.prompt.md');
+    generatedFiles.configs.push(`.github/prompts/${promptFileName}`);
   }
 
   private async generateCopilotConfigurationPrompts(
@@ -468,8 +499,8 @@ class InitServiceImpl implements InitService {
     // Save guide to file
     const guideFileName =
       config.ciProvider === 'github-actions'
-        ? 'IDENTITY-SETUP-GITHUB.md'
-        : 'IDENTITY-SETUP-AZDO.md';
+        ? 'APIOPS-WORKFLOW-IDENTITY-SETUP.md'
+        : 'APIOPS-PIPELINE-IDENTITY-SETUP.md';
     const guidePath = path.join(config.outputDir, guideFileName);
     await fs.writeFile(guidePath, guide);
     generatedFiles.configs.push(guideFileName);

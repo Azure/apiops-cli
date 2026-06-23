@@ -344,13 +344,13 @@ az devops service-endpoint list --query "[].name" -o table
 
 ## Step 8: Create Variable Groups
 
-Create one variable group per environment. Each group uses the **non-suffixed** variable names expected by the pipelines (`APIM_RESOURCE_GROUP`, `APIM_SERVICE_NAME`, `AZURE_SUBSCRIPTION_ID`, `AZURE_SERVICE_CONNECTION`).
+Create one variable group per environment. Each group includes the extractor pipeline's **non-suffixed** variables (`APIM_RESOURCE_GROUP`, `APIM_SERVICE_NAME`, `AZURE_SUBSCRIPTION_ID`, `AZURE_SERVICE_CONNECTION`) plus the publish pipeline's environment-suffixed APIM variables (`APIM_RESOURCE_GROUP_<ENV_UPPER>`, `APIM_SERVICE_NAME_<ENV_UPPER>`).
 
 **PowerShell:**
 ```powershell
 foreach ($env in $ENVIRONMENTS) {
     $envUpper = $env.ToUpper()
-    az pipelines variable-group create --name "apim-$env" --variables AZURE_SUBSCRIPTION_ID=$($APIM_SUBSCRIPTIONS[$env]) APIM_RESOURCE_GROUP=$($APIM_RESOURCE_GROUPS[$env]) APIM_SERVICE_NAME=$($APIM_SERVICE_NAMES[$env]) AZURE_SERVICE_CONNECTION="AZURE_SERVICE_CONNECTION_$envUpper"
+    az pipelines variable-group create --name "apim-$env" --variables AZURE_SUBSCRIPTION_ID=$($APIM_SUBSCRIPTIONS[$env]) APIM_RESOURCE_GROUP=$($APIM_RESOURCE_GROUPS[$env]) APIM_SERVICE_NAME=$($APIM_SERVICE_NAMES[$env]) APIM_RESOURCE_GROUP_$envUpper=$($APIM_RESOURCE_GROUPS[$env]) APIM_SERVICE_NAME_$envUpper=$($APIM_SERVICE_NAMES[$env]) AZURE_SERVICE_CONNECTION="AZURE_SERVICE_CONNECTION_$envUpper"
 }
 ```
 
@@ -358,7 +358,7 @@ foreach ($env in $ENVIRONMENTS) {
 ```bash
 for env in "${ENVIRONMENTS[@]}"; do
     env_upper=$(echo "$env" | tr '[:lower:]' '[:upper:]')
-    az pipelines variable-group create --name "apim-$env" --variables AZURE_SUBSCRIPTION_ID="${APIM_SUBSCRIPTIONS[$env]}" APIM_RESOURCE_GROUP="${APIM_RESOURCE_GROUPS[$env]}" APIM_SERVICE_NAME="${APIM_SERVICE_NAMES[$env]}" AZURE_SERVICE_CONNECTION="AZURE_SERVICE_CONNECTION_$env_upper"
+    az pipelines variable-group create --name "apim-$env" --variables AZURE_SUBSCRIPTION_ID="${APIM_SUBSCRIPTIONS[$env]}" APIM_RESOURCE_GROUP="${APIM_RESOURCE_GROUPS[$env]}" APIM_SERVICE_NAME="${APIM_SERVICE_NAMES[$env]}" APIM_RESOURCE_GROUP_$env_upper="${APIM_RESOURCE_GROUPS[$env]}" APIM_SERVICE_NAME_$env_upper="${APIM_SERVICE_NAMES[$env]}" AZURE_SERVICE_CONNECTION="AZURE_SERVICE_CONNECTION_$env_upper"
 done
 ```
 

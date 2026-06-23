@@ -4,6 +4,8 @@
 > Copilot to help you run through the steps. Copilot will prompt you for
 > the required values and generate the exact CLI commands for your environment.
 
+> **Important identity distinction:** `GITHUB_TOKEN` handles pull request creation automatically. The Azure app registration/service principal in this flow is only for Azure and APIM access.
+
 ## Goal
 
 Configure Azure AD federated credentials and GitHub repository secrets so the
@@ -224,3 +226,11 @@ The generated workflows expect these secrets:
 
 ### Per-Environment Secrets
 {{ENV_SECRETS_REFERENCE}}
+
+---
+
+## UI Reference Context
+
+Use this UI-oriented reference when you need to explain where a setting lives in the Azure portal or GitHub web UI while automating the setup.
+
+{{IDENTITY_GUIDE_CONTEXT}}

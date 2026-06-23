@@ -4,6 +4,8 @@
 > Copilot to help you run through the steps. Copilot will prompt you for
 > required values and generate exact CLI commands for your environment.
 
+> **Important identity distinction:** The Azure app registration/service principal created in this flow is only for Azure and APIM access. Repository contributions and pull request creation come from the Azure DevOps Build Service identity, which must be granted repo permissions separately.
+
 ## Goal
 
 Configure workload identity federation (OIDC), Azure DevOps federated service connections,
@@ -89,3 +91,11 @@ Verify pipelines were created:
 ```bash
 az pipelines list --query "[].name" -o table
 ```
+
+---
+
+## UI Reference Context
+
+Use this UI-oriented reference when you need to explain where a setting lives in the Azure portal or Azure DevOps web portal while automating the setup.
+
+{{IDENTITY_GUIDE_CONTEXT}}
