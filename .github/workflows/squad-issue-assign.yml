@@ -1,5 +1,10 @@
 name: Squad Issue Assign
 
+# Agentic Workflow: Issue Assignment
+# Trigger: maintainer applies "go:yes" label to approve an issue for work.
+# The agent assigns the issue to the label sender, reads the prior triage
+# analysis and routing table, then applies squad labels for matched areas.
+
 on:
   issues:
     types: [labeled]
@@ -9,100 +14,204 @@ permissions:
   contents: read
 
 jobs:
-  assign-work:
-    # Only trigger on squad:{member} labels (not the base "squad" label)
-    if: startsWith(github.event.label.name, 'squad:')
+  assign-issue:
+    if: github.event.label.name == 'go:yes'
     runs-on: ubuntu-latest
+    outputs:
+      assignee: ${{ steps.assign.outputs.assignee }}
+      squad-labels: ${{ steps.route.outputs.squad-labels }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Identify assigned member and trigger work
+      # Step 1: Assign issue to the maintainer who applied "go:yes"
+      - name: Assign to label sender
+        id: assign
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const sender = context.payload.sender.login;
+            const issue_number = context.payload.issue.number;
+
+            await github.rest.issues.addAssignees({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              assignees: [sender]
+            });
+
+            core.setOutput('assignee', sender);
+            core.info(`Assigned issue #${issue_number} to ${sender} (go:yes sender)`);
+
+      # Step 2: Read triage analysis and route to squad areas
+      - name: Route to squad areas
+        id: route
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
             const issue = context.payload.issue;
-            const label = context.payload.label.name;
+            const sender = context.payload.sender.login;
 
-            // Extract member name from label (e.g., "squad:ripley" → "ripley")
-            const memberName = label.replace('squad:', '').toLowerCase();
+            // --- System context: routing table and team roster ---
+            const routingPath = '.squad/routing.md';
+            const teamPath = '.squad/team.md';
 
-            // Read team roster — check .squad/ first, fall back to .ai-team/
-            let teamFile = '.squad/team.md';
-            if (!fs.existsSync(teamFile)) {
-              teamFile = '.ai-team/team.md';
+            if (!fs.existsSync(routingPath)) {
+              core.setFailed('.squad/routing.md not found — cannot route issue');
+              return;
             }
-            if (!fs.existsSync(teamFile)) {
-              core.warning('No .squad/team.md or .ai-team/team.md found — cannot assign work');
+            if (!fs.existsSync(teamPath)) {
+              core.setFailed('.squad/team.md not found — cannot route issue');
               return;
             }
 
-            const content = fs.readFileSync(teamFile, 'utf8');
-            const lines = content.split('\n');
+            const routingContent = fs.readFileSync(routingPath, 'utf8');
+            const teamContent = fs.readFileSync(teamPath, 'utf8');
 
-            // Check if this is a coding agent assignment
-            const isCopilotAssignment = memberName === 'copilot';
+            // Parse routing table entries (Work Type → Route To)
+            const routingEntries = [];
+            const routingLines = routingContent.split('\n');
+            let inRoutingTable = false;
+            for (const line of routingLines) {
+              if (line.match(/^\|\s*Work Type\s*\|/i)) {
+                inRoutingTable = true;
+                continue;
+              }
+              if (inRoutingTable && line.match(/^\|[-\s|]+\|$/)) {
+                continue; // separator row
+              }
+              if (inRoutingTable && line.startsWith('|')) {
+                const cells = line.split('|').map(c => c.trim()).filter(Boolean);
+                if (cells.length >= 3) {
+                  routingEntries.push({
+                    workType: cells[0].toLowerCase(),
+                    routeTo: cells[1],
+                    examples: cells[2].toLowerCase()
+                  });
+                }
+              } else if (inRoutingTable && !line.startsWith('|')) {
+                inRoutingTable = false;
+              }
+            }
 
-            let assignedMember = null;
-            if (isCopilotAssignment) {
-              assignedMember = { name: '@copilot', role: 'Coding Agent' };
-            } else {
-              let inMembersTable = false;
-              for (const line of lines) {
-                if (line.match(/^##\s+(Members|Team Roster)/i)) {
-                  inMembersTable = true;
-                  continue;
+            // Parse valid squad labels from team roster
+            const validSquadLabels = new Set();
+            const teamLines = teamContent.split('\n');
+            let inTeamLabels = false;
+            for (const line of teamLines) {
+              if (line.match(/^##\s*Team Labels/i)) {
+                inTeamLabels = true;
+                continue;
+              }
+              if (inTeamLabels && line.startsWith('## ')) break;
+              if (inTeamLabels && line.startsWith('|') && !line.includes('---') && !line.includes('Member')) {
+                const cells = line.split('|').map(c => c.trim()).filter(Boolean);
+                if (cells.length >= 2) {
+                  const labelMatch = cells[1].match(/`(squad:[^`]+)`/);
+                  if (labelMatch) validSquadLabels.add(labelMatch[1]);
                 }
-                if (inMembersTable && line.startsWith('## ')) {
-                  break;
-                }
-                if (inMembersTable && line.startsWith('|') && !line.includes('---') && !line.includes('Name')) {
-                  const cells = line.split('|').map(c => c.trim()).filter(Boolean);
-                  if (cells.length >= 2 && cells[0].toLowerCase() === memberName) {
-                    assignedMember = { name: cells[0], role: cells[1] };
-                    break;
-                  }
+              }
+            }
+            // Always allow squad:copilot
+            validSquadLabels.add('squad:copilot');
+
+            // --- User context: issue content + prior triage comment ---
+            const issueText = `${issue.title}\n${issue.body || ''}`.toLowerCase();
+
+            // Fetch prior triage analysis comment
+            let triageAnalysis = '';
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              per_page: 100
+            });
+            const triageComment = comments.find(c =>
+              c.body && c.body.includes('Squad Triage')
+            );
+            if (triageComment) {
+              triageAnalysis = triageComment.body.toLowerCase();
+            }
+
+            const combinedText = `${issueText}\n${triageAnalysis}`;
+
+            // Match routing entries against issue content
+            const matchedAreas = [];
+            const matchedLabels = new Set();
+
+            for (const entry of routingEntries) {
+              const keywords = entry.examples.split(',').map(k => k.trim()).filter(Boolean);
+              const workTypeWords = entry.workType.split(',').map(k => k.trim()).filter(Boolean);
+              const allKeywords = [...keywords, ...workTypeWords];
+
+              const matched = allKeywords.some(kw => combinedText.includes(kw));
+              if (matched) {
+                const memberSlug = entry.routeTo.toLowerCase().replace(/[^a-z0-9]+/g, '');
+                const label = `squad:${memberSlug}`;
+
+                // Only add if it's a valid squad label
+                if (validSquadLabels.has(label) && !matchedLabels.has(label)) {
+                  matchedLabels.add(label);
+                  matchedAreas.push({
+                    workType: entry.workType,
+                    routeTo: entry.routeTo,
+                    label
+                  });
                 }
               }
             }
 
-            if (!assignedMember) {
-              core.warning(`No member found matching label "${label}"`);
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                body: `⚠️ No squad member found matching label \`${label}\`. Check \`.squad/team.md\` (or \`.ai-team/team.md\`) for valid member names.`
+            // If no specific routing match, check if copilot is appropriate
+            if (matchedAreas.length === 0) {
+              matchedAreas.push({
+                workType: 'general',
+                routeTo: 'ApiOpsLead',
+                label: 'squad:apiopslead'
               });
-              return;
+              matchedLabels.add('squad:apiopslead');
             }
 
-            // Post assignment acknowledgment
-            let comment;
-            if (isCopilotAssignment) {
-              comment = [
-                `### 🤖 Routed to @copilot (Coding Agent)`,
-                '',
-                `**Issue:** #${issue.number} — ${issue.title}`,
-                '',
-                `@copilot has been assigned and will pick this up automatically.`,
-                '',
-                `> The coding agent will create a \`copilot/*\` branch and open a draft PR.`,
-                `> Review the PR as you would any team member's work.`,
-              ].join('\n');
-            } else {
-              comment = [
-                `### 📋 Assigned to ${assignedMember.name} (${assignedMember.role})`,
-                '',
-                `**Issue:** #${issue.number} — ${issue.title}`,
-                '',
-                `${assignedMember.name} will pick this up in the next Copilot session.`,
-                '',
-                `> **For Copilot coding agent:** If enabled, this issue will be worked automatically.`,
-                `> Otherwise, start a Copilot session and say:`,
-                `> \`${assignedMember.name}, work on issue #${issue.number}\``,
-              ].join('\n');
-            }
+            // Enforce max: 5 labels (squad + up to 4 squad:{member})
+            const labelsToApply = ['squad'];
+            const squadMemberLabels = [...matchedLabels].slice(0, 4);
+            labelsToApply.push(...squadMemberLabels);
+
+            // Validate: only allowed patterns (squad, squad:*)
+            // Blocked: go:*, priority:*, override:*, type:*
+            const blockedPatterns = [/^go:/, /^priority:/, /^override:/, /^type:/];
+            const safeLabels = labelsToApply.filter(l =>
+              !blockedPatterns.some(p => p.test(l))
+            );
+
+            // Apply labels
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              labels: safeLabels
+            });
+
+            core.setOutput('squad-labels', JSON.stringify(squadMemberLabels));
+
+            // Post assignment rationale comment (max: 1)
+            const areaList = matchedAreas.map(a =>
+              `- **${a.workType}** → ${a.routeTo} (\`${a.label}\`)`
+            ).join('\n');
+
+            const comment = [
+              `### 📋 Issue Assignment — approved by @${sender}`,
+              '',
+              `**Assignee:** @${sender}`,
+              `**Labels applied:** ${safeLabels.map(l => '`' + l + '`').join(', ')}`,
+              '',
+              `#### Matched Squad Areas`,
+              '',
+              areaList,
+              '',
+              triageComment
+                ? `> Routing based on prior [triage analysis](${triageComment.html_url}) and \`.squad/routing.md\`.`
+                : `> Routing based on issue content and \`.squad/routing.md\`.`,
+            ].join('\n');
 
             await github.rest.issues.createComment({
               owner: context.repo.owner,
@@ -111,51 +220,75 @@ jobs:
               body: comment
             });
 
-            core.info(`Issue #${issue.number} assigned to ${assignedMember.name} (${assignedMember.role})`);
+            core.info(`Applied labels [${safeLabels.join(', ')}] to issue #${issue.number}`);
 
-      # Separate step: assign @copilot using PAT (required for coding agent)
-      - name: Assign @copilot coding agent
-        if: github.event.label.name == 'squad:copilot'
+  # Post-check: verify assignee and labels are correct
+  post-check:
+    needs: assign-issue
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify assignment integrity
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.COPILOT_ASSIGN_TOKEN }}
           script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
+            const fs = require('fs');
             const issue_number = context.payload.issue.number;
+            const expectedAssignee = '${{ needs.assign-issue.outputs.assignee }}';
+            const expectedLabels = JSON.parse('${{ needs.assign-issue.outputs.squad-labels }}');
+            const sender = context.payload.sender.login;
 
-            // Get the default branch name (main, master, etc.)
-            const { data: repoData } = await github.rest.repos.get({ owner, repo });
-            const baseBranch = repoData.default_branch;
+            // Verify: assignee equals the go:yes label sender
+            const { data: issue } = await github.rest.issues.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number
+            });
 
-            try {
-              await github.request('POST /repos/{owner}/{repo}/issues/{issue_number}/assignees', {
-                owner,
-                repo,
-                issue_number,
-                assignees: ['copilot-swe-agent[bot]'],
-                agent_assignment: {
-                  target_repo: `${owner}/${repo}`,
-                  base_branch: baseBranch,
-                  custom_instructions: '',
-                  custom_agent: '',
-                  model: ''
-                },
-                headers: {
-                  'X-GitHub-Api-Version': '2022-11-28'
+            const assignees = issue.assignees.map(a => a.login);
+            if (!assignees.includes(sender)) {
+              core.setFailed(
+                `Assignee mismatch: expected ${sender} (go:yes sender) but got [${assignees.join(', ')}]`
+              );
+              return;
+            }
+
+            // Verify: every squad:{member} label corresponds to routing.md
+            const routingContent = fs.readFileSync('.squad/routing.md', 'utf8');
+            const routingLines = routingContent.split('\n');
+
+            // Extract all valid route-to members from routing table
+            const validMembers = new Set();
+            let inTable = false;
+            for (const line of routingLines) {
+              if (line.match(/^\|\s*Work Type\s*\|/i)) {
+                inTable = true;
+                continue;
+              }
+              if (inTable && line.match(/^\|[-\s|]+\|$/)) continue;
+              if (inTable && line.startsWith('|')) {
+                const cells = line.split('|').map(c => c.trim()).filter(Boolean);
+                if (cells.length >= 2) {
+                  const slug = cells[1].toLowerCase().replace(/[^a-z0-9]+/g, '');
+                  validMembers.add(`squad:${slug}`);
                 }
-              });
-              core.info(`Assigned copilot-swe-agent to issue #${issue_number} (base: ${baseBranch})`);
-            } catch (err) {
-              core.warning(`Assignment with agent_assignment failed: ${err.message}`);
-              // Fallback: try without agent_assignment
-              try {
-                await github.rest.issues.addAssignees({
-                  owner, repo, issue_number,
-                  assignees: ['copilot-swe-agent']
-                });
-                core.info(`Fallback assigned copilot-swe-agent to issue #${issue_number}`);
-              } catch (err2) {
-                core.warning(`Fallback also failed: ${err2.message}`);
+              } else if (inTable && !line.startsWith('|')) {
+                inTable = false;
               }
             }
+            // Always valid
+            validMembers.add('squad:copilot');
+
+            const issueLabels = issue.labels.map(l => l.name);
+            const squadLabels = issueLabels.filter(l => l.startsWith('squad:'));
+
+            const invalidLabels = squadLabels.filter(l => !validMembers.has(l));
+            if (invalidLabels.length > 0) {
+              core.setFailed(
+                `Invalid squad labels not in .squad/routing.md: [${invalidLabels.join(', ')}]`
+              );
+              return;
+            }
+
+            core.info(`✅ Post-check passed: assignee=${sender}, squad labels=[${squadLabels.join(', ')}]`);
