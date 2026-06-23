@@ -1,4 +1,4 @@
-# APIOps Azure DevOps identity setup guide
+# Identity setup guide for APIOps extract and publish Azure DevOps Pipelines
 
 > Prefer an automated walkthrough? Open `.github/prompts/apiops-setup-pipeline-identity.prompt.md` in VS Code with GitHub Copilot and ask Copilot to guide or automate the setup for you.
 
