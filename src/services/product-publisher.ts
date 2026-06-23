@@ -15,6 +15,7 @@ import { logger } from '../lib/logger.js';
 import { getNamePart } from '../lib/resource-path.js';
 import { parseArmUri } from '../lib/resource-uri.js';
 import { isWorkspaceScope, buildLinkPayload } from '../lib/workspace-link.js';
+import { isLinkAlreadyExistsError } from '../clients/apim-client.js';
 
 /**
  * Publish a Product with all its associations (APIs, Groups, Tags).
@@ -168,13 +169,13 @@ async function publishProductAssociations(
   const productName = getNamePart(productDescriptor.nameParts, 0);
   
   // Read association file
-  const names = await store.readAssociation(
+  const entries = await store.readAssociation(
     config.sourceDir,
     productDescriptor,
     associationType
   );
 
-  if (names.length === 0) {
+  if (entries.length === 0) {
     logger.debug(`No ${associationType} associations for product: ${productName}`);
     return;
   }
@@ -186,7 +187,8 @@ async function publishProductAssociations(
   const resourceTypeSegment = associationType === 'apis' ? 'apis' : 'groups';
 
   // Create association for each name
-  for (const name of names) {
+  for (const entry of entries) {
+    const name = entry.name;
     const assocDescriptor: ResourceDescriptor = {
       type: resourceType,
       nameParts: [productName, name],
@@ -194,14 +196,21 @@ async function publishProductAssociations(
     };
     
     try {
-      // In workspace scope, PUT with link payload; otherwise empty body
+      // In workspace scope, PUT with link payload; otherwise empty body.
+      // Honor the stored scope so service-level link targets (e.g. the built-in
+      // `administrators` group) are referenced at service scope rather than
+      // being rebuilt as a non-existent workspace resource.
       let payload: Record<string, unknown> = {};
       if (workspaceScoped && linkProperty) {
-        payload = buildLinkPayload(context, linkProperty, resourceTypeSegment, name, productDescriptor.workspace);
+        payload = buildLinkPayload(context, linkProperty, resourceTypeSegment, name, productDescriptor.workspace, entry.scope);
       }
       await client.putResource(context, assocDescriptor, payload);
       logger.debug(`Created ${resourceType} association: ${productName}/${name}`);
     } catch (error) {
+      if (isLinkAlreadyExistsError(error)) {
+        logger.debug(`${resourceType} association already exists: ${productName}/${name}`);
+        continue;
+      }
       logger.warn(`Failed to create ${resourceType} association ${productName}/${name}: ${String(error)}`);
     }
   }
@@ -222,13 +231,13 @@ async function publishProductTags(
   const productName = getNamePart(productDescriptor.nameParts, 0);
   
   // Read tags from tags.json association file
-  const tagNames = await store.readAssociation(
+  const tagEntries = await store.readAssociation(
     config.sourceDir,
     productDescriptor,
     'tags'
   );
   
-  if (tagNames.length === 0) {
+  if (tagEntries.length === 0) {
     logger.debug(`No tag associations for product: ${productName}`);
     return;
   }
@@ -237,7 +246,8 @@ async function publishProductTags(
   const linkProperty = RESOURCE_TYPE_METADATA[ResourceType.ProductTag].workspaceLinkIdProperty;
 
   // Create association for each tag
-  for (const tagName of tagNames) {
+  for (const tagEntry of tagEntries) {
+    const tagName = tagEntry.name;
     const tagDescriptor: ResourceDescriptor = {
       type: ResourceType.ProductTag,
       nameParts: [productName, tagName],
@@ -245,6 +255,8 @@ async function publishProductTags(
     };
     
     try {
+      // The workspace ProductTag link references the product (productId), which
+      // always lives in the workspace, so the link payload is workspace-scoped.
       let payload: Record<string, unknown> = {};
       if (workspaceScoped && linkProperty) {
         payload = buildLinkPayload(context, linkProperty, 'products', productName, productDescriptor.workspace);
@@ -252,9 +264,13 @@ async function publishProductTags(
       await client.putResource(context, tagDescriptor, payload);
       logger.debug(`Created ProductTag association: ${productName}/${tagName}`);
     } catch (error) {
+      if (isLinkAlreadyExistsError(error)) {
+        logger.debug(`ProductTag association already exists: ${productName}/${tagName}`);
+        continue;
+      }
       logger.warn(`Failed to create ProductTag association ${productName}/${tagName}: ${String(error)}`);
     }
   }
   
-  logger.info(`Published ${tagNames.length} tags for product: ${productName}`);
+  logger.info(`Published ${tagEntries.length} tags for product: ${productName}`);
 }

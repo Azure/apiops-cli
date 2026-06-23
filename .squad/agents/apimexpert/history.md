@@ -106,3 +106,13 @@ the SDK surface, reference docs, or ad-hoc observation.
 - Classic Developer/Premium SKU only.
 - Docs: <https://learn.microsoft.com/rest/api/apimanagement/policy-restriction> · <https://learn.microsoft.com/azure/templates/microsoft.apimanagement/service/policyrestrictions>
 
+### 2026-06-20: Link-import vs inline-import operation fidelity (round-trip)
+
+When comparing a *link-imported* API (e.g. Petstore via `swagger-link`/`openapi-link`) against the `apiops publish` *inline-imported* result, operation payloads diverge in two import-path-only ways — neither is an apiops bug:
+
+1. **`schemaId`/`typeName` on representations.** APIM binds operation request/response representations to an API-level schema **only on link import**. Inline import (`format: openapi, value: <spec>`, what publish uses) does NOT rebind, so the target has no `schemaId`. The schema *content* is identical and still extracted as API-level Schemas. → strip `schemaId`, `typeName` (and any derived schema token) on operation resources.
+
+2. **Parameter/header `description`.** Link import drops `templateParameters`/`queryParameters`/header descriptions; inline import preserves them from the spec. So the published **target is more faithful** than the link-imported source. Authoritative descriptions live in the API schema. → strip `description` on parameter-shaped objects (`{ name, …, values }`).
+
+Round-trip comparison harness (`tests/integration/all-resource-types`) normalizes both via `RepresentationSchemaRefIgnoredProperties` and `ParameterIgnoredProperties`. Symptom if not stripped: every operation shows a `properties.request/responses/templateParameters` DIFF present-on-one-side-only.
+

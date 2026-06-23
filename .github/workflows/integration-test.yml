@@ -87,8 +87,8 @@ concurrency:
   cancel-in-progress: false # Don't cancel — would leave resources running
 
 env:
-  SOURCE_RG: rg-apiops-bvt-source-${{ github.run_id }}
-  TARGET_RG: rg-apiops-bvt-target-${{ github.run_id }}
+  SOURCE_RG: rg-apiops-bvt-src-${{ github.run_id }}
+  TARGET_RG: rg-apiops-bvt-tgt-${{ github.run_id }}
   SOURCE_APIM: apiops-bvt-src-${{ github.run_id }}
   TARGET_APIM: apiops-bvt-tgt-${{ github.run_id }}
 
@@ -101,9 +101,9 @@ jobs:
     environment: integration-test # Requires approval for cost protection
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: 'npm'
@@ -128,7 +128,7 @@ jobs:
           "skuName=$skuName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Azure Login
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -154,7 +154,7 @@ jobs:
 
       - name: Azure Login - Refresh Before Phase 2
         if: success()
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           # Phase 1 can run for a long time while APIM activates; refresh login
           # before extract/publish so apiops receives a fresh federated session.
@@ -231,14 +231,6 @@ jobs:
             -TargetResourceGroup '${{ steps.phase1.outputs.targetResourceGroup }}' `
             -TargetApimName '${{ steps.phase1.outputs.targetApimName }}' `
             -LogLevel '${{ steps.settings.outputs.logLevel }}'
-
-      - name: Upload Extracted Artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: extracted-artifacts-${{ steps.phase1.outputs.skuName }}
-          path: ${{ steps.phase2.outputs.ExtractOutputDir || './extracted-artifacts/' }}
-          if-no-files-found: ignore
 
       - name: Run Round-Trip Phase 7 (Teardown)
         if: always()

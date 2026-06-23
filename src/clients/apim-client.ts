@@ -7,7 +7,7 @@
  */
 
 import { DefaultAzureCredential } from '@azure/identity';
-import { IApimClient } from './iapim-client.js';
+import { IApimClient, ApiSpecDialect } from './iapim-client.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import { RESOURCE_TYPE_METADATA, ResourceType } from '../models/resource-types.js';
 import { buildArmUri, buildResourceLabel } from '../lib/resource-uri.js';
@@ -29,6 +29,16 @@ export class HttpError extends Error {
     super(message);
     this.name = 'HttpError';
   }
+}
+
+/**
+ * Returns true when the error indicates an association link already exists.
+ * APIM returns HTTP 409 Conflict ("Link already exists between specified ...")
+ * when an association is re-created; the desired end state is already in place,
+ * so callers treat it as an idempotent success rather than a failure.
+ */
+export function isLinkAlreadyExistsError(error: unknown): boolean {
+  return error instanceof HttpError && error.status === 409;
 }
 
 export class ApimClient implements IApimClient {
@@ -493,9 +503,10 @@ export class ApimClient implements IApimClient {
   async getApiSpecification(
     context: ApimServiceContext,
     apiName: string,
-    apiType?: string
+    apiType?: string,
+    specDialect?: ApiSpecDialect
   ): Promise<{ content: string; format: 'yaml' | 'json' | 'graphql' | 'wsdl' | 'wadl' } | undefined> {
-    const exportFormat = this.getExportFormat(apiType);
+    const exportFormat = this.getExportFormat(apiType, specDialect);
     if (exportFormat === undefined) {
       return undefined;
     }
@@ -667,23 +678,29 @@ export class ApimClient implements IApimClient {
    * round-tripping is preserved even when the link variant is broken.
    *
    * Additional export formats supported by APIM for type=http REST APIs:
-   *   swagger-link          – Swagger 2.0 YAML
+   *   swagger-link          – Swagger 2.0 JSON
    *   openapi+json-link     – OpenAPI 3.0 JSON
    *   wadl-link             – WADL
    * These cannot be auto-selected from properties.type alone because all REST APIs
    * (whether originally imported as Swagger 2.0, OpenAPI 3.0, or WADL) share
-   * type=http in APIM. openapi-link is used as the preferred modern default.
+   * type=http in APIM. The caller passes `specDialect` so the export format
+   * matches the API's native source format: 'swagger2' exports via `swagger-link`,
+   * 'openapi3' (default) via `openapi-link`. This preserves the original format
+   * (and its schema/operation metadata) instead of converting Swagger 2.0 to
+   * OpenAPI 3.0 on export.
    *
    * Returns undefined for WebSocket APIs — they have no traditional API specification.
    * getApiSpecification will return undefined early when this method returns undefined.
    */
-  private getExportFormat(apiType?: string): string | undefined {
+  private getExportFormat(apiType?: string, specDialect?: ApiSpecDialect): string | undefined {
     switch (apiType?.toLowerCase()) {
       case 'graphql':   return 'graphql-link';
       case 'soap':      return 'wsdl-link';
       case 'websocket': return undefined;
       case 'a2a':       return undefined;
-      default:          return 'openapi-link';
+      // REST (http / odata / grpc / undefined): match the source dialect —
+      // export Swagger 2.0 when the API was natively Swagger 2.0, else OpenAPI 3.0.
+      default:          return specDialect === 'swagger2' ? 'swagger-link' : 'openapi-link';
     }
   }
 

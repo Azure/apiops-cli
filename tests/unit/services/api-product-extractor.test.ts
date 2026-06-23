@@ -190,7 +190,7 @@ describe('api-extractor', () => {
       );
 
       expect(result.specification).toBe(true);
-      expect(getApiSpecification).toHaveBeenCalledWith(testContext, 'linked-gql', 'graphql');
+      expect(getApiSpecification).toHaveBeenCalledWith(testContext, 'linked-gql', 'graphql', 'openapi3');
       expect(store.writeContent).toHaveBeenCalledWith(
         '/output',
         expect.objectContaining({ nameParts: ['linked-gql'] }),
@@ -198,6 +198,67 @@ describe('api-extractor', () => {
         'specification',
         'graphql'
       );
+    });
+
+    it('should export the swagger2 dialect when the API has a Swagger-definitions schema', async () => {
+      const getApiSpecification = vi.fn().mockResolvedValue({
+        content: '{"swagger":"2.0"}',
+        format: 'json',
+      });
+      const client = createMockClient({
+        getApiSpecification,
+        // Yield a Swagger 2.0 auto-generated schema for the ApiSchema list step
+        listResources: async function* (_ctx: ApimServiceContext, type: ResourceType) {
+          if (type === ResourceType.ApiSchema) {
+            yield {
+              name: 'swagger-defs',
+              properties: { contentType: 'application/vnd.ms-azure-apim.swagger.definitions+json' },
+            };
+          }
+        },
+        getResource: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+
+      const result = await extractApiResources(
+        client, store, testContext,
+        { type: ResourceType.Api, nameParts: ['swagger-rest'] },
+        { name: 'swagger-rest', properties: { type: 'http' } },
+        '/output'
+      );
+
+      expect(result.specification).toBe(true);
+      expect(getApiSpecification).toHaveBeenCalledWith(testContext, 'swagger-rest', 'http', 'swagger2');
+    });
+
+    it('should export the openapi3 dialect when the API has an OpenAPI components schema', async () => {
+      const getApiSpecification = vi.fn().mockResolvedValue({
+        content: '{"openapi":"3.0.1"}',
+        format: 'json',
+      });
+      const client = createMockClient({
+        getApiSpecification,
+        listResources: async function* (_ctx: ApimServiceContext, type: ResourceType) {
+          if (type === ResourceType.ApiSchema) {
+            yield {
+              name: 'openapi-defs',
+              properties: { contentType: 'application/vnd.oai.openapi.components+json' },
+            };
+          }
+        },
+        getResource: vi.fn().mockResolvedValue(undefined),
+      });
+      const store = createMockStore();
+
+      const result = await extractApiResources(
+        client, store, testContext,
+        { type: ResourceType.Api, nameParts: ['openapi-rest'] },
+        { name: 'openapi-rest', properties: { type: 'http' } },
+        '/output'
+      );
+
+      expect(result.specification).toBe(true);
+      expect(getApiSpecification).toHaveBeenCalledWith(testContext, 'openapi-rest', 'http', 'openapi3');
     });
 
     it('should extract API policy and collect content', async () => {
@@ -850,7 +911,7 @@ describe('api-extractor', () => {
       );
     });
 
-    it('should extract MCP server configuration from embedded API metadata when present', async () => {
+    it('should keep embedded MCP configuration in apiInformation.json without writing a sidecar file', async () => {
       const client = createMockClient({
         getApiSpecification: vi.fn().mockResolvedValue(undefined),
         getResource: vi.fn().mockResolvedValue(undefined),
@@ -873,21 +934,15 @@ describe('api-extractor', () => {
         client, store, testContext, apiDescriptor, apiJson, '/output'
       );
 
-      expect(result.mcpServer).toBe(true);
+      expect(result.mcpServer).toBe(false);
       expect(client.getResource).not.toHaveBeenCalledWith(
         testContext,
         expect.objectContaining({ type: ResourceType.McpServer })
       );
-      expect(store.writeResource).toHaveBeenCalledWith(
+      expect(store.writeResource).not.toHaveBeenCalledWith(
         '/output',
         expect.objectContaining({ type: ResourceType.McpServer, nameParts: ['my-api'] }),
-        {
-          name: 'default',
-          properties: {
-            mcpProperties: { serverUrl: 'https://example.com/mcp' },
-            mcpTools: [{ name: 'invokeTool' }],
-          },
-        }
+        expect.anything()
       );
     });
 
@@ -895,31 +950,6 @@ describe('api-extractor', () => {
       const client = createMockClient({
         getApiSpecification: vi.fn().mockResolvedValue(undefined),
         getResource: vi.fn().mockResolvedValue(undefined),
-      });
-      const store = createMockStore();
-      const apiDescriptor: ResourceDescriptor = {
-        type: ResourceType.Api,
-        nameParts: ['my-api'],
-      };
-
-      const result = await extractApiResources(
-        client, store, testContext, apiDescriptor,
-        { name: 'my-api' },
-        '/output'
-      );
-
-      expect(result.mcpServer).toBe(false);
-    });
-
-    it('should return mcpServer=false and not throw when getResource throws for McpServer', async () => {
-      const client = createMockClient({
-        getApiSpecification: vi.fn().mockResolvedValue(undefined),
-        getResource: vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
-          if (desc.type === ResourceType.McpServer) {
-            throw new Error('404 Not Found');
-          }
-          return undefined;
-        }),
       });
       const store = createMockStore();
       const apiDescriptor: ResourceDescriptor = {
@@ -1097,7 +1127,10 @@ describe('product-extractor', () => {
         '/output',
         expect.objectContaining({ type: ResourceType.Product, nameParts: ['starter'] }),
         'tags',
-        expect.arrayContaining(['v1', 'production'])
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'v1' }),
+          expect.objectContaining({ name: 'production' }),
+        ])
       );
     });
 

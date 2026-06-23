@@ -105,6 +105,16 @@ function Protect-ResourceGroupName {
         return "$($Matches[1])-...-$($Matches[2])-$($Matches[3])-rg"
     }
 
+    # When the name ends with a numeric suffix (≥6 digits, such as a GitHub run_id
+    # or timestamp), preserve the last meaningful dash-segment before the number so
+    # logs stay distinguishable.
+    if ($Value -match '^(.+)-([a-zA-Z][a-zA-Z0-9]*)-(\d{6,})$') {
+        $prefixPart = $Matches[1]
+        $keepLen = [Math]::Min(3, $prefixPart.Length)
+        $ellipsis = if ($keepLen -lt $prefixPart.Length) { '...' } else { '' }
+        return "$($prefixPart.Substring(0, $keepLen))$ellipsis$($Matches[2])-$($Matches[3])"
+    }
+
     return Protect-Identifier -Value $Value -Prefix 3 -Suffix 7
 }
 

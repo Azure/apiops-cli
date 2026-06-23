@@ -172,3 +172,14 @@ Gotchas for future PowerShell work:
 - `$x = if ($cond) { [List[T]]::new() }` assigns `$null` — PowerShell enumerates the empty list. Use `$x = $null; if ($cond) { $x = ... }`.
 - `ProcessStartInfo.StandardOutputEncoding/StandardErrorEncoding` default to OEM on Windows; force UTF-8 or `az --debug` output mangles.
 
+### 2026-06-19: Round-trip hardened for `Set-StrictMode -Version Latest`
+
+Run strict (inherited by `&` child scopes): `pwsh -Command "Set-StrictMode -Version Latest; & ./tests/integration/all-resource-types/run-roundtrip-test.ps1 -SkuName Premium -Location eastus2"`. Surfaced 3 latent Phase 1 bugs.
+
+- **`.Count` on a scalar throws.** `Where-Object`/`Sort-Object`/`Get-ChildItem` return a scalar for single-item results — wrap the whole pipeline in `@(...)`. Fixed: Compare-ApimInstance.ps1 (`@(... | Sort-Object)`, `@()` must include `Sort-Object`; had silently swallowed the workspace-product `groupLinks` diff via an outer `catch`), run-phase1-deploy.ps1 job-poll loop, run-phase2-extract.ps1.
+- **Start-Job stray output → array.** A job leaking pipeline output makes `Receive-Job` return an array; `$out.apimServiceName` then throws. Root cause: run-phase1-deploy-source.ps1 called `Invoke-MaskedAzCommand` bare (post-activation) — fix `| Out-Null`. Defense: orchestrator reads `Receive-Job | Select-Object -Last 1`.
+- **Deploy return-shape asymmetry:** source = flat `@{ apimServiceName }`; target = raw ARM outputs (`apimServiceName.value`).
+- **Strict mode is now baked into run-roundtrip-test.ps1** (`Set-StrictMode -Version Latest`), so it's always on regardless of launch wrapper. Empirically confirmed: under Latest, both `$psobject.missing` AND `$hashtable.missing` throw (so `ConvertFrom-Json -AsHashtable` is no escape); only `$obj.PSObject.Properties['name']` returns `$null` safely.
+- **Test-ExtractedArtifact.ps1** does manifest-driven JSON traversal with optional fields (`skuDependent`, `files`, `scope`, ...) — each absent read threw under Latest. Fix: added a `Get-Prop $obj 'name'` safe-accessor helper and routed every optional read through it (do NOT opt down to `-Version 1.0`). Smoke-tested standalone under Latest against real Premium artifacts: 322/322 checks, exit 0.
+- **Parse-check:** `pwsh -Command '$e=$null; [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path FILE),[ref]$null,[ref]$e)>$null; if($e){$e|%{$_.Message};exit 1}else{"OK"}'`
+

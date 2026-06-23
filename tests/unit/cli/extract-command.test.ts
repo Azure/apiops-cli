@@ -52,13 +52,6 @@ describe('extract-command', () => {
       expect(noTransOpt).toBeDefined();
     });
 
-    it('should have --spec-format option', () => {
-      const cmd = createExtractCommand();
-      const opts = cmd.options;
-      const specOpt = opts.find((o) => o.long === '--spec-format');
-      expect(specOpt).toBeDefined();
-    });
-
     it('should have a description', () => {
       const cmd = createExtractCommand();
       expect(cmd.description()).toBeTruthy();

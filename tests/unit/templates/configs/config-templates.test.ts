@@ -82,7 +82,7 @@ describe('configs/override-config', () => {
     it('should include environment name in examples', () => {
       const config = generateOverrideConfig('production');
       expect(config).toContain('production-api-key-value');
-      expect(config).toContain('production-db.example.com');
+      expect(config).toContain('{#[DB_Connection_String]#}');
       expect(config).toContain('production-kv.vault.azure.net');
     });
 

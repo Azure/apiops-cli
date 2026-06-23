@@ -41,7 +41,9 @@ if ($LASTEXITCODE -ne 0) { throw "Round-trip failed with exit code $LASTEXITCODE
 An apim instance with the following apis
 | API | Type | Spec Format |
 |-----|------|-------------|
-| `src-rest-openapi` | REST | OpenAPI 3.0 YAML |
+| `src-rest-openapi` | REST | OpenAPI 3.0 YAML (inline) |
+| `src-rest-swagger` | REST | Swagger 2.0 JSON (Petstore v2) |
+| `src-rest-petstore-v3` | REST | OpenAPI 3.0 YAML (Petstore v3) |
 | `src-soap-passthrough` | SOAP | WSDL |
 | `src-graphql-synthetic` | GraphQL | SDL (inline) |
 | `src-graphql-passthrough` | GraphQL | SDL (pass-through) |
@@ -76,7 +78,7 @@ An apim instance with the following apis
 - **Service Policy**: Global CORS policy
 - **Products**: Starter + Premium with policies, API/group associations, tags, wikis
 - **Subscriptions**: All-APIs + product-scoped
-- **Workspace** (Developer v2 only): Workspace with backend, named value, tag, product, API
+- **Workspace** (Premium/StandardV2/PremiumV2 only): Workspace with backend, named value, tag, group, product, API. The workspace product links groups at **both** scopes to cover the group-link scope round-trip: the service-level `administrators` group (scope `service`, auto-linked by APIM) and a workspace-scoped custom group `src-ws-group-internal` (scope `workspace`).
 
 ## Round-Trip Phases
 

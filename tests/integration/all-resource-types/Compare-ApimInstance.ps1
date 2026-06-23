@@ -58,12 +58,19 @@ $StripTimestampProperties = @(
 $RequestResponseIgnoredProperties = @('description')
 
 # Properties ignored on representation objects (have 'contentType' or 'schemaId'):
-# - description: SOAP/WSDL import generates descriptions that vary
-# - schemaId/typeName: Operation reconciliation strips these before PATCH because
-#   APIM rebinds representation schema refs during import. Values are therefore
-#   not stable for round-trip comparison and are ignored for operation resources.
+# - description: varies by import path.
+# - schemaId/typeName: unstable schema refs APIM rebinds on import; stripped for ops.
+# - __schemaSemantic: synthetic token from Add-RepresentationSchemaSemantics. Only
+#   link-imported source gets schemaId (and thus this token); inline-imported target
+#   doesn't. Schema content is compared separately via API-level Schemas, so strip it.
 $RepresentationIgnoredProperties = @('description')
-$RepresentationSchemaRefIgnoredProperties = @('schemaId', 'typeName')
+$RepresentationSchemaRefIgnoredProperties = @('schemaId', 'typeName', '__schemaSemantic')
+
+# Properties ignored on parameter/header objects (have 'name' + 'values':
+# templateParameters, queryParameters, response headers):
+# - description: link import (source) drops them; inline import (target) keeps them.
+#   Authoritative copies live in the API schema, compared separately.
+$ParameterIgnoredProperties = @('description')
 
 # Cache of normalized API schema semantics per instance/api, keyed as:
 # "{instance}|{apiName}" => @{ schemaId => normalizedSchemaJson }
@@ -78,7 +85,8 @@ $NormalizationContext = New-CompareNormalizationContext `
     -StripTimestampProperties $StripTimestampProperties `
     -RequestResponseIgnoredProperties $RequestResponseIgnoredProperties `
     -RepresentationIgnoredProperties $RepresentationIgnoredProperties `
-    -RepresentationSchemaRefIgnoredProperties $RepresentationSchemaRefIgnoredProperties
+    -RepresentationSchemaRefIgnoredProperties $RepresentationSchemaRefIgnoredProperties `
+    -ParameterIgnoredProperties $ParameterIgnoredProperties
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -329,8 +337,8 @@ function Compare-LinkResources {
         if ($armId) { ($armId -split '/')[-1] } else { $item.name }
     }
 
-    $srcNames = @($sourceItems | ForEach-Object { & $extractLinkedName $_ }) | Sort-Object
-    $tgtNames = @($targetItems | ForEach-Object { & $extractLinkedName $_ }) | Sort-Object
+    $srcNames = @($sourceItems | ForEach-Object { & $extractLinkedName $_ } | Sort-Object)
+    $tgtNames = @($targetItems | ForEach-Object { & $extractLinkedName $_ } | Sort-Object)
 
     $srcCount = $srcNames.Count
     $tgtCount = $tgtNames.Count
@@ -797,6 +805,21 @@ try {
                         -SourceUrl "$SourceBase/workspaces/$wsName/products/$wsProdName/apiLinks" `
                         -TargetUrl "$TargetBase/workspaces/$wsName/products/$wsProdName/apiLinks" `
                         -LinkProperty "apiId"
+                    $totalTypes++
+                    $totalDiffs += $result.Diffs
+                    $totalCompared += $result.Compared
+                    if ($result.Skipped) { $skippedTypes++ }
+
+                    # Product → Group associations via groupLinks.
+                    # Covers both service-scoped (built-in administrators) and
+                    # workspace-scoped group links. Compared by linked group name,
+                    # which is scope-independent, so a correctly re-scoped target
+                    # link still matches the source.
+                    $result = Compare-LinkResources `
+                        -TypeLabel "  Workspace/$wsName/Product/$wsProdName/groupLinks" `
+                        -SourceUrl "$SourceBase/workspaces/$wsName/products/$wsProdName/groupLinks" `
+                        -TargetUrl "$TargetBase/workspaces/$wsName/products/$wsProdName/groupLinks" `
+                        -LinkProperty "groupId"
                     $totalTypes++
                     $totalDiffs += $result.Diffs
                     $totalCompared += $result.Compared

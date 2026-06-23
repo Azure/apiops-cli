@@ -249,7 +249,7 @@ describe('resource-publisher', () => {
     it('should handle association resources (ProductApi)', async () => {
       const client = createMockClient();
       const store = createMockStore();
-      store.readAssociation.mockResolvedValue(['api-1', 'api-2']);
+      store.readAssociation.mockResolvedValue([{ name: 'api-1' }, { name: 'api-2' }]);
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ProductApi,
@@ -281,7 +281,7 @@ describe('resource-publisher', () => {
     it('should handle association resources (ProductGroup)', async () => {
       const client = createMockClient();
       const store = createMockStore();
-      store.readAssociation.mockResolvedValue(['group-1']);
+      store.readAssociation.mockResolvedValue([{ name: 'group-1' }]);
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ProductGroup,
@@ -307,7 +307,7 @@ describe('resource-publisher', () => {
     it('should handle association resources (GatewayApi)', async () => {
       const client = createMockClient();
       const store = createMockStore();
-      store.readAssociation.mockResolvedValue(['api-1']);
+      store.readAssociation.mockResolvedValue([{ name: 'api-1' }]);
 
       const descriptor: ResourceDescriptor = {
         type: ResourceType.GatewayApi,
@@ -801,7 +801,14 @@ describe('resource-publisher', () => {
         const store = createMockStore();
         store.readResource.mockResolvedValue({
           name: 'my-api;rev=2',
-          properties: { path: '/api', displayName: 'My API' },
+          properties: {
+            path: '/api',
+            displayName: 'My API',
+            mcpTools: [{
+              name: 'invokeTool',
+              operationId: '/subscriptions/src-sub/resourceGroups/src-rg/providers/Microsoft.ApiManagement/service/src-apim/apis/my-api/operations/get-orders',
+            }],
+          },
         });
 
         const descriptor: ResourceDescriptor = {
@@ -817,6 +824,10 @@ describe('resource-publisher', () => {
         expect(props).toHaveProperty('sourceApiId');
         expect(props.sourceApiId as string).toContain('/apis/my-api');
         expect(props.sourceApiId as string).not.toContain(';rev=');
+        expect(props.mcpTools).toEqual([{
+          name: 'invokeTool',
+          operationId: '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1/apis/my-api/operations/get-orders',
+        }]);
       });
 
       it('strips null properties for revision APIs', async () => {
@@ -926,6 +937,51 @@ describe('resource-publisher', () => {
         const putJson = putCall[2] as Record<string, unknown>;
         const props = putJson.properties as Record<string, unknown>;
         expect(props).toHaveProperty('isCurrent', true);
+      });
+
+      it('keeps override-provided MCP tool operationIds unchanged for revisions', async () => {
+        const client = createMockClient();
+        const store = createMockStore();
+        store.readResource.mockResolvedValue({
+          name: 'orders-api;rev=2',
+          properties: {
+            path: '/orders',
+            mcpTools: [{
+              name: 'invokeTool',
+              operationId: '/subscriptions/src-sub/resourceGroups/src-rg/providers/Microsoft.ApiManagement/service/src-apim/apis/orders-api/operations/get-orders',
+            }],
+          },
+        });
+
+        const descriptor: ResourceDescriptor = {
+          type: ResourceType.Api,
+          nameParts: ['orders-api;rev=2'],
+        };
+        const configWithOverrides: PublishConfig = {
+          ...testConfig,
+          overrides: {
+            apis: {
+              'orders-api;rev=2': {
+                properties: {
+                  mcpTools: [{
+                    name: 'invokeTool',
+                    operationId: '/subscriptions/override-sub/resourceGroups/override-rg/providers/Microsoft.ApiManagement/service/override-apim/apis/orders-api/operations/get-orders',
+                  }],
+                },
+              },
+            },
+          },
+        };
+
+        await publishResource(client, store, testContext, descriptor, configWithOverrides);
+
+        const putCall = client.putResource.mock.calls[0];
+        const putJson = putCall[2] as Record<string, unknown>;
+        const props = putJson.properties as Record<string, unknown>;
+        expect(props.mcpTools).toEqual([{
+          name: 'invokeTool',
+          operationId: '/subscriptions/override-sub/resourceGroups/override-rg/providers/Microsoft.ApiManagement/service/override-apim/apis/orders-api/operations/get-orders',
+        }]);
       });
     });
   });
@@ -1167,4 +1223,3 @@ describe('resource-publisher', () => {
     });
   });
 });
-

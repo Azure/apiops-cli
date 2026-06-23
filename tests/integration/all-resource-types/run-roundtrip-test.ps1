@@ -73,6 +73,8 @@ param(
     [switch]$SkipTeardown
 )
 
+# Strict mode is inherited by all `&`-invoked phase scripts (child scopes).
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $scriptArgModule = Join-Path $PSScriptRoot 'modules/ScriptRuntime.psm1'

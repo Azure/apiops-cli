@@ -7,13 +7,13 @@
 
 import { IApimClient } from '../clients/iapim-client.js';
 import { IArtifactStore } from '../clients/iartifact-store.js';
-import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
+import { ApimServiceContext, AssociationEntry, ResourceDescriptor } from '../models/types.js';
 import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { FilterConfig } from '../models/config.js';
 import { extractResourceName } from './resource-extractor.js';
 import { logger } from '../lib/logger.js';
 import { getNamePart } from '../lib/resource-path.js';
-import { isWorkspaceScope, extractNameFromLink } from '../lib/workspace-link.js';
+import { isWorkspaceScope, extractNameFromLink, extractLinkTarget } from '../lib/workspace-link.js';
 
 /**
  * Result of product-specific extraction for a single product.
@@ -99,7 +99,7 @@ async function extractProductAssociations(
   outputDir: string,
   associationType: 'apis' | 'groups'
 ): Promise<string[]> {
-  const names: string[] = [];
+  const entries: AssociationEntry[] = [];
   const resourceType = associationType === 'apis'
     ? ResourceType.ProductApi
     : ResourceType.ProductGroup;
@@ -111,35 +111,36 @@ async function extractProductAssociations(
 
     for await (const json of resources) {
       try {
-        let name: string;
         if (workspaceScoped && linkProperty) {
           // Workspace link responses have an opaque link ID as `name` and
-          // the actual resource ARM ID in `properties.<linkProperty>`
-          const extracted = extractNameFromLink(json, linkProperty);
-          if (!extracted) {
+          // the actual resource ARM ID in `properties.<linkProperty>`.
+          // Capture the linked resource's scope (service vs workspace) so
+          // publish can rebuild the link target at the correct scope — e.g.
+          // a workspace product linking the service-level `administrators` group.
+          const target = extractLinkTarget(json, linkProperty);
+          if (!target) {
             logger.warn(`Failed to extract ${associationType} link target from workspace link response`);
             continue;
           }
-          name = extracted;
+          entries.push({ name: target.name, scope: target.scope });
         } else {
-          name = extractResourceName(json);
+          entries.push({ name: extractResourceName(json) });
         }
-        names.push(name);
       } catch (error) {
         logger.warn(`Failed to extract ${associationType} association name: ${(error as Error).message}`);
       }
     }
 
     // Write association file
-    if (names.length > 0) {
-      await store.writeAssociation(outputDir, productDescriptor, associationType, names);
-      logger.info(`Extracted ${names.length} ${associationType} for product "${getNamePart(productDescriptor.nameParts, 0)}"`);
+    if (entries.length > 0) {
+      await store.writeAssociation(outputDir, productDescriptor, associationType, entries);
+      logger.info(`Extracted ${entries.length} ${associationType} for product "${getNamePart(productDescriptor.nameParts, 0)}"`);
     }
   } catch (error) {
     logger.warn(`Failed to list ${associationType} for product "${getNamePart(productDescriptor.nameParts, 0)}": ${(error as Error).message}`);
   }
 
-  return names;
+  return entries.map(entry => entry.name);
 }
 
 /**
@@ -153,7 +154,7 @@ async function extractProductTags(
   productDescriptor: ResourceDescriptor,
   outputDir: string
 ): Promise<string[]> {
-  const names: string[] = [];
+  const entries: AssociationEntry[] = [];
   const workspaceScoped = isWorkspaceScope(context);
   const linkProperty = RESOURCE_TYPE_METADATA[ResourceType.ProductTag].workspaceLinkIdProperty;
 
@@ -162,33 +163,31 @@ async function extractProductTags(
 
     for await (const json of resources) {
       try {
-        let name: string;
         if (workspaceScoped && linkProperty) {
-          const extracted = extractNameFromLink(json, linkProperty);
-          if (!extracted) {
+          const target = extractLinkTarget(json, linkProperty);
+          if (!target) {
             logger.warn('Failed to extract tag name from workspace link response');
             continue;
           }
-          name = extracted;
+          entries.push({ name: target.name, scope: target.scope });
         } else {
-          name = extractResourceName(json);
+          entries.push({ name: extractResourceName(json) });
         }
-        names.push(name);
       } catch (error) {
         logger.warn(`Failed to extract tag name: ${(error as Error).message}`);
       }
     }
 
     // Write tags association file
-    if (names.length > 0) {
-      await store.writeAssociation(outputDir, productDescriptor, 'tags', names);
-      logger.info(`Extracted ${names.length} tags for product "${getNamePart(productDescriptor.nameParts, 0)}"`);
+    if (entries.length > 0) {
+      await store.writeAssociation(outputDir, productDescriptor, 'tags', entries);
+      logger.info(`Extracted ${entries.length} tags for product "${getNamePart(productDescriptor.nameParts, 0)}"`);
     }
   } catch (error) {
     logger.warn(`Failed to list tags for product "${getNamePart(productDescriptor.nameParts, 0)}": ${(error as Error).message}`);
   }
 
-  return names;
+  return entries.map(entry => entry.name);
 }
 
 /**
@@ -321,7 +320,9 @@ export async function extractWorkspaceProductTags(
     const productName = getNamePart(product.descriptor.nameParts, 0);
     const tags = productTagsMap.get(productName);
     if (tags && tags.length > 0) {
-      await store.writeAssociation(outputDir, product.descriptor, 'tags', tags);
+      // Tags discovered here are workspace tags (listed within workspace scope).
+      const entries: AssociationEntry[] = tags.map(name => ({ name, scope: 'workspace' }));
+      await store.writeAssociation(outputDir, product.descriptor, 'tags', entries);
       logger.info(`Extracted ${tags.length} tags for workspace product "${productName}"`);
       count += tags.length;
     }

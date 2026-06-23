@@ -84,9 +84,9 @@ describe('product-publisher', () => {
       const client = createMockClient();
       const store = createMockStore();
       store.readAssociation
-        .mockResolvedValueOnce(['petstore', 'orders']) // apis
-        .mockResolvedValueOnce(['developers'])         // groups
-        .mockResolvedValueOnce(['production', 'v1']);  // tags
+        .mockResolvedValueOnce([{ name: 'petstore' }, { name: 'orders' }]) // apis
+        .mockResolvedValueOnce([{ name: 'developers' }])                  // groups
+        .mockResolvedValueOnce([{ name: 'production' }, { name: 'v1' }]);  // tags
       store.readContent.mockResolvedValue({ content: '<policies/>', format: 'xml' });
 
       const result = await publishProduct(client, store, testContext, productDescriptor, testConfig);
@@ -158,7 +158,7 @@ describe('product-publisher', () => {
       const client = createMockClient();
       const store = createMockStore();
       store.readAssociation
-        .mockResolvedValueOnce(['petstore', 'orders']) // apis
+        .mockResolvedValueOnce([{ name: 'petstore' }, { name: 'orders' }]) // apis
         .mockResolvedValueOnce([])                     // groups
         .mockResolvedValueOnce([]);                    // tags
       store.readContent.mockResolvedValue(undefined);
@@ -183,7 +183,7 @@ describe('product-publisher', () => {
       const store = createMockStore();
       store.readAssociation
         .mockResolvedValueOnce([])            // apis
-        .mockResolvedValueOnce(['developers']) // groups
+        .mockResolvedValueOnce([{ name: 'developers' }]) // groups
         .mockResolvedValueOnce([]);           // tags
       store.readContent.mockResolvedValue(undefined);
 
@@ -203,7 +203,7 @@ describe('product-publisher', () => {
       store.readAssociation
         .mockResolvedValueOnce([])                   // apis
         .mockResolvedValueOnce([])                   // groups
-        .mockResolvedValueOnce(['production', 'v1']); // tags
+        .mockResolvedValueOnce([{ name: 'production' }, { name: 'v1' }]); // tags
       store.readContent.mockResolvedValue(undefined);
 
       await publishProduct(client, store, testContext, productDescriptor, testConfig);
@@ -259,7 +259,7 @@ describe('product-publisher', () => {
       const client = createMockClient();
       const store = createMockStore();
       store.readAssociation
-        .mockResolvedValueOnce(['petstore']) // apis
+        .mockResolvedValueOnce([{ name: 'petstore' }]) // apis
         .mockResolvedValueOnce([])           // groups
         .mockResolvedValueOnce([]);          // tags
       store.readContent.mockResolvedValue(undefined);
