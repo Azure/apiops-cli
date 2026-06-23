@@ -19,8 +19,8 @@ name: Squad Issue Assign
 #   - Expose secrets, tokens, or internal routing logic in comments.
 #   - Override or skip the post-check verification job.
 #   - Escalate its own permissions (e.g., request write access to contents).
-#   - Process go:* label events unless the repository owner is Azure and
-#     the sender has repository maintain/admin permission.
+#   - Process go:* label events unless the sender has repository
+#     maintain/admin permission.
 # ────────────────────────────────────────────────────────────────────────
 
 on:
@@ -33,7 +33,7 @@ permissions:
 
 jobs:
   assign-issue:
-    if: github.event.label.name == 'go:yes' && github.repository_owner == 'Azure'
+    if: github.event.label.name == 'go:yes'
     runs-on: ubuntu-latest
     steps:
       - name: Verify maintainer-triggered event
