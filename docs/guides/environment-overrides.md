@@ -142,7 +142,7 @@ namedValues:
       displayName: payment-api-key
       secret: true
       value: "{#[PAYMENT_API_KEY]#}"  # Replaced at pipeline runtime
-  - name: stripe-webhook-secret
+  - name: webhook-secret
     properties:
       secret: true
       value: "{#[WEBHOOK_SECRET]#}"
