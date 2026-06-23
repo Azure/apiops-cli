@@ -133,13 +133,13 @@ post-steps:
       fi
 
       # Check for confidence score (e.g., "confidence: high", "Confidence: 85%", "confidence score: medium")
-      if ! echo "$AGENT_OUTPUT" | grep -iqE "(confidence[:\s]*\s*(score[:\s]*)?\s*(high|medium|low|[0-9]+%?))"; then
+      if ! echo "$AGENT_OUTPUT" | grep -iqE "(confidence[:\s]*(score[:\s]*)?(high|medium|low|[0-9]+%?))"; then
         echo "::error::Triage comment missing required confidence score field"
         exit 1
       fi
 
       # Check for uncertainty indicator (e.g., "uncertainty:", "low confidence -", "multiple domains match")
-      if ! echo "$AGENT_OUTPUT" | grep -iqE "(uncertainty[:\s]|low confidence\s*[-—]|multiple .* match|ambiguous|unclear)"; then
+      if ! echo "$AGENT_OUTPUT" | grep -iqE "(uncertainty[:\s]|low confidence\s*[-—]|multiple (domains?|areas?|teams?) match|ambiguous|unclear)"; then
         echo "::error::Triage comment missing required uncertainty indicator"
         exit 1
       fi
