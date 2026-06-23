@@ -83,18 +83,6 @@ steps:
       USER_TITLE_HEADER='^\*\*Title:\*\* '
       USER_BODY_HEADER="^## Body$"
 
-      # Verify user file contains context-role: user
-      if ! grep -q "context-role: user" "$USER_FILE"; then
-        echo "::error::Contract violation: user context file missing 'context-role: user' marker"
-        exit 1
-      fi
-
-      # Verify system file contains context-role: system
-      if ! grep -q "context-role: system" "$SYSTEM_FILE"; then
-        echo "::error::Contract violation: system context file missing 'context-role: system' marker"
-        exit 1
-      fi
-
       # Verify frontmatter markers are present near the top of each file
       if ! head -n 5 "$USER_FILE" | grep -qx "context-role: user"; then
         echo "::error::Contract violation: user context file has an unexpected role marker"
@@ -132,14 +120,16 @@ post-steps:
         exit 1
       fi
 
-      # Check for confidence score (e.g., "confidence: high", "Confidence: 85%", "confidence score: medium")
-      if ! echo "$AGENT_OUTPUT" | grep -iqE "(confidence[:\s]*(score[:\s]*)?(high|medium|low|([0-9]{1,2}|100)%?))"; then
+      # Check for confidence field in the documented format:
+      # **Confidence:** high|medium|low (0-100%)
+      if ! echo "$AGENT_OUTPUT" | grep -iqE '^\*\*Confidence:\*\*\s*(high|medium|low)\s*\(((100|[1-9]?[0-9])%)\)$'; then
         echo "::error::Triage comment missing required confidence score field"
         exit 1
       fi
 
-      # Check for uncertainty indicator (e.g., "uncertainty:", "low confidence -", "multiple domains match")
-      if ! echo "$AGENT_OUTPUT" | grep -iqE "(uncertainty[:\s]|low confidence\s*[-—]|multiple (domains?|areas?|teams?) match|ambiguous|unclear)"; then
+      # Check for uncertainty field in the documented format:
+      # **Uncertainty:** <non-empty explanation or "none">
+      if ! echo "$AGENT_OUTPUT" | grep -iqE '^\*\*Uncertainty:\*\*\s+\S.+'; then
         echo "::error::Triage comment missing required uncertainty indicator"
         exit 1
       fi
