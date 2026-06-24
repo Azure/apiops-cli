@@ -1,0 +1,66 @@
+name: Bug Report
+description: Report a bug with apiops CLI
+labels: ["bug"]
+body:
+  - type: input
+    id: command
+    attributes:
+      label: Command that triggered the bug
+      description: Which CLI command were you running?
+      placeholder: "apiops init"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual behavior
+      description: What actually happened?
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      description: "Run `apiops --version` (or `npm list -g @peterhauge/apiops-cli`) to find the installed version."
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment details
+      description: "OS, Node.js version, shell, and any other relevant info."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: ci-cd
+    attributes:
+      label: CI/CD environment
+      description: If this bug occurs in a CI/CD pipeline, which platform are you using?
+      options:
+        - "N/A (running locally)"
+        - "GitHub Actions"
+        - "Azure DevOps"
+        - "Other"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: blocking
+    attributes:
+      label: Is this bug blocking you?
+      options:
+        - "Yes"
+        - "No"
+    validations:
+      required: false
