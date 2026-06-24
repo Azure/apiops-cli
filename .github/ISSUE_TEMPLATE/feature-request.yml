@@ -21,6 +21,8 @@ body:
   - type: input
     id: affected-command
     attributes:
+      label: Affected command
+      description: Which CLI command does this feature relate to (if any)?
       placeholder: "apiops extract"
     validations:
       required: false

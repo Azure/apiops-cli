@@ -30,6 +30,7 @@ body:
   - type: input
     id: version
     attributes:
+      label: apiops CLI version
       description: "Run `apiops --version` (or `npm list -g @peterhauge/apiops-cli`) to find the installed version."
     validations:
       required: true
