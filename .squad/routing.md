@@ -4,49 +4,22 @@ How to decide who handles what.
 
 ## Routing Table
 
-| Work Type | Route To | Examples |
-|-----------|----------|----------|
-| Architecture, design decisions, scope/priority | ApiOpsLead | High-level design, command structure, trade-off calls |
-| APIM REST API, resource types, policies | ApimExpert | Extract/publish logic, dependency ordering, pagination, retry, workspace scoping |
-| APIC REST API, API Center resources | ApicExpert | APIC sync, APIC resource model, APIM↔APIC integration |
-| TypeScript types, interfaces, abstractions | TypeScriptDev | tsconfig, abstraction contracts, ESLint, build |
-| CLI wiring, Commander, npm, init scaffolding | NodeJsDev | Flag definitions, help text, exit codes, `apiops init`, package.json |
-| Tests, mocking, edge cases, coverage | TestEngineer | Vitest unit tests, mock implementations, spec edge cases |
-| License compliance, OSS requirements, repo health | OpenSourceExpert | Dependency audits, LICENSE/SECURITY/CONTRIBUTING files, CLA |
-| Code review, standards enforcement | CodeReviewer | Review PRs, enforce constitution compliance, check testability, modern TypeScript standards |
-| Azure DevOps, `az devops`, pipelines, service connections | AzdoExpert | Azure Pipelines YAML, variable groups, service connections, workload identity, `az pipelines` |
-| GitHub Actions, `gh` CLI, repository settings | GitHubExpert | GitHub workflows, reusable actions, OIDC federation, branch protection, `gh` commands |
-| Documentation, user guides, diagrams, /docs content | DocWriter | Markdown docs, Mermaid charts, API developer guides, README |
-| Security, threat modeling, supply-chain defense | SecurityExpert | Workflow hardening, dependency pinning, secret scanning, fork PR threat modeling, hostile contributor defense, cross-team security review |
-| Architecture review, scope decisions | ApiOpsLead | High-level design review, spec alignment, scope gatekeeping |
-| Issue triage | ApiOpsLead | Read GitHub issues, assign `squad:{member}` labels |
-| Session logging | Scribe | Automatic — never needs routing |
-| Work queue monitoring | Ralph | Automatic — activated with "Ralph, go" |
+Machine-readable data: [`.squad/routing-table.json`](routing-table.json)
+
+Each entry has `workType`, `routeTo` (squad member name), and `examples` (keyword list for matching).
 
 ## Issue Routing
 
-| Label | Action | Who |
-|-------|--------|-----|
-| `squad` | Triage: analyze issue, assign `squad:{member}` label | ApiOpsLead |
-| `squad:apiopslead` | Pick up issue — architecture or scope decision | ApiOpsLead |
-| `squad:apimexpert` | Pick up issue — APIM REST API work | ApimExpert |
-| `squad:apicexpert` | Pick up issue — APIC REST API work | ApicExpert |
-| `squad:typescriptdev` | Pick up issue — TypeScript types or build | TypeScriptDev |
-| `squad:nodejsdev` | Pick up issue — CLI wiring, packaging, init | NodeJsDev |
-| `squad:testengineer` | Pick up issue — tests or coverage | TestEngineer |
-| `squad:opensourceexpert` | Pick up issue — license or OSS compliance | OpenSourceExpert |
-| `squad:codereviewer` | Pick up issue — code review or standards enforcement | CodeReviewer |
-| `squad:azdoexpert` | Pick up issue — Azure DevOps pipelines or CLI | AzdoExpert |
-| `squad:githubexpert` | Pick up issue — GitHub Actions or CLI | GitHubExpert |
-| `squad:docwriter` | Pick up issue — documentation or diagrams | DocWriter |
-| `squad:securityexpert` | Pick up issue — security, supply-chain, threat modeling | SecurityExpert |
+Machine-readable data: [`.squad/issue-routing.json`](issue-routing.json)
+
+Each entry has `label`, `action`, and `who` (squad member name).
 
 ### How Issue Assignment Works
 
-1. When a GitHub issue gets the `squad` label, the **Lead** triages it — analyzing content, assigning the right `squad:{member}` label, and commenting with triage notes.
-2. When a `squad:{member}` label is applied, that member picks up the issue in their next session.
-3. Members can reassign by removing their label and adding another member's label.
-4. The `squad` label is the "inbox" — untriaged issues waiting for Lead review.
+1. A maintainer reviews the issue and applies a `go:*` decision label.
+2. When a maintainer applies `go:yes`, the issue assignment workflow assigns the issue to that maintainer.
+3. The assignment workflow reads the issue text, optionally uses the most recent `Squad Triage` comment from the last 50 issue comments, and applies `squad` plus matching `squad:{member}` labels from [`.squad/routing-table.json`](routing-table.json) and [`.squad/issue-routing.json`](issue-routing.json).
+4. The `squad` label marks the issue for squad routing, and each `squad:{member}` label identifies a matched follow-up area.
 
 ## Rules
 
