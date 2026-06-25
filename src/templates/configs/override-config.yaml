@@ -1,0 +1,92 @@
+# yaml-language-server: $schema={{SCHEMA_URL}}
+# APIM Override Configuration for {{ENVIRONMENT}} environment
+# Customize resource properties for this specific environment
+# For full format details and examples, see:
+# https://github.com/Azure/apiops-cli/blob/main/docs/guides/environment-overrides.md
+
+# Override named values (e.g., API keys, connection strings)
+# namedValues:
+#   - name: api-key
+#     properties:
+#       value: "{{ENVIRONMENT}}-api-key-value"
+#   - name: connection-string
+#     properties:
+#       value: "{#[DB_Connection_String]#}"
+#   - name: secret-from-keyvault
+#     properties:
+#       keyVault:
+#         secretIdentifier: "https://{{ENVIRONMENT}}-kv.vault.azure.net/secrets/my-secret"
+#         identityClientId: "00000000-0000-0000-0000-000000000000"
+
+# Override backend URLs per environment
+# backends:
+#   - name: backend-api
+#     properties:
+#       url: "https://{{ENVIRONMENT}}-api.example.com"
+#   - name: legacy-backend
+#     properties:
+#       url: "https://{{ENVIRONMENT}}-legacy.example.com"
+#       resourceId: "/subscriptions/.../sites/{{ENVIRONMENT}}-backend"
+
+# Override API service URLs (with optional nested sub-resource overrides)
+# apis:
+#   - name: echo-api
+#     properties:
+#       serviceUrl: "https://{{ENVIRONMENT}}-echo.example.com"
+#   - name: petstore-api
+#     properties:
+#       serviceUrl: "https://{{ENVIRONMENT}}-petstore.example.com"
+#       displayName: "Petstore API ({{ENVIRONMENT}})"
+#     diagnostics:
+#       - name: applicationinsights
+#         properties:
+#           loggerId: "appinsights-logger-{{ENVIRONMENT}}"
+#           verbosity: Error
+#     policies:
+#       - name: policy
+#         properties:
+#           format: rawxml
+
+# Override diagnostic logger references
+# diagnostics:
+#   - name: applicationinsights
+#     properties:
+#       loggerId: "appinsights-logger-{{ENVIRONMENT}}"
+#       verbosity: Error
+
+# Override logger credentials or resource IDs
+# loggers:
+#   - name: appinsights-logger
+#     properties:
+#       loggerType: applicationInsights
+#       resourceId: "/subscriptions/xxxxx/resourceGroups/{{ENVIRONMENT}}-rg/providers/microsoft.insights/components/{{ENVIRONMENT}}-appinsights"
+#       isBuffered: true
+#       credentials:
+#         instrumentationKey: "<APP-INSIGHTS-INSTRUMENTATION-KEY>"
+
+# Override service-level policies
+# policies:
+#   - name: policy
+#     properties:
+#       format: rawxml
+
+# Override gateway properties
+# gateways:
+#   - name: on-prem-gateway
+#     properties:
+#       locationData:
+#         name: "{{ENVIRONMENT}} datacenter"
+
+# Override version sets, groups, subscriptions, products, tags, policy fragments
+# versionSets:
+#   - name: my-version-set
+#     properties:
+#       displayName: "My Version Set ({{ENVIRONMENT}})"
+# products:
+#   - name: starter
+#     properties:
+#       displayName: "Starter Plan ({{ENVIRONMENT}})"
+# tags:
+#   - name: env-tag
+#     properties:
+#       displayName: "{{ENVIRONMENT}}"

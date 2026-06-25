@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$comment": "Copyright (c) Microsoft Corporation. Licensed under the MIT license.",
-  "$id": "https://github.com/Azure/apiops-cli/schemas/override-config.schema.json",
+  "$comment": "Copyright (c) Microsoft Corporation. Licensed under the MIT license. Schema version: v1.",
+  "$id": "https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas/v1/override-config.schema.json",
   "title": "APIOps Override Configuration",
   "description": "Validates configuration.{env}.yaml override files used by APIOps CLI to apply environment-specific property overrides during publish. All resource sections are optional.",
   "type": "object",

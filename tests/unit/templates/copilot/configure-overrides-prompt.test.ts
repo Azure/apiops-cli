@@ -13,7 +13,7 @@ describe('copilot/configure-overrides-prompt', () => {
 
     expect(prompt).toContain('# Configure APIOps Environment Overrides');
     expect(prompt).toContain('configuration.{environment}.yaml');
-    expect(prompt).toContain('Detect Environments');
+    expect(prompt).toContain('Detect and Confirm Environments');
     expect(prompt).toContain('configuration.*.yaml');
     expect(prompt).not.toMatch(/\{\{[^}]+\}\}/);
   });

@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$comment": "Copyright (c) Microsoft Corporation. Licensed under the MIT license.",
-  "$id": "https://github.com/Azure/apiops-cli/schemas/extractor-config.schema.json",
+  "$comment": "Copyright (c) Microsoft Corporation. Licensed under the MIT license. Schema version: v1.",
+  "$id": "https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas/v1/extractor-config.schema.json",
   "title": "APIOps Filter Configuration",
   "description": "Validates configuration.extractor.yaml files used by APIOps CLI to select which Azure API Management resources are extracted. All resource sections are optional.",
   "type": "object",

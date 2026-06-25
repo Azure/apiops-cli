@@ -45,14 +45,14 @@ async function runNpm(args: string[]): Promise<string> {
   return result.stdout;
 }
 
-async function collectMarkdownFiles(dirPath: string): Promise<string[]> {
+async function collectEmbeddableTemplateFiles(dirPath: string): Promise<string[]> {
   const entries = await fs.readdir(dirPath, { withFileTypes: true });
   const nested = await Promise.all(entries.map(async (entry) => {
     const fullPath = path.join(dirPath, entry.name);
     if (entry.isDirectory()) {
-      return collectMarkdownFiles(fullPath);
+      return collectEmbeddableTemplateFiles(fullPath);
     }
-    return entry.name.endsWith('.md') ? [fullPath] : [];
+    return entry.name.endsWith('.md') || entry.name.endsWith('.yaml') ? [fullPath] : [];
   }));
 
   return nested.flat();
@@ -94,14 +94,14 @@ describe('package build integration', () => {
     expect(distFiles.length).toBeGreaterThan(0);
   }, 240_000);
 
-  it('should include all src/templates markdown files in packed output via embedded template constants', async () => {
+  it('should include all src/templates markdown and yaml files in packed output via embedded template constants', async () => {
     await runNpm(['run', 'build']);
 
     const templateRoot = path.join(repoRoot, 'src/templates');
-    const markdownFiles = await collectMarkdownFiles(templateRoot);
-    expect(markdownFiles.length).toBeGreaterThan(0);
+    const templateFiles = await collectEmbeddableTemplateFiles(templateRoot);
+    expect(templateFiles.length).toBeGreaterThan(0);
 
-    const expectedTemplateContents = await Promise.all(markdownFiles.map(async (filePath) => {
+    const expectedTemplateContents = await Promise.all(templateFiles.map(async (filePath) => {
       const relPath = normalizePath(path.relative(templateRoot, filePath));
       const content = await fs.readFile(filePath, 'utf8');
       return { relPath, content };

@@ -69,6 +69,17 @@ describe('configs/filter-config', () => {
       const lines = config.split('\n').filter((line) => line.trim() && !line.trim().startsWith('#'));
       expect(lines).toHaveLength(0);
     });
+
+    it('should render the extractor schema URL in the yaml-language-server header', () => {
+      const config = generateFilterConfig();
+      expect(config).toContain('# yaml-language-server: $schema=');
+      expect(config).toContain('schemas/v1/extractor-config.schema.json');
+    });
+
+    it('should not leave any unrendered template placeholders', () => {
+      const config = generateFilterConfig();
+      expect(config).not.toMatch(/\{\{[^}]+\}\}/);
+    });
   });
 });
 
@@ -139,6 +150,18 @@ describe('configs/override-config', () => {
       const config = generateOverrideConfig('dev');
       const lines = config.split('\n').filter((line) => line.trim() && !line.trim().startsWith('#'));
       expect(lines).toHaveLength(0);
+    });
+
+    it('should render the override schema URL in the yaml-language-server header', () => {
+      const config = generateOverrideConfig('dev');
+      expect(config).toContain('# yaml-language-server: $schema=');
+      expect(config).toContain('schemas/v1/override-config.schema.json');
+    });
+
+    it('should substitute every environment placeholder', () => {
+      const config = generateOverrideConfig('staging');
+      expect(config).not.toMatch(/\{\{[^}]+\}\}/);
+      expect(config).toContain('staging-api-key-value');
     });
   });
 });

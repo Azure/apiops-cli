@@ -16,7 +16,19 @@ import { resolve } from 'node:path';
 
 const repoRoot = resolve(import.meta.dirname, '..');
 const configPath = resolve(repoRoot, 'src/models/config.ts');
-const schemasDir = resolve(repoRoot, 'schemas');
+
+// Schemas are versioned independently of the CLI package version. Each schema
+// version lives at a frozen path (schemas/v<N>/...) on the `main` branch:
+// backward-compatible edits update the current version in place, while a
+// breaking change introduces a new version folder. The `main` ref always
+// resolves, and the versioned path keeps existing configs pointing at the
+// schema shape they were written against.
+const pkg = JSON.parse(await readFile(resolve(repoRoot, 'package.json'), 'utf8'));
+const schemaVersion = pkg.schemaVersion ?? '1';
+const schemaDirName = `v${schemaVersion}`;
+const schemasDir = resolve(repoRoot, 'schemas', schemaDirName);
+const SCHEMA_BASE = 'https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas';
+const schemaId = (fileName) => `${SCHEMA_BASE}/${schemaDirName}/${fileName}`;
 
 // Read the config.ts source to extract interface fields
 const configSource = await readFile(configPath, 'utf8');
@@ -150,11 +162,12 @@ function buildWorkspaceSubFilterProperties() {
 }
 
 const LICENSE_COMMENT = 'Copyright (c) Microsoft Corporation. Licensed under the MIT license.';
+const versionComment = `${LICENSE_COMMENT} Schema version: ${schemaDirName}.`;
 
 const extractorSchema = {
   $schema: 'http://json-schema.org/draft-07/schema#',
-  $comment: LICENSE_COMMENT,
-  $id: 'https://github.com/Azure/apiops-cli/schemas/extractor-config.schema.json',
+  $comment: versionComment,
+  $id: schemaId('extractor-config.schema.json'),
   title: 'APIOps Filter Configuration',
   description:
     'Validates configuration.extractor.yaml files used by APIOps CLI to select which Azure API Management resources are extracted. All resource sections are optional.',
@@ -281,8 +294,8 @@ function buildOverrideProperties() {
 
 const overrideSchema = {
   $schema: 'http://json-schema.org/draft-07/schema#',
-  $comment: LICENSE_COMMENT,
-  $id: 'https://github.com/Azure/apiops-cli/schemas/override-config.schema.json',
+  $comment: versionComment,
+  $id: schemaId('override-config.schema.json'),
   title: 'APIOps Override Configuration',
   description:
     'Validates configuration.{env}.yaml override files used by APIOps CLI to apply environment-specific property overrides during publish. All resource sections are optional.',

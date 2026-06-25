@@ -41,6 +41,14 @@ const templates = [
     exportName: 'copilotGithubEnvironmentSecretCommandsTemplate',
     path: 'src/templates/shared/github-environment-secret-commands.md',
   },
+  {
+    exportName: 'filterConfigTemplate',
+    path: 'src/templates/configs/filter-config.yaml',
+  },
+  {
+    exportName: 'overrideConfigTemplate',
+    path: 'src/templates/configs/override-config.yaml',
+  },
 ];
 
 const rendered = await Promise.all(

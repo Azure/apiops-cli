@@ -41,10 +41,10 @@ Only `petstore-api`, `orders-api`, and their transitive dependencies are extract
 Add this comment as the first line of your filter file to enable autocomplete in VS Code and other YAML-aware editors:
 
 ```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas/extractor-config.schema.json
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas/v1/extractor-config.schema.json
 ```
 
-The schema validates field names, array structure, and sub-resource filters. It is published at [`schemas/extractor-config.schema.json`](https://github.com/Azure/apiops-cli/blob/main/schemas/extractor-config.schema.json).
+The schema validates field names, array structure, and sub-resource filters. It is published at [`schemas/v1/extractor-config.schema.json`](https://github.com/Azure/apiops-cli/blob/main/schemas/v1/extractor-config.schema.json).
 
 ---
 
