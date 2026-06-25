@@ -5,11 +5,36 @@ All notable changes to the APIOps CLI are documented in this file.
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/) with alpha pre-release tags.
 
+## [0.3.0-alpha.0] — 2026-06-25
+
+### Breaking Changes
+
+- **Removed unimplemented CLI options** — `--spec-format` (extract command) and `--otel` (global) have been removed from the CLI, docs, and specs. Both were documented but never implemented, so no functional behavior changes for users who weren't relying on them ([#165](https://github.com/Azure/apiops-cli/pull/165))
+
+### Features
+
+- **Wildcard pattern matching in filter configuration** — all name-based filter fields (`apis`, `backends`, `namedValues`, etc.) now accept glob-style patterns with `*` and `?`. Exact names still work alongside patterns ([#160](https://github.com/Azure/apiops-cli/pull/160))
+- **Workspace sub-resource filtering** — nested workspace filters are now applied at runtime (previously documented but not implemented). Wildcard patterns in the `workspaces` list trigger discovery-then-filter instead of being used as literal names. Adds `schemas` field on `WorkspaceSubFilter` ([#160](https://github.com/Azure/apiops-cli/pull/160))
+- **Token substitution validation in generated GitHub Actions publish workflow** — `apiops init` now adds a validation step between token substitution and publish that greps for unresolved \`{#[...]#}\` tokens and fails the job with a clear list of unmapped names. Mirrors the existing Azure DevOps behavior ([#158](https://github.com/Azure/apiops-cli/pull/158))
+- **MCP publish from embedded API metadata** — MCP configuration is now read/written exclusively from `apiInformation.json`; the redundant `mcpServerInformation.json` sidecar is no longer produced or consumed. Legacy sidecars are ignored. Tool operation references are rewritten from source to target ARM IDs before override application so overrides still win ([#173](https://github.com/Azure/apiops-cli/pull/173))
+- **Association scope tracking for round-trip correctness** — extract/publish now records and reconstructs whether each linked resource (e.g. workspace product → built-in group) is service-scoped or workspace-scoped, producing correct ARM paths in both directions. Backward-compatible with legacy artifact files that only contain `name`. 409 "link already exists" responses are treated as idempotent successes ([#175](https://github.com/Azure/apiops-cli/pull/175))
+
+### Bug Fixes
+
+- **Resource group log masking preserves meaningful segments** — `Protect-ResourceGroupName` now detects resource group names ending with a long numeric suffix (>=6 digits, typical of GitHub `run_id` values) and preserves the last dash-separated segment before the number. Output goes from `rg-...1553476` to `rg-...src-27781553476`, making source vs target groups distinguishable in logs ([#168](https://github.com/Azure/apiops-cli/pull/168))
+- **Override config template no longer hardcodes a secret** — the generated `configuration.override.yaml` from `apiops init` now uses a \`{#[DB\_Connection\_String]#}\` token placeholder for the connection-string example (aligned with the pipeline substitution format) and drops the confusing "APIOps Toolkit" reference comment ([#164](https://github.com/Azure/apiops-cli/pull/164))
+
+### Docs & Testing
+
+- **Incremental publish behavior documented** — clarified that changes to override files alone don't trigger incremental publish; only API/policy/etc. artifact changes do ([#159](https://github.com/Azure/apiops-cli/pull/159))
+- **Environment overrides guide improvements** — expanded examples and clarifications in `docs/guides/environment-overrides.md` ([#166](https://github.com/Azure/apiops-cli/pull/166))
+- **All-types round-trip test imports Petstore Swagger** — the all-resource-types integration test now imports the canonical Petstore Swagger spec in both V2 and V3 forms, exercising a broader surface ([#171](https://github.com/Azure/apiops-cli/pull/171))
+
 ## [0.2.1-alpha.0] — 2026-06-12
 
 ### Features
 
-- **Token substitution in publish pipelines** — `{#[TOKEN_NAME]#}` placeholders are now resolved during publish, matching APIOps Toolkit behavior ([#127](https://github.com/Azure/apiops-cli/pull/127))
+- **Token substitution in publish pipelines** — \`{#[TOKEN\_NAME]#}\` placeholders are now resolved during publish, matching APIOps Toolkit behavior ([#127](https://github.com/Azure/apiops-cli/pull/127))
 
 ### Bug Fixes
 
@@ -113,6 +138,7 @@ This project uses [Semantic Versioning](https://semver.org/) with alpha pre-rele
 - **Initial release** — core extract, publish, and init commands for Azure API Management ([#15](https://github.com/Azure/apiops-cli/pull/15))
 - **CodeQL analysis** — automated security scanning workflow ([#19](https://github.com/Azure/apiops-cli/pull/19))
 
+[0.3.0-alpha.0]: https://github.com/Azure/apiops-cli/compare/v0.2.1-alpha.0...v0.3.0-alpha.0
 [0.2.1-alpha.0]: https://github.com/Azure/apiops-cli/compare/v0.2.0-alpha.0...v0.2.1-alpha.0
 [0.2.0-alpha.0]: https://github.com/Azure/apiops-cli/compare/v0.1.7-alpha.0...v0.2.0-alpha.0
 [0.1.7-alpha.0]: https://github.com/Azure/apiops-cli/compare/v0.1.6-alpha.0...v0.1.7-alpha.0
