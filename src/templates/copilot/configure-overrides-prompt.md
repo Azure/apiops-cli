@@ -38,6 +38,13 @@ These rules apply to **every** step below. Follow them strictly:
    that should be written literally.
 4. **Ask, don't guess, about pipeline tokens.** Only use a token after the user
    has told you that token exists (or will be added) in their pipeline.
+5. **The JSON schema is the source of structure.** To determine the valid
+   shape of an override entry and its nested properties (for example a Key
+   Vault named value's `keyVault.secretIdentifier` / `identityClientId`),
+   consult the `override-config` JSON schema referenced in each file's
+   `# yaml-language-server: $schema=...` comment (the public schema URL). Do
+   **not** rely on the `apiops-cli` source repository — end users only have
+   the built npm package and the published schema URL.
 
 ---
 
@@ -97,6 +104,9 @@ Using the artifact directory confirmed in Step 1:
    - Diagnostic `loggerId` references
    - Gateway or VNet references
    - Policy fragment references to external endpoints
+   - Workspace-scoped resources (only if the APIM instance uses **workspaces**)
+     — workspaces can contain their own APIs, backends, named values, loggers,
+     etc. that may need per-environment overrides
 
    > **Note:** References to sub-resources of the same APIM instance (e.g.,
    > one API referencing another API's policy) are handled automatically by
@@ -115,8 +125,12 @@ Using the artifact directory confirmed in Step 1:
    confirmed candidate as an entry with the correct `name` and structure but
    **blank values** (e.g., empty strings `""` or empty `properties`). This
    shows the shape of each file; the actual values are filled in during
-   Step 4. Include the schema comment as the first line of each file:
-   `# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas/override-config.schema.json`
+   Step 4. **Preserve any existing schema comment.** If a file already has a
+   `# yaml-language-server: $schema=...` line (as `apiops init` generates),
+   keep it **exactly as-is** — it already points at the correct schema version.
+   Only when creating a brand-new file with no schema comment, add one
+   referencing the current schema version:
+   `# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas/v1/override-config.schema.json`
 
 **STOP for confirmation before continuing to Step 3.**
 
