@@ -49,32 +49,80 @@ Don't commit the version bump yet — the changelog has to be written first (Ste
 
 ### 4. Compile the list of changes
 
-Find the previous release tag, then walk every merged PR since:
+**⚠️ Do NOT trust the previous version's git tag as the lower bound, and do NOT trust the new version's git tag (if it exists) as the upper bound.** Tags in this repo have historically been created out-of-order, prematurely, or left orphaned. The only reliable approach is to enumerate merged PRs by **merge date** on `main`.
+
+#### Step 4a. Establish the date range
 
 ```powershell
-# Most recent tag (sorted by semver)
-git tag --sort=-v:refname | Select-Object -First 1
-
-# Commits since that tag
-git log <previous-tag>..main --pretty=format:"%h %s" --no-merges
-
-# PRs merged since that tag (more useful for changelog entries)
-gh pr list --state merged --base main --limit 100 --json number,title,mergedAt,url `
-  --jq '[.[] | select(.mergedAt > "<previous-tag-date>")] | .[] | "#\(.number) \(.title)"'
+# Find the previous release's tag and its commit date
+git tag --sort=-v:refname | Select-Object -First 5
+$prevTag = "v<PREV_VERSION>"   # e.g. v0.2.1-alpha.0 — confirm with the team if uncertain
+$prevDate = git --no-pager log -1 --format="%cI" $prevTag
+Write-Host "Previous release tag: $prevTag at $prevDate"
 ```
 
-Group the entries into the sections used by `CHANGELOG.md`:
+**Sanity check: is the tag stale?** If the tag's commit isn't on `main` HEAD or close to it, the tag may be premature/orphaned and shouldn't be used as an upper bound for the *next* release either:
+
+```powershell
+$commitsSinceTag = (git --no-pager log --oneline "$prevTag..main" | Measure-Object -Line).Lines
+Write-Host "$commitsSinceTag commits on main since $prevTag"
+# If this is suspiciously large (50+) and you weren't expecting that, investigate
+# before assuming the tag represents the last *real* release.
+```
+
+If you find a tag that exists but has no matching `## [VERSION]` entry in `CHANGELOG.md` and no GitHub Release, treat it as **orphaned** — ignore it and use the most recent tag that *does* appear in `CHANGELOG.md` as your lower bound.
+
+#### Step 4b. Enumerate all merged PRs in the date range
+
+This is the authoritative list. **Do not** use `git log tag..tag` as a substitute — see "Why this matters" below.
+
+```powershell
+# Pull every PR merged on/after the previous release date.
+# Strip the time portion to be inclusive of release-day PRs.
+$sinceDate = ($prevDate -split "T")[0]
+gh pr list --state merged --base main --search "merged:>=$sinceDate" --limit 100 `
+  --json number,title,mergedAt,author `
+  --jq '.[] | "\(.mergedAt) #\(.number) [\(.author.login)] \(.title)"' `
+  | Sort-Object
+```
+
+Cross-check against the commit log (sanity, not source of truth — `gh pr list` is canonical):
+
+```powershell
+git --no-pager log --merges --pretty=format:"%ci %s" "$prevTag..main"
+```
+
+If the two lists disagree (e.g. a PR in `gh pr list` doesn't appear in `git log`), trust `gh pr list`. A PR can be missing from `git log tag..tag` because the tag was placed prematurely, the PR was rebased/squashed, or the PR landed on a branch that was later merged via another commit.
+
+#### Step 4c. Categorize the PRs
+
+Walk each PR and place it into one of these buckets. Use `gh pr view <N> --json title,body` to read details when the title alone isn't enough:
 
 - **Features** — new user-visible capabilities
 - **Bug Fixes** — corrections to existing behavior
 - **Docs & Testing** — documentation, examples, test improvements
-- **Breaking Changes** — anything that requires user action (add this section only if non-empty; call it out loudly)
+- **Breaking Changes** — anything that requires user action (add this section only if non-empty; call it out loudly even for pre-1.0)
+- **Skip from changelog** — internal repo tooling (issue templates, agentic workflows, label sync, squad/agent upgrades, CI hardening that doesn't affect end users). These don't belong in a user-facing changelog. If you're unsure, **ask the user** rather than guessing.
 
-Use the existing changelog as a style guide — short bolded headline, then plain-language explanation, then PR link(s):
+#### Step 4d. Confirm the categorization with the user before writing the entry
+
+Show the user the categorized list and confirm:
+
+- Which PRs belong in the user-facing changelog vs. are internal-only
+- Whether any PR title is misleading and needs a clearer headline
+- Whether any change is breaking (especially CLI flag removals, schema changes, default-value changes)
+
+Only after this confirmation, proceed to draft the entry using the existing changelog style (short bolded headline → plain-language explanation → PR link):
 
 ```markdown
 - **Token substitution in publish pipelines** — `{#[TOKEN_NAME]#}` placeholders are now resolved during publish, matching APIOps Toolkit behavior ([#127](https://github.com/Azure/apiops-cli/pull/127))
 ```
+
+#### Why this matters (don't repeat past mistakes)
+
+A prior release attempt used `git log v<prev>..v<new>` to compile changes and found only 1 PR — when in reality **18 PRs** had merged in the range. Root cause: the `v<new>` tag had been placed on a commit 9 days before the actual release-bump PR merged, so `git log` only saw commits up to that stale tag. The user caught the mistake by eyeballing the GitHub PR list.
+
+**Lesson:** tags are not a reliable boundary in this repo. Always enumerate by `gh pr list --search "merged:>=<date>"` and cross-check against the screen the user sees on github.com/Azure/apiops-cli/pulls?q=is%3Amerged.
 
 ### 5. Suggest a version and let the user pick
 
@@ -115,13 +163,24 @@ Insert a new section directly under the `# Changelog` header (above the previous
 - ...
 ```
 
-Verify the workflow validator will accept it:
+**Also add a compare-link footer at the bottom of the file.** CHANGELOG.md uses [Keep a Changelog](https://keepachangelog.com/) reference-style links so every `## [VERSION]` heading renders as a clickable link to the GitHub compare view between this and the previous release. The footer lives at the very bottom of the file and looks like:
+
+```markdown
+[0.3.1-alpha.0]: https://github.com/Azure/apiops-cli/compare/v0.3.0-alpha.0...v0.3.1-alpha.0
+[0.3.0-alpha.0]: https://github.com/Azure/apiops-cli/compare/v0.2.1-alpha.0...v0.3.0-alpha.0
+...
+```
+
+Add a new line for the new version at the **top** of the footer block (most recent first), comparing against the **immediately preceding** version's tag.
+
+Verify both the workflow validator will accept the heading **and** the compare link is in place:
 
 ```powershell
 Select-String -Path CHANGELOG.md -Pattern "^## \[<NEW_VERSION>\]"
+Select-String -Path CHANGELOG.md -Pattern "^\[<NEW_VERSION>\]:"
 ```
 
-If `Select-String` returns nothing, the header is malformed — fix the brackets, spacing, or em-dash.
+Both `Select-String` calls must return a hit. If the first is empty the workflow will fail; if the second is empty the version heading won't render as a link in the published changelog (a pre-existing convention violation, not a workflow failure — but still wrong).
 
 ### 7. Bump the version with `npm version`
 
