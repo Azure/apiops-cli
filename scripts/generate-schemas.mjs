@@ -311,6 +311,8 @@ const overrideSchema = {
     },
     overrideEntry: {
       type: 'object',
+      // Only 'name' is required: the loader treats 'properties' as optional and
+      // falls back to inline fields when it is omitted (see src/lib/config-loader.ts).
       required: ['name'],
       additionalProperties: false,
       properties: {
