@@ -23,15 +23,22 @@ apiops publish \
   --overrides ./configuration.prod.yaml
 ```
 
-## IDE Autocomplete (JSON Schema)
+## Copilot-Assisted Configuration
 
-Add this comment as the first line of your override file to enable autocomplete in VS Code and other YAML-aware editors:
+If you ran `apiops init`, a Copilot prompt file was generated at `.github/prompts/apiops-configure-overrides.prompt.md`. Open it in VS Code and ask GitHub Copilot to help you configure environment overrides — it will guide you through setting up environment-specific values interactively.
+
+## IDE Autocompletion with JSON Schema
+
+A JSON Schema is available for `configuration.{env}.yaml` override files. Add yaml-language-server comment at the top of your override file. Requires yaml language extension in VSCode.
 
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas/v1/override-config.schema.json
 ```
 
-The schema validates section names, entry structure, nested sub-resource overrides, and supports `{#[TOKEN_NAME]#}` placeholder values. It is published at [`schemas/v1/override-config.schema.json`](https://github.com/Azure/apiops-cli/blob/main/schemas/v1/override-config.schema.json).
+The schema provides:
+- Property name autocompletion for all resource sections
+- Validation of the override structure (name + properties format)
+- Inline documentation including token substitution syntax
 
 ## Override file format (APIOps Toolkit-compatible)
 
@@ -567,21 +574,3 @@ apiops publish --overrides configuration.prod.yaml --dry-run \
 - [Scenarios and Workflows](scenarios-and-workflows.md)
 - [GitHub Actions Integration](../ci-cd/github-actions.md)
 
----
-
-## Copilot-Assisted Configuration
-
-If you ran `apiops init`, a Copilot prompt file was generated at `.github/prompts/apiops-configure-overrides.prompt.md`. Open it in VS Code and ask GitHub Copilot to help you configure environment overrides — it will guide you through setting up environment-specific values interactively.
-
-## IDE Autocompletion with JSON Schema
-
-A JSON Schema is available for `configuration.{env}.yaml` override files. Add this comment at the top of your override file to enable autocompletion in VS Code (with the YAML extension):
-
-```yaml
-# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas/v1/override-config.schema.json
-```
-
-The schema provides:
-- Property name autocompletion for all resource sections
-- Validation of the override structure (name + properties format)
-- Inline documentation including token substitution syntax

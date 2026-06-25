@@ -38,7 +38,7 @@ Only `petstore-api`, `orders-api`, and their transitive dependencies are extract
 
 ## IDE Autocomplete (JSON Schema)
 
-Add this comment as the first line of your filter file to enable autocomplete in VS Code and other YAML-aware editors:
+Add yaml-language-server comment at the top of your override file. Requires yaml language extension in VSCode.
 
 ```yaml
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas/v1/extractor-config.schema.json
