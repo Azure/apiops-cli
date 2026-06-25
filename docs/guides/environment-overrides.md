@@ -52,6 +52,10 @@ namedValues:
       keyVault:
         secretIdentifier: "https://prod-kv.vault.azure.net/secrets/db-conn"
         identityClientId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+  - name: payment-api-key
+    properties:
+      secret: true
+      value: "{#[PAYMENT_API_KEY]#}"  # Pipeline token — replaced at runtime
 
 backends:
   - name: petstore-backend
@@ -136,6 +140,29 @@ namedValues:
         secretIdentifier: "https://prod-keyvault.vault.azure.net/secrets/db-conn-string"
         identityClientId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 ```
+
+### Named value secrets (with pipeline token substitution)
+
+Secrets can be stored in Key Vault (see [Key Vault pattern](#key-vault-pattern) below) or injected at pipeline runtime using [token substitution](token-substitution.md). With token substitution, the `{#[TOKEN_NAME]#}` placeholder is replaced with the actual secret value from your pipeline's secret store (GitHub Actions Secrets or Azure DevOps variable groups).
+
+```yaml
+namedValues:
+  - name: payment-api-key
+    properties:
+      displayName: payment-api-key
+      secret: true
+      value: "{#[PAYMENT_API_KEY]#}"  # Replaced at pipeline runtime
+  - name: webhook-secret
+    properties:
+      secret: true
+      value: "{#[WEBHOOK_SECRET]#}"
+```
+
+Store the actual secret values in:
+- **GitHub Actions:** Environment secrets (Settings → Environments → Add secret). See [Using secrets in GitHub Actions](https://docs.github.com/actions/security-guides/using-secrets-in-github-actions#creating-secrets-for-an-environment).
+- **Azure DevOps:** Variable groups marked as secret (Pipelines → Library). See [Use variable groups in pipelines](https://learn.microsoft.com/azure/devops/pipelines/library/variable-groups) and [Set secret variables](https://learn.microsoft.com/azure/devops/pipelines/process/set-secret-variables).
+
+See the [Token Substitution guide](token-substitution.md) for complete setup instructions.
 
 ### Backends
 
@@ -251,6 +278,8 @@ loggers:
       isBuffered: true
 ```
 
+> **Tip:** You can also use [pipeline token substitution](token-substitution.md) for logger credentials. Replace the hardcoded value with a placeholder like `{#[APPINSIGHTS_KEY]#}`, and store the actual key in your pipeline's secret store. This keeps secrets out of your repository entirely.
+
 ### Subscriptions
 
 ```yaml
@@ -308,7 +337,7 @@ policies:
 
 ### Version sets, groups, and tags
 
-Overrides are also supported for `versionSets`, `groups`, `tags`, and `workspaces`. Each uses the same `name` + `properties` format:
+Overrides are also supported for `versionSets`, `groups`, and `tags`. Each uses the same `name` + `properties` format:
 
 ```yaml
 versionSets:
@@ -327,6 +356,50 @@ tags:
     properties:
       displayName: "Public API"
 ```
+
+### Workspaces
+
+Workspaces (Premium/StandardV2/PremiumV2 tiers) support overrides for the workspace container itself:
+
+```yaml
+workspaces:
+  - name: partner-workspace
+    properties:
+      displayName: "Partner Workspace (Production)"
+      description: "Production workspace for partner APIs"
+```
+
+#### Workspace-scoped resource overrides
+
+Resources inside a workspace are extracted to `workspaces/<workspace-name>/` subdirectories. To override them, **nest** the child sections directly under the workspace entry (matching the APIOps Toolkit format):
+
+```yaml
+workspaces:
+  - name: partner-workspace
+    properties:
+      displayName: "Partner Workspace (Production)"
+    apis:
+      - name: orders-api
+        properties:
+          serviceUrl: "https://orders-prod.contoso.com/v1"
+    backends:
+      - name: orders-backend
+        properties:
+          url: "https://orders-prod.contoso.com"
+    namedValues:
+      - name: api-key
+        properties:
+          secret: true
+          value: "{#[PARTNER_API_KEY]#}"
+    loggers:
+      - name: appinsights-logger
+        properties:
+          resourceId: "/subscriptions/<sub-id>/resourceGroups/<rg>/providers/microsoft.insights/components/prod-appinsights"
+```
+
+The supported workspace child sections are: `apis`, `backends`, `diagnostics`, `groups`, `loggers`, `namedValues`, `policyFragments`, `products`, `subscriptions`, `tags`, and `versionSets`.
+
+> ⚠️ **Known limitation — tracked in [#118](https://github.com/Azure/apiops-cli/issues/118):** workspace child overrides are *parsed* (the YAML above is accepted with no errors) but are **not yet applied at publish time**. Until #118 is fixed, only the workspace container's own `properties` are honored for workspace-scoped resources. Authoring overrides in this nested shape today is safe and forward-compatible — they will start taking effect automatically once the merger is updated.
 
 ## Override rules
 
@@ -488,6 +561,7 @@ apiops publish --overrides configuration.prod.yaml --dry-run \
 ## Related
 
 - [`apiops publish` Command Reference](../commands/publish.md)
+- [Token Substitution Guide](token-substitution.md)
 - [Configuration Reference](../reference/configuration.md)
 - [Authentication Guide](authentication.md)
 - [Scenarios and Workflows](scenarios-and-workflows.md)

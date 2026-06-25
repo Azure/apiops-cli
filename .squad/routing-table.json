@@ -1,0 +1,82 @@
+[
+  {
+    "workType": "Architecture, design decisions, scope/priority",
+    "routeTo": "ApiOpsLead",
+    "examples": ["High-level design", "command structure", "trade-off calls"]
+  },
+  {
+    "workType": "APIM REST API, resource types, policies",
+    "routeTo": "ApimExpert",
+    "examples": ["Extract/publish logic", "dependency ordering", "pagination", "retry", "workspace scoping"]
+  },
+  {
+    "workType": "APIC REST API, API Center resources",
+    "routeTo": "ApicExpert",
+    "examples": ["APIC sync", "APIC resource model", "APIM-APIC integration"]
+  },
+  {
+    "workType": "TypeScript types, interfaces, abstractions",
+    "routeTo": "TypeScriptDev",
+    "examples": ["tsconfig", "abstraction contracts", "ESLint", "build"]
+  },
+  {
+    "workType": "CLI wiring, Commander, npm, init scaffolding",
+    "routeTo": "NodeJsDev",
+    "examples": ["Flag definitions", "help text", "exit codes", "apiops init", "package.json"]
+  },
+  {
+    "workType": "Tests, mocking, edge cases, coverage",
+    "routeTo": "TestEngineer",
+    "examples": ["Vitest unit tests", "mock implementations", "spec edge cases"]
+  },
+  {
+    "workType": "License compliance, OSS requirements, repo health",
+    "routeTo": "OpenSourceExpert",
+    "examples": ["Dependency audits", "LICENSE/SECURITY/CONTRIBUTING files", "CLA"]
+  },
+  {
+    "workType": "Code review, standards enforcement",
+    "routeTo": "CodeReviewer",
+    "examples": ["Review PRs", "enforce constitution compliance", "check testability", "modern TypeScript standards"]
+  },
+  {
+    "workType": "Azure DevOps, az devops, pipelines, service connections",
+    "routeTo": "AzdoExpert",
+    "examples": ["Azure Pipelines YAML", "variable groups", "service connections", "workload identity", "az pipelines"]
+  },
+  {
+    "workType": "GitHub Actions, gh CLI, repository settings",
+    "routeTo": "GitHubExpert",
+    "examples": ["GitHub workflows", "reusable actions", "OIDC federation", "branch protection", "gh commands"]
+  },
+  {
+    "workType": "Documentation, user guides, diagrams, /docs content",
+    "routeTo": "DocWriter",
+    "examples": ["Markdown docs", "Mermaid charts", "API developer guides", "README"]
+  },
+  {
+    "workType": "Security, threat modeling, supply-chain defense",
+    "routeTo": "SecurityExpert",
+    "examples": ["Workflow hardening", "dependency pinning", "secret scanning", "fork PR threat modeling", "hostile contributor defense", "cross-team security review"]
+  },
+  {
+    "workType": "Architecture review, scope decisions",
+    "routeTo": "ApiOpsLead",
+    "examples": ["High-level design review", "spec alignment", "scope gatekeeping"]
+  },
+  {
+    "workType": "Issue triage",
+    "routeTo": "ApiOpsLead",
+    "examples": ["Read GitHub issues", "assign squad:{member} labels"]
+  },
+  {
+    "workType": "Session logging",
+    "routeTo": "Scribe",
+    "examples": ["Automatic — never needs routing"]
+  },
+  {
+    "workType": "Work queue monitoring",
+    "routeTo": "Ralph",
+    "examples": ["Automatic — activated with Ralph, go"]
+  }
+]

@@ -46,7 +46,6 @@ describe('CLI entry point', () => {
     expect(result.stdout).toContain('--format');
     expect(result.stdout).toContain('--subscription-id');
     expect(result.stdout).toContain('--cloud');
-    expect(result.stdout).toContain('--otel');
     expect(result.exitCode).toBe(0);
   });
 

@@ -66,7 +66,6 @@ apiops extract \
 | `--output <dir>` | string | `./apim-artifacts` | No | Output directory path |
 | `--filter <path>` | string | — | No | Filter configuration YAML file |
 | `--no-transitive` | boolean | false (transitive ON) | No | Disable transitive dependency inclusion |
-| `--spec-format <format>` | string | — | No | API spec format: `openapi-v2-json`, `openapi-v3-json`, `openapi-v3-yaml` |
 
 ### Global flags
 

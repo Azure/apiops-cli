@@ -47,7 +47,6 @@ Extract APIM service configuration to local artifact files.
 | `--output <dir>` | `./apim-artifacts` | Output directory |
 | `--filter <path>` | | Extract only matching resources |
 | `--no-transitive` | | Skip transitive dependencies |
-| `--spec-format <format>` | | Override API spec format |
 
 ```bash
 apiops extract --help
@@ -58,12 +57,11 @@ apiops extract \
   --service-name <name> \
   --output ./apim-artifacts
 
-# Extract a filtered subset of resources and override the API spec format
+# Extract a filtered subset of resources
 apiops extract \
   --resource-group <rg> \
   --service-name <name> \
-  --filter ./filter.yaml \
-  --spec-format openapi-v3-yaml
+  --filter ./filter.yaml
 
 # Authenticate explicitly with a service principal
 apiops extract \
@@ -142,6 +140,12 @@ apiops init \
 | `--client-id <id>` | `AZURE_CLIENT_ID` env var | Service principal client ID |
 | `--client-secret <secret>` | `AZURE_CLIENT_SECRET` env var | Service principal secret |
 | `--tenant-id <id>` | `AZURE_TENANT_ID` env var | Azure AD tenant ID |
+
+## Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md) for release notes and the list of changes in each version. To see what has changed
+since the version you have installed, compare tags on GitHub
+(e.g. [`v0.2.1-alpha.0...main`](https://github.com/Azure/apiops-cli/compare/v0.2.1-alpha.0...main)).
 
 ## Contributing
 

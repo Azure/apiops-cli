@@ -14,7 +14,6 @@ export interface ExtractConfig {
   filter?: FilterConfig;
   includeTransitive: boolean;
   logLevel: LogLevel;
-  otelConfigPath?: string;
 }
 
 /**
@@ -81,7 +80,6 @@ export interface PublishConfig {
   deleteUnmatched: boolean;
   commitId?: string;
   logLevel: LogLevel;
-  otelConfigPath?: string;
 }
 
 /**
