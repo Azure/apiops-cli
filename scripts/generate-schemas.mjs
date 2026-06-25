@@ -311,7 +311,7 @@ const overrideSchema = {
     },
     overrideEntry: {
       type: 'object',
-      required: ['name', 'properties'],
+      required: ['name'],
       additionalProperties: false,
       properties: {
         name: {

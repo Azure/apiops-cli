@@ -77,8 +77,7 @@
     "overrideEntry": {
       "type": "object",
       "required": [
-        "name",
-        "properties"
+        "name"
       ],
       "additionalProperties": false,
       "properties": {
