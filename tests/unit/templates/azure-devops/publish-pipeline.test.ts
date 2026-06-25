@@ -223,6 +223,7 @@ describe('azure-devops/publish-pipeline', () => {
       expect(pipeline).toContain("tokenPrefix: '{#['");
       expect(pipeline).toContain("tokenSuffix: ']#}'");
       expect(pipeline).toContain("missingVarAction: 'keep'");
+      expect(pipeline).toContain("missingVarLog: 'error'");
     });
 
     it('should validate unresolved tokens after substitution', () => {

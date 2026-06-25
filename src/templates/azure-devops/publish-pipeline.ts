@@ -61,6 +61,7 @@ export function generatePublishPipeline(config: PublishPipelineConfig): string {
                   tokenPrefix: '{#['
                   tokenSuffix: ']#}'
                   missingVarAction: 'keep'
+                  missingVarLog: 'error'
 
               - script: |
                   if grep -q '{#\\[' configuration.${env}.yaml; then
