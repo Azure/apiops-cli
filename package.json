@@ -10,7 +10,8 @@
     "apiops": "dist/cli/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "CHANGELOG.md"
   ],
   "readme": "README.md",
   "scripts": {
@@ -44,6 +45,7 @@
     "url": "https://github.com/Azure/apiops-cli/issues"
   },
   "homepage": "https://github.com/Azure/apiops-cli#readme",
+  "changelog": "https://github.com/Azure/apiops-cli/blob/main/CHANGELOG.md",
   "dependencies": {
     "@azure/identity": "^4.13.1",
     "any-ascii": "^0.3.3",

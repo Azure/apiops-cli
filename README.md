@@ -141,6 +141,12 @@ apiops init \
 | `--client-secret <secret>` | `AZURE_CLIENT_SECRET` env var | Service principal secret |
 | `--tenant-id <id>` | `AZURE_TENANT_ID` env var | Azure AD tenant ID |
 
+## Changelog
+
+See [CHANGELOG.md](./CHANGELOG.md) for release notes and the list of changes in each version. To see what has changed
+since the version you have installed, compare tags on GitHub
+(e.g. [`v0.2.1-alpha.0...main`](https://github.com/Azure/apiops-cli/compare/v0.2.1-alpha.0...main)).
+
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for how to build, test, debug, and submit changes.
