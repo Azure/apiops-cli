@@ -16,30 +16,60 @@ environment-specific settings.
 
 ---
 
-## Step 0 — Detect Environments
+## How Copilot must work through this prompt
 
-Before asking the user anything, look for existing environment configuration
-files in the repository:
+These rules apply to **every** step below. Follow them strictly:
+
+1. **Confirm before proceeding.** At the end of every step, summarize what you
+   learned or propose, then **STOP and wait for the user to confirm** before
+   moving to the next step. Never chain steps together without an explicit
+   "yes" / "go ahead" from the user.
+   - **Hard stop rule:** When you ask for confirmation, end the response there.
+     Do **not** include the next question, next override, or any forward action
+     in the same message.
+   - This hard stop applies to **step boundaries** (Step 0, Step 1, Step 2,
+     Step 3, Step 5, Step 6). In Step 4, follow the single-setting cadence below.
+2. **Never assume a value.** Do not invent backend URLs, service URLs,
+   resource IDs, instrumentation keys, secret names, Key Vault URLs, or token
+   names. If you don't know a value, **ask the user**.
+3. **Do not tokenize everything.** A `{#[TOKEN_NAME]#}` placeholder is only for
+   values the user explicitly wants injected by the pipeline (see Step 4 for
+   how to classify each value). Many values are plain, non-sensitive settings
+   that should be written literally.
+4. **Ask, don't guess, about pipeline tokens.** Only use a token after the user
+   has told you that token exists (or will be added) in their pipeline.
+
+---
+
+## Step 0 — Detect and Confirm Environments
+
+Before asking the user anything else, look for existing environment
+configuration files in the repository:
 
 1. Search for files matching `configuration.*.yaml` (excluding
    `configuration.extractor.yaml`). The `*` portion is the environment name.
 2. Also check CI/CD workflow files (`.github/workflows/` or
    `.azdo/pipelines/`) for environment references.
 
-If existing config files are found, present the detected environments to the
-user and ask them to confirm or update the list.
+Then **present the detected environments to the user** and ask which ones they
+want override files for:
 
-If no config files are found, ask the user:
+> "I found these environments: `<list>`. Which of these do you want to create
+> or update override files for? If you deploy to other environments I didn't
+> detect, list them too."
+
+If no config files are found, ask:
 > "What environments do you deploy to? Common patterns include `dev, stage, prod`
 > or `stage, prod` (if dev shares the same APIM instance as stage)."
 
-Once the environment list is confirmed, proceed.
+**STOP. Do not proceed until the user has explicitly confirmed the exact list
+of environments to work on.**
 
 ---
 
 ## Step 1 — Gather Information
 
-Copilot, collect the following from the user:
+Once the environment list is confirmed, collect the following:
 
 1. **Existing override config files** — If `configuration.{env}.yaml` files
    already exist:
@@ -47,23 +77,24 @@ Copilot, collect the following from the user:
    - Ask whether the user wants to update them or start fresh.
 
 2. **APIM artifacts location** — Ask the user where the APIOps artifact
-   directory is (default: `./apim-artifacts`). You will need to inspect the
-   artifacts in the next step.
+   directory is (default: `./apim-artifacts`). You will inspect the artifacts
+   in the next step.
 
-Summarize what you've learned before moving on.
+Summarize what you've learned and **STOP for confirmation** before continuing.
 
 ---
 
-## Step 2 — Investigate APIM Artifacts and Create Stub Override Files
+## Step 2 — Investigate Artifacts and Create Stub Override Files
 
-Using the artifact directory identified in Step 1:
+Using the artifact directory confirmed in Step 1:
 
-1. Scan the artifacts for references to **external resources** — these are the
-   things that typically need overrides between environments. Examples:
-   - Backend service URLs
-   - Named values (especially those referencing Key Vault secrets)
-   - Product subscription settings
-   - Logger resource IDs
+1. Scan the artifacts for references to **external resources** — the things
+   that typically differ between environments. Examples:
+   - API `serviceUrl` values
+   - Backend service URLs and linked `resourceId`s
+   - Named values (secrets and plain config values)
+   - Logger `resourceId`s and credentials
+   - Diagnostic `loggerId` references
    - Gateway or VNet references
    - Policy fragment references to external endpoints
 
@@ -71,80 +102,184 @@ Using the artifact directory identified in Step 1:
    > one API referencing another API's policy) are handled automatically by
    > APIOps and do **not** need overrides.
 
-2. For each environment, create a **stub** `configuration.{env}.yaml` that
-   covers all the commonly-overridden items you found. Use placeholder values
-   (e.g., `TODO` or `{#[TOKEN_NAME]#}`) so the user can see the shape of the
-   file and fill in real values in Step 3.
+2. Produce a **plain list of override candidates** grouped by resource type
+   (e.g., "APIs needing a serviceUrl: `src-graphql-passthrough`,
+   `src-rest-versioned-v1`…"). Do **not** decide yet which are tokens versus
+   literals — that happens in Step 3.
+
+3. Present this list and ask the user to confirm which items actually need
+   per-environment overrides and which can be left as-is.
+
+4. Once the candidate list is confirmed, **create the stub override files** —
+   one `configuration.{env}.yaml` per confirmed environment — containing every
+   confirmed candidate as an entry with the correct `name` and structure but
+   **blank values** (e.g., empty strings `""` or empty `properties`). This
+   shows the shape of each file; the actual values are filled in during
+   Step 4. Include the schema comment as the first line of each file:
+   `# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas/override-config.schema.json`
+
+**STOP for confirmation before continuing to Step 3.**
 
 ---
 
-## Step 3 — Work With the User to Fill In Values
+## Step 3 — Confirm Available Pipeline Tokens
 
-Go through each environment one at a time. For each environment:
+Before filling in any value, **ask the user** which environment variables /
+pipeline variables are available for this environment, and get the **exact,
+case-sensitive** token names.
 
-1. **Pipeline environment variables (tokens)** — Ask the user whether
-   environment variables are available in the publish pipeline. Common ones:
-   - Subscription ID
-   - Resource group name
-   - APIM service instance name
+**Known `apiops init` tokens.** If the user scaffolded the repo with
+`apiops init`, the generated publish pipeline already wires up a standard set
+of pipeline variables / secrets that are usable as `{#[...]#}` tokens. You may
+**ask** whether the user has these (substitute `<ENV>` with the uppercased
+environment name, e.g. `STAGE`):
 
-   These can be added as `{#[TOKEN_NAME]#}` placeholders so the pipeline
-   substitutes the real value at runtime. This avoids hardcoding
-   environment-specific IDs in files committed to source control.
+- `AZURE_SUBSCRIPTION_ID_<ENV>` (e.g., `AZURE_SUBSCRIPTION_ID_STAGE`)
+- `APIM_RESOURCE_GROUP_<ENV>` (e.g., `APIM_RESOURCE_GROUP_STAGE`)
+- `APIM_SERVICE_NAME_<ENV>` (e.g., `APIM_SERVICE_NAME_STAGE`)
+- GitHub Actions only: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` (used for login;
+  rarely needed inside override files)
 
-2. **Shared values** — Sometimes a value does not need to differ by
-   environment (e.g., dev and stage may use the same Key Vault). Confirm with
-   the user before duplicating values.
+> Note: some repos use `AZURE_SUBSCRIPTION_ID` (global, no env suffix) as the
+> default init-generated name. Others customize to `AZURE_SUBSCRIPTION_ID_<ENV>`.
+> Ask the user which naming pattern exists in their pipeline.
 
-3. **Key Vault pattern** — A common pattern is for one Key Vault to hold all
-   secrets per environment (e.g., `https://{env}-kv.vault.azure.net/secrets/`).
-   Users often define a named-value token for the Key Vault secrets base URL and
-   then append the secret name — this avoids human error. For example:
-   ```yaml
-   namedValues:
-     - name: kv-base-url
-       properties:
-         value: "{#[KV_BASE_URL]#}"
-     - name: db-connection-string
-       properties:
-         keyVault:
-           secretIdentifier: "{#[KV_BASE_URL]#}db-conn"
-           identityClientId: "{#[MANAGED_IDENTITY_CLIENT_ID]#}"
-   ```
+Ask the user to **confirm which of these they actually have**, then ask whether
+there are **any other** tokens:
 
-4. For values that must remain secret (API keys, connection strings):
-   - Use **`{#[TOKEN_NAME]#}`** for pipeline-injected secrets.
-   - Use `keyVault.secretIdentifier` for Azure Key Vault-managed secrets.
-   - Use plain values only for non-sensitive settings like URLs or feature
-     flags that are safe to commit.
+> "If you ran `apiops init`, you may already have these pipeline variables:
+> `AZURE_SUBSCRIPTION_ID` (or `AZURE_SUBSCRIPTION_ID_STAGE`),
+> `APIM_RESOURCE_GROUP_STAGE`, `APIM_SERVICE_NAME_STAGE`.
+> Which of these do you have? And are there any other pipeline variables (with
+> their exact, case-sensitive names) I should use as tokens?"
 
-Uncomment and populate each stub entry as the user provides or confirms values.
+> **Beyond the known `init` tokens, do NOT propose, guess, or pre-populate
+> tokens.** Do not invent token names for secrets, URLs, or resource segments.
+> Let the user tell you what else exists.
 
----
+Record this list of confirmed tokens. You may **only** use these token names
+later. Never invent a token, and never wrap a value in `{#[TOKEN_NAME]#}`
+unless its token is on this confirmed list. The publish step fails if a token
+has no matching pipeline variable.
 
-## Step 4 — Generate the Override Files
-
-Once all values are confirmed, produce the final YAML files:
-
-- Output valid YAML for each file.
-- Include the schema comment at the top of each file:
-  `# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas/override-config.schema.json`
-- Keep files easy to compare across environments.
-- Use `{#[TOKEN_NAME]#}` placeholders for secrets (never commit real secret values).
-- Use Key Vault references for centrally-managed secrets.
-- Avoid duplicating unchanged base configuration.
+**STOP and confirm the token list before continuing to Step 4.**
 
 ---
 
-## Step 5 — Validate the Promotion Model
+## Step 4 — Fill In Each Override With the User
+
+Walk through the stub entries created in Step 2 **one setting/property at a
+time** (for example one `resourceId` or one `value` field), not one whole
+override object at a time. Do not batch multiple settings in a single prompt.
+
+**Single-setting cadence for Step 4:**
+
+- Ask for exactly one setting when information is missing.
+- If the user provides that setting unambiguously, write it immediately.
+- After writing it, proceed by asking for the next single missing setting.
+- Only pause for confirmation when the user explicitly asks for confirmation,
+  or when the value is ambiguous and you need clarification.
+- Do not ask the user to reconfirm a setting they just provided unless there is
+  a concrete ambiguity.
+
+For each override value, classify how it should be supplied using the confirmed
+token list from Step 3. There are three kinds of values — do not default to
+tokens:
+
+| Kind | When to use | How it's written |
+| --- | --- | --- |
+| **Literal value** | Non-sensitive settings that are safe to commit — API/backend URLs, resource IDs, Application Insights logger resource IDs, **Application Insights instrumentation keys** (telemetry ingestion keys, **not secrets**), feature flags. | Plain YAML value, e.g. `url: "https://api.contoso.com"` |
+| **Pipeline token** | Secrets or values the user wants injected at publish time from the pipeline's secret store (GitHub Actions secrets / Azure DevOps variable groups). | `value: "{#[TOKEN_NAME]#}"` — only use a token the user confirms exists |
+| **Key Vault reference** | Secrets stored centrally in Azure Key Vault and referenced by named values. | A `keyVault.secretIdentifier` URL (see pattern below) |
+
+For each candidate value, ask the user something like:
+
+> "For `<resource>.<property>`, what is the value in **<env>**? Is it a fixed
+> value I can write directly, a secret your pipeline injects via a token, or a
+> Key Vault secret?"
+
+Concrete guidance to follow while classifying:
+
+- **API service URLs and backend URLs** — Ask the user for the actual URL per
+  environment. These are usually plain literal values, **not tokens**, unless
+  the user specifically wants them injected by the pipeline.
+- **Application Insights instrumentation keys** — These are **not secrets**.
+  Write the value the user provides directly, or leave the extracted value in
+  place. Do **not** wrap them in `{#[TOKEN_NAME]#}` unless the user asks.
+- **Resource IDs (loggers, backends, diagnostics)** — Usually literal values.
+  Only the subscription ID / resource group / service name segments need
+  tokenizing if the user wants them injected; ask first.
+- **Connection strings, API keys, passwords** — These are secrets. Use a
+  pipeline token or a Key Vault reference based on the user's preference.
+
+### Key Vault reference — the correct pattern
+
+A Key Vault-backed named value uses a **`keyVault.secretIdentifier`** that is a
+**full secret URL**. Do **not** create a separate named value just to hold a
+Key Vault base URL, and do **not** concatenate a token with a secret name.
+
+Correct — literal full secret identifier:
+
+```yaml
+namedValues:
+  - name: db-connection-string
+    properties:
+      keyVault:
+        secretIdentifier: "https://prod-kv.vault.azure.net/secrets/db-conn"
+        identityClientId: "{#[MANAGED_IDENTITY_CLIENT_ID]#}"
+```
+
+Also acceptable — tokenize the whole secret identifier when the user wants the
+pipeline to supply it:
+
+```yaml
+namedValues:
+  - name: db-connection-string
+    properties:
+      keyVault:
+        secretIdentifier: "{#[DB_CONN_SECRET_IDENTIFIER]#}"
+        identityClientId: "{#[MANAGED_IDENTITY_CLIENT_ID]#}"
+```
+
+As you fill in each override, write it into the stub file using the right form:
+
+- Write literal values directly; use `{#[TOKEN_NAME]#}` only for confirmed
+  tokens; use full `keyVault.secretIdentifier` URLs for Key Vault secrets.
+- Never commit real secret values — those must be tokens or Key Vault
+  references.
+
+Continue setting-by-setting until there are no missing values.
+
+---
+
+## Step 5 — Finalize and Review the Override Files
+
+Once every stub override has been filled in across all environments:
+
+- Re-read each `configuration.{env}.yaml` file and confirm it is valid YAML
+  with no leftover blank values from the stubs.
+- Confirm the schema comment is present as the first line of each file.
+- Keep files easy to compare across environments and avoid duplicating
+  unchanged base configuration.
+
+Show the finalized files and **STOP for confirmation** before treating them as
+final.
+
+---
+
+## Step 6 — Validate the Promotion Model
 
 Before finishing:
 
 1. Verify every generated override file matches the intended environment.
-2. Verify all secrets use either `{#[TOKEN_NAME]#}` or Key Vault references.
+2. Verify all **secrets** use either `{#[TOKEN_NAME]#}` or a Key Vault
+   reference — and that non-secrets (URLs, resource IDs, instrumentation keys)
+   are written as plain values, not tokens.
+3. Confirm every `{#[TOKEN_NAME]#}` used corresponds to a token the user said
+   exists in their pipeline.
 4. Remind the user to add any `{#[TOKEN_NAME]#}` tokens to their pipeline's
    secret store (GitHub Actions Secrets or Azure DevOps variable groups).
-   Help the user with this step if they ask. Note that the pipeline will fail
-   with an error if any tokens are missed.
+   Help with this if they ask. Note that the pipeline fails with an error if
+   any tokens are missing.
 5. Remind the user to test publish for a lower environment before promoting
    further.
