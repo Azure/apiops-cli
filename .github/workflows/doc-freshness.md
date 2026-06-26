@@ -24,12 +24,38 @@ safe-outputs:
     max: 0
 
 steps:
+  - name: Determine lookback window
+    id: lookback
+    env:
+      GH_TOKEN: ${{ github.token }}
+    run: |
+      # Find the most recent [Doc Drift] issue creation date; fall back to 7 days
+      LAST_DRIFT_DATE=$(gh issue list \
+        --repo "$GITHUB_REPOSITORY" \
+        --search '[Doc Drift] in:title' \
+        --state all \
+        --json createdAt \
+        --jq '.[0].createdAt' 2>/dev/null || echo "")
+
+      if [ -z "$LAST_DRIFT_DATE" ] || [ "$LAST_DRIFT_DATE" = "null" ]; then
+        SINCE_DATE=$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
+          || date -u -v-7d '+%Y-%m-%dT%H:%M:%SZ')
+        echo "No prior [Doc Drift] issues found — defaulting to last 7 days"
+      else
+        SINCE_DATE="$LAST_DRIFT_DATE"
+        echo "Last [Doc Drift] issue created at: $SINCE_DATE"
+      fi
+
+      echo "since_date=$SINCE_DATE" >> "$GITHUB_OUTPUT"
+
   - name: Gather recent commits
     id: commits
     run: |
-      # Fetch commits from the last 7 days on main
-      git log origin/main --since="7 days ago" --oneline --name-only > /tmp/gh-aw/recent-commits.txt
+      # Fetch commits since last doc-drift issue (or last 7 days)
+      SINCE="${{ steps.lookback.outputs.since_date }}"
+      git log origin/main --since="$SINCE" --oneline --name-only > /tmp/gh-aw/recent-commits.txt
       echo "commit_file=recent-commits.txt" >> "$GITHUB_OUTPUT"
+      echo "Commits since: $SINCE ($(wc -l < /tmp/gh-aw/recent-commits.txt) lines)"
 
   - name: Gather CLI help output
     id: help
@@ -100,7 +126,7 @@ steps:
 
       USER_EOF
 
-      echo "## Recent Commits (last 7 days)" >> /tmp/gh-aw/agent/user-context.md
+      echo "## Recent Commits (since ${{ steps.lookback.outputs.since_date }})" >> /tmp/gh-aw/agent/user-context.md
       echo '```' >> /tmp/gh-aw/agent/user-context.md
       cat /tmp/gh-aw/recent-commits.txt >> /tmp/gh-aw/agent/user-context.md
       echo '```' >> /tmp/gh-aw/agent/user-context.md
@@ -142,7 +168,7 @@ not been updated — and file advisory issues for maintainer review.
 
 Work from **source changes toward documentation**, not the reverse:
 
-1. Read the recent commits from `/tmp/gh-aw/agent/user-context.md` to understand what changed.
+1. Read the recent commits from `/tmp/gh-aw/agent/user-context.md` to understand what changed since the last doc-freshness run.
 2. For each behavioral change (new command, new flag, changed default, removed feature, new dependency, config change), check if the relevant documentation reflects the current state.
 3. Read the actual documentation files (README.md, CONTRIBUTING.md, docs/*, specs/*) to verify accuracy.
 4. Read the CLI help output from the user context to compare against documented flags and options.
