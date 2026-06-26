@@ -83,7 +83,7 @@ jobs:
         id: env
         run: |
           echo "name=\${TARGET_ENV}" >> "$GITHUB_OUTPUT"
-          echo "upper=\$(echo "\${TARGET_ENV}" | tr '[:lower:]' '[:upper:]')" >> "$GITHUB_OUTPUT"
+          echo "upper=$(echo "\${TARGET_ENV}" | tr '[:lower:]' '[:upper:]')" >> "$GITHUB_OUTPUT"
 
       - name: Azure Login (Federated Credential)
         uses: azure/login@v3
