@@ -165,7 +165,8 @@ jobs:
             const MIGRATIONS = [
               { from: 'bug', to: 'type:bug' },
               { from: 'question', to: 'type:question' },
-              { from: 'enhancement', to: 'type:enhancement' }
+              { from: 'enhancement', to: 'type:enhancement' },
+              { from: 'documentation', to: 'type:documentation' }
             ];
 
             for (const { from, to } of MIGRATIONS) {
