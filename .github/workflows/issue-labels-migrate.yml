@@ -108,7 +108,20 @@ jobs:
 
                   await relabelItems(from, to);
 
-                  core.info(`Retained legacy label "${from}" after fallback migration`);
+                  try {
+                    await github.rest.issues.deleteLabel({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      name: from
+                    });
+                    core.info(`Deleted legacy label "${from}" after fallback migration`);
+                  } catch (deleteErr) {
+                    if (deleteErr.status === 404) {
+                      core.info(`Legacy label "${from}" already removed`);
+                    } else {
+                      throw deleteErr;
+                    }
+                  }
                 } else {
                   core.warning(`Failed to migrate ${from}: ${err.message}`);
                 }
