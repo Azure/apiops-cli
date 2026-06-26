@@ -208,7 +208,7 @@ describe('github-actions/publish-workflow', () => {
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
-      expect(workflow).toContain('cschleiden/replace-tokens@v1.3');
+      expect(workflow).toContain('cschleiden/replace-tokens@v1.4');
       expect(workflow).toContain("tokenPrefix: '{#['");
       expect(workflow).toContain("tokenSuffix: ']#}'");
     });

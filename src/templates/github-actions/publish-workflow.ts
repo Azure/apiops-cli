@@ -86,7 +86,7 @@ jobs:
           echo "upper=\$(echo "\${TARGET_ENV}" | tr '[:lower:]' '[:upper:]')" >> "$GITHUB_OUTPUT"
 
       - name: Azure Login (Federated Credential)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: \${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: \${{ secrets.AZURE_TENANT_ID }}
@@ -131,7 +131,7 @@ jobs:
           fi
 
       - name: Substitute tokens in configuration file
-        uses: cschleiden/replace-tokens@v1.3
+        uses: cschleiden/replace-tokens@v1.4
         with:
           tokenPrefix: '{#['
           tokenSuffix: ']#}'
