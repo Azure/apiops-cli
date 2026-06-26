@@ -75,40 +75,41 @@ describe('github-actions/publish-workflow', () => {
       expect(workflow).toContain('GITHUB_SHA');
     });
 
-    it('should create job for each environment', () => {
+    it('should create a single parameterized publish job', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'staging', 'prod'],
       });
-      expect(workflow).toContain('publish-dev:');
-      expect(workflow).toContain('publish-staging:');
-      expect(workflow).toContain('publish-prod:');
+      expect(workflow).toContain('publish:');
+      expect(workflow).not.toContain('publish-dev:');
+      expect(workflow).not.toContain('publish-staging:');
+      expect(workflow).not.toContain('publish-prod:');
     });
 
-    it('should set environment for each job', () => {
+    it('should drive the job environment from the ENVIRONMENT input', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
-      expect(workflow).toContain('environment: dev');
-      expect(workflow).toContain('environment: prod');
+      expect(workflow).toContain("environment: ${{ github.event.inputs.ENVIRONMENT || 'dev' }}");
+      expect(workflow).not.toContain('environment: prod');
     });
 
-    it('should chain jobs with needs dependencies', () => {
+    it('should define a workflow-level TARGET_ENV variable defaulting to the first environment', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
-        environments: ['dev', 'staging', 'prod'],
+        environments: ['dev', 'prod'],
       });
-      expect(workflow).toContain('needs: [get-commit, publish-dev]');
-      expect(workflow).toContain('needs: [get-commit, publish-staging]');
+      expect(workflow).toContain("TARGET_ENV: ${{ github.event.inputs.ENVIRONMENT || 'dev' }}");
     });
 
-    it('should have first environment depend on get-commit only', () => {
+    it('should have the publish job depend on get-commit', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
       expect(workflow).toContain('needs: get-commit');
+      expect(workflow).not.toContain('needs: [get-commit, publish-dev]');
     });
 
     it('should have conditional steps for incremental vs all artifacts publish', () => {
@@ -141,35 +142,31 @@ describe('github-actions/publish-workflow', () => {
       expect(allArtifactsSection).not.toContain('--commit-id');
     });
 
-    it('should filter jobs by ENVIRONMENT input', () => {
+    it('should select the target environment from the ENVIRONMENT input', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
-      expect(workflow).toContain("ENVIRONMENT == 'dev'");
-      expect(workflow).toContain("ENVIRONMENT == 'prod'");
+      expect(workflow).toContain("TARGET_ENV: ${{ github.event.inputs.ENVIRONMENT || 'dev' }}");
+      expect(workflow).not.toContain("ENVIRONMENT == 'dev'");
     });
 
-    it('should use environment-specific secrets', () => {
+    it('should select env-suffixed secrets dynamically by environment', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
-      expect(workflow).toContain('${{ secrets.APIM_RESOURCE_GROUP_DEV }}');
-      expect(workflow).toContain('${{ secrets.APIM_SERVICE_NAME_DEV }}');
-      expect(workflow).toContain('${{ secrets.APIM_RESOURCE_GROUP_PROD }}');
-      expect(workflow).toContain('${{ secrets.APIM_SERVICE_NAME_PROD }}');
+      expect(workflow).toContain("${{ secrets[format('APIM_RESOURCE_GROUP_{0}', steps.env.outputs.upper)] }}");
+      expect(workflow).toContain("${{ secrets[format('APIM_SERVICE_NAME_{0}', steps.env.outputs.upper)] }}");
     });
 
-    it('should use environment-specific secrets for resource group and service name', () => {
+    it('should resolve an uppercase environment suffix for secret lookup', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
-      expect(workflow).toContain('${{ secrets.APIM_RESOURCE_GROUP_DEV }}');
-      expect(workflow).toContain('${{ secrets.APIM_SERVICE_NAME_DEV }}');
-      expect(workflow).toContain('${{ secrets.APIM_RESOURCE_GROUP_PROD }}');
-      expect(workflow).toContain('${{ secrets.APIM_SERVICE_NAME_PROD }}');
+      expect(workflow).toContain('id: env');
+      expect(workflow).toContain("tr '[:lower:]' '[:upper:]'");
     });
 
     it('should have id-token write permission for OIDC', () => {
@@ -216,13 +213,12 @@ describe('github-actions/publish-workflow', () => {
       expect(workflow).toContain("tokenSuffix: ']#}'");
     });
 
-    it('should target environment-specific configuration file for token substitution', () => {
+    it('should target the parameterized configuration file for token substitution', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
-      expect(workflow).toContain('files: \'["configuration.dev.yaml"]\'');
-      expect(workflow).toContain('files: \'["configuration.prod.yaml"]\'');
+      expect(workflow).toContain('files: \'["configuration.${{ env.TARGET_ENV }}.yaml"]\'');
     });
 
     it('should place token substitution step before publish steps', () => {
@@ -241,15 +237,12 @@ describe('github-actions/publish-workflow', () => {
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
-      expect(workflow).toContain('Validate token source values (dev)');
-      expect(workflow).toContain('Validate token source values (prod)');
+      expect(workflow).toContain('Validate token source values');
       expect(workflow).toContain('AVAILABLE_SECRETS_JSON: ${{ toJSON(secrets) }}');
       expect(workflow).toContain("echo \"::error::Missing secret for token '$token'\"");
       expect(workflow).toContain("printf '%s=%s\\n' \"$token\" \"$value\" >> \"$GITHUB_ENV\"");
-      expect(workflow).toContain('Validate token substitution (dev)');
-      expect(workflow).toContain('Validate token substitution (prod)');
-      expect(workflow).toContain("grep -q '{#\\[' configuration.dev.yaml");
-      expect(workflow).toContain("grep -q '{#\\[' configuration.prod.yaml");
+      expect(workflow).toContain('Validate token substitution');
+      expect(workflow).toContain("grep -q '{#\\[' \"$config_file\"");
     });
 
     it('should place token validation step between substitution and publish', () => {
@@ -257,9 +250,9 @@ describe('github-actions/publish-workflow', () => {
         artifactDir: './apim-artifacts',
         environments: ['dev'],
       });
-      const validateSourcesIdx = workflow.indexOf('Validate token source values (dev)');
+      const validateSourcesIdx = workflow.indexOf('Validate token source values');
       const substituteIdx = workflow.indexOf('cschleiden/replace-tokens');
-      const validateSubstitutionIdx = workflow.indexOf('Validate token substitution (dev)');
+      const validateSubstitutionIdx = workflow.indexOf('Validate token substitution');
       const publishIdx = workflow.indexOf('npx apiops publish');
       expect(validateSourcesIdx).toBeLessThan(substituteIdx);
       expect(substituteIdx).toBeLessThan(validateSubstitutionIdx);
@@ -271,8 +264,8 @@ describe('github-actions/publish-workflow', () => {
         artifactDir: './apim-artifacts',
         environments: ['dev'],
       });
-      expect(workflow).toContain('Dry-run validation (dev, incremental)');
-      expect(workflow).toContain('Dry-run validation (dev, all artifacts)');
+      expect(workflow).toContain('Dry-run validation (incremental)');
+      expect(workflow).toContain('Dry-run validation (all artifacts)');
     });
 
     it('should include --dry-run flag in dry-run validation steps', () => {
@@ -281,7 +274,7 @@ describe('github-actions/publish-workflow', () => {
         environments: ['dev'],
       });
       const lines = workflow.split('\n');
-      const dryRunIncrIdx = lines.findIndex((l) => l.includes('Dry-run validation (dev, incremental)'));
+      const dryRunIncrIdx = lines.findIndex((l) => l.includes('Dry-run validation (incremental)'));
       const dryRunSection = lines.slice(dryRunIncrIdx, dryRunIncrIdx + 15).join('\n');
       expect(dryRunSection).toContain('--dry-run');
     });
@@ -291,21 +284,19 @@ describe('github-actions/publish-workflow', () => {
         artifactDir: './apim-artifacts',
         environments: ['dev'],
       });
-      const dryRunIdx = workflow.indexOf('Dry-run validation (dev, incremental)');
-      const publishIdx = workflow.indexOf('Publish to dev (incremental');
+      const dryRunIdx = workflow.indexOf('Dry-run validation (incremental)');
+      const publishIdx = workflow.indexOf('Publish (incremental');
       expect(dryRunIdx).toBeGreaterThan(0);
       expect(dryRunIdx).toBeLessThan(publishIdx);
     });
 
-    it('should include dry-run validation for each environment', () => {
+    it('should include parameterized dry-run validation steps', () => {
       const workflow = generatePublishWorkflow({
         artifactDir: './apim-artifacts',
         environments: ['dev', 'prod'],
       });
-      expect(workflow).toContain('Dry-run validation (dev, incremental)');
-      expect(workflow).toContain('Dry-run validation (dev, all artifacts)');
-      expect(workflow).toContain('Dry-run validation (prod, incremental)');
-      expect(workflow).toContain('Dry-run validation (prod, all artifacts)');
+      expect(workflow).toContain('Dry-run validation (incremental)');
+      expect(workflow).toContain('Dry-run validation (all artifacts)');
     });
 
     it('should pass commit-id in incremental dry-run step', () => {
@@ -314,7 +305,7 @@ describe('github-actions/publish-workflow', () => {
         environments: ['dev'],
       });
       const lines = workflow.split('\n');
-      const dryRunIncrIdx = lines.findIndex((l) => l.includes('Dry-run validation (dev, incremental)'));
+      const dryRunIncrIdx = lines.findIndex((l) => l.includes('Dry-run validation (incremental)'));
       const nextStepIdx = lines.findIndex((l, i) => i > dryRunIncrIdx + 1 && l.includes('- name:'));
       const dryRunSection = lines.slice(dryRunIncrIdx, nextStepIdx).join('\n');
       expect(dryRunSection).toContain('--commit-id');
@@ -327,7 +318,7 @@ describe('github-actions/publish-workflow', () => {
         environments: ['dev'],
       });
       const lines = workflow.split('\n');
-      const dryRunAllIdx = lines.findIndex((l) => l.includes('Dry-run validation (dev, all artifacts)'));
+      const dryRunAllIdx = lines.findIndex((l) => l.includes('Dry-run validation (all artifacts)'));
       const nextStepIdx = lines.findIndex((l, i) => i > dryRunAllIdx + 1 && l.includes('- name:'));
       const dryRunSection = lines.slice(dryRunAllIdx, nextStepIdx).join('\n');
       expect(dryRunSection).not.toContain('--commit-id');
