@@ -14,18 +14,18 @@ export function generatePublishPipeline(config: PublishPipelineConfig): string {
   const defaultEnvironment = config.environments[0] ?? 'dev';
   const envValues = config.environments.map((env) => `      - '${env}'`).join('\n');
 
-  const stages = config.environments.map((env) => {
-    const envUpper = env.toUpperCase();
-
-    return `- stage: Publish_${env}
-  displayName: 'Publish to ${env}'
-  condition: eq('\${{ parameters.ENVIRONMENT }}', '${env}')
+  // A single parameterized stage drives all environments. The ENVIRONMENT
+  // parameter is resolved at template (compile) time, so it can select the
+  // variable group, deployment environment, config file, and env-suffixed
+  // variable names (via upper()) without duplicating the stage per environment.
+  const stage = `- stage: Publish
+  displayName: 'Publish to \${{ parameters.ENVIRONMENT }}'
   variables:
-    - group: apim-${env}
+    - group: apim-\${{ parameters.ENVIRONMENT }}
   jobs:
     - deployment: Deploy
-      displayName: 'Deploy to ${env}'
-      environment: ${env}
+      displayName: 'Deploy to \${{ parameters.ENVIRONMENT }}'
+      environment: \${{ parameters.ENVIRONMENT }}
       pool:
         vmImage: 'ubuntu-latest'
       strategy:
@@ -54,9 +54,9 @@ export function generatePublishPipeline(config: PublishPipelineConfig): string {
                 displayName: 'Install dependencies'
 
               - task: replacetokens@6
-                displayName: 'Substitute tokens in configuration.${env}.yaml'
+                displayName: 'Substitute tokens in configuration.\${{ parameters.ENVIRONMENT }}.yaml'
                 inputs:
-                  sources: 'configuration.${env}.yaml'
+                  sources: 'configuration.\${{ parameters.ENVIRONMENT }}.yaml'
                   tokenPattern: 'custom'
                   tokenPrefix: '{#['
                   tokenSuffix: ']#}'
@@ -64,78 +64,77 @@ export function generatePublishPipeline(config: PublishPipelineConfig): string {
                   missingVarLog: 'error'
 
               - script: |
-                  if grep -q '{#\\[' configuration.${env}.yaml; then
-                    echo "Unresolved tokens remain in configuration.${env}.yaml"
-                    grep -o '{#\\[[^]]*\\]#}' configuration.${env}.yaml | sort -u
+                  if grep -q '{#\\[' configuration.\${{ parameters.ENVIRONMENT }}.yaml; then
+                    echo "Unresolved tokens remain in configuration.\${{ parameters.ENVIRONMENT }}.yaml"
+                    grep -o '{#\\[[^]]*\\]#}' configuration.\${{ parameters.ENVIRONMENT }}.yaml | sort -u
                     exit 1
                   fi
-                displayName: 'Validate token substitution (${env})'
+                displayName: 'Validate token substitution'
 
               - task: AzureCLI@2
-                displayName: 'Dry-run validation (${env}, incremental)'
+                displayName: 'Dry-run validation (incremental)'
                 condition: and(succeeded(), ne('\${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo'))
                 inputs:
-                  azureSubscription: 'AZURE_SERVICE_CONNECTION_${envUpper}'
+                  azureSubscription: 'AZURE_SERVICE_CONNECTION_\${{ upper(parameters.ENVIRONMENT) }}'
                   scriptType: 'bash'
                   scriptLocation: 'inlineScript'
                   inlineScript: |
                     npx apiops publish \\
-                      --resource-group $(APIM_RESOURCE_GROUP_${envUpper}) \\
-                      --service-name $(APIM_SERVICE_NAME_${envUpper}) \\
+                      --resource-group $(APIM_RESOURCE_GROUP_\${{ upper(parameters.ENVIRONMENT) }}) \\
+                      --service-name $(APIM_SERVICE_NAME_\${{ upper(parameters.ENVIRONMENT) }}) \\
                       --source ${config.artifactDir} \\
-                      --overrides configuration.${env}.yaml \\
+                      --overrides configuration.\${{ parameters.ENVIRONMENT }}.yaml \\
                       --commit-id $(Build.SourceVersion) \\
                       --subscription-id $(AZURE_SUBSCRIPTION_ID) \\
                       --dry-run
 
               - task: AzureCLI@2
-                displayName: 'Dry-run validation (${env}, all artifacts)'
+                displayName: 'Dry-run validation (all artifacts)'
                 condition: and(succeeded(), eq('\${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo'))
                 inputs:
-                  azureSubscription: 'AZURE_SERVICE_CONNECTION_${envUpper}'
+                  azureSubscription: 'AZURE_SERVICE_CONNECTION_\${{ upper(parameters.ENVIRONMENT) }}'
                   scriptType: 'bash'
                   scriptLocation: 'inlineScript'
                   inlineScript: |
                     npx apiops publish \\
-                      --resource-group $(APIM_RESOURCE_GROUP_${envUpper}) \\
-                      --service-name $(APIM_SERVICE_NAME_${envUpper}) \\
+                      --resource-group $(APIM_RESOURCE_GROUP_\${{ upper(parameters.ENVIRONMENT) }}) \\
+                      --service-name $(APIM_SERVICE_NAME_\${{ upper(parameters.ENVIRONMENT) }}) \\
                       --source ${config.artifactDir} \\
-                      --overrides configuration.${env}.yaml \\
+                      --overrides configuration.\${{ parameters.ENVIRONMENT }}.yaml \\
                       --subscription-id $(AZURE_SUBSCRIPTION_ID) \\
                       --dry-run
 
               - task: AzureCLI@2
-                displayName: 'Publish to ${env} (incremental - last commit only)'
+                displayName: 'Publish (incremental - last commit only)'
                 condition: and(succeeded(), ne('\${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo'))
                 inputs:
-                  azureSubscription: 'AZURE_SERVICE_CONNECTION_${envUpper}'
+                  azureSubscription: 'AZURE_SERVICE_CONNECTION_\${{ upper(parameters.ENVIRONMENT) }}'
                   scriptType: 'bash'
                   scriptLocation: 'inlineScript'
                   inlineScript: |
                     npx apiops publish \\
-                      --resource-group $(APIM_RESOURCE_GROUP_${envUpper}) \\
-                      --service-name $(APIM_SERVICE_NAME_${envUpper}) \\
+                      --resource-group $(APIM_RESOURCE_GROUP_\${{ upper(parameters.ENVIRONMENT) }}) \\
+                      --service-name $(APIM_SERVICE_NAME_\${{ upper(parameters.ENVIRONMENT) }}) \\
                       --source ${config.artifactDir} \\
-                      --overrides configuration.${env}.yaml \\
+                      --overrides configuration.\${{ parameters.ENVIRONMENT }}.yaml \\
                       --commit-id $(Build.SourceVersion) \\
                       --subscription-id $(AZURE_SUBSCRIPTION_ID)
 
               - task: AzureCLI@2
-                displayName: 'Publish to ${env} (all artifacts)'
+                displayName: 'Publish (all artifacts)'
                 condition: and(succeeded(), eq('\${{ parameters.COMMIT_ID_CHOICE }}', 'publish-all-artifacts-in-repo'))
                 inputs:
-                  azureSubscription: 'AZURE_SERVICE_CONNECTION_${envUpper}'
+                  azureSubscription: 'AZURE_SERVICE_CONNECTION_\${{ upper(parameters.ENVIRONMENT) }}'
                   scriptType: 'bash'
                   scriptLocation: 'inlineScript'
                   inlineScript: |
                     npx apiops publish \\
-                      --resource-group $(APIM_RESOURCE_GROUP_${envUpper}) \\
-                      --service-name $(APIM_SERVICE_NAME_${envUpper}) \\
+                      --resource-group $(APIM_RESOURCE_GROUP_\${{ upper(parameters.ENVIRONMENT) }}) \\
+                      --service-name $(APIM_SERVICE_NAME_\${{ upper(parameters.ENVIRONMENT) }}) \\
                       --source ${config.artifactDir} \\
-                      --overrides configuration.${env}.yaml \\
+                      --overrides configuration.\${{ parameters.ENVIRONMENT }}.yaml \\
                       --subscription-id $(AZURE_SUBSCRIPTION_ID)
 `;
-  }).join('\n');
 
   return `# Azure DevOps Pipeline: Run APIM Publisher
 
@@ -166,6 +165,6 @@ parameters:
 ${envValues}
 
 stages:
-${stages}
+${stage}
 `;
 }
