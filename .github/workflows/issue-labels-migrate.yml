@@ -1,8 +1,6 @@
 name: Migrate Legacy Labels
 
 on:
-  schedule:
-    - cron: '0 7 * * *'   # Daily at 07:00 UTC (runs before label sync at 08:00)
   workflow_dispatch:
 
 permissions:
