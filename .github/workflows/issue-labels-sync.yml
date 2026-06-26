@@ -161,38 +161,6 @@ jobs:
             labels.push(...SIGNAL_LABELS);
             labels.push(...LIFECYCLE_LABELS);
 
-            // Migrate legacy labels → type: equivalents (rename preserves issue associations)
-            const MIGRATIONS = [
-              { from: 'bug', to: 'type:bug' },
-              { from: 'question', to: 'type:question' },
-              { from: 'enhancement', to: 'type:enhancement' },
-              { from: 'documentation', to: 'type:documentation' }
-            ];
-
-            for (const { from, to } of MIGRATIONS) {
-              try {
-                await github.rest.issues.getLabel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  name: from
-                });
-                // Old label exists — rename it (this moves all issues to the new name)
-                await github.rest.issues.updateLabel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  name: from,
-                  new_name: to
-                });
-                core.info(`Migrated label: ${from} → ${to}`);
-              } catch (err) {
-                if (err.status === 404) {
-                  core.info(`Legacy label "${from}" not found — no migration needed`);
-                } else {
-                  core.warning(`Failed to migrate ${from}: ${err.message}`);
-                }
-              }
-            }
-
             // Sync labels (create or update)
             for (const label of labels) {
               try {
@@ -228,3 +196,36 @@ jobs:
             }
 
             core.info(`Label sync complete: ${labels.length} labels synced`);
+
+            // Migrate legacy labels → type: equivalents AFTER sync ensures targets exist.
+            // Rename preserves issue associations.
+            const MIGRATIONS = [
+              { from: 'bug', to: 'type:bug' },
+              { from: 'question', to: 'type:question' },
+              { from: 'enhancement', to: 'type:enhancement' },
+              { from: 'documentation', to: 'type:documentation' }
+            ];
+
+            for (const { from, to } of MIGRATIONS) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: from
+                });
+                // Old label exists — rename it (this moves all issues to the new name)
+                await github.rest.issues.updateLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: from,
+                  new_name: to
+                });
+                core.info(`Migrated label: ${from} → ${to}`);
+              } catch (err) {
+                if (err.status === 404) {
+                  core.info(`Legacy label "${from}" not found — no migration needed`);
+                } else {
+                  core.warning(`Failed to migrate ${from}: ${err.message}`);
+                }
+              }
+            }
