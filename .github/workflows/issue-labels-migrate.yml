@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: "Rename legacy labels to type: equivalents"
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             // Legacy label → canonical type: label.
@@ -26,9 +26,18 @@ jobs:
             ];
 
             function isAlreadyExistsError(err) {
-              return err?.status === 422
-                && Array.isArray(err?.errors)
-                && err.errors.some(e => e.code === 'already_exists' && e.field === 'name');
+              const errors = err?.errors
+                || err?.response?.data?.errors
+                || err?.data?.errors
+                || [];
+
+              const hasTypedError = Array.isArray(errors)
+                && errors.some(e => e?.code === 'already_exists' && e?.field === 'name');
+
+              const message = String(err?.message || '');
+              const messageHasAlreadyExists = message.includes('already_exists') && message.includes('Label');
+
+              return (err?.status === 422 && hasTypedError) || messageHasAlreadyExists;
             }
 
             async function relabelItems(from, to) {
