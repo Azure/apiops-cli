@@ -17,10 +17,10 @@ jobs:
   sync-labels:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Parse roster and sync labels
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require('fs');
@@ -85,15 +85,14 @@ jobs:
             ];
 
             const TYPE_LABELS = [
+              { name: 'type:bug', color: 'FF0422', description: 'Something broken' },
               { name: 'type:feature', color: 'DDD1F2', description: 'New capability' },
               { name: 'type:enhancement', color: 'A2EEEF', description: 'Improvement to existing functionality' },
-              { name: 'type:bug', color: 'FF0422', description: 'Something broken' },
-              { name: 'type:question', color: 'D876E3', description: 'Questions about usage or behavior' },
-              { name: 'type:documentation', color: '0075CA', description: 'Documentation issues or requests' },
               { name: 'type:spike', color: 'F2DDD4', description: 'Research/investigation — produces a plan, not code' },
-              { name: 'type:docs', color: 'D4E5F7', description: 'Documentation work' },
               { name: 'type:chore', color: 'D4E5F7', description: 'Maintenance, refactoring, cleanup' },
-              { name: 'type:epic', color: 'CC4455', description: 'Parent issue that decomposes into sub-issues' }
+              { name: 'type:epic', color: 'CC4455', description: 'Parent issue that decomposes into sub-issues' },
+              { name: 'type:documentation', color: '0075CA', description: 'Documentation issues or requests' },
+              { name: 'type:question', color: 'D876E3', description: 'Questions about usage or behavior' }
             ];
 
             const CLOSE_LABELS = [
