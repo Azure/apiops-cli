@@ -25,6 +25,57 @@ jobs:
               { from: 'documentation', to: 'type:documentation' }
             ];
 
+            function isAlreadyExistsError(err) {
+              return err?.status === 422
+                && Array.isArray(err?.errors)
+                && err.errors.some(e => e.code === 'already_exists' && e.field === 'name');
+            }
+
+            async function relabelItems(from, to) {
+              const items = await github.paginate(github.rest.issues.listForRepo, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'all',
+                labels: from,
+                per_page: 100
+              });
+
+              if (items.length === 0) {
+                core.info(`No issues or PRs found with legacy label "${from}"`);
+                return;
+              }
+
+              for (const item of items) {
+                const existing = (item.labels || [])
+                  .map(l => (typeof l === 'string' ? l : l.name))
+                  .filter(Boolean);
+
+                if (!existing.includes(to)) {
+                  await github.rest.issues.addLabels({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: item.number,
+                    labels: [to]
+                  });
+                }
+
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: item.number,
+                    name: from
+                  });
+                } catch (err) {
+                  if (err.status !== 404) {
+                    throw err;
+                  }
+                }
+              }
+
+              core.info(`Re-labeled ${items.length} issues/PRs: ${from} → ${to}`);
+            }
+
             for (const { from, to } of MIGRATIONS) {
               try {
                 await github.rest.issues.getLabel({
@@ -43,6 +94,25 @@ jobs:
               } catch (err) {
                 if (err.status === 404) {
                   core.info(`Legacy label "${from}" not found — no migration needed`);
+                } else if (isAlreadyExistsError(err)) {
+                  core.info(`Target label "${to}" already exists; applying fallback migration for "${from}"`);
+
+                  await relabelItems(from, to);
+
+                  try {
+                    await github.rest.issues.deleteLabel({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      name: from
+                    });
+                    core.info(`Deleted legacy label "${from}" after fallback migration`);
+                  } catch (deleteErr) {
+                    if (deleteErr.status === 404) {
+                      core.info(`Legacy label "${from}" already removed`);
+                    } else {
+                      throw deleteErr;
+                    }
+                  }
                 } else {
                   core.warning(`Failed to migrate ${from}: ${err.message}`);
                 }
