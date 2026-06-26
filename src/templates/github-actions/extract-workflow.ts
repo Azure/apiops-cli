@@ -62,10 +62,10 @@ jobs:
           echo "  Service Name: \${{ env.APIM_SERVICE_NAME }}"
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
 
@@ -73,7 +73,7 @@ jobs:
         run: npm install
 
       - name: Azure Login (Federated Credential)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: \${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: \${{ secrets.AZURE_TENANT_ID }}
@@ -110,7 +110,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download artifacts
         uses: actions/download-artifact@v4

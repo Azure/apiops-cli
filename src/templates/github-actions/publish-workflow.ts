@@ -2,7 +2,8 @@
 // Licensed under the MIT license.
 /**
  * GitHub Actions publish workflow template
- * Push-to-main trigger with commit ID choice, environment selection, and multi-env stages
+ * Push-to-main trigger with commit ID choice and a single parameterized publish
+ * job driven by a workflow-level environment variable (TARGET_ENV)
  */
 
 export interface PublishWorkflowConfig {
@@ -11,53 +12,96 @@ export interface PublishWorkflowConfig {
 }
 
 export function generatePublishWorkflow(config: PublishWorkflowConfig): string {
+  const defaultEnvironment = config.environments[0] ?? 'dev';
   const envChoices = config.environments.map((env) => `          - ${env}`).join('\n');
 
-  const envJobs = config.environments.map((env, idx) => {
-    const envUpper = env.toUpperCase();
-    const autoDeployComment = idx === 0
-      ? `    # To enable automatic deployment on push to main, uncomment the condition below:
-    # if: github.event.inputs.ENVIRONMENT == '${env}' || github.event_name == 'push'`
-      : `    # To enable automatic deployment on push to main, uncomment the condition below:
-    # if: github.event.inputs.ENVIRONMENT == '${env}' || github.event_name == 'push'
-    # And change needs to: needs: [get-commit, publish-${config.environments[idx - 1]}]`;
+  return `name: Run APIM Publisher
 
-    return `  publish-${env}:
-${autoDeployComment}
-    if: github.event.inputs.ENVIRONMENT == '${env}'
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '${config.artifactDir}/**'
+      - 'configuration.*.yaml'
+  workflow_dispatch:
+    inputs:
+      COMMIT_ID_CHOICE:
+        description: 'Choose "publish-all-artifacts-in-repo" only when you want to force republishing all artifacts (e.g. after build failure). Otherwise stick with the default behavior of "publish-artifacts-in-last-commit"'
+        required: true
+        type: choice
+        default: publish-artifacts-in-last-commit
+        options:
+          - publish-artifacts-in-last-commit
+          - publish-all-artifacts-in-repo
+      ENVIRONMENT:
+        description: 'Choose which environment to publish to'
+        required: true
+        type: choice
+        default: ${defaultEnvironment}
+        options:
+${envChoices}
+
+permissions:
+  id-token: write
+  contents: read
+
+# A single workflow-level variable selects the target environment. On manual runs
+# it comes from the ENVIRONMENT input; on push to main it defaults to '${defaultEnvironment}'.
+env:
+  TARGET_ENV: \${{ github.event.inputs.ENVIRONMENT || '${defaultEnvironment}' }}
+
+jobs:
+  get-commit:
     runs-on: ubuntu-latest
-    environment: ${env}
+    outputs:
+      commit_id: \${{ steps.commit.outputs.commit_id }}
+    steps:
+      - name: Set the Commit Id
+        id: commit
+        run: echo "commit_id=\${GITHUB_SHA}" >> $GITHUB_OUTPUT
+
+  publish:
+    runs-on: ubuntu-latest
+    environment: \${{ github.event.inputs.ENVIRONMENT || '${defaultEnvironment}' }}
     needs: get-commit
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
 
       - name: Install dependencies
         run: npm install
 
+      - name: Resolve target environment
+        id: env
+        run: |
+          echo "name=\${TARGET_ENV}" >> "$GITHUB_OUTPUT"
+          echo "upper=$(echo "\${TARGET_ENV}" | tr '[:lower:]' '[:upper:]')" >> "$GITHUB_OUTPUT"
+
       - name: Azure Login (Federated Credential)
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           client-id: \${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: \${{ secrets.AZURE_TENANT_ID }}
           subscription-id: \${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Validate token source values (${env})
+      - name: Validate token source values
         env:
           AVAILABLE_SECRETS_JSON: \${{ toJSON(secrets) }}
         run: |
           missing=0
-          tokens=$(grep -o '{#\\[[^]]*\\]#}' configuration.${env}.yaml | sed -E 's/^\\{#\\[([^]]+)\\]#\\}$/\\1/' | sort -u || true)
+          config_file="configuration.\${TARGET_ENV}.yaml"
+          tokens=$(grep -o '{#\\[[^]]*\\]#}' "$config_file" | sed -E 's/^\\{#\\[([^]]+)\\]#\\}$/\\1/' | sort -u || true)
 
           if [ -z "$tokens" ]; then
-            echo "No tokens found in configuration.${env}.yaml"
+            echo "No tokens found in $config_file"
             exit 0
           fi
 
@@ -86,88 +130,67 @@ ${autoDeployComment}
             exit 1
           fi
 
-      - name: Substitute tokens in configuration.${env}.yaml
-        uses: cschleiden/replace-tokens@v1.3
+      - name: Substitute tokens in configuration file
+        uses: cschleiden/replace-tokens@v1.4
         with:
           tokenPrefix: '{#['
           tokenSuffix: ']#}'
-          files: '["configuration.${env}.yaml"]'
+          files: '["configuration.\${{ env.TARGET_ENV }}.yaml"]'
           # Token values are injected in the previous step based on token names.
-          # Ensure tokens in configuration.${env}.yaml match secret names exactly.
+          # Ensure tokens in the configuration file match secret names exactly.
 
-      - name: Validate token substitution (${env})
+      - name: Validate token substitution
         run: |
-          if grep -q '{#\\[' configuration.${env}.yaml; then
-            echo "Unresolved tokens remain in configuration.${env}.yaml"
-            grep -o '{#\\[[^]]*\\]#}' configuration.${env}.yaml | sort -u
+          config_file="configuration.\${TARGET_ENV}.yaml"
+          if grep -q '{#\\[' "$config_file"; then
+            echo "Unresolved tokens remain in $config_file"
+            grep -o '{#\\[[^]]*\\]#}' "$config_file" | sort -u
             exit 1
           fi
 
-      - name: Publish to ${env} (incremental - last commit only)
+      - name: Dry-run validation (incremental)
         if: \${{ github.event.inputs.COMMIT_ID_CHOICE != 'publish-all-artifacts-in-repo' }}
         run: |
           npx apiops publish \\
             --subscription-id \${{ secrets.AZURE_SUBSCRIPTION_ID }} \\
-            --resource-group \${{ secrets.APIM_RESOURCE_GROUP_${envUpper} }} \\
-            --service-name \${{ secrets.APIM_SERVICE_NAME_${envUpper} }} \\
+            --resource-group \${{ secrets[format('APIM_RESOURCE_GROUP_{0}', steps.env.outputs.upper)] }} \\
+            --service-name \${{ secrets[format('APIM_SERVICE_NAME_{0}', steps.env.outputs.upper)] }} \\
             --source ${config.artifactDir} \\
-            --overrides configuration.${env}.yaml \\
-            --commit-id \${{ needs.get-commit.outputs.commit_id }}
+            --overrides configuration.\${{ env.TARGET_ENV }}.yaml \\
+            --commit-id \${{ needs.get-commit.outputs.commit_id }} \\
+            --dry-run
 
-      - name: Publish to ${env} (all artifacts)
+      - name: Dry-run validation (all artifacts)
         if: \${{ github.event.inputs.COMMIT_ID_CHOICE == 'publish-all-artifacts-in-repo' }}
         run: |
           npx apiops publish \\
             --subscription-id \${{ secrets.AZURE_SUBSCRIPTION_ID }} \\
-            --resource-group \${{ secrets.APIM_RESOURCE_GROUP_${envUpper} }} \\
-            --service-name \${{ secrets.APIM_SERVICE_NAME_${envUpper} }} \\
+            --resource-group \${{ secrets[format('APIM_RESOURCE_GROUP_{0}', steps.env.outputs.upper)] }} \\
+            --service-name \${{ secrets[format('APIM_SERVICE_NAME_{0}', steps.env.outputs.upper)] }} \\
             --source ${config.artifactDir} \\
-            --overrides configuration.${env}.yaml
-`;
-  }).join('\n');
+            --overrides configuration.\${{ env.TARGET_ENV }}.yaml \\
+            --dry-run
 
-  return `name: Run APIM Publisher
+      - name: Publish (incremental - last commit only)
+        if: \${{ github.event.inputs.COMMIT_ID_CHOICE != 'publish-all-artifacts-in-repo' }}
+        run: |
+          npx apiops publish \\
+            --subscription-id \${{ secrets.AZURE_SUBSCRIPTION_ID }} \\
+            --resource-group \${{ secrets[format('APIM_RESOURCE_GROUP_{0}', steps.env.outputs.upper)] }} \\
+            --service-name \${{ secrets[format('APIM_SERVICE_NAME_{0}', steps.env.outputs.upper)] }} \\
+            --source ${config.artifactDir} \\
+            --overrides configuration.\${{ env.TARGET_ENV }}.yaml \\
+            --commit-id \${{ needs.get-commit.outputs.commit_id }}
 
-on:
-  push:
-    branches:
-      - main
-    paths:
-      - '${config.artifactDir}/**'
-      - 'configuration.*.yaml'
-  workflow_dispatch:
-    inputs:
-      COMMIT_ID_CHOICE:
-        description: 'Choose "publish-all-artifacts-in-repo" only when you want to force republishing all artifacts (e.g. after build failure). Otherwise stick with the default behavior of "publish-artifacts-in-last-commit"'
-        required: true
-        type: choice
-        default: publish-artifacts-in-last-commit
-        options:
-          - publish-artifacts-in-last-commit
-          - publish-all-artifacts-in-repo
-      ENVIRONMENT:
-        description: 'Choose which environment to publish to'
-        required: true
-        type: choice
-        default: ${config.environments[0]}
-        options:
-${envChoices}
-
-permissions:
-  id-token: write
-  contents: read
-
-jobs:
-  get-commit:
-    runs-on: ubuntu-latest
-    outputs:
-      commit_id: \${{ steps.commit.outputs.commit_id }}
-    steps:
-      - name: Set the Commit Id
-        id: commit
-        run: echo "commit_id=\${GITHUB_SHA}" >> $GITHUB_OUTPUT
-
-${envJobs}
+      - name: Publish (all artifacts)
+        if: \${{ github.event.inputs.COMMIT_ID_CHOICE == 'publish-all-artifacts-in-repo' }}
+        run: |
+          npx apiops publish \\
+            --subscription-id \${{ secrets.AZURE_SUBSCRIPTION_ID }} \\
+            --resource-group \${{ secrets[format('APIM_RESOURCE_GROUP_{0}', steps.env.outputs.upper)] }} \\
+            --service-name \${{ secrets[format('APIM_SERVICE_NAME_{0}', steps.env.outputs.upper)] }} \\
+            --source ${config.artifactDir} \\
+            --overrides configuration.\${{ env.TARGET_ENV }}.yaml
 `;
 }
 

@@ -40,7 +40,7 @@ describe('github-actions/extract-workflow', () => {
     it('should include Azure login step with federated credentials', () => {
       const workflow = generateExtractWorkflow({ artifactDir: './apim-artifacts' });
       expect(workflow).toContain('Azure Login (Federated Credential)');
-      expect(workflow).toContain('azure/login@v2');
+      expect(workflow).toContain('azure/login@v3');
       expect(workflow).toContain('${{ secrets.AZURE_CLIENT_ID }}');
       expect(workflow).toContain('${{ secrets.AZURE_TENANT_ID }}');
       expect(workflow).toContain('${{ secrets.AZURE_SUBSCRIPTION_ID }}');
