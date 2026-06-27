@@ -1,0 +1,98 @@
+name: Enforce Unique Category Labels
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  enforce:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Enforce one label per category
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const issue = context.payload.issue;
+            const appliedLabel = context.payload.label.name;
+
+            // Only handle "category:value" labels
+            const match = appliedLabel.match(/^([^:]+):/);
+            if (!match) {
+              core.info(`Label "${appliedLabel}" has no category prefix — skipping`);
+              return;
+            }
+
+            const category = match[1];
+
+            // squad: labels are exempt from uniqueness enforcement
+            if (category === 'squad') {
+              core.info(`squad: labels are exempt — skipping`);
+              return;
+            }
+
+            // Collect all labels in the same category currently on the issue
+            const allLabels = issue.labels.map(l => l.name);
+            const sameCategory = allLabels.filter(l => l.startsWith(category + ':'));
+
+            if (sameCategory.length <= 1) {
+              core.info(`Only one "${category}:" label present — nothing to enforce`);
+              return;
+            }
+
+            // Read the sync workflow to determine canonical label ordering.
+            // Labels listed earlier in issue-labels-sync.yml have higher priority.
+            const syncPath = '.github/workflows/issue-labels-sync.yml';
+            let labelOrder = [];
+            if (fs.existsSync(syncPath)) {
+              const syncContent = fs.readFileSync(syncPath, 'utf8');
+              const nameRegex = /name:\s*'([^']+)'/g;
+              let m;
+              while ((m = nameRegex.exec(syncContent)) !== null) {
+                if (m[1].startsWith(category + ':')) {
+                  labelOrder.push(m[1]);
+                }
+              }
+            }
+
+            // Determine winner: first label (by sync-file order) that is on the issue.
+            // If the category isn't in the sync file, fall back to keeping whichever
+            // label appeared first in the issue's current label list.
+            let winner = null;
+            if (labelOrder.length > 0) {
+              for (const ordered of labelOrder) {
+                if (sameCategory.includes(ordered)) {
+                  winner = ordered;
+                  break;
+                }
+              }
+            }
+            if (!winner) {
+              winner = sameCategory[0];
+            }
+
+            const toRemove = sameCategory.filter(l => l !== winner);
+            core.info(`Conflict in "${category}:" — keeping "${winner}", removing ${toRemove.join(', ')}`);
+
+            for (const label of toRemove) {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                name: label
+              });
+              core.info(`Removed: ${label}`);
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: `🏷️ Label conflict resolved in \`${category}:\` — kept \`${winner}\`, removed ${toRemove.map(l => '`' + l + '`').join(', ')}.`
+            });

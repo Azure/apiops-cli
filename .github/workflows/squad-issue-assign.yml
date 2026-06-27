@@ -57,7 +57,7 @@ jobs:
 
             core.info(`Verified ${sender} as a ${permission.permission} collaborator`);
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Step 1: Assign issue to the maintainer who applied "go:yes"
       - name: Assign to label sender
@@ -233,7 +233,7 @@ jobs:
     needs: assign-issue
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Verify assignment integrity
         uses: actions/github-script@v8

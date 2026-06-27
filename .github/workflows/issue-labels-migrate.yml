@@ -1,0 +1,129 @@
+name: Migrate Legacy Labels
+
+on:
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Rename legacy labels to type: equivalents"
+        uses: actions/github-script@v8
+        with:
+          script: |
+            // Legacy label → canonical type: label.
+            // Rename preserves all issue associations automatically.
+            const MIGRATIONS = [
+              { from: 'bug', to: 'type:bug' },
+              { from: 'question', to: 'type:question' },
+              { from: 'enhancement', to: 'type:enhancement' },
+              { from: 'documentation', to: 'type:documentation' }
+            ];
+
+            function isAlreadyExistsError(err) {
+              const errors = err?.errors
+                || err?.response?.data?.errors
+                || err?.data?.errors
+                || [];
+
+              const hasTypedError = Array.isArray(errors)
+                && errors.some(e => e?.code === 'already_exists' && e?.field === 'name');
+
+              const message = String(err?.message || '');
+              const messageHasAlreadyExists = message.includes('already_exists') && message.includes('Label');
+
+              return (err?.status === 422 && hasTypedError) || messageHasAlreadyExists;
+            }
+
+            async function relabelItems(from, to) {
+              const items = await github.paginate(github.rest.issues.listForRepo, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                state: 'all',
+                labels: from,
+                per_page: 100
+              });
+
+              if (items.length === 0) {
+                core.info(`No issues or PRs found with legacy label "${from}"`);
+                return;
+              }
+
+              for (const item of items) {
+                const existing = (item.labels || [])
+                  .map(l => (typeof l === 'string' ? l : l.name))
+                  .filter(Boolean);
+
+                if (!existing.includes(to)) {
+                  await github.rest.issues.addLabels({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: item.number,
+                    labels: [to]
+                  });
+                }
+
+                try {
+                  await github.rest.issues.removeLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    issue_number: item.number,
+                    name: from
+                  });
+                } catch (err) {
+                  if (err.status !== 404) {
+                    throw err;
+                  }
+                }
+              }
+
+              core.info(`Re-labeled ${items.length} issues/PRs: ${from} → ${to}`);
+            }
+
+            for (const { from, to } of MIGRATIONS) {
+              try {
+                await github.rest.issues.getLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: from
+                });
+                // Old label exists — rename it
+                await github.rest.issues.updateLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: from,
+                  new_name: to
+                });
+                core.info(`Migrated label: ${from} → ${to}`);
+              } catch (err) {
+                if (err.status === 404) {
+                  core.info(`Legacy label "${from}" not found — no migration needed`);
+                } else if (isAlreadyExistsError(err)) {
+                  core.info(`Target label "${to}" already exists; applying fallback migration for "${from}"`);
+
+                  await relabelItems(from, to);
+
+                  try {
+                    await github.rest.issues.deleteLabel({
+                      owner: context.repo.owner,
+                      repo: context.repo.repo,
+                      name: from
+                    });
+                    core.info(`Deleted legacy label "${from}" after fallback migration`);
+                  } catch (deleteErr) {
+                    if (deleteErr.status === 404) {
+                      core.info(`Legacy label "${from}" already removed`);
+                    } else {
+                      throw deleteErr;
+                    }
+                  }
+                } else {
+                  core.warning(`Failed to migrate ${from}: ${err.message}`);
+                }
+              }
+            }
+
+            core.info('Label migration complete');

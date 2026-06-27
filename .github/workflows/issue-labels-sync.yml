@@ -17,10 +17,10 @@ jobs:
   sync-labels:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Parse roster and sync labels
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const fs = require('fs');
@@ -85,14 +85,21 @@ jobs:
             ];
 
             const TYPE_LABELS = [
-              { name: 'type:feature', color: 'DDD1F2', description: 'New capability' },
               { name: 'type:bug', color: 'FF0422', description: 'Something broken' },
-              { name: 'type:question', color: 'D876E3', description: 'Questions about usage or behavior' },
-              { name: 'type:documentation', color: '0075CA', description: 'Documentation issues or requests' },
+              { name: 'type:feature', color: 'DDD1F2', description: 'New capability' },
+              { name: 'type:enhancement', color: 'A2EEEF', description: 'Improvement to existing functionality' },
               { name: 'type:spike', color: 'F2DDD4', description: 'Research/investigation — produces a plan, not code' },
-              { name: 'type:docs', color: 'D4E5F7', description: 'Documentation work' },
               { name: 'type:chore', color: 'D4E5F7', description: 'Maintenance, refactoring, cleanup' },
-              { name: 'type:epic', color: 'CC4455', description: 'Parent issue that decomposes into sub-issues' }
+              { name: 'type:epic', color: 'CC4455', description: 'Parent issue that decomposes into sub-issues' },
+              { name: 'type:documentation', color: '0075CA', description: 'Documentation issues or requests' },
+              { name: 'type:question', color: 'D876E3', description: 'Questions about usage or behavior' }
+            ];
+
+            const CLOSE_LABELS = [
+              { name: 'close:fixed', color: '0E8A16', description: 'Fixed by a previous PR or release' },
+              { name: 'close:wont-fix', color: 'FFFFFF', description: 'Will not be addressed' },
+              { name: 'close:duplicate', color: 'CFD3D7', description: 'Duplicate of another issue' },
+              { name: 'close:question-answered', color: 'D876E3', description: 'Question has been answered' }
             ];
 
             const EFFORT_LABELS = [
@@ -104,7 +111,6 @@ jobs:
 
             // High-signal labels — these MUST visually dominate all others
             const SIGNAL_LABELS = [
-              { name: 'bug', color: 'FF0422', description: 'Something isn\'t working' },
               { name: 'feedback', color: '00E5FF', description: 'User feedback — high signal, needs attention' }
             ];
 
@@ -144,10 +150,11 @@ jobs:
               });
             }
 
-            // Add go:, release:, type:, effort:, priority:, high-signal, and lifecycle labels
+            // Add go:, release:, type:, close:, effort:, priority:, high-signal, and lifecycle labels
             labels.push(...GO_LABELS);
             labels.push(...RELEASE_LABELS);
             labels.push(...TYPE_LABELS);
+            labels.push(...CLOSE_LABELS);
             labels.push(...EFFORT_LABELS);
             labels.push(...PRIORITY_LABELS);
             labels.push(...SIGNAL_LABELS);
