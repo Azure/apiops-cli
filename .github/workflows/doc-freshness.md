@@ -58,6 +58,10 @@ steps:
     run: |
       # Fetch commits since last doc-drift issue (or last 7 days)
       SINCE="$SINCE_DATE"
+      # The agent job checks out only the triggering ref, so ensure origin/main
+      # is available before diffing against it.
+      git fetch --no-tags --depth=200 origin +refs/heads/main:refs/remotes/origin/main \
+        || git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
       git log origin/main --since="$SINCE" --oneline --name-only > /tmp/gh-aw/recent-commits.txt
       echo "commit_file=recent-commits.txt" >> "$GITHUB_OUTPUT"
       echo "Commits since: $SINCE ($(wc -l < /tmp/gh-aw/recent-commits.txt) lines)"
