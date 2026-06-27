@@ -19,7 +19,7 @@ safe-outputs:
     title-prefix: "[Doc Drift]"
     labels:
       - "type:documentation"
-    max: 3
+    max: 2
     deduplicate-by-title: true
   add-comment:
     max: 0
@@ -213,13 +213,21 @@ Each issue you file must follow this structure:
 
 - **Time budget:** Complete your analysis within 10 minutes. Do not exhaustively audit every file — focus on the highest-signal changes.
 - Limit analysis to the **20 most recent commits**. If there are more, prioritize commits that touch `src/cli/` or `src/commands/`.
-- Stop as soon as you have found 3 drift items — do not continue searching for more.
 - If no drift is apparent after reviewing the commit list and help output, report "No documentation drift detected" and exit immediately.
 - You have `contents: read` permissions only — do NOT create PRs or modify files.
-- Maximum 3 issues per run. Prioritize user-facing docs over internal docs.
+- **Maximum 2 issues per run** — one per drift group (see below).
 - Issues are deduplicated by title — if an open issue with the same `[Doc Drift]` title exists, skip it.
 - Fire-and-forget: once issues are filed, no further automation touches them. No auto-assign, no reminders, no auto-close.
 - All findings are advisory — a human maintainer must review each issue.
+
+## Drift Groups
+
+File **one issue per group**. Each issue should consolidate all drift findings for that group.
+
+| Group | Trigger | Issue covers |
+|-------|---------|-------------|
+| **Source drift** | Changes in `src/` that introduce new commands, flags, defaults, or remove features without corresponding doc updates | All undocumented source changes in this run |
+| **Docs drift** | Changes in `docs/`, README, CONTRIBUTING, or `specs/` that reference removed or renamed source behavior | All stale documentation references in this run |
 
 ## Security Rules
 
