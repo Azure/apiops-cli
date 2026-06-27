@@ -21,6 +21,14 @@ safe-outputs:
       - "type:documentation"
     max: 2
     deduplicate-by-title: true
+  noop:
+    report-as-issue: false
+  missing-tool:
+    report-as-issue: false
+  missing-data:
+    report-as-issue: false
+  report-incomplete:
+    report-as-issue: false
 
 steps:
   - name: Determine lookback window
