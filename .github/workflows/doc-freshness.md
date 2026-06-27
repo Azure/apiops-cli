@@ -6,11 +6,21 @@ description: >
 on:
   schedule: weekly on monday
   workflow_dispatch:
+  # TEMP: trigger on push to this branch to test before merge — REVERT before merge
+  push:
+    branches:
+      - emaher-doc-freshness-workflow
 
 permissions:
   contents: read
   issues: read
   copilot-requests: write  # use GitHub Actions token-based inference (no PAT) — requires org centralized Copilot billing
+
+# Pin Node to the repo's standard version (Active LTS 22.x) so the CLI runs under
+# the same runtime as CI, rather than gh-aw's default Node 24.
+runtimes:
+  node:
+    version: "22"
 
 timeout-minutes: 10
 
@@ -24,11 +34,12 @@ safe-outputs:
   noop:
     report-as-issue: false
   missing-tool:
-    report-as-issue: false
+    create-issue: false
   missing-data:
-    report-as-issue: false
+    create-issue: false
   report-incomplete:
-    report-as-issue: false
+    create-issue: false
+  report-failure-as-issue: false
 
 steps:
   - name: Determine lookback window
@@ -73,14 +84,17 @@ steps:
   - name: Gather CLI help output
     id: help
     run: |
-      npm ci --ignore-scripts --quiet 2>/dev/null || true
+      # Fail the workflow if dependency install or help generation breaks — a
+      # silent failure here would feed the agent empty/partial CLI context and
+      # cause it to miss real doc drift. Better to surface an unhealthy run.
+      npm ci --ignore-scripts --quiet
       # Top-level help
-      npx tsx src/cli/index.ts --help > /tmp/gh-aw/cli-help.txt 2>&1 || true
+      npx tsx src/cli/index.ts --help > /tmp/gh-aw/cli-help.txt 2>&1
       # Per-command help
       for cmd in init extract publish; do
         echo "---" >> /tmp/gh-aw/cli-help.txt
         echo "## apiops ${cmd} --help" >> /tmp/gh-aw/cli-help.txt
-        npx tsx src/cli/index.ts ${cmd} --help >> /tmp/gh-aw/cli-help.txt 2>&1 || true
+        npx tsx src/cli/index.ts ${cmd} --help >> /tmp/gh-aw/cli-help.txt 2>&1
       done
       echo "help_file=cli-help.txt" >> "$GITHUB_OUTPUT"
 
