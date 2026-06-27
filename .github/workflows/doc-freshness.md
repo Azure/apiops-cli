@@ -88,6 +88,10 @@ steps:
       # silent failure here would feed the agent empty/partial CLI context and
       # cause it to miss real doc drift. Better to surface an unhealthy run.
       npm ci --ignore-scripts --quiet
+      # Generate the embedded markdown templates that the CLI imports at runtime.
+      # These are normally produced by the prebuild/prelint/pretest hooks, which
+      # --ignore-scripts skips, so generate them explicitly before running the CLI.
+      node scripts/embed-markdown-templates.mjs
       # Top-level help
       npx tsx src/cli/index.ts --help > /tmp/gh-aw/cli-help.txt 2>&1
       # Per-command help
