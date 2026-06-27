@@ -6,10 +6,6 @@ description: >
 on:
   schedule: weekly on monday
   workflow_dispatch:
-  # TEMP: trigger on push to this branch to test before merge — REVERT before merge
-  push:
-    branches:
-      - emaher-doc-freshness-workflow
 
 permissions:
   contents: read
