@@ -3,3 +3,5 @@
 .squad/agents/*/history.md merge=union
 .squad/log/** merge=union
 .squad/orchestration-log/** merge=union
+
+.github/workflows/*.lock.yml linguist-generated=true merge=ours

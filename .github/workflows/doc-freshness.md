@@ -4,13 +4,16 @@ description: >
   Files advisory issues for maintainer review when CLI behavior diverges from docs.
 
 on:
-  schedule:
-    - cron: '0 9 * * 1'   # Weekly on Monday at 09:00 UTC
+  schedule: weekly on monday
   workflow_dispatch:
+  # TEMP: trigger on push to this branch to test before merge — REVERT before merge
+  push:
+    branches:
+      - emaher-doc-freshness-workflow
 
 permissions:
   contents: read
-  issues: write
+  issues: read
 
 timeout-minutes: 10
 
@@ -21,8 +24,6 @@ safe-outputs:
       - "type:documentation"
     max: 2
     deduplicate-by-title: true
-  add-comment:
-    max: 0
 
 steps:
   - name: Determine lookback window
@@ -51,9 +52,11 @@ steps:
 
   - name: Gather recent commits
     id: commits
+    env:
+      SINCE_DATE: ${{ steps.lookback.outputs.since_date }}
     run: |
       # Fetch commits since last doc-drift issue (or last 7 days)
-      SINCE="${{ steps.lookback.outputs.since_date }}"
+      SINCE="$SINCE_DATE"
       git log origin/main --since="$SINCE" --oneline --name-only > /tmp/gh-aw/recent-commits.txt
       echo "commit_file=recent-commits.txt" >> "$GITHUB_OUTPUT"
       echo "Commits since: $SINCE ($(wc -l < /tmp/gh-aw/recent-commits.txt) lines)"
@@ -74,6 +77,8 @@ steps:
 
   - name: Prepare documentation context
     id: docs
+    env:
+      SINCE_DATE: ${{ steps.lookback.outputs.since_date }}
     run: |
       mkdir -p /tmp/gh-aw/agent
 
@@ -122,7 +127,7 @@ steps:
 
       USER_EOF
 
-      echo "## Recent Commits (since ${{ steps.lookback.outputs.since_date }})" >> /tmp/gh-aw/agent/user-context.md
+      echo "## Recent Commits (since $SINCE_DATE)" >> /tmp/gh-aw/agent/user-context.md
       echo '```' >> /tmp/gh-aw/agent/user-context.md
       cat /tmp/gh-aw/recent-commits.txt >> /tmp/gh-aw/agent/user-context.md
       echo '```' >> /tmp/gh-aw/agent/user-context.md
