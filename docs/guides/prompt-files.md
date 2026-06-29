@@ -28,8 +28,11 @@ If you already have an APIOps repository and want to add prompt files without re
 #### Bash
 
 ```bash
+# Resolve repo root so this works from any subdirectory
+repo_root="$(git rev-parse --show-toplevel)"
+
 # Create the prompts directory
-mkdir -p .github/prompts
+mkdir -p "${repo_root}/.github/prompts"
 
 # Available prompt files — remove any you don't need
 files=(
@@ -43,7 +46,7 @@ files=(
 base_url="https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot"
 
 for file in "${files[@]}"; do
-  curl -sL "${base_url}/${file}" -o ".github/prompts/${file}"
+  curl -sL "${base_url}/${file}" -o "${repo_root}/.github/prompts/${file}"
   echo "Downloaded ${file}"
 done
 ```
@@ -51,8 +54,11 @@ done
 #### PowerShell
 
 ```powershell
+# Resolve repo root so this works from any subdirectory
+$repoRoot = git rev-parse --show-toplevel
+
 # Create the prompts directory
-New-Item -ItemType Directory -Path ".github/prompts" -Force | Out-Null
+New-Item -ItemType Directory -Path "$repoRoot/.github/prompts" -Force | Out-Null
 
 # Available prompt files — remove any you don't need
 $files = @(
@@ -66,7 +72,7 @@ $files = @(
 $baseUrl = "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot"
 
 foreach ($file in $files) {
-  Invoke-WebRequest -Uri "$baseUrl/$file" -OutFile ".github/prompts/$file"
+  Invoke-WebRequest -Uri "$baseUrl/$file" -OutFile "$repoRoot/.github/prompts/$file"
   Write-Host "Downloaded $file"
 }
 ```
