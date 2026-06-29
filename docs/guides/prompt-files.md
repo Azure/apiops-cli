@@ -30,42 +30,46 @@ If you already have an APIOps repository and want to add prompt files without re
 # Create the prompts directory
 mkdir -p .github/prompts
 
-# Download prompt files
-curl -sL "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot/configure-filter-prompt.md" \
-  -o ".github/prompts/apiops-configure-filter.prompt.md"
+# Available prompt files — comment out any you don't need
+files=(
+  "configure-filter-prompt.md:apiops-configure-filter.prompt.md"
+  "configure-overrides-prompt.md:apiops-configure-overrides.prompt.md"
+  # Choose ONE of the following identity setup prompts:
+  "identity-setup-prompt-github-actions.md:apiops-setup-workflow-identity.prompt.md"
+  # "identity-setup-prompt-azure-devops.md:apiops-setup-workflow-identity.prompt.md"
+)
 
-curl -sL "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot/configure-overrides-prompt.md" \
-  -o ".github/prompts/apiops-configure-overrides.prompt.md"
+base_url="https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot"
 
-# For GitHub Actions identity setup:
-curl -sL "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot/identity-setup-prompt-github-actions.md" \
-  -o ".github/prompts/apiops-setup-workflow-identity.prompt.md"
-
-# For Azure DevOps identity setup:
-curl -sL "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot/identity-setup-prompt-azure-devops.md" \
-  -o ".github/prompts/apiops-setup-workflow-identity.prompt.md"
+for entry in "${files[@]}"; do
+  src="${entry%%:*}"
+  dest="${entry##*:}"
+  curl -sL "${base_url}/${src}" -o ".github/prompts/${dest}"
+  echo "Downloaded ${dest}"
+done
 ```
 
 #### PowerShell
 
 ```powershell
 # Create the prompts directory
-New-Item -ItemType Directory -Path ".github/prompts" -Force
+New-Item -ItemType Directory -Path ".github/prompts" -Force | Out-Null
 
-# Download prompt files
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot/configure-filter-prompt.md" `
-  -OutFile ".github/prompts/apiops-configure-filter.prompt.md"
+# Available prompt files — comment out any you don't need
+$files = @(
+  @{ Source = "configure-filter-prompt.md"; Dest = "apiops-configure-filter.prompt.md" }
+  @{ Source = "configure-overrides-prompt.md"; Dest = "apiops-configure-overrides.prompt.md" }
+  # Choose ONE of the following identity setup prompts:
+  @{ Source = "identity-setup-prompt-github-actions.md"; Dest = "apiops-setup-workflow-identity.prompt.md" }
+  # @{ Source = "identity-setup-prompt-azure-devops.md"; Dest = "apiops-setup-workflow-identity.prompt.md" }
+)
 
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot/configure-overrides-prompt.md" `
-  -OutFile ".github/prompts/apiops-configure-overrides.prompt.md"
+$baseUrl = "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot"
 
-# For GitHub Actions identity setup:
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot/identity-setup-prompt-github-actions.md" `
-  -OutFile ".github/prompts/apiops-setup-workflow-identity.prompt.md"
-
-# For Azure DevOps identity setup:
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot/identity-setup-prompt-azure-devops.md" `
-  -OutFile ".github/prompts/apiops-setup-workflow-identity.prompt.md"
+foreach ($file in $files) {
+  Invoke-WebRequest -Uri "$baseUrl/$($file.Source)" -OutFile ".github/prompts/$($file.Dest)"
+  Write-Host "Downloaded $($file.Dest)"
+}
 ```
 
 ## Using prompt files
