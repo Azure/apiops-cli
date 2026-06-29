@@ -55,16 +55,13 @@ Use **Access control (IAM)** on each resource group and APIM instance to create 
 
 > 📖 [Create an Azure Resource Manager service connection using workload identity federation](https://learn.microsoft.com/azure/devops/pipelines/library/connect-to-azure)
 
+For each environment, do the following steps:
+
 1. In **Azure DevOps**, open **Project settings** → **Service connections** → **New service connection**.
 2. Choose **Azure Resource Manager**.
 3. Select **Workload identity federation**.
 4. Use the app registration from Step 2.
-5. Create one service connection per environment using the exact names below unless you also plan to edit the generated pipeline YAML and variable-group values:
-
-| Environment | Required service connection name | Scope guidance |
-|---|---|---|
-{{SERVICE_CONNECTION_ROWS}}
-
+5. Name the service connection `AZURE_SERVICE_CONNECTION_<ENV>` (replace `<ENV>` with the upper-case environment name) unless you plan to edit the generated pipeline YAML.
 6. Complete the validation flow in Azure DevOps so the service connection can issue the issuer and subject values required for federation.
 7. If Azure DevOps asks you to finish the federated credential in Azure, follow the linked experience or copy the issuer/subject into the app registration's **Federated credentials** blade in the Azure portal.
 
@@ -72,14 +69,17 @@ Use **Access control (IAM)** on each resource group and APIM instance to create 
 
 > 📖 [Add and use variable groups in Azure Pipelines](https://learn.microsoft.com/azure/devops/pipelines/library/variable-groups)
 
+For each environment, do the following steps:
+
 1. Go to **Pipelines** → **Library** → **+ Variable group**.
-2. Create one variable group per environment:
-
-| Environment | Variable group name | Required variables |
-|---|---|---|
-{{VARIABLE_GROUP_ROWS}}
-
-3. Include both the non-suffixed variables used by the extractor pipeline and the environment-suffixed APIM variables used by the publish pipeline.
+2. Name the variable group `apim-<environment>` (e.g. `apim-dev`, `apim-prod`).
+3. Add the following variables:
+   - `AZURE_SERVICE_CONNECTION` — the service connection name from Step 4
+   - `AZURE_SUBSCRIPTION_ID` — the Azure subscription ID for that environment
+   - `APIM_RESOURCE_GROUP` — the resource group containing the APIM instance
+   - `APIM_SERVICE_NAME` — the APIM service name
+   - `APIM_RESOURCE_GROUP_<ENV>` — same value, upper-case environment suffix (used by the publish pipeline)
+   - `APIM_SERVICE_NAME_<ENV>` — same value, upper-case environment suffix (used by the publish pipeline)
 4. Authorize each variable group for pipeline use when Azure DevOps prompts you.
 
 ## Step 6: Create Azure DevOps environments and approvals

@@ -6,8 +6,7 @@
 
 ## Before you start
 
-- Azure subscription: `{{SUBSCRIPTION_ID}}`
-- Resource group containing an APIM instance: `{{RESOURCE_GROUP}}`
+- An Azure subscription with an API Management instance
 - GitHub repository admin access
 - Permission in Microsoft Entra ID to create or manage app registrations
 
@@ -44,11 +43,12 @@ Helpful documentation:
 
 > 📖 [Assign Azure roles using the Azure portal](https://learn.microsoft.com/azure/role-based-access-control/role-assignments-portal)
 
-1. In the **Azure portal**, open your API Management service.
+For each environment, do the following steps:
+
+1. In the **Azure portal**, open the resource group that contains the APIM instance for that environment.
 2. Go to **Access control (IAM)** → **Add role assignment**.
-3. For every environment configured by `apiops init`, assign access to the app registration or service principal:
-{{ENVIRONMENT_AZURE_ACCESS_NOTES}}
-4. If you are starting with a single shared APIM resource in resource group `{{RESOURCE_GROUP}}` and subscription `{{SUBSCRIPTION_ID}}`, those placeholders are the first values to replace.
+3. Assign **Reader** on the resource group to the app registration.
+4. Open the APIM service itself and assign **API Management Service Contributor** to the app registration.
 5. Wait a few minutes for RBAC changes to propagate before you test the workflow.
 
 ## Step 4: Add federated credentials in Azure portal
@@ -64,18 +64,17 @@ Helpful documentation:
    - **Entity type**: **Branch**
    - **Branch name**: `main`
    - **Credential name**: `github-main-branch`
-4. Add one credential for each GitHub environment used by publish workflows:
-
-| GitHub environment | Suggested credential name | Subject value |
-|---|---|---|
-{{FEDERATED_CREDENTIAL_ROWS}}
+4. For each environment, add one additional federated credential:
+   - **Entity type**: **Environment**
+   - **Environment name**: the GitHub environment name (must match what you create in Step 5)
+   - **Credential name**: `github-env-<environment>`
 
 ## Step 5: Create GitHub environments in the web UI
 
 > 📖 [Using environments for deployment](https://docs.github.com/actions/deployment/targeting-different-environments/using-environments-for-deployment)
 
 1. In GitHub, go to **Settings** → **Environments**.
-2. Create an environment for each deployment target used by `apiops init`.
+2. For each environment, create a GitHub environment with the same name used during `apiops init`.
 3. Add protection rules such as required reviewers for production environments if your process needs approvals.
 
 ## Step 6: Add repository and environment secrets in GitHub
@@ -86,9 +85,10 @@ Helpful documentation:
 2. Under **Repository secrets**, create:
    - `AZURE_CLIENT_ID` — the Application (client) ID from the app registration
    - `AZURE_TENANT_ID` — the Directory (tenant) ID from the app registration
-3. Then configure the environment secrets below:
-
-{{ENVIRONMENT_SECRET_SECTIONS}}
+3. For each environment, add the following **environment secrets**:
+   - `AZURE_SUBSCRIPTION_ID` — the Azure subscription ID for that environment
+   - `APIM_RESOURCE_GROUP_<ENV>` — the resource group containing the APIM instance (replace `<ENV>` with the upper-case environment name)
+   - `APIM_SERVICE_NAME_<ENV>` — the APIM service name (replace `<ENV>` with the upper-case environment name)
 
 ## Step 7: Verify the workflow end to end
 

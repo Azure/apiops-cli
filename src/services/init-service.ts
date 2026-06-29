@@ -35,10 +35,6 @@ import { generateIdentitySetupPrompt } from '../templates/copilot/identity-setup
 import { generateConfigureFilterPrompt } from '../templates/copilot/configure-filter-prompt.js';
 import { generateConfigureOverridesPrompt } from '../templates/copilot/configure-overrides-prompt.js';
 
-/** Placeholder values used in generated identity setup guides */
-const PLACEHOLDER_SUBSCRIPTION_ID = '<your-subscription-id>';
-const PLACEHOLDER_RESOURCE_GROUP = '<your-resource-group>';
-
 export interface GeneratedFiles {
   pipelines: string[];
   configs: string[];
@@ -453,19 +449,11 @@ class InitServiceImpl implements InitService {
    * Save identity setup guide to file and tell user where to find it
    */
   private async outputIdentityGuide(config: InitConfig, generatedFiles: GeneratedFiles): Promise<void> {
-    // Use placeholder values for the guide — users replace these with their actual Azure details
-    const subscriptionId = PLACEHOLDER_SUBSCRIPTION_ID;
-    const resourceGroup = PLACEHOLDER_RESOURCE_GROUP;
-
     let guide: string;
     if (config.ciProvider === 'github-actions') {
-      guide = identityGuideService.generateGitHubActionsGuide(
-        subscriptionId,
-        resourceGroup,
-        config.environments
-      );
+      guide = identityGuideService.generateGitHubActionsGuide();
     } else {
-      guide = identityGuideService.generateAzureDevOpsGuide(config.environments);
+      guide = identityGuideService.generateAzureDevOpsGuide();
     }
 
     // Save guide to file
