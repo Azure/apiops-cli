@@ -1,0 +1,98 @@
+# Prompt Files
+
+APIOps provides [prompt files](https://code.visualstudio.com/docs/copilot/copilot-customization#_reusable-prompt-files-experimental) that guide GitHub Copilot through common APIOps configuration tasks. These are reusable `.prompt.md` files that give Copilot the context it needs to help you configure extraction filters, environment overrides, and CI/CD identity setup.
+
+## What are prompt files?
+
+Prompt files are markdown files with a `.prompt.md` extension that provide instructions and context to GitHub Copilot. When you open a prompt file in VS Code and invoke Copilot, it uses the file's content as context to guide you through a task interactively.
+
+## Available prompt files
+
+| File | Description |
+|------|-------------|
+| `apiops-configure-filter.prompt.md` | Guides Copilot through creating a `configuration.extractor.yaml` filter file to control which API Management resources are extracted. |
+| `apiops-configure-overrides.prompt.md` | Guides Copilot through creating environment override files (`configuration.<env>.yaml`) for promoting APIs across environments. |
+| `apiops-setup-workflow-identity.prompt.md` | Walks through setting up Azure identity (app registration, federated credentials, RBAC) for GitHub Actions or Azure DevOps CI/CD pipelines. |
+
+## Getting prompt files
+
+### Via `apiops init` (recommended)
+
+The easiest way to get prompt files is to run [`apiops init`](../commands/init.md), which scaffolds your repository with prompt files already in place at `.github/prompts/`.
+
+### Download individually
+
+If you already have an APIOps repository and want to add prompt files without re-running init, you can download them directly from this repository.
+
+#### Bash
+
+```bash
+# Create the prompts directory
+mkdir -p .github/prompts
+
+# Download prompt files
+curl -sL "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot/configure-filter-prompt.md" \
+  -o ".github/prompts/apiops-configure-filter.prompt.md"
+
+curl -sL "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot/configure-overrides-prompt.md" \
+  -o ".github/prompts/apiops-configure-overrides.prompt.md"
+
+# For GitHub Actions identity setup:
+curl -sL "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot/identity-setup-prompt-github-actions.md" \
+  -o ".github/prompts/apiops-setup-workflow-identity.prompt.md"
+
+# For Azure DevOps identity setup:
+curl -sL "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot/identity-setup-prompt-azure-devops.md" \
+  -o ".github/prompts/apiops-setup-workflow-identity.prompt.md"
+```
+
+#### PowerShell
+
+```powershell
+# Create the prompts directory
+New-Item -ItemType Directory -Path ".github/prompts" -Force
+
+# Download prompt files
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot/configure-filter-prompt.md" `
+  -OutFile ".github/prompts/apiops-configure-filter.prompt.md"
+
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot/configure-overrides-prompt.md" `
+  -OutFile ".github/prompts/apiops-configure-overrides.prompt.md"
+
+# For GitHub Actions identity setup:
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot/identity-setup-prompt-github-actions.md" `
+  -OutFile ".github/prompts/apiops-setup-workflow-identity.prompt.md"
+
+# For Azure DevOps identity setup:
+Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot/identity-setup-prompt-azure-devops.md" `
+  -OutFile ".github/prompts/apiops-setup-workflow-identity.prompt.md"
+```
+
+## Using prompt files
+
+### In VS Code
+
+1. Open the prompt file (e.g., `.github/prompts/apiops-configure-filter.prompt.md`) in VS Code.
+2. Open the Copilot Chat panel and type `#` followed by the prompt file name, or use the **Attach Context** button to select it.
+3. Ask Copilot to help you complete the task described in the prompt.
+
+For more details on using prompt files in VS Code, see the [VS Code documentation on reusable prompt files](https://code.visualstudio.com/docs/copilot/copilot-customization#_reusable-prompt-files-experimental).
+
+### In GitHub Copilot CLI
+
+You can reference prompt files when using [GitHub Copilot in the CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli/using-github-copilot-in-the-cli):
+
+```bash
+# Ask Copilot CLI to use a prompt file as context
+gh copilot suggest --file .github/prompts/apiops-configure-filter.prompt.md "help me configure extraction filters"
+```
+
+For more details, see the [GitHub Copilot in the CLI documentation](https://docs.github.com/en/copilot/github-copilot-in-the-cli/using-github-copilot-in-the-cli).
+
+## Further reading
+
+- [VS Code: Reusable prompt files](https://code.visualstudio.com/docs/copilot/copilot-customization#_reusable-prompt-files-experimental)
+- [GitHub Copilot in the CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli/using-github-copilot-in-the-cli)
+- [APIOps `init` command reference](../commands/init.md)
+- [Filtering resources guide](./filtering-resources.md)
+- [Environment overrides guide](./environment-overrides.md)
