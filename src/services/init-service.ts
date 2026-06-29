@@ -148,10 +148,6 @@ class InitServiceImpl implements InitService {
         config.outputDir,
         '.github/prompts/apiops-setup-workflow-identity.prompt.md'
       );
-      const legacyPromptFile = path.join(
-        config.outputDir,
-        '.github/prompts/apiops-setup-identity.prompt.md'
-      );
       const filterPromptFile = path.join(
         config.outputDir,
         '.github/prompts/apiops-configure-filter.prompt.md'
@@ -163,10 +159,6 @@ class InitServiceImpl implements InitService {
       const identityGuide = path.join(
         config.outputDir,
         'APIOPS-WORKFLOW-IDENTITY-SETUP.md'
-      );
-      const legacyIdentityGuide = path.join(
-        config.outputDir,
-        'IDENTITY-SETUP-GITHUB.md'
       );
 
       if (await this.fileExists(extractWorkflow)) {
@@ -184,14 +176,8 @@ class InitServiceImpl implements InitService {
       if (await this.fileExists(overridesPromptFile)) {
         conflictingFiles.push(overridesPromptFile);
       }
-      if (await this.fileExists(legacyPromptFile)) {
-        conflictingFiles.push(legacyPromptFile);
-      }
       if (await this.fileExists(identityGuide)) {
         conflictingFiles.push(identityGuide);
-      }
-      if (await this.fileExists(legacyIdentityGuide)) {
-        conflictingFiles.push(legacyIdentityGuide);
       }
     } else if (config.ciProvider === 'azure-devops') {
       const extractPipeline = path.join(
@@ -206,17 +192,9 @@ class InitServiceImpl implements InitService {
         config.outputDir,
         'APIOPS-PIPELINE-IDENTITY-SETUP.md'
       );
-      const legacyIdentityGuide = path.join(
-        config.outputDir,
-        'IDENTITY-SETUP-AZDO.md'
-      );
       const promptFile = path.join(
         config.outputDir,
         '.github/prompts/apiops-setup-pipeline-identity.prompt.md'
-      );
-      const legacyPromptFile = path.join(
-        config.outputDir,
-        '.github/prompts/apiops-setup-identity.prompt.md'
       );
       const filterPromptFile = path.join(
         config.outputDir,
@@ -236,9 +214,6 @@ class InitServiceImpl implements InitService {
       if (await this.fileExists(identityGuide)) {
         conflictingFiles.push(identityGuide);
       }
-      if (await this.fileExists(legacyIdentityGuide)) {
-        conflictingFiles.push(legacyIdentityGuide);
-      }
       if (await this.fileExists(promptFile)) {
         conflictingFiles.push(promptFile);
       }
@@ -247,9 +222,6 @@ class InitServiceImpl implements InitService {
       }
       if (await this.fileExists(overridesPromptFile)) {
         conflictingFiles.push(overridesPromptFile);
-      }
-      if (await this.fileExists(legacyPromptFile)) {
-        conflictingFiles.push(legacyPromptFile);
       }
     }
 

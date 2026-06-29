@@ -247,30 +247,6 @@ describe('init-service', () => {
       await expect(initService.run(config)).resolves.toBeDefined();
     });
 
-    it('should treat legacy GitHub identity files as conflicts', async () => {
-      vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
-        const p = filePath.toString();
-        if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('apiops-setup-identity.prompt.md')) {
-          return Promise.resolve();
-        }
-        throw new Error('ENOENT');
-      });
-
-      const config: InitConfig = {
-        ciProvider: 'github-actions',
-        nonInteractive: true,
-        artifactDir: './apim-artifacts',
-        environments: ['dev'],
-        outputDir: '/test',
-        cliPackage: TEST_CLI_PACKAGE,
-        force: false,
-      };
-
-      await expect(initService.run(config)).rejects.toThrow(
-        'Use --force to overwrite existing files'
-      );
-    });
-
     it('should throw when config files exist and --force is not set', async () => {
       // Mock file exists for filter config and the CLI tarball
       vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
