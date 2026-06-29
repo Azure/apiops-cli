@@ -21,6 +21,7 @@ import { logger } from '../lib/logger.js';
 import { REDACTION_MARKER } from './secret-redactor.js';
 import { isLinkAlreadyExistsError } from '../clients/apim-client.js';
 import type { OverrideConfig } from '../models/config.js';
+import { buildResourceLabel } from '../lib/resource-uri.js';
 
 export interface ResourcePublishResult {
   descriptor: ResourceDescriptor;
@@ -414,6 +415,17 @@ async function publishPolicy(
         status: 'skipped',
         action: 'noop',
       };
+    }
+
+    // Fail-safe guard: extracted policies don't currently carry separate metadata
+    // indicating prior redaction, so marker detection is a deliberate content
+    // check to block publishing placeholder secrets.
+    if (policyContent.content.includes(REDACTION_MARKER)) {
+      throw new Error(
+        `Cannot publish ${buildResourceLabel(descriptor)}: policy contains '${REDACTION_MARKER}'. ` +
+        'Replace inline secrets with named values before publish: ' +
+        'https://learn.microsoft.com/en-us/azure/api-management/api-management-howto-properties'
+      );
     }
 
     const payload: Record<string, unknown> = {

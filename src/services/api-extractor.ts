@@ -14,6 +14,7 @@ import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.j
 import { FilterConfig } from '../models/config.js';
 import { shouldIncludeResource } from './filter-service.js';
 import { extractResourceType, ExtractedResource } from './resource-extractor.js';
+import { redactPolicySecrets, warnPolicySecretRedactions } from './secret-redactor.js';
 import { logger } from '../lib/logger.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
 import { getNamePart } from '../lib/resource-path.js';
@@ -363,14 +364,16 @@ async function extractApiPolicy(
   const policyContent = properties?.value as string | undefined;
 
   if (policyContent) {
+    const { redactedContent, findings } = redactPolicySecrets(policyContent);
+    warnPolicySecretRedactions(policyDescriptor, findings);
     await store.writeContent(
       outputDir,
       policyDescriptor,
-      policyContent,
+      redactedContent,
       'policy'
     );
     logger.debug(`Extracted ${buildResourceLabel(policyDescriptor)}`);
-    return policyContent;
+    return redactedContent;
   }
 
   return undefined;
@@ -420,13 +423,15 @@ async function extractApiOperations(
     const policyContent = properties?.value as string | undefined;
 
     if (policyContent) {
-      await store.writeContent(outputDir, opPolicyDescriptor, policyContent, 'policy');
+      const { redactedContent, findings } = redactPolicySecrets(policyContent);
+      warnPolicySecretRedactions(opPolicyDescriptor, findings);
+      await store.writeContent(outputDir, opPolicyDescriptor, redactedContent, 'policy');
       operationPolicies.push({
         descriptor: opPolicyDescriptor,
         json: policyJson,
         status: 'success',
       });
-      policies.push(policyContent);
+      policies.push(redactedContent);
       logger.debug(`Extracted ${buildResourceLabel(opPolicyDescriptor)}`);
     }
   }
@@ -531,13 +536,15 @@ async function extractGraphQLResolvers(
     const policyContent = props?.value as string | undefined;
 
     if (policyContent) {
-      await store.writeContent(outputDir, resolverPolicyDescriptor, policyContent, 'policy');
+      const { redactedContent, findings } = redactPolicySecrets(policyContent);
+      warnPolicySecretRedactions(resolverPolicyDescriptor, findings);
+      await store.writeContent(outputDir, resolverPolicyDescriptor, redactedContent, 'policy');
       resolverPolicies.push({
         descriptor: resolverPolicyDescriptor,
         json: policyJson,
         status: 'success',
       });
-      policies.push(policyContent);
+      policies.push(redactedContent);
       logger.debug(`Extracted ${buildResourceLabel(resolverPolicyDescriptor)}`);
     }
   }

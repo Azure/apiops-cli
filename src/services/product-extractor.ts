@@ -11,6 +11,7 @@ import { ApimServiceContext, AssociationEntry, ResourceDescriptor } from '../mod
 import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { FilterConfig } from '../models/config.js';
 import { extractResourceName } from './resource-extractor.js';
+import { redactPolicySecrets, warnPolicySecretRedactions } from './secret-redactor.js';
 import { logger } from '../lib/logger.js';
 import { getNamePart } from '../lib/resource-path.js';
 import { isWorkspaceScope, extractNameFromLink, extractLinkTarget } from '../lib/workspace-link.js';
@@ -215,9 +216,11 @@ async function extractProductPolicy(
   const policyContent = properties?.value as string | undefined;
 
   if (policyContent) {
-    await store.writeContent(outputDir, policyDescriptor, policyContent, 'policy');
+    const { redactedContent, findings } = redactPolicySecrets(policyContent);
+    warnPolicySecretRedactions(policyDescriptor, findings);
+    await store.writeContent(outputDir, policyDescriptor, redactedContent, 'policy');
     logger.debug(`Extracted policy for product "${getNamePart(productDescriptor.nameParts, 0)}"`);
-    return policyContent;
+    return redactedContent;
   }
 
   return undefined;

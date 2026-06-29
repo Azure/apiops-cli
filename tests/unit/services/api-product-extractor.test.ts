@@ -10,6 +10,7 @@ import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/type
 import { FilterConfig } from '../../../src/models/config.js';
 import { extractApiResources } from '../../../src/services/api-extractor.js';
 import { extractProductResources } from '../../../src/services/product-extractor.js';
+import { REDACTION_MARKER } from '../../../src/services/secret-redactor.js';
 
 const testContext: ApimServiceContext = {
   subscriptionId: 'sub-1',
@@ -261,8 +262,9 @@ describe('api-extractor', () => {
       expect(getApiSpecification).toHaveBeenCalledWith(testContext, 'openapi-rest', 'http', 'openapi3');
     });
 
-    it('should extract API policy and collect content', async () => {
-      const policyContent = '<policies><inbound><base /></inbound></policies>';
+    it('should extract API policy and redact inline secrets', async () => {
+      const policyContent = '<policies><inbound><set-header name="Authorization"><value>AUTH_LITERAL_VALUE</value></set-header></inbound></policies>';
+      const redactedPolicy = `<policies><inbound><set-header name="Authorization"><value>${REDACTION_MARKER}</value></set-header></inbound></policies>`;
       const client = createMockClient({
         getResource: vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
           if (desc.type === ResourceType.ApiPolicy) {
@@ -284,7 +286,13 @@ describe('api-extractor', () => {
         '/output'
       );
 
-      expect(result.policies).toContain(policyContent);
+      expect(result.policies).toContain(redactedPolicy);
+      expect(store.writeContent).toHaveBeenCalledWith(
+        '/output',
+        expect.objectContaining({ type: ResourceType.ApiPolicy, nameParts: ['my-api'] }),
+        redactedPolicy,
+        'policy'
+      );
       // Verify the descriptor used the API name, not 'policy'
       expect(client.getResource).toHaveBeenCalledWith(
         expect.anything(),
@@ -1014,8 +1022,9 @@ describe('product-extractor', () => {
       expect(result.groups).toEqual(['group-1']);
     });
 
-    it('should extract product policy', async () => {
-      const policyContent = '<policies><inbound></inbound></policies>';
+    it('should extract product policy and redact inline secrets', async () => {
+      const policyContent = '<policies><inbound><set-query-parameter name="code"><value>abc123</value></set-query-parameter></inbound></policies>';
+      const redactedPolicy = `<policies><inbound><set-query-parameter name="code"><value>${REDACTION_MARKER}</value></set-query-parameter></inbound></policies>`;
       const client = createMockClient();
       client.listResources = async function* () {};
       client.getResource = vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
@@ -1032,8 +1041,14 @@ describe('product-extractor', () => {
         '/output'
       );
 
-      expect(result.policy).toBe(policyContent);
-      expect(result.policies).toContain(policyContent);
+      expect(result.policy).toBe(redactedPolicy);
+      expect(result.policies).toContain(redactedPolicy);
+      expect(store.writeContent).toHaveBeenCalledWith(
+        '/output',
+        expect.objectContaining({ type: ResourceType.ProductPolicy, nameParts: ['starter'] }),
+        redactedPolicy,
+        'policy'
+      );
     });
 
     it('should propagate write errors from store.writeContent for product policy', async () => {

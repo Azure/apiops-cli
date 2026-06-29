@@ -11,6 +11,7 @@ import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/type
 import { PublishConfig } from '../../../src/models/config.js';
 import { KeyVaultAccessError } from '../../../src/services/keyvault-checker.js';
 import { LogLevel } from '../../../src/lib/logger.js';
+import { REDACTION_MARKER } from '../../../src/services/secret-redactor.js';
 
 // Mock keyvault-checker so resource-publisher tests don't need an Azure environment
 const mockCheckKeyVaultSecretAccess = vi.fn().mockResolvedValue(undefined);
@@ -243,6 +244,25 @@ describe('resource-publisher', () => {
 
       expect(result.status).toBe('skipped');
       expect(result.action).toBe('noop');
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
+    it('should fail policy publish when policy content still contains redaction marker', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readContent.mockResolvedValue({
+        content: `<policies><inbound><set-header name="Authorization"><value>${REDACTION_MARKER}</value></set-header></inbound></policies>`,
+      });
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ApiPolicy,
+        nameParts: ['my-api'],
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, testConfig);
+
+      expect(result.status).toBe('failed');
+      expect(result.error?.message).toContain(`policy contains '${REDACTION_MARKER}'`);
       expect(client.putResource).not.toHaveBeenCalled();
     });
 
