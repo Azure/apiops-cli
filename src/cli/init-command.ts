@@ -91,7 +91,7 @@ export function createInitCommand(): Command {
         logger.info('  3. Set up CI/CD identity authentication:');
         if (isGitHub) {
           logger.info('     - Follow APIOPS-WORKFLOW-IDENTITY-SETUP.md for manual setup, OR');
-          logger.info('     - Open ./.github/prompts/apiops-setup-workflow-identity.prompt.md with GitHub Copilot for guided setup');
+          logger.info('     - Use github/prompts/apiops-setup-workflow-identity.prompt.md prompt file with GitHub Copilot for guided setup');
         } else {
           logger.info('     - Follow ./APIOPS-PIPELINE-IDENTITY-SETUP.md for manual setup, OR');
           logger.info('     - Open ./.github/prompts/apiops-setup-pipeline-identity.prompt.md with GitHub Copilot for guided setup');
