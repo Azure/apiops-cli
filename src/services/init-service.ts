@@ -142,7 +142,7 @@ class InitServiceImpl implements InitService {
       );
       const publishWorkflow = path.join(
         config.outputDir,
-        '.github/workflows/run-apiops-publish.yml'
+        '.github/workflows/run-apiops-publisher.yml'
       );
       const promptFile = path.join(
         config.outputDir,
@@ -186,7 +186,7 @@ class InitServiceImpl implements InitService {
       );
       const publishPipeline = path.join(
         config.outputDir,
-        '.azdo/pipelines/run-apiops-publish.yml'
+        '.azdo/pipelines/run-apiops-publisher.yml'
       );
       const identityGuide = path.join(
         config.outputDir,
@@ -342,9 +342,9 @@ class InitServiceImpl implements InitService {
       environments: config.environments,
     };
     const publishContent = generatePublishWorkflow(publishWorkflowConfig);
-    const publishPath = path.join(workflowsDir, 'run-apiops-publish.yml');
+    const publishPath = path.join(workflowsDir, 'run-apiops-publisher.yml');
     await fs.writeFile(publishPath, publishContent);
-    generatedFiles.pipelines.push('.github/workflows/run-apiops-publish.yml');
+    generatedFiles.pipelines.push('.github/workflows/run-apiops-publisher.yml');
 
     await this.generateCopilotIdentitySetupPrompt(config, generatedFiles);
     await this.generateCopilotConfigurationPrompts(config, generatedFiles);
@@ -376,9 +376,9 @@ class InitServiceImpl implements InitService {
       environments: config.environments,
     };
     const publishContent = generatePublishPipeline(publishPipelineConfig);
-    const publishPath = path.join(pipelinesDir, 'run-apiops-publish.yml');
+    const publishPath = path.join(pipelinesDir, 'run-apiops-publisher.yml');
     await fs.writeFile(publishPath, publishContent);
-    generatedFiles.pipelines.push('.azdo/pipelines/run-apiops-publish.yml');
+    generatedFiles.pipelines.push('.azdo/pipelines/run-apiops-publisher.yml');
 
     await this.generateCopilotIdentitySetupPrompt(config, generatedFiles);
     await this.generateCopilotConfigurationPrompts(config, generatedFiles);

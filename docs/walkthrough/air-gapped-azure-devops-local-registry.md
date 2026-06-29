@@ -163,7 +163,7 @@ This generates:
 |------|---------|
 | `package.json` | Declares the CLI as a dependency |
 | `.azdo/pipelines/run-apiops-extractor.yml` | Extract pipeline |
-| `.azdo/pipelines/run-apiops-publish.yml` | Publish pipeline |
+| `.azdo/pipelines/run-apiops-publisher.yml` | Publish pipeline |
 | `configuration.*.yaml` | Override templates |
 
 Follow the remaining instructions listed in created `APIOPS-PIPELINE-IDENTITY-SETUP.md` or run `/apiops-setup-pipeline-identity` prompt. This creates the necessary variable groups and and service connections.
@@ -178,7 +178,7 @@ This creates `package-lock.json`. Commit it — the lock file is **required** fo
 
 ### 2.3 Modify Pipelines for Air-Gapped Operation
 
-The generated pipelines (`.azdo/pipelines/run-apiops-extractor.yml` and `.azdo/pipelines/run-apiops-publish.yml`) need the following edits:
+The generated pipelines (`.azdo/pipelines/run-apiops-extractor.yml` and `.azdo/pipelines/run-apiops-publisher.yml`) need the following edits:
 
 | Edit | What to Change |
 |------|----------------|
@@ -208,7 +208,7 @@ Commit the files required to run the local-registry workflow on self-hosted agen
 | `package.json` | Declares the CLI dependency. |
 | `package-lock.json` | Required for deterministic installs with `npm ci`. |
 | `.azdo/pipelines/run-apiops-extractor.yml` | Azure DevOps extract pipeline definition. |
-| `.azdo/pipelines/run-apiops-publish.yml` | Azure DevOps publish pipeline definition. |
+| `.azdo/pipelines/run-apiops-publisher.yml` | Azure DevOps publish pipeline definition. |
 | `configuration.*.yaml` | Generated environment override templates. |
 
 ```bash
@@ -217,7 +217,7 @@ git add \
     package.json \
     package-lock.json \
     .azdo/pipelines/run-apiops-extractor.yml \
-    .azdo/pipelines/run-apiops-publish.yml \
+    .azdo/pipelines/run-apiops-publisher.yml \
     configuration.*.yaml
 git commit -m "chore: commit local-registry apiops bootstrap files"
 git push

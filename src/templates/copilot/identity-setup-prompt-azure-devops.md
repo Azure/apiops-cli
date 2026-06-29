@@ -76,7 +76,7 @@ Create Azure Pipelines from the YAML files in your repository.
 $REPO_NAME = $AZDO_PROJECT
 
 az pipelines create --name "apiops-extract" --repository $REPO_NAME --branch main --yml-path ".azdo/pipelines/run-apiops-extractor.yml" --repository-type tfsgit --skip-first-run true
-az pipelines create --name "apiops-publish" --repository $REPO_NAME --branch main --yml-path ".azdo/pipelines/run-apiops-publish.yml" --repository-type tfsgit --skip-first-run true
+az pipelines create --name "apiops-publish" --repository $REPO_NAME --branch main --yml-path ".azdo/pipelines/run-apiops-publisher.yml" --repository-type tfsgit --skip-first-run true
 ```
 
 **Git Bash:**
@@ -84,7 +84,7 @@ az pipelines create --name "apiops-publish" --repository $REPO_NAME --branch mai
 REPO_NAME="$AZDO_PROJECT"
 
 az pipelines create --name "apiops-extract" --repository "$REPO_NAME" --branch main --yml-path ".azdo/pipelines/run-apiops-extractor.yml" --repository-type tfsgit --skip-first-run true
-az pipelines create --name "apiops-publish" --repository "$REPO_NAME" --branch main --yml-path ".azdo/pipelines/run-apiops-publish.yml" --repository-type tfsgit --skip-first-run true
+az pipelines create --name "apiops-publish" --repository "$REPO_NAME" --branch main --yml-path ".azdo/pipelines/run-apiops-publisher.yml" --repository-type tfsgit --skip-first-run true
 ```
 
 Verify pipelines were created:

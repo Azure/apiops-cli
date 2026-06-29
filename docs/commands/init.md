@@ -79,7 +79,7 @@ In interactive mode (the default when running in a terminal), `apiops init` prom
 | File | Purpose |
 |------|---------|
 | `.github/workflows/run-apiops-extractor.yml` | Workflow to extract APIM artifacts |
-| `.github/workflows/run-apiops-publish.yml` | Workflow to publish artifacts to APIM |
+| `.github/workflows/run-apiops-publisher.yml` | Workflow to publish artifacts to APIM |
 | `configuration.extractor.yaml` | Sample filter configuration for extraction |
 | `configuration.{env}.yaml` | Override templates per environment (e.g., `configuration.dev.yaml`, `configuration.prod.yaml`) |
 | `.github/prompts/apiops-setup-workflow-identity.prompt.md` | Copilot prompt for GitHub Actions identity setup |
@@ -90,7 +90,7 @@ In interactive mode (the default when running in a terminal), `apiops init` prom
 | File | Purpose |
 |------|---------|
 | `.azdo/pipelines/run-apiops-extractor.yml` | Pipeline to extract APIM artifacts |
-| `.azdo/pipelines/run-apiops-publish.yml` | Pipeline to publish artifacts to APIM |
+| `.azdo/pipelines/run-apiops-publisher.yml` | Pipeline to publish artifacts to APIM |
 | `configuration.extractor.yaml` | Sample filter configuration for extraction |
 | `configuration.{env}.yaml` | Override templates per environment |
 | `.github/prompts/apiops-setup-pipeline-identity.prompt.md` | Copilot prompt for Azure DevOps identity setup |

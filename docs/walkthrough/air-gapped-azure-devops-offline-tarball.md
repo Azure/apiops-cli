@@ -79,7 +79,7 @@ This command generates:
 |------|---------|
 | `package.json` | Declares the CLI as a `file:` dependency pointing at the tarball |
 | `.azdo/pipelines/run-apiops-extractor.yml` | Extract pipeline |
-| `.azdo/pipelines/run-apiops-publish.yml` | Publish pipeline |
+| `.azdo/pipelines/run-apiops-publisher.yml` | Publish pipeline |
 | `configuration.*.yaml` | Override templates |
 
 Follow the remaining instructions listed in created `APIOPS-PIPELINE-IDENTITY-SETUP.md` or run `/apiops-setup-pipeline-identity` prompt. This creates the necessary variable groups and and service connections.
@@ -97,7 +97,7 @@ npm ci        # populates ~/.npm/_cacache/ with every package the lock file refe
 
 ### 2.3 Modify Pipelines for Air-Gapped Operation
 
-The generated pipelines (`.azdo/pipelines/run-apiops-extractor.yml` and `.azdo/pipelines/run-apiops-publish.yml`) need the following edits:
+The generated pipelines (`.azdo/pipelines/run-apiops-extractor.yml` and `.azdo/pipelines/run-apiops-publisher.yml`) need the following edits:
 
 | Edit | What to Change |
 |------|----------------|
@@ -115,7 +115,7 @@ For the offline-tarball workflow, commit the files that make the pipeline fully 
 | `package.json` | Contains the `file:` dependency pointing to the tarball. |
 | `package-lock.json` | Required for deterministic offline installs with `npm ci --offline`. |
 | `.azdo/pipelines/run-apiops-extractor.yml` | Azure DevOps extract pipeline definition. |
-| `.azdo/pipelines/run-apiops-publish.yml` | Azure DevOps publish pipeline definition. |
+| `.azdo/pipelines/run-apiops-publisher.yml` | Azure DevOps publish pipeline definition. |
 | `configuration.*.yaml` | Generated environment override templates. |
 
 ```bash
@@ -124,7 +124,7 @@ git add \
     package.json \
     package-lock.json \
     .azdo/pipelines/run-apiops-extractor.yml \
-    .azdo/pipelines/run-apiops-publish.yml \
+    .azdo/pipelines/run-apiops-publisher.yml \
     configuration.*.yaml
 git commit -m "chore: commit offline-tarball apiops bootstrap files"
 git push

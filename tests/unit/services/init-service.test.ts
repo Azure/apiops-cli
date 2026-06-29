@@ -105,7 +105,7 @@ describe('init-service', () => {
       const result = await initService.run(config);
 
       expect(result.pipelines).toContain('.github/workflows/run-apiops-extractor.yml');
-      expect(result.pipelines).toContain('.github/workflows/run-apiops-publish.yml');
+      expect(result.pipelines).toContain('.github/workflows/run-apiops-publisher.yml');
     });
 
     it('should generate Azure DevOps pipelines when ciProvider is azure-devops', async () => {
@@ -122,7 +122,7 @@ describe('init-service', () => {
       const result = await initService.run(config);
 
       expect(result.pipelines).toContain('.azdo/pipelines/run-apiops-extractor.yml');
-      expect(result.pipelines).toContain('.azdo/pipelines/run-apiops-publish.yml');
+      expect(result.pipelines).toContain('.azdo/pipelines/run-apiops-publisher.yml');
     });
 
     it('should generate filter configuration file', async () => {
