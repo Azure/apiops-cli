@@ -6,6 +6,14 @@
 
 > **Important identity distinction:** The Azure app registration/service principal created in this flow is only for Azure and APIM access. Repository contributions and pull request creation come from the Azure DevOps Build Service identity, which must be granted repo permissions separately.
 
+## Agent Behavior
+
+- **One step at a time.** Complete each step fully before moving to the next.
+- **Confirm information.** After gathering user input, summarize what was provided and ask the user to confirm it is correct before proceeding.
+- **Ask before proceeding.** At the end of each step, ask: "Step N is complete. Ready to proceed to Step N+1?"
+- **Never combine steps.** Do not run commands from multiple steps together, even if they could be batched.
+- **Stop on errors.** If any command fails, show the full error output and wait for the user to decide how to proceed.
+
 ## Goal
 
 Configure workload identity federation (OIDC), Azure DevOps federated service connections,
@@ -41,6 +49,8 @@ For each environment in the configured list, gather these values (where `<ENV_UP
 - `APIM_RG_<ENV_UPPER>`
 - `APIM_NAME_<ENV_UPPER>`
 - `APIM_RESOURCE_ID_<ENV_UPPER>` *(optional Option B shorthand)*
+
+**Copilot:** After collecting all values, present a summary table and ask: "Please confirm these values are correct before I proceed."
 
 ---
 

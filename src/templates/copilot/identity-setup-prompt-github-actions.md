@@ -6,6 +6,14 @@
 
 > **Important identity distinction:** `GITHUB_TOKEN` handles pull request creation automatically. The Azure app registration/service principal in this flow is only for Azure and APIM access.
 
+## Agent Behavior
+
+- **One step at a time.** Complete each step fully before moving to the next.
+- **Confirm information.** After gathering user input, summarize what was provided and ask the user to confirm it is correct before proceeding.
+- **Ask before proceeding.** At the end of each step, ask: "Step N is complete. Ready to proceed to Step N+1?"
+- **Never combine steps.** Do not run commands from multiple steps together, even if they could be batched.
+- **Stop on errors.** If any command fails, show the full error output and wait for the user to decide how to proceed.
+
 ## Goal
 
 Configure Azure AD federated credentials and GitHub repository secrets so the
@@ -85,6 +93,8 @@ each answer for use in later steps.
 | `GITHUB_REPO` | GitHub repository name | `apim-artifacts` |
 | `APP_NAME` | Display name for the Azure AD application | `apiops-github-sp` |
 {{ENV_APIM_TABLE_ROWS}}
+
+**Copilot:** After collecting all values, present a summary table and ask: "Please confirm these values are correct before I proceed."
 
 ---
 
