@@ -30,13 +30,13 @@ If you already have an APIOps repository and want to add prompt files without re
 # Create the prompts directory
 mkdir -p .github/prompts
 
-# Available prompt files — comment out any you don't need
+# Available prompt files — remove any you don't need
 files=(
   "configure-filter-prompt.md:apiops-configure-filter.prompt.md"
   "configure-overrides-prompt.md:apiops-configure-overrides.prompt.md"
   # Remove the identity setup prompt that doesn't apply to your CI provider:
   "identity-setup-prompt-github-actions.md:apiops-setup-workflow-identity.prompt.md"
-  # "identity-setup-prompt-azure-devops.md:apiops-setup-workflow-identity.prompt.md"
+  "identity-setup-prompt-azure-devops.md:apiops-setup-workflow-identity.prompt.md"
 )
 
 base_url="https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot"
@@ -55,13 +55,13 @@ done
 # Create the prompts directory
 New-Item -ItemType Directory -Path ".github/prompts" -Force | Out-Null
 
-# Available prompt files — comment out any you don't need
+# Available prompt files — remove any you don't need
 $files = @(
   @{ Source = "configure-filter-prompt.md"; Dest = "apiops-configure-filter.prompt.md" }
   @{ Source = "configure-overrides-prompt.md"; Dest = "apiops-configure-overrides.prompt.md" }
   # Remove the identity setup prompt that doesn't apply to your CI provider:
   @{ Source = "identity-setup-prompt-github-actions.md"; Dest = "apiops-setup-workflow-identity.prompt.md" }
-  # @{ Source = "identity-setup-prompt-azure-devops.md"; Dest = "apiops-setup-workflow-identity.prompt.md" }
+  @{ Source = "identity-setup-prompt-azure-devops.md"; Dest = "apiops-setup-workflow-identity.prompt.md" }
 )
 
 $baseUrl = "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot"
