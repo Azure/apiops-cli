@@ -12,7 +12,7 @@ Prompt files are markdown files with a `.prompt.md` extension that provide instr
 |------|-------------|
 | `apiops-configure-filter.prompt.md` | Guides Copilot through creating a `configuration.extractor.yaml` filter file to control which API Management resources are extracted. |
 | `apiops-configure-overrides.prompt.md` | Guides Copilot through creating environment override files (`configuration.<env>.yaml`) for promoting APIs across environments. |
-| `apiops-setup-workflow-identity.prompt.md` | Walks through setting up Azure identity (app registration, federated credentials, RBAC) for GitHub Actions or Azure DevOps CI/CD pipelines. |
+| `apiops-setup-workflow-identity.prompt.md` | Walks through setting up Azure identity (app registration, federated credentials, RBAC) for your CI/CD pipeline. There are separate versions for GitHub Actions and Azure DevOps — `apiops init` selects the correct one based on your chosen CI provider. |
 
 ## Getting prompt files
 
