@@ -82,7 +82,7 @@ This command generates:
 | `.azdo/pipelines/run-apiops-publisher.yml` | Publish pipeline |
 | `configuration.*.yaml` | Override templates |
 
-Follow the remaining instructions listed in created `APIOPS-PIPELINE-IDENTITY-SETUP.md` or run `/apiops-setup-pipeline-identity` prompt. This creates the necessary variable groups and and service connections.
+Follow the remaining instructions listed in created `APIOPS-PIPELINE-IDENTITY-SETUP.md` or run `/apiops-setup-pipeline-identity` prompt. This creates the necessary variable groups and service connections.
 
 ### 2.2 Generate the Lock File and Pre-Stage the npm Cache
 
@@ -164,7 +164,7 @@ tar -xzf npm-cacache.tar.gz -C ~/.npm
 
 ## 4 - Finish `apiops init` for pipeline
 
-If not already done, while on the air-gapped network, follow the remaining instructions listed in created `APIOPS-PIPELINE-IDENTITY-SETUP.md`. This creates the necessary variable groups and and service connections.
+If not already done, while on the air-gapped network, follow the remaining instructions listed in created `APIOPS-PIPELINE-IDENTITY-SETUP.md`. This creates the necessary variable groups and service connections.
 
 ## 5 — Commit and Validate
 
