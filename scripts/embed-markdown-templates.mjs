@@ -22,10 +22,6 @@ const templates = [
     path: 'src/templates/copilot/configure-overrides-prompt.md',
   },
   {
-    exportName: 'azureDevOpsIdentitySetupCoreTemplate',
-    path: 'src/templates/shared/identity-setup-azure-devops-core.md',
-  },
-  {
     exportName: 'githubActionsIdentityGuideTemplate',
     path: 'src/templates/identity/identity-guide-github-actions.md',
   },
