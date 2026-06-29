@@ -34,7 +34,7 @@ mkdir -p .github/prompts
 files=(
   "configure-filter-prompt.md:apiops-configure-filter.prompt.md"
   "configure-overrides-prompt.md:apiops-configure-overrides.prompt.md"
-  # Choose ONE of the following identity setup prompts:
+  # Remove the identity setup prompt that doesn't apply to your CI provider:
   "identity-setup-prompt-github-actions.md:apiops-setup-workflow-identity.prompt.md"
   # "identity-setup-prompt-azure-devops.md:apiops-setup-workflow-identity.prompt.md"
 )
@@ -59,7 +59,7 @@ New-Item -ItemType Directory -Path ".github/prompts" -Force | Out-Null
 $files = @(
   @{ Source = "configure-filter-prompt.md"; Dest = "apiops-configure-filter.prompt.md" }
   @{ Source = "configure-overrides-prompt.md"; Dest = "apiops-configure-overrides.prompt.md" }
-  # Choose ONE of the following identity setup prompts:
+  # Remove the identity setup prompt that doesn't apply to your CI provider:
   @{ Source = "identity-setup-prompt-github-actions.md"; Dest = "apiops-setup-workflow-identity.prompt.md" }
   # @{ Source = "identity-setup-prompt-azure-devops.md"; Dest = "apiops-setup-workflow-identity.prompt.md" }
 )
