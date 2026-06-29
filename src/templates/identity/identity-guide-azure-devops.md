@@ -23,8 +23,8 @@ Helpful documentation:
 
 1. Commit and push the generated files to your Azure DevOps repository.
 2. Confirm these files are available in the repo browser:
-   - `.azdo/pipelines/run-apim-extractor.yml`
-   - `.azdo/pipelines/run-apim-publisher.yml`
+   - `.azdo/pipelines/run-apiops-extractor.yml`
+   - `.azdo/pipelines/run-apiops-publish.yml`
 3. Note the environment names you chose when running `apiops init` because you will create matching service connections, variable groups, and approvals.
 
 ## Step 2: Create or choose an app registration in Azure portal
@@ -110,8 +110,8 @@ Use **Access control (IAM)** on each resource group and APIM instance to create 
 2. Choose your repository.
 3. Select **Existing Azure Pipelines YAML file**.
 4. Create a pipeline for each generated YAML file:
-   - `.azdo/pipelines/run-apim-extractor.yml`
-   - `.azdo/pipelines/run-apim-publisher.yml`
+   - `.azdo/pipelines/run-apiops-extractor.yml`
+   - `.azdo/pipelines/run-apiops-publish.yml`
 5. Save without running if you still need approvals or variable authorization.
 
 ## Step 9: Verify the setup

@@ -138,11 +138,11 @@ class InitServiceImpl implements InitService {
     if (config.ciProvider === 'github-actions') {
       const extractWorkflow = path.join(
         config.outputDir,
-        '.github/workflows/run-apim-extractor.yml'
+        '.github/workflows/run-apiops-extractor.yml'
       );
       const publishWorkflow = path.join(
         config.outputDir,
-        '.github/workflows/run-apim-publisher.yml'
+        '.github/workflows/run-apiops-publish.yml'
       );
       const promptFile = path.join(
         config.outputDir,
@@ -182,11 +182,11 @@ class InitServiceImpl implements InitService {
     } else if (config.ciProvider === 'azure-devops') {
       const extractPipeline = path.join(
         config.outputDir,
-        '.azdo/pipelines/run-apim-extractor.yml'
+        '.azdo/pipelines/run-apiops-extractor.yml'
       );
       const publishPipeline = path.join(
         config.outputDir,
-        '.azdo/pipelines/run-apim-publisher.yml'
+        '.azdo/pipelines/run-apiops-publish.yml'
       );
       const identityGuide = path.join(
         config.outputDir,
@@ -332,9 +332,9 @@ class InitServiceImpl implements InitService {
       artifactDir: config.artifactDir,
     };
     const extractContent = generateExtractWorkflow(extractWorkflowConfig);
-    const extractPath = path.join(workflowsDir, 'run-apim-extractor.yml');
+    const extractPath = path.join(workflowsDir, 'run-apiops-extractor.yml');
     await fs.writeFile(extractPath, extractContent);
-    generatedFiles.pipelines.push('.github/workflows/run-apim-extractor.yml');
+    generatedFiles.pipelines.push('.github/workflows/run-apiops-extractor.yml');
 
     // Publish workflow
     const publishWorkflowConfig: PublishWorkflowConfig = {
@@ -342,9 +342,9 @@ class InitServiceImpl implements InitService {
       environments: config.environments,
     };
     const publishContent = generatePublishWorkflow(publishWorkflowConfig);
-    const publishPath = path.join(workflowsDir, 'run-apim-publisher.yml');
+    const publishPath = path.join(workflowsDir, 'run-apiops-publish.yml');
     await fs.writeFile(publishPath, publishContent);
-    generatedFiles.pipelines.push('.github/workflows/run-apim-publisher.yml');
+    generatedFiles.pipelines.push('.github/workflows/run-apiops-publish.yml');
 
     await this.generateCopilotIdentitySetupPrompt(config, generatedFiles);
     await this.generateCopilotConfigurationPrompts(config, generatedFiles);
@@ -366,9 +366,9 @@ class InitServiceImpl implements InitService {
       environments: config.environments,
     };
     const extractContent = generateExtractPipeline(extractPipelineConfig);
-    const extractPath = path.join(pipelinesDir, 'run-apim-extractor.yml');
+    const extractPath = path.join(pipelinesDir, 'run-apiops-extractor.yml');
     await fs.writeFile(extractPath, extractContent);
-    generatedFiles.pipelines.push('.azdo/pipelines/run-apim-extractor.yml');
+    generatedFiles.pipelines.push('.azdo/pipelines/run-apiops-extractor.yml');
 
     // Publish pipeline
     const publishPipelineConfig: PublishPipelineConfig = {
@@ -376,9 +376,9 @@ class InitServiceImpl implements InitService {
       environments: config.environments,
     };
     const publishContent = generatePublishPipeline(publishPipelineConfig);
-    const publishPath = path.join(pipelinesDir, 'run-apim-publisher.yml');
+    const publishPath = path.join(pipelinesDir, 'run-apiops-publish.yml');
     await fs.writeFile(publishPath, publishContent);
-    generatedFiles.pipelines.push('.azdo/pipelines/run-apim-publisher.yml');
+    generatedFiles.pipelines.push('.azdo/pipelines/run-apiops-publish.yml');
 
     await this.generateCopilotIdentitySetupPrompt(config, generatedFiles);
     await this.generateCopilotConfigurationPrompts(config, generatedFiles);
