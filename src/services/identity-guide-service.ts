@@ -11,6 +11,7 @@ import {
   azureDevOpsIdentityGuideTemplate,
   githubActionsIdentityGuideTemplate,
 } from '../templates/generated/embedded-markdown.js';
+import { renderTemplate } from '../lib/render-template.js';
 
 export interface IdentityGuideService {
   generateGitHubActionsGuide(
@@ -25,13 +26,6 @@ export interface IdentityGuideService {
 }
 
 class IdentityGuideServiceImpl implements IdentityGuideService {
-  private renderTemplate(template: string, tokens: Record<string, string>): string {
-    return Object.entries(tokens).reduce(
-      (rendered, [key, value]) => rendered.replaceAll(`{{${key}}}`, value),
-      template
-    );
-  }
-
   generateGitHubActionsGuide(
     subscriptionId: string,
     resourceGroup: string,
@@ -52,7 +46,7 @@ class IdentityGuideServiceImpl implements IdentityGuideService {
 - \`APIM_SERVICE_NAME_${env.toUpperCase()}\`: APIM service name for ${env}
 `).join('\n');
 
-    return this.renderTemplate(githubActionsIdentityGuideTemplate, {
+    return renderTemplate(githubActionsIdentityGuideTemplate, {
       SUBSCRIPTION_ID: subscriptionId,
       RESOURCE_GROUP: resourceGroup,
       FEDERATED_CREDENTIALS_PER_ENV: federatedCredentialsPerEnvironment,
@@ -70,12 +64,12 @@ class IdentityGuideServiceImpl implements IdentityGuideService {
       .map((environment) => `"${environment}"`)
       .join(' ');
 
-    const coreSteps = this.renderTemplate(azureDevOpsIdentitySetupCoreTemplate, {
+    const coreSteps = renderTemplate(azureDevOpsIdentitySetupCoreTemplate, {
       ENVIRONMENTS_ARRAY_POWERSHELL: environmentsArrayPowerShell,
       ENVIRONMENTS_ARRAY_BASH: environmentsArrayBash,
     });
 
-    return this.renderTemplate(azureDevOpsIdentityGuideTemplate, {
+    return renderTemplate(azureDevOpsIdentityGuideTemplate, {
       AZURE_DEVOPS_CORE_STEPS: coreSteps,
     });
   }

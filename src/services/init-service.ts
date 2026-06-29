@@ -32,6 +32,8 @@ import { generateFilterConfig } from '../templates/configs/filter-config.js';
 import { generateOverrideConfig } from '../templates/configs/override-config.js';
 import { generatePackageJson } from '../templates/configs/package-json.js';
 import { generateIdentitySetupPrompt } from '../templates/copilot/identity-setup-prompt.js';
+import { generateConfigureFilterPrompt } from '../templates/copilot/configure-filter-prompt.js';
+import { generateConfigureOverridesPrompt } from '../templates/copilot/configure-overrides-prompt.js';
 
 /** Placeholder values used in generated identity setup guides */
 const PLACEHOLDER_SUBSCRIPTION_ID = '<your-subscription-id>';
@@ -146,6 +148,14 @@ class InitServiceImpl implements InitService {
         config.outputDir,
         '.github/prompts/apiops-setup-identity.prompt.md'
       );
+      const filterPromptFile = path.join(
+        config.outputDir,
+        '.github/prompts/apiops-configure-filter.prompt.md'
+      );
+      const overridesPromptFile = path.join(
+        config.outputDir,
+        '.github/prompts/apiops-configure-overrides.prompt.md'
+      );
       const identityGuide = path.join(
         config.outputDir,
         'IDENTITY-SETUP-GITHUB.md'
@@ -159,6 +169,12 @@ class InitServiceImpl implements InitService {
       }
       if (await this.fileExists(promptFile)) {
         conflictingFiles.push(promptFile);
+      }
+      if (await this.fileExists(filterPromptFile)) {
+        conflictingFiles.push(filterPromptFile);
+      }
+      if (await this.fileExists(overridesPromptFile)) {
+        conflictingFiles.push(overridesPromptFile);
       }
       if (await this.fileExists(identityGuide)) {
         conflictingFiles.push(identityGuide);
@@ -180,6 +196,14 @@ class InitServiceImpl implements InitService {
         config.outputDir,
         '.github/prompts/apiops-setup-identity.prompt.md'
       );
+      const filterPromptFile = path.join(
+        config.outputDir,
+        '.github/prompts/apiops-configure-filter.prompt.md'
+      );
+      const overridesPromptFile = path.join(
+        config.outputDir,
+        '.github/prompts/apiops-configure-overrides.prompt.md'
+      );
 
       if (await this.fileExists(extractPipeline)) {
         conflictingFiles.push(extractPipeline);
@@ -192,6 +216,12 @@ class InitServiceImpl implements InitService {
       }
       if (await this.fileExists(promptFile)) {
         conflictingFiles.push(promptFile);
+      }
+      if (await this.fileExists(filterPromptFile)) {
+        conflictingFiles.push(filterPromptFile);
+      }
+      if (await this.fileExists(overridesPromptFile)) {
+        conflictingFiles.push(overridesPromptFile);
       }
     }
 
@@ -317,6 +347,7 @@ class InitServiceImpl implements InitService {
     generatedFiles.pipelines.push('.github/workflows/run-apim-publisher.yml');
 
     await this.generateCopilotIdentitySetupPrompt(config, generatedFiles);
+    await this.generateCopilotConfigurationPrompts(config, generatedFiles);
   }
 
   /**
@@ -350,6 +381,7 @@ class InitServiceImpl implements InitService {
     generatedFiles.pipelines.push('.azdo/pipelines/run-apim-publisher.yml');
 
     await this.generateCopilotIdentitySetupPrompt(config, generatedFiles);
+    await this.generateCopilotConfigurationPrompts(config, generatedFiles);
   }
 
   private async generateCopilotIdentitySetupPrompt(
@@ -365,6 +397,28 @@ class InitServiceImpl implements InitService {
     const promptPath = path.join(promptsDir, 'apiops-setup-identity.prompt.md');
     await fs.writeFile(promptPath, promptContent);
     generatedFiles.configs.push('.github/prompts/apiops-setup-identity.prompt.md');
+  }
+
+  private async generateCopilotConfigurationPrompts(
+    config: InitConfig,
+    generatedFiles: GeneratedFiles
+  ): Promise<void> {
+    const promptsDir = path.join(config.outputDir, '.github/prompts');
+    await fs.mkdir(promptsDir, { recursive: true });
+
+    // Filter configuration prompt
+    const filterPromptContent = generateConfigureFilterPrompt({
+      environments: config.environments,
+    });
+    const filterPromptPath = path.join(promptsDir, 'apiops-configure-filter.prompt.md');
+    await fs.writeFile(filterPromptPath, filterPromptContent);
+    generatedFiles.configs.push('.github/prompts/apiops-configure-filter.prompt.md');
+
+    // Override configuration prompt
+    const overridesPromptContent = generateConfigureOverridesPrompt();
+    const overridesPromptPath = path.join(promptsDir, 'apiops-configure-overrides.prompt.md');
+    await fs.writeFile(overridesPromptPath, overridesPromptContent);
+    generatedFiles.configs.push('.github/prompts/apiops-configure-overrides.prompt.md');
   }
 
   /**

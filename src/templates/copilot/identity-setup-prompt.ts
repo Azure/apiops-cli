@@ -16,17 +16,11 @@ import {
   copilotGithubEnvironmentSecretCommandsTemplate,
   copilotGitHubActionsIdentitySetupPromptTemplate,
 } from '../generated/embedded-markdown.js';
+import { renderTemplate } from '../../lib/render-template.js';
 
 export interface IdentitySetupPromptConfig {
   environments: string[];
   ciProvider?: 'github-actions' | 'azure-devops';
-}
-
-function renderTemplate(template: string, tokens: Record<string, string>): string {
-  return Object.entries(tokens).reduce(
-    (rendered, [key, value]) => rendered.replaceAll(`{{${key}}}`, value),
-    template
-  );
 }
 
 export function generateIdentitySetupPrompt(config: IdentitySetupPromptConfig): string {

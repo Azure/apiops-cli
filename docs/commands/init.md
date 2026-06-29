@@ -99,6 +99,8 @@ In interactive mode (the default when running in a terminal), `apiops init` prom
 | File | Purpose |
 |------|---------|
 | `.github/prompts/apiops-setup-identity.prompt.md` | Copilot prompt for identity setup |
+| `.github/prompts/apiops-configure-filter.prompt.md` | Copilot prompt for creating extraction filter files |
+| `.github/prompts/apiops-configure-overrides.prompt.md` | Copilot prompt for creating environment override files |
 | `<artifact-dir>/` | Empty artifact directory (default: `./apim-artifacts`) |
 
 ## Package consumption modes
@@ -116,11 +118,12 @@ If you pass `--cli-package <path>`, the tarball is copied into a `.apiops/` dire
 
 ## Next steps after init
 
-1. **Set up identity** — Follow the generated `IDENTITY-SETUP-*.md` guide to configure Azure credentials for your CI/CD platform.
+1. **Set up identity** — Follow the generated `IDENTITY-SETUP-*.md` guide to configure Azure credentials for your CI/CD platform. Or use the `.github/prompts/apiops-setup-identity.prompt.md` Copilot prompt.
 2. **Extract your first snapshot** — Run [`apiops extract`](./extract.md) to pull your current APIM configuration into the artifact directory.
-3. **Commit and push** — Check the generated files into version control.
-4. **Configure overrides** — Edit `configuration.{env}.yaml` files with environment-specific values. See the [environment overrides guide](../guides/environment-overrides.md).
-5. **Run your pipeline** — Trigger the publish pipeline to deploy artifacts to your target APIM instance.
+3. **Configure filters** — Edit `configuration.extractor.yaml` to control which resources are extracted. Use the `.github/prompts/apiops-configure-filter.prompt.md` Copilot prompt for guided setup.
+4. **Commit and push** — Check the generated files into version control.
+5. **Configure overrides** — Edit `configuration.{env}.yaml` files with environment-specific values. Use the `.github/prompts/apiops-configure-overrides.prompt.md` Copilot prompt for guided setup. See the [environment overrides guide](../guides/environment-overrides.md).
+6. **Run your pipeline** — Trigger the publish pipeline to deploy artifacts to your target APIM instance.
 
 ## Related docs
 

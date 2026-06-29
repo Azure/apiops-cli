@@ -1,0 +1,221 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$comment": "Copyright (c) Microsoft Corporation. Licensed under the MIT license. Schema version: v1.",
+  "$id": "https://raw.githubusercontent.com/Azure/apiops-cli/main/schemas/v1/extractor-config.schema.json",
+  "title": "APIOps Filter Configuration",
+  "description": "Validates configuration.extractor.yaml files used by APIOps CLI to select which Azure API Management resources are extracted. All resource sections are optional.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional schema URI for editor and IDE validation."
+    },
+    "apis": {
+      "type": "array",
+      "description": "APIs to extract. Each item can be either a plain API name or wildcard pattern, or an object with a single API name mapped to nested API sub-filters. Matching is case-insensitive and supports * and ? wildcards.",
+      "items": {
+        "$ref": "#/definitions/apiSelector"
+      }
+    },
+    "backends": {
+      "$ref": "#/definitions/resourcePatternArray",
+      "description": "Backends to extract. Matching is case-insensitive and supports * and ? wildcards."
+    },
+    "products": {
+      "$ref": "#/definitions/resourcePatternArray",
+      "description": "Products to extract. Matching is case-insensitive and supports * and ? wildcards."
+    },
+    "namedValues": {
+      "$ref": "#/definitions/resourcePatternArray",
+      "description": "Named values to extract. Matching is case-insensitive and supports * and ? wildcards."
+    },
+    "loggers": {
+      "$ref": "#/definitions/resourcePatternArray",
+      "description": "Loggers to extract. Matching is case-insensitive and supports * and ? wildcards."
+    },
+    "diagnostics": {
+      "$ref": "#/definitions/resourcePatternArray",
+      "description": "Diagnostics to extract. Matching is case-insensitive and supports * and ? wildcards."
+    },
+    "tags": {
+      "$ref": "#/definitions/resourcePatternArray",
+      "description": "Tags to extract. Matching is case-insensitive and supports * and ? wildcards."
+    },
+    "policyFragments": {
+      "$ref": "#/definitions/resourcePatternArray",
+      "description": "Policy fragments to extract. Matching is case-insensitive and supports * and ? wildcards."
+    },
+    "gateways": {
+      "$ref": "#/definitions/resourcePatternArray",
+      "description": "Gateways to extract. Matching is case-insensitive and supports * and ? wildcards."
+    },
+    "versionSets": {
+      "$ref": "#/definitions/resourcePatternArray",
+      "description": "Version sets to extract. Matching is case-insensitive and supports * and ? wildcards."
+    },
+    "groups": {
+      "$ref": "#/definitions/resourcePatternArray",
+      "description": "Groups to extract. Matching is case-insensitive and supports * and ? wildcards."
+    },
+    "subscriptions": {
+      "$ref": "#/definitions/resourcePatternArray",
+      "description": "Subscriptions to extract. Matching is case-insensitive and supports * and ? wildcards."
+    },
+    "schemas": {
+      "$ref": "#/definitions/resourcePatternArray",
+      "description": "Schemas to extract. Matching is case-insensitive and supports * and ? wildcards."
+    },
+    "policies": {
+      "$ref": "#/definitions/resourcePatternArray",
+      "description": "Service-level policies to extract. Matching is case-insensitive and supports * and ? wildcards."
+    },
+    "policyRestrictions": {
+      "$ref": "#/definitions/resourcePatternArray",
+      "description": "Policy restrictions to extract. Matching is case-insensitive and supports * and ? wildcards."
+    },
+    "documentations": {
+      "$ref": "#/definitions/resourcePatternArray",
+      "description": "Documentations to extract. Matching is case-insensitive and supports * and ? wildcards."
+    },
+    "workspaces": {
+      "type": "array",
+      "description": "Workspaces to extract. Each item can be either a plain workspace name or wildcard pattern, or an object with a single workspace name mapped to nested workspace sub-filters. Matching is case-insensitive and supports * and ? wildcards.",
+      "items": {
+        "$ref": "#/definitions/workspaceSelector"
+      }
+    }
+  },
+  "definitions": {
+    "resourcePattern": {
+      "type": "string",
+      "description": "A resource name or wildcard pattern. Matching is case-insensitive. Supported wildcards: * matches zero or more characters, and ? matches a single character."
+    },
+    "resourcePatternArray": {
+      "type": "array",
+      "description": "A list of resource names or wildcard patterns. Matching is case-insensitive. Supported wildcards: * and ?.",
+      "items": {
+        "$ref": "#/definitions/resourcePattern"
+      }
+    },
+    "apiSelector": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/resourcePattern"
+        },
+        {
+          "type": "object",
+          "description": "A single API name mapped to sub-resource filters for that API.",
+          "minProperties": 1,
+          "maxProperties": 1,
+          "patternProperties": {
+            "^.+$": {
+              "$ref": "#/definitions/apiSubFilter"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "workspaceSelector": {
+      "oneOf": [
+        {
+          "$ref": "#/definitions/resourcePattern"
+        },
+        {
+          "type": "object",
+          "description": "A single workspace name mapped to sub-resource filters for that workspace.",
+          "minProperties": 1,
+          "maxProperties": 1,
+          "patternProperties": {
+            "^.+$": {
+              "$ref": "#/definitions/workspaceSubFilter"
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "apiSubFilter": {
+      "type": "object",
+      "description": "Sub-resource filters for a specific API. Omit a property to include all sub-resources of that type, or set it to an empty array to exclude all of that type. Matching is case-insensitive and supports * and ? wildcards.",
+      "additionalProperties": false,
+      "properties": {
+        "operations": {
+          "$ref": "#/definitions/resourcePatternArray",
+          "description": "Operations to extract for this API. Matching is case-insensitive and supports * and ? wildcards."
+        },
+        "diagnostics": {
+          "$ref": "#/definitions/resourcePatternArray",
+          "description": "Diagnostics to extract for this API. Matching is case-insensitive and supports * and ? wildcards."
+        },
+        "schemas": {
+          "$ref": "#/definitions/resourcePatternArray",
+          "description": "Schemas to extract for this API. Matching is case-insensitive and supports * and ? wildcards."
+        },
+        "releases": {
+          "$ref": "#/definitions/resourcePatternArray",
+          "description": "Releases to extract for this API. Matching is case-insensitive and supports * and ? wildcards."
+        }
+      }
+    },
+    "workspaceSubFilter": {
+      "type": "object",
+      "description": "Sub-resource filters for a specific workspace. Omit a property to include all resources of that type, or set it to an empty array to exclude all of that type. Matching is case-insensitive and supports * and ? wildcards.",
+      "additionalProperties": false,
+      "properties": {
+        "apis": {
+          "type": "array",
+          "description": "APIs within this workspace to extract. Each item can be either a plain API name or wildcard pattern, or an object with a single API name mapped to nested API sub-filters. Matching is case-insensitive and supports * and ? wildcards.",
+          "items": {
+            "$ref": "#/definitions/apiSelector"
+          }
+        },
+        "backends": {
+          "$ref": "#/definitions/resourcePatternArray",
+          "description": "Backends within this workspace to extract. Matching is case-insensitive and supports * and ? wildcards."
+        },
+        "diagnostics": {
+          "$ref": "#/definitions/resourcePatternArray",
+          "description": "Diagnostics within this workspace to extract. Matching is case-insensitive and supports * and ? wildcards."
+        },
+        "groups": {
+          "$ref": "#/definitions/resourcePatternArray",
+          "description": "Groups within this workspace to extract. Matching is case-insensitive and supports * and ? wildcards."
+        },
+        "loggers": {
+          "$ref": "#/definitions/resourcePatternArray",
+          "description": "Loggers within this workspace to extract. Matching is case-insensitive and supports * and ? wildcards."
+        },
+        "namedValues": {
+          "$ref": "#/definitions/resourcePatternArray",
+          "description": "Named values within this workspace to extract. Matching is case-insensitive and supports * and ? wildcards."
+        },
+        "policyFragments": {
+          "$ref": "#/definitions/resourcePatternArray",
+          "description": "Policy fragments within this workspace to extract. Matching is case-insensitive and supports * and ? wildcards."
+        },
+        "products": {
+          "$ref": "#/definitions/resourcePatternArray",
+          "description": "Products within this workspace to extract. Matching is case-insensitive and supports * and ? wildcards."
+        },
+        "schemas": {
+          "$ref": "#/definitions/resourcePatternArray",
+          "description": "Schemas within this workspace to extract. Matching is case-insensitive and supports * and ? wildcards."
+        },
+        "subscriptions": {
+          "$ref": "#/definitions/resourcePatternArray",
+          "description": "Subscriptions within this workspace to extract. Matching is case-insensitive and supports * and ? wildcards."
+        },
+        "tags": {
+          "$ref": "#/definitions/resourcePatternArray",
+          "description": "Tags within this workspace to extract. Matching is case-insensitive and supports * and ? wildcards."
+        },
+        "versionSets": {
+          "$ref": "#/definitions/resourcePatternArray",
+          "description": "Version sets within this workspace to extract. Matching is case-insensitive and supports * and ? wildcards."
+        }
+      }
+    }
+  }
+}

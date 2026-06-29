@@ -1,0 +1,118 @@
+# yaml-language-server: $schema={{SCHEMA_URL}}
+# APIM Extract Filter Configuration
+# Customize this file to control which resources are extracted
+# For full format details and examples, see:
+# https://github.com/Azure/apiops-cli/blob/main/docs/guides/filtering-resources.md
+
+# Extract only specific APIs by name (or wildcard pattern)
+# apis:
+#   - echo-api
+#   - petstore-api
+#   - 'prod-*'                       # Wildcard: all APIs starting with prod-
+#   - '*-internal-*'                 # Wildcard: all APIs containing -internal-
+
+# Advanced: Filter API sub-resources (operations, diagnostics, schemas, releases)
+# apis:
+#   - echo-api                        # Include all sub-resources
+#   - petstore-api:                   # Control sub-resources
+#       operations:
+#         - get-pets
+#         - create-pet
+#         - 'list-*'                  # Wildcard: all operations starting with list-
+#       diagnostics:
+#         - applicationinsights
+#       schemas: []                   # Exclude all schemas
+#       releases:
+#         - v1
+
+# Extract only specific products
+# products:
+#   - starter
+#   - unlimited
+
+# Extract only specific backends
+# backends:
+#   - backend-api
+#   - legacy-backend
+
+# Extract only specific named values
+# namedValues:
+#   - api-key
+#   - connection-string
+
+# Extract only specific loggers
+# loggers:
+#   - appinsights-logger
+
+# Extract only specific diagnostics
+# diagnostics:
+#   - applicationinsights
+
+# Extract only specific tags
+# tags:
+#   - production
+#   - external
+
+# Extract only specific policy fragments
+# policyFragments:
+#   - rate-limit-fragment
+#   - cors-fragment
+
+# Extract only specific gateways
+# gateways:
+#   - default
+#   - internal-gateway
+
+# Extract only specific version sets
+# versionSets:
+#   - payments-v1
+
+# Extract only specific groups
+# groups:
+#   - administrators
+
+# Extract only specific subscriptions
+# subscriptions:
+#   - starter-subscription
+
+# Extract only specific schemas
+# schemas:
+#   - pet-schema
+
+# Filter service-level policies
+# policies:
+#   - policy
+
+# Extract only specific policy restrictions
+# policyRestrictions:
+#   - global-policy-restriction
+
+# Extract only specific documentations
+# documentations:
+#   - getting-started
+
+# Extract only specific workspaces
+# workspaces:
+#   - dev-workspace
+
+# Advanced: Filter workspace sub-resources
+# workspaces:
+#   - team-workspace:
+#       apis:
+#         - team-api-1
+#         - team-api-2
+#       backends:
+#         - team-backend
+#       namedValues:
+#         - team-api-key
+
+# Filter behavior:
+# - Leave a section commented out to include ALL resources of that type
+# - Set a section to an empty array ([]) to exclude ALL resources of that type
+#   Example:
+#   gateways: []
+#   subscriptions: []
+# - Use * to match any characters: prod-* matches prod-api, prod-users
+# - Use ? to match a single character: api-v? matches api-v1, api-v2
+# - Exact names and wildcard patterns can be mixed in the same list
+# - All matching is case-insensitive

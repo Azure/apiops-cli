@@ -1,6 +1,7 @@
 {
   "name": "@peterhauge/apiops-cli",
   "version": "0.3.0-alpha.0",
+  "schemaVersion": "1",
   "description": "CLI tool for Azure API Management configuration-as-code",
   "type": "module",
   "private": false,
@@ -15,9 +16,9 @@
   ],
   "readme": "README.md",
   "scripts": {
-    "prelint": "node scripts/embed-markdown-templates.mjs",
-    "prebuild": "node scripts/embed-markdown-templates.mjs",
-    "pretest": "node scripts/embed-markdown-templates.mjs",
+    "prelint": "node scripts/embed-markdown-templates.mjs && node scripts/generate-schemas.mjs",
+    "prebuild": "node scripts/embed-markdown-templates.mjs && node scripts/generate-schemas.mjs",
+    "pretest": "node scripts/embed-markdown-templates.mjs && node scripts/generate-schemas.mjs",
     "build": "tsc",
     "test": "vitest run",
     "test:watch": "vitest",
