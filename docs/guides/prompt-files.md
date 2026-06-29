@@ -70,27 +70,6 @@ foreach ($file in $files) {
 }
 ```
 
-## Using prompt files
-
-### In VS Code
-
-1. Open the prompt file (e.g., `.github/prompts/apiops-configure-filter.prompt.md`) in VS Code.
-2. Open the Copilot Chat panel and type `#` followed by the prompt file name, or use the **Attach Context** button to select it.
-3. Ask Copilot to help you complete the task described in the prompt.
-
-For more details on using prompt files in VS Code, see the [VS Code documentation on reusable prompt files](https://code.visualstudio.com/docs/copilot/copilot-customization#_reusable-prompt-files-experimental).
-
-### In GitHub Copilot CLI
-
-You can reference prompt files when using [GitHub Copilot in the CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli/using-github-copilot-in-the-cli):
-
-```bash
-# Ask Copilot CLI to use a prompt file as context
-gh copilot suggest --file .github/prompts/apiops-configure-filter.prompt.md "help me configure extraction filters"
-```
-
-For more details, see the [GitHub Copilot in the CLI documentation](https://docs.github.com/en/copilot/github-copilot-in-the-cli/using-github-copilot-in-the-cli).
-
 ## Further reading
 
 - [VS Code: Reusable prompt files](https://code.visualstudio.com/docs/copilot/copilot-customization#_reusable-prompt-files-experimental)
