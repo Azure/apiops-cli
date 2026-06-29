@@ -10,8 +10,8 @@ Prompt files are markdown files with a `.prompt.md` extension that provide instr
 
 | File | Description |
 |------|-------------|
-| `apiops-configure-filter.prompt.md` | Guides Copilot through creating a `configuration.extractor.yaml` filter file to control which API Management resources are extracted. |
-| `apiops-configure-overrides.prompt.md` | Guides Copilot through creating environment override files (`configuration.<env>.yaml`) for promoting APIs across environments. |
+| `apiops-configure-filter.prompt.md` | Guides Copilot through creating a `configuration.extractor.yaml` filter file to control which API Management resources are extracted. See also: [Filtering resources guide](./filtering-resources.md) |
+| `apiops-configure-overrides.prompt.md` | Guides Copilot through creating environment override files (`configuration.<env>.yaml`) for promoting APIs across environments. See also: [Environment overrides guide](./environment-overrides.md) |
 | `apiops-setup-workflow-identity.prompt.md` | Walks through setting up Azure identity (app registration, federated credentials, RBAC) for your CI/CD pipeline. There are separate versions for GitHub Actions and Azure DevOps — `apiops init` selects the correct one based on your chosen CI provider. |
 
 ## Getting prompt files
@@ -75,5 +75,3 @@ foreach ($file in $files) {
 - [VS Code: Reusable prompt files](https://code.visualstudio.com/docs/copilot/copilot-customization#_reusable-prompt-files-experimental)
 - [GitHub Copilot in the CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli/using-github-copilot-in-the-cli)
 - [APIOps `init` command reference](../commands/init.md)
-- [Filtering resources guide](./filtering-resources.md)
-- [Environment overrides guide](./environment-overrides.md)
