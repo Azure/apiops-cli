@@ -32,20 +32,18 @@ mkdir -p .github/prompts
 
 # Available prompt files — remove any you don't need
 files=(
-  "configure-filter-prompt.md:apiops-configure-filter.prompt.md"
-  "configure-overrides-prompt.md:apiops-configure-overrides.prompt.md"
+  "apiops-configure-filter.prompt.md"
+  "apiops-configure-overrides.prompt.md"
   # Remove the identity setup prompt that doesn't apply to your CI provider:
-  "identity-setup-prompt-github-actions.md:apiops-setup-workflow-identity.prompt.md"
-  "identity-setup-prompt-azure-devops.md:apiops-setup-workflow-identity.prompt.md"
+  "apiops-setup-workflow-identity-github-actions.prompt.md"
+  "apiops-setup-workflow-identity-azure-devops.prompt.md"
 )
 
 base_url="https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot"
 
-for entry in "${files[@]}"; do
-  src="${entry%%:*}"
-  dest="${entry##*:}"
-  curl -sL "${base_url}/${src}" -o ".github/prompts/${dest}"
-  echo "Downloaded ${dest}"
+for file in "${files[@]}"; do
+  curl -sL "${base_url}/${file}" -o ".github/prompts/${file}"
+  echo "Downloaded ${file}"
 done
 ```
 
@@ -57,18 +55,18 @@ New-Item -ItemType Directory -Path ".github/prompts" -Force | Out-Null
 
 # Available prompt files — remove any you don't need
 $files = @(
-  @{ Source = "configure-filter-prompt.md"; Dest = "apiops-configure-filter.prompt.md" }
-  @{ Source = "configure-overrides-prompt.md"; Dest = "apiops-configure-overrides.prompt.md" }
+  "apiops-configure-filter.prompt.md"
+  "apiops-configure-overrides.prompt.md"
   # Remove the identity setup prompt that doesn't apply to your CI provider:
-  @{ Source = "identity-setup-prompt-github-actions.md"; Dest = "apiops-setup-workflow-identity.prompt.md" }
-  @{ Source = "identity-setup-prompt-azure-devops.md"; Dest = "apiops-setup-workflow-identity.prompt.md" }
+  "apiops-setup-workflow-identity-github-actions.prompt.md"
+  "apiops-setup-workflow-identity-azure-devops.prompt.md"
 )
 
 $baseUrl = "https://raw.githubusercontent.com/Azure/apiops-cli/main/src/templates/copilot"
 
 foreach ($file in $files) {
-  Invoke-WebRequest -Uri "$baseUrl/$($file.Source)" -OutFile ".github/prompts/$($file.Dest)"
-  Write-Host "Downloaded $($file.Dest)"
+  Invoke-WebRequest -Uri "$baseUrl/$file" -OutFile ".github/prompts/$file"
+  Write-Host "Downloaded $file"
 }
 ```
 
