@@ -91,11 +91,3 @@ Verify pipelines were created:
 ```bash
 az pipelines list --query "[].name" -o table
 ```
-
----
-
-## UI Reference Context
-
-Use this UI-oriented reference when you need to explain where a setting lives in the Azure portal or Azure DevOps web portal while automating the setup.
-
-{{IDENTITY_GUIDE_CONTEXT}}

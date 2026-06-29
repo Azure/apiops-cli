@@ -226,11 +226,3 @@ The generated workflows expect these secrets:
 
 ### Per-Environment Secrets
 {{ENV_SECRETS_REFERENCE}}
-
----
-
-## UI Reference Context
-
-Use this UI-oriented reference when you need to explain where a setting lives in the Azure portal or GitHub web UI while automating the setup.
-
-{{IDENTITY_GUIDE_CONTEXT}}

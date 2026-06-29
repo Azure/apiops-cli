@@ -111,11 +111,9 @@ describe('copilot/identity-setup-prompt', () => {
       expect(prompt).toContain('Open this file in VS Code with GitHub Copilot');
     });
 
-    it('should include the GitHub identity distinction note and UI guide context', () => {
+    it('should include the GitHub identity distinction note', () => {
       const prompt = generateIdentitySetupPrompt({ environments: ['dev'] });
       expect(prompt).toContain('pull request creation automatically');
-      expect(prompt).toContain('## UI Reference Context');
-      expect(prompt).toContain('APIOps GitHub Actions identity setup guide');
     });
 
     it('should include tool authentication check in Step 0', () => {
@@ -178,8 +176,6 @@ describe('copilot/identity-setup-prompt', () => {
         ciProvider: 'azure-devops',
       });
       expect(prompt).toContain('Build Service identity');
-      expect(prompt).toContain('## UI Reference Context');
-      expect(prompt).toContain('Identity setup guide for APIOps extract and publish Azure DevOps Pipelines');
     });
 
     it('should ask Copilot to gather per-environment APIM info for each ADO environment', () => {
