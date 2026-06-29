@@ -114,7 +114,8 @@ describe('secret-redactor', () => {
       const basicAuthPolicy = `<authentication-basic username="user" ${passwordAttribute}="PWD_LITERAL" />`;
       const policyXml = `<policies>
     <inbound>
-      <set-header name="Authorization"><value>AUTH_LITERAL_VALUE</value></set-header>
+      <set-header name="Authorization"><value>Bearer TOKEN_LITERAL</value></set-header>
+      <set-header name="Authorization"><value>Bearer {{jwt-token}}</value></set-header>
       <set-header name="api-key"><value>{{my-api-key}}</value></set-header>
       <set-query-parameter name="sig"><value>abc123</value></set-query-parameter>
       ${basicAuthPolicy}
@@ -128,7 +129,8 @@ describe('secret-redactor', () => {
 
       const { redactedContent, findings } = redactPolicySecrets(policyXml);
 
-      expect(redactedContent).toContain(`<set-header name="Authorization"><value>${REDACTION_MARKER}</value></set-header>`);
+      expect(redactedContent).toContain(`<set-header name="Authorization"><value>Bearer ${REDACTION_MARKER}</value></set-header>`);
+      expect(redactedContent).toContain('<set-header name="Authorization"><value>Bearer {{jwt-token}}</value></set-header>');
       expect(redactedContent).toContain('<set-header name="api-key"><value>{{my-api-key}}</value></set-header>');
       expect(redactedContent).toContain(`<set-query-parameter name="sig"><value>${REDACTION_MARKER}</value></set-query-parameter>`);
       expect(redactedContent).toContain('<authentication-basic username="user"');

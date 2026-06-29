@@ -263,8 +263,8 @@ describe('api-extractor', () => {
     });
 
     it('should extract API policy and redact inline secrets', async () => {
-      const policyContent = '<policies><inbound><set-header name="Authorization"><value>AUTH_LITERAL_VALUE</value></set-header></inbound></policies>';
-      const redactedPolicy = `<policies><inbound><set-header name="Authorization"><value>${REDACTION_MARKER}</value></set-header></inbound></policies>`;
+      const policyContent = '<policies><inbound><set-header name="Authorization"><value>Bearer TOKEN_LITERAL</value></set-header></inbound></policies>';
+      const redactedPolicy = `<policies><inbound><set-header name="Authorization"><value>Bearer ${REDACTION_MARKER}</value></set-header></inbound></policies>`;
       const client = createMockClient({
         getResource: vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
           if (desc.type === ResourceType.ApiPolicy) {

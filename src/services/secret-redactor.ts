@@ -31,6 +31,7 @@ const SECRET_QUERY_PARAMETER_NAMES = new Set([
   'sig',
   'subscription-key',
 ]);
+const BEARER_TOKEN_PATTERN = /^(\s*Bearer)(\s+)(.*?)(\s*)$/i;
 
 export interface PolicySecretFinding {
   location: string;
@@ -91,6 +92,29 @@ function shouldRedactLiteral(value: string): boolean {
   return !isApimNamedValueReference(trimmed);
 }
 
+function redactAuthorizationHeaderValue(
+  value: string
+): { redactedValue: string; wasRedacted: boolean } {
+  const bearerMatch = BEARER_TOKEN_PATTERN.exec(value);
+  if (bearerMatch) {
+    const [, scheme, spacing, tokenValue, suffix] = bearerMatch;
+    if (!shouldRedactLiteral(tokenValue)) {
+      return { redactedValue: value, wasRedacted: false };
+    }
+
+    return {
+      redactedValue: `${scheme}${spacing}${REDACTION_MARKER}${suffix}`,
+      wasRedacted: true,
+    };
+  }
+
+  if (!shouldRedactLiteral(value)) {
+    return { redactedValue: value, wasRedacted: false };
+  }
+
+  return { redactedValue: REDACTION_MARKER, wasRedacted: true };
+}
+
 /**
  * Redact inline literal secrets in policy XML content.
  */
@@ -114,12 +138,19 @@ export function redactPolicySecrets(
     return setHeaderBlock.replace(
       /(<value\b[^>]*>)([\s\S]*?)(<\/value>)/gi,
       (_full, openTag: string, value: string, closeTag: string) => {
-        if (!shouldRedactLiteral(value)) {
+        const shouldRedactHeaderValue = shouldRedactLiteral(value);
+        const { redactedValue, wasRedacted } = headerName === 'authorization'
+          ? redactAuthorizationHeaderValue(value)
+          : {
+              redactedValue: shouldRedactHeaderValue ? REDACTION_MARKER : value,
+              wasRedacted: shouldRedactHeaderValue,
+            };
+        if (!wasRedacted) {
           return `${openTag}${value}${closeTag}`;
         }
 
         addFinding(`set-header[${headerName}]`);
-        return `${openTag}${REDACTION_MARKER}${closeTag}`;
+        return `${openTag}${redactedValue}${closeTag}`;
       }
     );
   });
