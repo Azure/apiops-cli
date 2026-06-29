@@ -25,7 +25,7 @@ Helpful documentation:
 2. Confirm these files are available in the repo browser:
    - `.azdo/pipelines/run-apiops-extractor.yml`
    - `.azdo/pipelines/run-apiops-publisher.yml`
-3. Note the environment names you chose when running `apiops init` because you will create matching service connections, variable groups, and approvals.
+3. **IMPORTANT:** Note the environment names you chose when running `apiops init` because you will create matching service connections, variable groups, and approvals.
 
 ## Step 2: Create or choose an app registration in Azure portal
 
