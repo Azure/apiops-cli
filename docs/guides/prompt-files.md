@@ -81,4 +81,3 @@ foreach ($file in $files) {
 
 - [VS Code: Reusable prompt files](https://code.visualstudio.com/docs/copilot/copilot-customization#_reusable-prompt-files-experimental)
 - [GitHub Copilot in the CLI](https://docs.github.com/en/copilot/github-copilot-in-the-cli/using-github-copilot-in-the-cli)
-- [APIOps `init` command reference](../commands/init.md)
