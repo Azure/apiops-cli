@@ -39,18 +39,13 @@ permissions:
   contents: read
 
 jobs:
-  unit-tests:
-    name: Unit Tests
-    uses: ./.github/workflows/test-unit.yml
-
-  build-package:
-    name: Build Package Integration Test
-    needs: unit-tests
-    uses: ./.github/workflows/test-build-package.yml
+  ci:
+    name: CI (Unit + Build Package Tests)
+    uses: ./.github/workflows/ci.yml
 
   all-types-integration:
     name: All-Types Integration Test
-    needs: build-package
+    needs: ci
     uses: ./.github/workflows/integration-test.yml
     with:
       sku: ${{ inputs.sku }}
