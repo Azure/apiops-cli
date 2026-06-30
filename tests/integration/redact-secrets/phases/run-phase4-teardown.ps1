@@ -18,7 +18,9 @@ $ErrorActionPreference = 'Stop'
 
 $integrationRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $maskingModule = Join-Path (Join-Path $integrationRoot 'shared/modules') 'LogMasking.psm1'
+$deploymentOpsModule = Join-Path (Join-Path $integrationRoot 'shared/modules') 'DeploymentOps.psm1'
 Import-Module $maskingModule -Force
+Import-Module $deploymentOpsModule -Force
 
 if ($SkipTeardown) {
     Write-Host "⏭️  Teardown skipped (-SkipTeardown)"
@@ -29,50 +31,6 @@ function Get-SubscriptionArgs {
     param([string]$SubscriptionId)
     if ([string]::IsNullOrWhiteSpace($SubscriptionId)) { return @() }
     return @('--subscription', $SubscriptionId)
-}
-
-function Get-GroupExists {
-    param([string]$ResourceGroup, [string]$SubscriptionId)
-    $exists = az group exists --name $ResourceGroup @(Get-SubscriptionArgs -SubscriptionId $SubscriptionId) -o tsv 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to check resource group existence for '$(Protect-ResourceGroupName -Value $ResourceGroup)'."
-    }
-    return $exists -eq 'true'
-}
-
-function Wait-ForResourceGroupDeletion {
-    param([string]$ResourceGroup, [string]$SubscriptionId, [int]$TimeoutMinutes = 60)
-
-    $timeoutSeconds = $TimeoutMinutes * 60
-    $elapsed = 0
-    while ($elapsed -lt $timeoutSeconds) {
-        if (-not (Get-GroupExists -ResourceGroup $ResourceGroup -SubscriptionId $SubscriptionId)) {
-            return
-        }
-
-        Write-Host "   ... waiting for deletion of $(Protect-ResourceGroupName -Value $ResourceGroup) (${elapsed}s elapsed)"
-        Start-Sleep -Seconds 30
-        $elapsed += 30
-    }
-
-    throw "Timed out waiting for deletion of resource group '$(Protect-ResourceGroupName -Value $ResourceGroup)'."
-}
-
-function Wait-ForDeletedApimService {
-    param([string]$ServiceName, [string]$ServiceLocation)
-
-    $elapsed = 0
-    while ($elapsed -lt 1800) {
-        az apim deletedservice show --service-name $ServiceName --location $ServiceLocation -o none 2>$null
-        if ($LASTEXITCODE -eq 0) {
-            return
-        }
-
-        Start-Sleep -Seconds 15
-        $elapsed += 15
-    }
-
-    throw "Timed out waiting for soft-deleted APIM service '$(Protect-ApimName -Value $ServiceName)'."
 }
 
 Write-Host "🧹 PHASE 4 — Teardown"
@@ -90,7 +48,7 @@ if (Get-GroupExists -ResourceGroup $SourceResourceGroup -SubscriptionId $SourceS
 }
 
 if (-not [string]::IsNullOrWhiteSpace($sourceApimName)) {
-    Wait-ForDeletedApimService -ServiceName $sourceApimName -ServiceLocation $Location
+    Wait-ForDeletedApimService -ServiceName $sourceApimName -ServiceLocation $Location -SubscriptionId $SourceSubscriptionId
     az apim deletedservice purge --service-name $sourceApimName --location $Location @(Get-SubscriptionArgs -SubscriptionId $SourceSubscriptionId) 2>$null
 }
 

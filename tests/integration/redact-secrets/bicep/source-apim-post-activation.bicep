@@ -5,7 +5,6 @@ param apimName string
 var servicePolicyXml = '''
 <policies>
   <inbound>
-    <base />
     <set-header name="Authorization" exists-action="override"><value>Bearer SERVICE_AUTH_SECRET_LITERAL</value></set-header>
     <set-header name="Authorization" exists-action="override"><value>Bearer {{rs-nv-secret}}</value></set-header>
     <set-header name="Ocp-Apim-Subscription-Key" exists-action="override"><value>SERVICE_OCP_SECRET_LITERAL</value></set-header>
@@ -16,8 +15,8 @@ var servicePolicyXml = '''
     <set-query-parameter name="sig" exists-action="override"><value>SERVICE_QUERY_SIG_LITERAL</value></set-query-parameter>
     <set-query-parameter name="subscription-key" exists-action="override"><value>SERVICE_QUERY_SUBSCRIPTION_LITERAL</value></set-query-parameter>
     <authentication-basic username="svc-user" password="SERVICE_BASIC_PASSWORD_LITERAL" />
-    <authentication-certificate body="SERVICE_CERT_BODY_LITERAL"><certificate>SERVICE_CERT_INLINE_LITERAL</certificate></authentication-certificate>
-    <validate-jwt>
+    <authentication-certificate thumbprint="SERVICE_CERT_THUMBPRINT_LITERAL" />
+    <validate-jwt header-name="Authorization">
       <issuer-signing-keys><key>SERVICE_SIGNING_KEY_LITERAL</key></issuer-signing-keys>
       <decryption-keys><key>SERVICE_DECRYPT_KEY_LITERAL</key></decryption-keys>
     </validate-jwt>
@@ -25,9 +24,9 @@ var servicePolicyXml = '''
     <set-header name="x-servicebus-connection" exists-action="override"><value>Endpoint=sb://foo.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SERVICE_SHARED_ACCESS_KEY_LITERAL</value></set-header>
     <set-header name="x-ai-connection" exists-action="override"><value>InstrumentationKey=AI-INSTRUMENTATION-KEY-LITERAL</value></set-header>
   </inbound>
-  <backend><base /></backend>
-  <outbound><base /></outbound>
-  <on-error><base /></on-error>
+  <backend />
+  <outbound />
+  <on-error />
 </policies>
 '''
 
@@ -68,22 +67,13 @@ var operationPolicyXml = '''
 '''
 
 var resolverPolicyXml = '''
-<policies>
-  <inbound>
-    <base />
+<http-data-source>
+  <http-request>
+    <set-method>GET</set-method>
+    <set-url>https://example.org/graphql-resolver</set-url>
     <set-header name="x-resolver-connection" exists-action="override"><value>Endpoint=sb://foo.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=RESOLVER_SHARED_ACCESS_KEY_LITERAL</value></set-header>
-  </inbound>
-  <backend>
-    <http-data-source>
-      <http-request>
-        <set-method>GET</set-method>
-        <set-url>https://example.org/graphql-resolver</set-url>
-      </http-request>
-    </http-data-source>
-  </backend>
-  <outbound><base /></outbound>
-  <on-error><base /></on-error>
-</policies>
+  </http-request>
+</http-data-source>
 '''
 
 resource apim 'Microsoft.ApiManagement/service@2025-09-01-preview' existing = {

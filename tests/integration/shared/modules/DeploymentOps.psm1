@@ -210,7 +210,149 @@ function Wait-ApimApiQueryable {
         -TimeoutMessage "Timed out waiting for API '$ApiId' to be queryable in APIM '$maskedApim' within ${TimeoutSeconds}s"
 }
 
+<#
+.SYNOPSIS
+Checks whether a resource group exists.
+
+.PARAMETER ResourceGroup
+Resource group name.
+
+.PARAMETER SubscriptionId
+Optional subscription id for the query.
+
+.OUTPUTS
+System.Boolean
+#>
+function Get-GroupExists {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ResourceGroup,
+        [string]$SubscriptionId
+    )
+
+    $azArgs = @('group', 'exists', '--name', $ResourceGroup)
+    if (-not [string]::IsNullOrWhiteSpace($SubscriptionId)) {
+        $azArgs += @('--subscription', $SubscriptionId)
+    }
+    $azArgs += @('--output', 'tsv')
+
+    $exists = az @azArgs 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to query existence for resource group '$(Protect-ResourceGroupName -Value $ResourceGroup)'."
+    }
+
+    return $exists -eq 'true'
+}
+
+<#
+.SYNOPSIS
+Waits for a resource group to be deleted.
+
+.PARAMETER ResourceGroup
+Resource group name.
+
+.PARAMETER SubscriptionId
+Optional subscription id for the query.
+
+.PARAMETER TimeoutMinutes
+Maximum wait duration in minutes.
+
+.PARAMETER IntervalSeconds
+Polling interval in seconds.
+
+.OUTPUTS
+System.Boolean
+#>
+function Wait-ForResourceGroupDeletion {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ResourceGroup,
+        [string]$SubscriptionId,
+        [int]$TimeoutMinutes = 60,
+        [int]$IntervalSeconds = 30
+    )
+
+    $waitedSeconds = 0
+    $timeoutSeconds = $TimeoutMinutes * 60
+    $maskedGroup = Protect-ResourceGroupName -Value $ResourceGroup
+
+    while ($waitedSeconds -lt $timeoutSeconds) {
+        if (-not (Get-GroupExists -ResourceGroup $ResourceGroup -SubscriptionId $SubscriptionId)) {
+            return $true
+        }
+
+        Write-Host "   ... waiting for deletion of $maskedGroup (${waitedSeconds}s elapsed)"
+        Start-Sleep -Seconds $IntervalSeconds
+        $waitedSeconds += $IntervalSeconds
+    }
+
+    throw "Timed out waiting for deletion of resource group '$maskedGroup'."
+}
+
+<#
+.SYNOPSIS
+Waits for APIM soft-delete metadata to become queryable.
+
+.PARAMETER ServiceName
+APIM service name.
+
+.PARAMETER ServiceLocation
+APIM location.
+
+.PARAMETER SubscriptionId
+Optional subscription id for the query.
+
+.PARAMETER TimeoutMinutes
+Maximum wait duration in minutes.
+
+.PARAMETER IntervalSeconds
+Polling interval in seconds.
+
+.OUTPUTS
+System.Boolean
+#>
+function Wait-ForDeletedApimService {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ServiceName,
+        [Parameter(Mandatory)][string]$ServiceLocation,
+        [string]$SubscriptionId,
+        [int]$TimeoutMinutes = 30,
+        [int]$IntervalSeconds = 15
+    )
+
+    $waitedSeconds = 0
+    $timeoutSeconds = $TimeoutMinutes * 60
+    $maskedApim = Protect-ApimName -Value $ServiceName
+
+    while ($waitedSeconds -lt $timeoutSeconds) {
+        $showArgs = @(
+            'apim', 'deletedservice', 'show',
+            '--service-name', $ServiceName,
+            '--location', $ServiceLocation,
+            '--output', 'none'
+        )
+        if (-not [string]::IsNullOrWhiteSpace($SubscriptionId)) {
+            $showArgs += @('--subscription', $SubscriptionId)
+        }
+
+        az @showArgs 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            return $true
+        }
+
+        Write-Host "   ... waiting for APIM soft-delete entry ($maskedApim) (${waitedSeconds}s elapsed)"
+        Start-Sleep -Seconds $IntervalSeconds
+        $waitedSeconds += $IntervalSeconds
+    }
+
+    throw "Timed out waiting for APIM soft-delete entry for '$maskedApim' in location '$ServiceLocation'."
+}
+
 Export-ModuleMember -Function `
     Write-DeploymentFailureDetails, `
     Wait-ApimActivation, `
-    Wait-ApimApiQueryable
+    Wait-ApimApiQueryable, `
+    Get-GroupExists, `
+    Wait-ForResourceGroupDeletion, `
+    Wait-ForDeletedApimService

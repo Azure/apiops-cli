@@ -136,6 +136,7 @@ resource graphqlResolver 'Microsoft.ApiManagement/service/apis/resolvers@2025-09
   name: 'src-redact-resolver'
   properties: {
     displayName: 'Redact Resolver'
+    description: 'GraphQL resolver used for redaction integration validation.'
     path: 'Query/hero'
   }
   dependsOn: [

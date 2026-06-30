@@ -48,6 +48,63 @@ $account = Assert-AzCliLoggedIn
 $resolvedSubscriptionId = if (-not [string]::IsNullOrWhiteSpace($SubscriptionId)) { $SubscriptionId } else { $account.id }
 $apimNameValue = Get-BoundParameterValueOrNull -BoundParameters $PSBoundParameters -Name 'ApimName'
 
+function New-LocalJwtKeyBase64 {
+    $bytes = New-Object byte[] 32
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+    }
+    finally {
+        $rng.Dispose()
+    }
+
+    return [Convert]::ToBase64String($bytes)
+}
+
+function New-LocalSecretValue {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Placeholder
+    )
+
+    switch ($Placeholder) {
+        'SERVICE_SIGNING_KEY_LITERAL' {
+            return New-LocalJwtKeyBase64
+        }
+        'SERVICE_DECRYPT_KEY_LITERAL' {
+            return New-LocalJwtKeyBase64
+        }
+        default {
+            return "rs-$([Guid]::NewGuid().ToString('N'))"
+        }
+    }
+}
+
+function Remove-PlaintextTempFile {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path $Path)) {
+        return
+    }
+
+    try {
+        $fileInfo = Get-Item -Path $Path -ErrorAction Stop
+        if ($fileInfo.Length -gt 0) {
+            $wipeBytes = New-Object byte[] $fileInfo.Length
+            [System.IO.File]::WriteAllBytes($Path, $wipeBytes)
+        }
+    }
+    catch {
+        # Best-effort wipe; always attempt deletion next.
+    }
+    finally {
+        Remove-Item -Path $Path -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Host "🚀 PHASE 1 — Deploy source APIM for redaction test"
 Write-Host "   Azure subscription: $(Protect-SubscriptionId -Value $resolvedSubscriptionId)"
 
@@ -58,69 +115,93 @@ if ($LASTEXITCODE -ne 0) {
 
 $bicepFile = Join-Path (Split-Path $PSScriptRoot -Parent) 'bicep/source-apim.bicep'
 $postActivationBicepFile = Join-Path (Split-Path $PSScriptRoot -Parent) 'bicep/source-apim-post-activation.bicep'
+$postActivationTemplateRaw = Get-Content -Path $postActivationBicepFile -Raw
+$postActivationTemplateResolved = $postActivationTemplateRaw
+$literalPattern = '\b[A-Z0-9_]+_LITERAL\b'
+$literals = [System.Text.RegularExpressions.Regex]::Matches($postActivationTemplateRaw, $literalPattern) |
+    ForEach-Object { $_.Value } |
+    Select-Object -Unique
 
-$deploymentName = "redact-secrets-source-$(Get-Date -Format 'yyyyMMddHHmmss')"
-$azReplacements = @{
-    $resolvedSubscriptionId = Protect-SubscriptionId -Value $resolvedSubscriptionId
-    $ResourceGroupName      = Protect-ResourceGroupName -Value $ResourceGroupName
+foreach ($literal in $literals) {
+    $replacementValue = New-LocalSecretValue -Placeholder $literal
+    $postActivationTemplateResolved = $postActivationTemplateResolved.Replace($literal, $replacementValue)
 }
 
-$deployArgs = @(
-    'deployment', 'group', 'create',
-    '--subscription', $resolvedSubscriptionId,
-    '--resource-group', $ResourceGroupName,
-    '--name', $deploymentName,
-    '--template-file', $bicepFile,
-    '--parameters', "skuName=$SkuName", "location=$Location", "publisherEmail=$PublisherEmail",
-    '--output', 'json'
-)
-if (-not [string]::IsNullOrWhiteSpace($apimNameValue)) {
-    $deployArgs += @('--parameters', "apimName=$apimNameValue")
+if ([System.Text.RegularExpressions.Regex]::IsMatch($postActivationTemplateResolved, $literalPattern)) {
+    throw 'Failed to replace one or more *_LITERAL placeholders in post-activation Bicep template.'
 }
 
-$rawDeploy = Invoke-MaskedAzCommand -Replacements $azReplacements -Arguments $deployArgs
-if ($LASTEXITCODE -ne 0) {
-    Write-DeploymentFailureDetails -ResourceGroupName $ResourceGroupName -DeploymentName $deploymentName -Replacements $azReplacements
-    throw "Source deployment failed in resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)'."
-}
+$resolvedPostActivationBicepFile = Join-Path ([System.IO.Path]::GetTempPath()) ("source-apim-post-activation-$([Guid]::NewGuid().ToString('N')).bicep")
+Set-Content -Path $resolvedPostActivationBicepFile -Value $postActivationTemplateResolved
 
-$deployResult = $rawDeploy | ConvertFrom-Json
-$outputs = $deployResult.properties.outputs
-$apimServiceName = $outputs.apimServiceName.value
-
-Wait-ApimActivation -ResourceGroupName $ResourceGroupName -ApimName $apimServiceName -TimeoutSeconds 2700 -PollIntervalSeconds 60 | Out-Null
-
-Wait-ApimApiQueryable -ResourceGroupName $ResourceGroupName -ApimServiceName $apimServiceName -ApiId 'src-redact-rest' -Replacements $azReplacements -TimeoutSeconds 600 -PollIntervalSeconds 20 | Out-Null
-
-$postDeploymentName = "redact-secrets-post-activation-$(Get-Date -Format 'yyyyMMddHHmmss')"
-$postArgs = @(
-    'deployment', 'group', 'create',
-    '--subscription', $resolvedSubscriptionId,
-    '--resource-group', $ResourceGroupName,
-    '--name', $postDeploymentName,
-    '--template-file', $postActivationBicepFile,
-    '--parameters', "apimName=$apimServiceName",
-    '--output', 'json'
-)
-
-Invoke-MaskedAzCommand -Replacements $azReplacements -Arguments $postArgs | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    Write-DeploymentFailureDetails -ResourceGroupName $ResourceGroupName -DeploymentName $postDeploymentName -Replacements $azReplacements
-    throw "Post-activation deployment failed in resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)'."
-}
-
-$result = [ordered]@{
-    sourceSubscriptionId = $outputs.subscriptionId.value
-    sourceResourceGroup  = $outputs.resourceGroupName.value
-    sourceApimName       = $apimServiceName
-    skuName              = $outputs.skuName.value
-    location             = $outputs.location.value
-}
-
-if ($env:GITHUB_OUTPUT) {
-    foreach ($key in $result.Keys) {
-        "$key=$($result[$key])" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+try {
+    $deploymentName = "redact-secrets-source-$(Get-Date -Format 'yyyyMMddHHmmss')"
+    $azReplacements = @{
+        $resolvedSubscriptionId = Protect-SubscriptionId -Value $resolvedSubscriptionId
+        $ResourceGroupName      = Protect-ResourceGroupName -Value $ResourceGroupName
     }
-}
 
-return $result
+    $deployArgs = @(
+        'deployment', 'group', 'create',
+        '--subscription', $resolvedSubscriptionId,
+        '--resource-group', $ResourceGroupName,
+        '--name', $deploymentName,
+        '--template-file', $bicepFile,
+        '--parameters', "skuName=$SkuName", "location=$Location", "publisherEmail=$PublisherEmail",
+        '--output', 'json'
+    )
+    if (-not [string]::IsNullOrWhiteSpace($apimNameValue)) {
+        $deployArgs += @('--parameters', "apimName=$apimNameValue")
+    }
+
+    $rawDeploy = Invoke-MaskedAzCommand -Replacements $azReplacements -Arguments $deployArgs
+    if ($LASTEXITCODE -ne 0) {
+        Write-DeploymentFailureDetails -ResourceGroupName $ResourceGroupName -DeploymentName $deploymentName -Replacements $azReplacements
+        throw "Source deployment failed in resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)'."
+    }
+
+    $deployResult = $rawDeploy | ConvertFrom-Json
+    $outputs = $deployResult.properties.outputs
+    $apimServiceName = $outputs.apimServiceName.value
+
+    Wait-ApimActivation -ResourceGroupName $ResourceGroupName -ApimName $apimServiceName -TimeoutSeconds 2700 -PollIntervalSeconds 60 | Out-Null
+
+    Wait-ApimApiQueryable -ResourceGroupName $ResourceGroupName -ApimServiceName $apimServiceName -ApiId 'src-redact-rest' -Replacements $azReplacements -TimeoutSeconds 600 -PollIntervalSeconds 20 | Out-Null
+
+    $postDeploymentName = "redact-secrets-post-activation-$(Get-Date -Format 'yyyyMMddHHmmss')"
+    $postArgs = @(
+        'deployment', 'group', 'create',
+        '--subscription', $resolvedSubscriptionId,
+        '--resource-group', $ResourceGroupName,
+        '--name', $postDeploymentName,
+        '--template-file', $resolvedPostActivationBicepFile,
+        '--parameters', "apimName=$apimServiceName",
+        '--output', 'json'
+    )
+
+    Invoke-MaskedAzCommand -Replacements $azReplacements -Arguments $postArgs | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-DeploymentFailureDetails -ResourceGroupName $ResourceGroupName -DeploymentName $postDeploymentName -Replacements $azReplacements
+        throw "Post-activation deployment failed in resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)'."
+    }
+
+    $result = [ordered]@{
+        sourceSubscriptionId = $outputs.subscriptionId.value
+        sourceResourceGroup  = $outputs.resourceGroupName.value
+        sourceApimName       = $apimServiceName
+        skuName              = $outputs.skuName.value
+        location             = $outputs.location.value
+    }
+
+    if ($env:GITHUB_OUTPUT) {
+        foreach ($key in $result.Keys) {
+            "$key=$($result[$key])" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+        }
+    }
+
+    return $result
+}
+finally {
+    Remove-PlaintextTempFile -Path $resolvedPostActivationBicepFile
+    Clear-Variable -Name postActivationTemplateResolved, postActivationTemplateRaw -ErrorAction SilentlyContinue
+}
