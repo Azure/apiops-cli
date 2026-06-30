@@ -1,0 +1,63 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+# ===========================================================================
+# Release Tests — Run all test suites in order before a release.
+# ===========================================================================
+# Executes unit tests, build-package integration tests, and the full
+# extract→publish round-trip integration test sequentially. Fails fast:
+# subsequent stages are skipped if any prior stage fails.
+# ===========================================================================
+
+name: "Release Tests"
+
+on:
+  workflow_dispatch:
+    inputs:
+      sku:
+        description: 'APIM SKU for all-types integration test'
+        required: true
+        type: choice
+        options:
+          - Standard
+          - StandardV2
+          - Premium
+          - PremiumV2
+        default: StandardV2
+      location:
+        description: 'Azure region for all-types integration test'
+        required: false
+        type: string
+        default: 'centralus'
+      log_level:
+        description: 'Log level for all-types integration test (Info, Verbose, Debug)'
+        required: false
+        type: string
+        default: Verbose
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    uses: ./.github/workflows/test-unit.yml
+
+  build-package:
+    name: Build Package Integration Test
+    needs: unit-tests
+    uses: ./.github/workflows/test-build-package.yml
+
+  all-types-integration:
+    name: All-Types Integration Test
+    needs: build-package
+    uses: ./.github/workflows/integration-test.yml
+    with:
+      sku: ${{ inputs.sku }}
+      location: ${{ inputs.location }}
+      log_level: ${{ inputs.log_level }}
+    secrets:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      APIM_PUBLISHER_EMAIL: ${{ secrets.APIM_PUBLISHER_EMAIL }}
