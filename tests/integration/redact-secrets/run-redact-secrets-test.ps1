@@ -33,6 +33,8 @@ $integrationRoot = Split-Path $PSScriptRoot -Parent
 $sharedScriptRuntimeModule = Join-Path $integrationRoot 'shared/modules/ScriptRuntime.psm1'
 Import-Module $sharedScriptRuntimeModule -Force
 
+Set-ScriptLogPreferences -LogLevel $LogLevel
+
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $random = -join ((97..122) | Get-Random -Count 3 | ForEach-Object { [char]$_ })
 $uniqueId = "$timestamp-$random"
@@ -46,6 +48,8 @@ if (-not $SourceApimName) {
 if (-not $SourceSubscriptionId) {
     $SourceSubscriptionId = $env:SOURCE_SUBSCRIPTION_ID
 }
+
+Write-Host "🧪 Redact-secrets integration test — run id $uniqueId"
 
 $extractOutputDirValue = Get-BoundParameterValueOrNull -BoundParameters $PSBoundParameters -Name 'ExtractOutputDir'
 
@@ -66,6 +70,7 @@ $currentPhase = 'phase-setup'
 
 try {
     $currentPhase = 'phase1-deploy'
+    Write-Host "▶️  Running phase 1 (deploy)"
     $phase1Args = @{
         ResourceGroupName = $SourceResourceGroup
         ApimName          = $SourceApimName
@@ -88,6 +93,7 @@ try {
     $Location = $phase1Output.location
 
     $currentPhase = 'phase2-extract'
+    Write-Host "▶️  Running phase 2 (extract)"
     $phase2Args = @{
         SourceResourceGroup  = $SourceResourceGroup
         SourceApimName       = $SourceApimName
@@ -98,6 +104,7 @@ try {
     & $phase2Script @phase2Args | Out-Null
 
     $currentPhase = 'phase3-validate-redaction'
+    Write-Host "▶️  Running phase 3 (validate redaction)"
     $phase3Args = @{
         LogLevel = $LogLevel
     }
@@ -115,9 +122,11 @@ catch {
     }
 }
 finally {
+    Write-Host "▶️  Running phase 4 (teardown)"
     $phase4Args = @{
         SourceResourceGroup  = $SourceResourceGroup
         Location             = $Location
+        LogLevel             = $LogLevel
         SkipTeardown         = $SkipTeardown
     }
     Add-ArgumentIfSet -Hashtable $phase4Args -Key 'SourceSubscriptionId' -Value $SourceSubscriptionId

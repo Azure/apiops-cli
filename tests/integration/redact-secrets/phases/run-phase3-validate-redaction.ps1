@@ -30,6 +30,7 @@ function Assert-PathExists {
     if (-not (Test-Path $Path)) {
         throw "Expected path not found: $Path"
     }
+    Write-Verbose "  [path] exists: $Path"
 }
 
 function Assert-Contains {
@@ -38,6 +39,7 @@ function Assert-Contains {
     if (-not $content.Contains($Expected)) {
         throw "Expected '$Expected' in $Path"
     }
+    Write-Verbose "  [contains] '$Expected' found in $(Split-Path -Leaf $Path)"
 }
 
 function Assert-NotContains {
@@ -46,9 +48,11 @@ function Assert-NotContains {
     if ($content.Contains($Unexpected)) {
         throw "Found unredacted value '$Unexpected' in $Path"
     }
+    Write-Verbose "  [not-contains] '$Unexpected' absent from $(Split-Path -Leaf $Path)"
 }
 
 Write-Host "🔎 PHASE 3 — Validate secret redaction output"
+Write-Verbose "Extract output directory: $ExtractOutputDir"
 
 $servicePolicyPath = Join-Path $ExtractOutputDir 'policy.xml'
 $productPolicyPath = Join-Path $ExtractOutputDir 'products/rs-product/policy.xml'
@@ -62,11 +66,16 @@ foreach ($path in @($servicePolicyPath, $productPolicyPath, $apiPolicyPath, $ope
     Assert-PathExists -Path $path
 }
 
+Write-Host "  → Checking service-scope policy redaction"
 Assert-Contains -Path $servicePolicyPath -Expected $redactionMarker
 Assert-Contains -Path $servicePolicyPath -Expected $expectedBearerNamedValueReference
 Assert-Contains -Path $servicePolicyPath -Expected '{{rs-nv-secret}}'
+
+# InstrumentationKeys are not secrets and must survive unredacted 
+# (allow-listed in src/services/secret-redactor.ts). Guards against future over-redaction.
 Assert-Contains -Path $servicePolicyPath -Expected 'InstrumentationKey=AI-INSTRUMENTATION-KEY-LITERAL'
 
+Write-Host "  → Verifying service-scope secret literals are gone"
 foreach ($literal in @(
     'SERVICE_AUTH_SECRET_LITERAL',
     'SERVICE_OCP_SECRET_LITERAL',
@@ -86,6 +95,7 @@ foreach ($literal in @(
     Assert-NotContains -Path $servicePolicyPath -Unexpected $literal
 }
 
+Write-Host "  → Checking product / api / operation / resolver policy redaction"
 Assert-Contains -Path $productPolicyPath -Expected $redactionMarker
 Assert-NotContains -Path $productPolicyPath -Unexpected 'PRODUCT_AUTH_SECRET_LITERAL'
 
@@ -98,6 +108,7 @@ Assert-NotContains -Path $operationPolicyPath -Unexpected 'OPERATION_BASIC_PASSW
 Assert-Contains -Path $resolverPolicyPath -Expected $redactionMarker
 Assert-NotContains -Path $resolverPolicyPath -Unexpected 'RESOLVER_SHARED_ACCESS_KEY_LITERAL'
 
+Write-Host "  → Checking named value redaction"
 $secretNamedValue = Get-Content -Path $secretNamedValuePath -Raw | ConvertFrom-Json
 if ($secretNamedValue.properties.secret -ne $true) {
     throw "Expected secret named value flag to remain true in $secretNamedValuePath"
@@ -105,11 +116,13 @@ if ($secretNamedValue.properties.secret -ne $true) {
 if ($secretNamedValue.properties.value -ne $redactionMarker) {
     throw "Expected secret named value to be redacted in $secretNamedValuePath"
 }
+Write-Verbose "  [named-value] 'rs-nv-secret' is flagged secret and redacted"
 
 $plainNamedValue = Get-Content -Path $plainNamedValuePath -Raw | ConvertFrom-Json
 if ($plainNamedValue.properties.value -ne 'plain-value') {
     throw "Expected plain named value to remain unchanged in $plainNamedValuePath"
 }
+Write-Verbose "  [named-value] 'rs-nv-plain' retained its plaintext value"
 
 Write-Host "✅ Redaction checks passed"
 exit 0

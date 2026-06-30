@@ -142,7 +142,9 @@ function Remove-PlaintextTempFile {
 
 Write-Host "🚀 PHASE 1 — Deploy source APIM for redaction test"
 Write-Host "   Azure subscription: $(Protect-SubscriptionId -Value $resolvedSubscriptionId)"
+Write-Host "Resource group: $(Protect-ResourceGroupName -Value $ResourceGroupName) | SKU: $SkuName | Location: $Location"
 
+Write-Verbose "  → Creating resource group"
 az group create --name $ResourceGroupName --location $Location --subscription $resolvedSubscriptionId --output none
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to create resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)'."
@@ -157,9 +159,12 @@ $literals = [System.Text.RegularExpressions.Regex]::Matches($postActivationTempl
     ForEach-Object { $_.Value } |
     Select-Object -Unique
 
+Write-Host "  → Resolving secret literals in post-activation template"
+Write-Verbose "  [literal] found $($literals.Count) placeholder(s) to replace"
 foreach ($literal in $literals) {
     $replacementValue = New-LocalSecretValue -Placeholder $literal
     $postActivationTemplateResolved = $postActivationTemplateResolved.Replace($literal, $replacementValue)
+    Write-Verbose "  [literal] replaced placeholder '$literal'"
 }
 
 if ([System.Text.RegularExpressions.Regex]::IsMatch($postActivationTemplateResolved, $literalPattern)) {
@@ -173,6 +178,8 @@ $postActivationParamsFile = $null
 
 try {
     $deploymentName = "redact-secrets-source-$(Get-Date -Format 'yyyyMMddHHmmss')"
+    Write-Host "  → Deploying source APIM service (this can take a while)"
+    Write-Verbose "  [deploy] deployment name: $deploymentName"
     $tempCertificate = New-TemporaryPfxPayload
     $azReplacements = @{
         $resolvedSubscriptionId = Protect-SubscriptionId -Value $resolvedSubscriptionId
@@ -202,11 +209,15 @@ try {
     $deployResult = $rawDeploy | ConvertFrom-Json
     $outputs = $deployResult.properties.outputs
     $apimServiceName = $outputs.apimServiceName.value
+    Write-Verbose "  [deploy] provisioned APIM service: $(Protect-ApimName -Value $apimServiceName)"
 
+    Write-Host "  → Waiting for APIM activation"
     Wait-ApimActivation -ResourceGroupName $ResourceGroupName -ApimName $apimServiceName -TimeoutSeconds 2700 -PollIntervalSeconds 60 | Out-Null
 
+    Write-Host "  → Waiting for API to become queryable"
     Wait-ApimApiQueryable -ResourceGroupName $ResourceGroupName -ApimServiceName $apimServiceName -ApiId 'src-redact-rest' -Replacements $azReplacements -TimeoutSeconds 600 -PollIntervalSeconds 20 | Out-Null
 
+    Write-Host "  → Applying post-activation policies with secret literals"
     $postDeploymentName = "redact-secrets-post-activation-$(Get-Date -Format 'yyyyMMddHHmmss')"
 
     # Pass secure parameters via a temporary parameters file so the PFX payload and
@@ -240,6 +251,7 @@ try {
         throw "Post-activation deployment failed in resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)'."
     }
 
+    Write-Host "✅ Phase 1 deploy complete"
     $result = [ordered]@{
         sourceSubscriptionId = $outputs.subscriptionId.value
         sourceResourceGroup  = $outputs.resourceGroupName.value

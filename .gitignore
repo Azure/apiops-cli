@@ -39,11 +39,11 @@ Desktop.ini
 .local-extract*/
 
 # Files for integration tests
-tests/integration/all-resource-types/**/logs/**
-tests/integration/all-resource-types/**/extracted-artifacts*/**
-tests/integration/all-resource-types/bicep/target-apim.json
-tests/integration/all-resource-types/bicep/source-apim.json
-tests/integration/all-resource-types/bicep/source-apim-post-activation.bicep
+tests/integration/**/logs
+tests/integration/**/extracted-artifacts*
+tests/integration/**/bicep/target-apim.json
+tests/integration/**/bicep/source-apim.json
+tests/integration/**/bicep/source-apim-post-activation.bicep
 
 # Environment variables
 .env

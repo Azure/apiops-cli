@@ -74,14 +74,22 @@ Script log level (Info, Verbose, Debug).
 None
 #>
 function Set-ScriptLogPreferences {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
         [ValidateSet('Info', 'Verbose', 'Debug')]
         [string]$LogLevel
     )
 
-    Set-Variable -Name VerbosePreference -Scope 1 -Value $(if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' })
-    Set-Variable -Name DebugPreference -Scope 1 -Value $(if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' })
+    $verbosePreference = if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' }
+    $debugPreference = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' }
+
+    # Use the caller's session state so the preference variables land in the
+    # invoking script's scope. Set-Variable -Scope 1 from a module function
+    # only affects the module's scope chain, not the caller, so Write-Verbose
+    # output would otherwise stay suppressed.
+    $PSCmdlet.SessionState.PSVariable.Set('VerbosePreference', $verbosePreference)
+    $PSCmdlet.SessionState.PSVariable.Set('DebugPreference', $debugPreference)
 }
 
 <#
