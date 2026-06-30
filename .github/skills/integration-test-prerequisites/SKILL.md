@@ -1,6 +1,6 @@
 ---
 name: "integration-test-prerequisites"
-description: "Set up Azure and GitHub prerequisites for integration workflows using a user-assigned managed identity, OIDC federated credentials, RBAC roles, and environment secrets. Use when troubleshooting AADSTS70025/AADSTS700213 or authorization failures during integration-test or integration-redact-secrets workflow runs."
+description: "Set up Azure and GitHub prerequisites for integration and release-tests workflows using a user-assigned managed identity, OIDC federated credentials, RBAC roles, and environment secrets. Use when troubleshooting AADSTS70025/AADSTS700213 or authorization failures during integration-test or release-tests workflow runs."
 domain: "ci-cd"
 confidence: "high"
 source: "manual + observed from integration-test OIDC and RBAC troubleshooting"
@@ -10,13 +10,18 @@ source: "manual + observed from integration-test OIDC and RBAC troubleshooting"
 
 Use this skill when preparing or repairing prerequisites for:
 
-- `.github/workflows/integration-test.yml`
-- `.github/workflows/integration-redact-secrets.yml`
+- `.github/workflows/integration-test.yml` — Extract→Publish round-trip
+- `.github/workflows/integration-redact-secrets.yml` — Secret redaction validation
+- `.github/workflows/release-tests.yml` — Orchestrator that calls CI, then both integration-test workflows sequentially
+
+All integration-test workflows share the same GitHub environment (`integration-test`) and Azure identity. Setting up prerequisites once covers all three workflows.
 
 These workflows expect:
-- OIDC login through `azure/login@v2`
-- GitHub environment `integration-test` (shared by both workflows)
+- OIDC login through `azure/login@v3`
+- GitHub environment `integration-test` (shared by all integration workflows)
 - Azure identity with enough permissions to deploy resources and create role assignments in test resource groups
+
+The `release-tests.yml` orchestrator calls `ci.yml` (no Azure prereqs), then `integration-test.yml` and `integration-redact-secrets.yml` (both use the `integration-test` environment). Secrets are passed through from the orchestrator's repo-level secrets to the called workflows' environment.
 
 Preferred identity model: user-assigned managed identity (UAMI).
 
