@@ -22,6 +22,7 @@ Import-Module $scriptArgModule -Force
 Set-ScriptLogPreferences -LogLevel $LogLevel
 
 $redactionMarker = '*** REDACTED ***'
+# Keep this split so CI log scrubbing does not rewrite the expected literal.
 $expectedBearerNamedValueReference = ('Be' + 'arer {{rs-nv-secret}}')
 
 function Assert-PathExists {
