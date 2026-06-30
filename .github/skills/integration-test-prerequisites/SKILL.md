@@ -1,6 +1,6 @@
 ---
 name: "integration-test-prerequisites"
-description: "Set up Azure and GitHub prerequisites for integration workflows using a user-assigned managed identity, OIDC federated credentials, RBAC roles, and environment secrets. Use when troubleshooting AADSTS70025/AADSTS700213 or authorization failures during integration-test or integration-redact-secrets workflow runs."
+description: "Set up Azure and GitHub prerequisites for integration and release-tests workflows using a user-assigned managed identity, OIDC federated credentials, RBAC roles, and environment secrets. Use when troubleshooting AADSTS70025/AADSTS700213 or authorization failures during integration-test or release-tests workflow runs."
 domain: "ci-cd"
 confidence: "high"
 source: "manual + observed from integration-test OIDC and RBAC troubleshooting"
@@ -10,13 +10,18 @@ source: "manual + observed from integration-test OIDC and RBAC troubleshooting"
 
 Use this skill when preparing or repairing prerequisites for:
 
-- `.github/workflows/integration-test.yml`
-- `.github/workflows/integration-redact-secrets.yml`
+- `.github/workflows/test-round-trip.yml` — Extract→Publish round-trip
+- `.github/workflows/test-redact-secrets.yml` — Secret redaction validation
+- `.github/workflows/test-all.yml` — Orchestrator that calls CI, then both integration-test workflows sequentially
+
+All integration-test workflows share the same GitHub environment (`integration-test`) and Azure identity. Setting up prerequisites once covers all three workflows.
 
 These workflows expect:
-- OIDC login through `azure/login@v2`
-- GitHub environment `integration-test` (shared by both workflows)
+- OIDC login through `azure/login@v3`
+- GitHub environment `integration-test` (shared by all integration workflows)
 - Azure identity with enough permissions to deploy resources and create role assignments in test resource groups
+
+The `test-all.yml` orchestrator calls `ci.yml` (no Azure prereqs), then `test-round-trip.yml` and `test-redact-secrets.yml`. The called workflows access secrets directly from the `integration-test` environment — no secret pass-through from the orchestrator is needed.
 
 Preferred identity model: user-assigned managed identity (UAMI).
 
@@ -135,11 +140,18 @@ gh secret set AZURE_SUBSCRIPTION_ID \
   --env "${GITHUB_ENVIRONMENT}" \
   --body "${SUBSCRIPTION_ID}"
 
+# Optional — falls back to apim-integration-test@contoso.com if not set
 gh secret set APIM_PUBLISHER_EMAIL \
   --repo "${GITHUB_OWNER}/${GITHUB_REPO}" \
   --env "${GITHUB_ENVIRONMENT}" \
   --body "${APIM_PUBLISHER_EMAIL}"
 ```
+
+### 6) Verify Called Workflows Can Access Environment Secrets
+
+The `test-all.yml` orchestrator does **not** pass secrets to called workflows. Instead, the called workflows (`test-round-trip.yml`, `test-redact-secrets.yml`) access secrets directly via their `environment: integration-test` declaration. Each called workflow includes a "Validate Required Secrets" step that fails fast with a clear error if any secret is missing.
+
+No repo-level secrets are required — all secrets are scoped to the `integration-test` environment.
 
 ## Verification
 

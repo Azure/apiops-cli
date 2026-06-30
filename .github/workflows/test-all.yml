@@ -1,0 +1,68 @@
+# Copyright (c) Microsoft Corporation.
+# Licensed under the MIT license.
+# ===========================================================================
+# Release Tests — Run all test suites in order before a release.
+# ===========================================================================
+# Executes unit tests, build-package integration tests, and the full
+# extract→publish round-trip integration test sequentially. Fails fast:
+# subsequent stages are skipped if any prior stage fails.
+# ===========================================================================
+
+name: "Test: Release Tests"
+
+on:
+  schedule:
+    - cron: '0 9 1 * *' # 1st of every month at 9:00 UTC
+  workflow_dispatch:
+    inputs:
+      sku:
+        description: 'APIM SKU for all-types integration test'
+        required: true
+        type: choice
+        options:
+          - Standard
+          - StandardV2
+          - Premium
+          - PremiumV2
+        default: StandardV2
+      location:
+        description: 'Azure region for all-types integration test'
+        required: false
+        type: string
+        default: 'centralus'
+      log_level:
+        description: 'Log level'
+        required: false
+        type: choice
+        options:
+          - Info
+          - Verbose
+          - Debug
+        default: Verbose
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  ci:
+    name: CI (Unit + Build Package Tests)
+    uses: ./.github/workflows/ci.yml
+
+  all-types-integration:
+    name: All-Types Integration Test
+    needs: ci
+    uses: ./.github/workflows/test-round-trip.yml
+    with:
+      sku: ${{ inputs.sku || vars.DEFAULT_SKU || 'StandardV2' }}
+      location: ${{ inputs.location || vars.DEFAULT_LOCATION || 'centralus' }}
+      log_level: ${{ inputs.log_level || vars.DEFAULT_LOG_LEVEL || 'Verbose' }}
+
+  redact-secrets-integration:
+    name: Redact Secrets Integration Test
+    needs: all-types-integration
+    uses: ./.github/workflows/test-redact-secrets.yml
+    with:
+      sku: ${{ inputs.sku || vars.DEFAULT_SKU || 'StandardV2' }}
+      location: ${{ inputs.location || vars.DEFAULT_LOCATION || 'centralus' }}
+      log_level: ${{ inputs.log_level || vars.DEFAULT_LOG_LEVEL || 'Verbose' }}
