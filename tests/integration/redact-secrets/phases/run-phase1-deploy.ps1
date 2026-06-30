@@ -61,6 +61,41 @@ function New-LocalJwtKeyBase64 {
     return [Convert]::ToBase64String($bytes)
 }
 
+function New-TemporaryPfxPayload {
+    $subject = "CN=apiops-redact-temp-$([Guid]::NewGuid().ToString('N').Substring(0, 8))"
+    $password = "Pfx-$([Guid]::NewGuid().ToString('N'))!"
+
+    $rsa = [System.Security.Cryptography.RSA]::Create(2048)
+    try {
+        $request = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new(
+            $subject,
+            $rsa,
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
+        )
+
+        $certificate = $request.CreateSelfSigned(
+            [System.DateTimeOffset]::UtcNow.AddMinutes(-5),
+            [System.DateTimeOffset]::UtcNow.AddDays(1)
+        )
+
+        try {
+            $pfxBytes = $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $password)
+        }
+        finally {
+            $certificate.Dispose()
+        }
+    }
+    finally {
+        $rsa.Dispose()
+    }
+
+    return [ordered]@{
+        data     = [Convert]::ToBase64String($pfxBytes)
+        password = $password
+    }
+}
+
 function New-LocalSecretValue {
     param(
         [Parameter(Mandatory)]
@@ -134,11 +169,15 @@ if ([System.Text.RegularExpressions.Regex]::IsMatch($postActivationTemplateResol
 $resolvedPostActivationBicepFile = Join-Path ([System.IO.Path]::GetTempPath()) ("source-apim-post-activation-$([Guid]::NewGuid().ToString('N')).bicep")
 Set-Content -Path $resolvedPostActivationBicepFile -Value $postActivationTemplateResolved
 
+$postActivationParamsFile = $null
+
 try {
     $deploymentName = "redact-secrets-source-$(Get-Date -Format 'yyyyMMddHHmmss')"
+    $tempCertificate = New-TemporaryPfxPayload
     $azReplacements = @{
         $resolvedSubscriptionId = Protect-SubscriptionId -Value $resolvedSubscriptionId
         $ResourceGroupName      = Protect-ResourceGroupName -Value $ResourceGroupName
+        $tempCertificate.password = '*** REDACTED ***'
     }
 
     $deployArgs = @(
@@ -169,13 +208,29 @@ try {
     Wait-ApimApiQueryable -ResourceGroupName $ResourceGroupName -ApimServiceName $apimServiceName -ApiId 'src-redact-rest' -Replacements $azReplacements -TimeoutSeconds 600 -PollIntervalSeconds 20 | Out-Null
 
     $postDeploymentName = "redact-secrets-post-activation-$(Get-Date -Format 'yyyyMMddHHmmss')"
+
+    # Pass secure parameters via a temporary parameters file so the PFX payload and
+    # password never appear in the az CLI process argument list.
+    $postParams = [ordered]@{
+        '$schema'      = 'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#'
+        contentVersion = '1.0.0.0'
+        parameters     = [ordered]@{
+            apimName                = @{ value = $apimServiceName }
+            tempCertificateData     = @{ value = $tempCertificate.data }
+            tempCertificatePassword = @{ value = $tempCertificate.password }
+        }
+    }
+
+    $postActivationParamsFile = Join-Path ([System.IO.Path]::GetTempPath()) ("source-apim-post-activation-params-$([Guid]::NewGuid().ToString('N')).json")
+    $postParams | ConvertTo-Json -Depth 5 | Set-Content -Path $postActivationParamsFile
+
     $postArgs = @(
         'deployment', 'group', 'create',
         '--subscription', $resolvedSubscriptionId,
         '--resource-group', $ResourceGroupName,
         '--name', $postDeploymentName,
         '--template-file', $resolvedPostActivationBicepFile,
-        '--parameters', "apimName=$apimServiceName",
+        '--parameters', "@$postActivationParamsFile",
         '--output', 'json'
     )
 
@@ -203,5 +258,8 @@ try {
 }
 finally {
     Remove-PlaintextTempFile -Path $resolvedPostActivationBicepFile
-    Clear-Variable -Name postActivationTemplateResolved, postActivationTemplateRaw -ErrorAction SilentlyContinue
+    if ($postActivationParamsFile) {
+        Remove-PlaintextTempFile -Path $postActivationParamsFile
+    }
+    Clear-Variable -Name postActivationTemplateResolved, postActivationTemplateRaw, tempCertificate -ErrorAction SilentlyContinue
 }

@@ -2,7 +2,18 @@
 @description('APIM service name.')
 param apimName string
 
-var servicePolicyXml = '''
+@description('Base64-encoded PFX payload for temporary APIM certificate used by service policy.')
+@secure()
+param tempCertificateData string
+
+@description('Password used to open temporary APIM certificate PFX payload.')
+@secure()
+param tempCertificatePassword string
+
+@description('Temporary APIM certificate entity name used by authentication-certificate policy.')
+param tempCertificateName string = 'rs-temp-cert'
+
+var servicePolicyXmlTemplate = '''
 <policies>
   <inbound>
     <set-header name="Authorization" exists-action="override"><value>Bearer SERVICE_AUTH_SECRET_LITERAL</value></set-header>
@@ -15,12 +26,13 @@ var servicePolicyXml = '''
     <set-query-parameter name="sig" exists-action="override"><value>SERVICE_QUERY_SIG_LITERAL</value></set-query-parameter>
     <set-query-parameter name="subscription-key" exists-action="override"><value>SERVICE_QUERY_SUBSCRIPTION_LITERAL</value></set-query-parameter>
     <authentication-basic username="svc-user" password="SERVICE_BASIC_PASSWORD_LITERAL" />
-    <authentication-certificate thumbprint="SERVICE_CERT_THUMBPRINT_LITERAL" />
+    <authentication-certificate certificate-id="__TEMP_CERT_NAME__" />
+    <set-header name="x-cert-secret" exists-action="override"><value>body=SERVICE_CERT_BODY_LITERAL;inline=SERVICE_CERT_INLINE_LITERAL</value></set-header>
     <validate-jwt header-name="Authorization">
       <issuer-signing-keys><key>SERVICE_SIGNING_KEY_LITERAL</key></issuer-signing-keys>
       <decryption-keys><key>SERVICE_DECRYPT_KEY_LITERAL</key></decryption-keys>
     </validate-jwt>
-    <set-header name="x-storage-connection" exists-action="override"><value>DefaultEndpointsProtocol=https;AccountName=storageacct;AccountKey=SERVICE_ACCOUNT_KEY_LITERAL;EndpointSuffix=core.windows.net</value></set-header>
+    <set-header name="x-storage-connection" exists-action="override"><value>DefaultEndpointsProtocol=https;AccountName=storageacct;AccountKey=SERVICE_ACCOUNT_KEY_LITERAL;EndpointSuffix=${environment().suffixes.storage}</value></set-header>
     <set-header name="x-servicebus-connection" exists-action="override"><value>Endpoint=sb://foo.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=SERVICE_SHARED_ACCESS_KEY_LITERAL</value></set-header>
     <set-header name="x-ai-connection" exists-action="override"><value>InstrumentationKey=AI-INSTRUMENTATION-KEY-LITERAL</value></set-header>
   </inbound>
@@ -29,6 +41,10 @@ var servicePolicyXml = '''
   <on-error />
 </policies>
 '''
+
+// Multi-line (triple-quoted) Bicep strings do not support ${} interpolation, so
+// resolve the certificate name token with replace().
+var servicePolicyXml = replace(servicePolicyXmlTemplate, '__TEMP_CERT_NAME__', tempCertificateName)
 
 var productPolicyXml = '''
 <policies>
@@ -100,9 +116,21 @@ resource graphqlResolver 'Microsoft.ApiManagement/service/apis/resolvers@2025-09
   name: 'src-redact-resolver'
 }
 
+resource tempPolicyCertificate 'Microsoft.ApiManagement/service/certificates@2025-09-01-preview' = {
+  parent: apim
+  name: tempCertificateName
+  properties: {
+    data: tempCertificateData
+    password: tempCertificatePassword
+  }
+}
+
 resource servicePolicy 'Microsoft.ApiManagement/service/policies@2025-09-01-preview' = {
   parent: apim
   name: 'policy'
+  dependsOn: [
+    tempPolicyCertificate
+  ]
   properties: {
     format: 'rawxml'
     value: servicePolicyXml
