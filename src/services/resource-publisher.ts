@@ -33,7 +33,7 @@ export interface ResourcePublishResult {
 /**
  * Policy resource types that have external XML content
  */
-const POLICY_TYPES = new Set<ResourceType>([
+export const POLICY_TYPES = new Set<ResourceType>([
   ResourceType.ServicePolicy,
   ResourceType.ProductPolicy,
   ResourceType.ApiPolicy,
@@ -420,14 +420,6 @@ async function publishPolicy(
     // Fail-safe guard: extracted policies don't currently carry separate metadata
     // indicating prior redaction, so marker detection is a deliberate content
     // check to block publishing placeholder secrets.
-    if (policyContent.content.includes(REDACTION_MARKER)) {
-      throw new Error(
-        `Cannot publish ${buildResourceLabel(descriptor)}: policy contains '${REDACTION_MARKER}'. ` +
-        'Replace inline secrets with named values before publish: ' +
-        'https://learn.microsoft.com/en-us/azure/api-management/api-management-howto-properties'
-      );
-    }
-
     const payload: Record<string, unknown> = {
       properties: {
         value: policyContent.content,
@@ -437,6 +429,19 @@ async function publishPolicy(
 
     // Apply overrides (e.g., format: xml) before PUT — matches Toolkit behavior
     const mergedPayload = applyOverrides(descriptor, payload, config.overrides);
+
+    // Marker check runs AFTER overrides: an override may legitimately replace the
+    // policy value with clean content, so only the merged (about-to-be-published)
+    // value is authoritative for redaction detection.
+    const mergedProps = mergedPayload.properties as Record<string, unknown> | undefined;
+    const mergedValue = mergedProps?.value;
+    if (typeof mergedValue === 'string' && mergedValue.includes(REDACTION_MARKER)) {
+      throw new Error(
+        `Cannot publish ${buildResourceLabel(descriptor)}: policy contains '${REDACTION_MARKER}'. ` +
+        'Replace inline secrets with named values before publish: ' +
+        'https://learn.microsoft.com/en-us/azure/api-management/api-management-howto-properties'
+      );
+    }
 
     await client.putResource(context, descriptor, mergedPayload);
 

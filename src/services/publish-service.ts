@@ -26,6 +26,8 @@ import { publishProduct } from './product-publisher.js';
 import { generateDryRunReport, DryRunReport } from './dry-run-reporter.js';
 import { computeDeleteActions } from './delete-unmatched-service.js';
 import { computeGitDiff } from './git-diff-service.js';
+import { scanForRedactionMarkers } from './secret-redaction-guard.js';
+import { REDACTION_MARKER } from './secret-redactor.js';
 
 /**
  * The APIM Backend properties.type value that identifies a pool backend.
@@ -78,6 +80,44 @@ export async function runPublish(
     logger.debug(
       `Publishing ${targetDescriptors.length} resources (dry-run: ${config.dryRun})`
     );
+
+    // Step 1b: Redaction pre-flight gate.
+    // Scan every artifact that would be published for leftover redaction markers
+    // ('*** REDACTED ***'). A single leftover marker aborts the ENTIRE publish
+    // before any PUT is issued — and also fails dry-run — so a service can never
+    // be left partially published with placeholder secrets.
+    const redactionFindings = await scanForRedactionMarkers(
+      store,
+      config,
+      targetDescriptors
+    );
+    if (redactionFindings.length > 0) {
+      logger.error(
+        `Publish aborted: ${redactionFindings.length} artifact(s) still contain the redaction marker '${REDACTION_MARKER}'. ` +
+        'Replace inline secrets with named values or KeyVault references before publishing: ' +
+        'https://learn.microsoft.com/en-us/azure/api-management/api-management-howto-properties'
+      );
+      const actions: PublishActionResult[] = redactionFindings.map((finding) => {
+        logger.error(`  - ${finding.label} (${finding.location})`);
+        return {
+          descriptor: finding.descriptor,
+          action: 'noop',
+          status: 'failed',
+          error: new Error(
+            `${finding.label} contains '${REDACTION_MARKER}' in ${finding.location}`
+          ),
+        };
+      });
+
+      return {
+        totalPuts: 0,
+        totalDeletes: 0,
+        totalErrors: actions.length,
+        totalSkipped: 0,
+        exitCode: EXIT_FATAL,
+        actions,
+      };
+    }
 
     // Step 2: Handle dry-run mode
     if (config.dryRun) {
