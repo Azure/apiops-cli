@@ -42,11 +42,7 @@ on:
 
 permissions:
   contents: read
-
-env:
-  DEFAULT_SKU: StandardV2
-  DEFAULT_LOCATION: centralus
-  DEFAULT_LOG_LEVEL: Verbose
+  id-token: write
 
 jobs:
   ci:
@@ -58,15 +54,15 @@ jobs:
     needs: ci
     uses: ./.github/workflows/integration-test.yml
     with:
-      sku: ${{ inputs.sku || env.DEFAULT_SKU }}
-      location: ${{ inputs.location || env.DEFAULT_LOCATION }}
-      log_level: ${{ inputs.log_level || env.DEFAULT_LOG_LEVEL }}
+      sku: ${{ inputs.sku || vars.DEFAULT_SKU || 'StandardV2' }}
+      location: ${{ inputs.location || vars.DEFAULT_LOCATION || 'centralus' }}
+      log_level: ${{ inputs.log_level || vars.DEFAULT_LOG_LEVEL || 'Verbose' }}
 
   redact-secrets-integration:
     name: Redact Secrets Integration Test
     needs: all-types-integration
     uses: ./.github/workflows/integration-redact-secrets.yml
     with:
-      sku: ${{ inputs.sku || env.DEFAULT_SKU }}
-      location: ${{ inputs.location || env.DEFAULT_LOCATION }}
-      log_level: ${{ inputs.log_level || env.DEFAULT_LOG_LEVEL }}
+      sku: ${{ inputs.sku || vars.DEFAULT_SKU || 'StandardV2' }}
+      location: ${{ inputs.location || vars.DEFAULT_LOCATION || 'centralus' }}
+      log_level: ${{ inputs.log_level || vars.DEFAULT_LOG_LEVEL || 'Verbose' }}
