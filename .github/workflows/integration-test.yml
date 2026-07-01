@@ -80,6 +80,8 @@ concurrency:
   cancel-in-progress: false # Don't cancel — would leave resources running
 
 env:
+  DEFAULT_LOCATION: centralus
+  DEFAULT_PUBLISHER_EMAIL: apim-integration-test@contoso.com
   SOURCE_RG: rg-apiops-bvt-src-${{ github.run_id }}
   TARGET_RG: rg-apiops-bvt-tgt-${{ github.run_id }}
   SOURCE_APIM: apiops-bvt-src-${{ github.run_id }}
@@ -126,7 +128,7 @@ jobs:
         shell: bash
         run: |
           LOCATION="${{ inputs.location }}"
-          if [[ -z "$LOCATION" ]]; then LOCATION="centralus"; fi
+          if [[ -z "$LOCATION" ]]; then LOCATION="${{ env.DEFAULT_LOCATION }}"; fi
           VALID_LOCATIONS=$(az account list-locations --query "[].name" -o tsv)
           if ! echo "$VALID_LOCATIONS" | grep -qx "$LOCATION"; then
             echo "::error::Invalid Azure region: '$LOCATION'. Run 'az account list-locations --query [].name' to see valid options."
@@ -147,7 +149,7 @@ jobs:
             SkuName            = '${{ inputs.sku }}'
             Location           = '${{ inputs.location }}'
             LogLevel           = '${{ inputs.log_level }}'
-            PublisherEmail     = '${{ secrets.APIM_PUBLISHER_EMAIL || 'apim-integration-test@contoso.com' }}'
+            PublisherEmail     = '${{ secrets.APIM_PUBLISHER_EMAIL || env.DEFAULT_PUBLISHER_EMAIL }}'
           }
           ./tests/integration/all-resource-types/phases/run-phase1-deploy.ps1 @params
 
