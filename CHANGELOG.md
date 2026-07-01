@@ -5,6 +5,23 @@ All notable changes to the APIOps CLI are documented in this file.
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/) with alpha pre-release tags.
 
+## [0.4.0-alpha.0] — 2026-07-01
+
+### Breaking Changes
+
+- **`apiops init` output filenames renamed** — identity setup guides and Copilot prompts are now emitted as `APIOPS-PIPELINE-IDENTITY-SETUP.md` / `APIOPS-WORKFLOW-IDENTITY-SETUP.md` and `apiops-setup-pipeline-identity.prompt.md` / `apiops-setup-workflow-identity.prompt.md`. Generated pipeline files are now named `run-apiops-extractor.yml` / `run-apiops-publisher.yml`. Users who re-run `apiops init` after upgrading will see the new files alongside any previously generated ones; delete the old files if you no longer want them tracked ([#200](https://github.com/Azure/apiops-cli/pull/200))
+
+### Features
+
+- **Secret redaction in policy XML** — `apiops extract` now redacts inline secrets (including literal bearer tokens in `Authorization` headers) from extracted policy files while preserving named-value references. `apiops publish` performs a pre-flight scan of all artifacts and aborts (including in dry-run mode) if any `*** REDACTED ***` markers remain, preventing accidental secret exposure ([#199](https://github.com/Azure/apiops-cli/pull/199))
+- **JSON schemas and Copilot prompts for filter/override configuration** — new `schemas/extractor-config.schema.json` and `schemas/override-config.schema.json` provide IDE autocompletion for `configuration.extractor.yaml` and `configuration.{env}.yaml` via the `yaml-language-server` `$schema` directive. `apiops init` now also lays down `apiops-configure-filter.prompt.md` and `apiops-configure-overrides.prompt.md` to conversationally guide users through building these files. Schemas are auto-generated from the TypeScript types on every build so they stay in sync ([#183](https://github.com/Azure/apiops-cli/pull/183))
+- **Dry-run validation gate in generated publish pipelines** — GitHub Actions and Azure DevOps publish templates emitted by `apiops init` now run `apiops publish --dry-run` before every real publish step. If the dry-run fails (connectivity, invalid resources, permission errors), the pipeline halts before touching APIM, preventing partial-failure states ([#182](https://github.com/Azure/apiops-cli/pull/182))
+- **Identity setup guides rewritten for UI workflows** — the manual identity setup guides emitted by `apiops init` now walk users through the Azure portal, Azure DevOps, and GitHub web UIs with step-by-step instructions and links to official docs, while the companion `.prompt.md` files remain the CLI/scripted path for Copilot-driven setup ([#200](https://github.com/Azure/apiops-cli/pull/200))
+
+### Bug Fixes
+
+- **Removed stale `mcpServerInformation.json` references** — follow-up to #173, which moved MCP server configuration into `apiInformation.json`. Documentation (`docs/reference/artifact-format.md`, `docs/reference/resource-types.md`) and the `all-resource-types` integration test manifest now match the post-#173 artifact layout ([#205](https://github.com/Azure/apiops-cli/pull/205))
+
 ## [0.3.0-alpha.0] — 2026-06-25
 
 ### Breaking Changes
@@ -138,6 +155,7 @@ This project uses [Semantic Versioning](https://semver.org/) with alpha pre-rele
 - **Initial release** — core extract, publish, and init commands for Azure API Management ([#15](https://github.com/Azure/apiops-cli/pull/15))
 - **CodeQL analysis** — automated security scanning workflow ([#19](https://github.com/Azure/apiops-cli/pull/19))
 
+[0.4.0-alpha.0]: https://github.com/Azure/apiops-cli/compare/v0.3.0-alpha.0...v0.4.0-alpha.0
 [0.3.0-alpha.0]: https://github.com/Azure/apiops-cli/compare/v0.2.1-alpha.0...v0.3.0-alpha.0
 [0.2.1-alpha.0]: https://github.com/Azure/apiops-cli/compare/v0.2.0-alpha.0...v0.2.1-alpha.0
 [0.2.0-alpha.0]: https://github.com/Azure/apiops-cli/compare/v0.1.7-alpha.0...v0.2.0-alpha.0
