@@ -36,6 +36,31 @@ jobs:
     if: github.event.pull_request.merged == true
 
     steps:
+      - name: Verify close:fixed label exists
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const FIXED_LABEL = process.env.FIXED_LABEL;
+            const { owner, repo } = context.repo;
+
+            // The close:fixed label is owned by issue-labels-sync.yml. If it's
+            // missing, fail the run rather than letting a later addLabels call
+            // silently create a default-colored variant — that signals the
+            // label taxonomy is out of sync and needs the sync workflow to run.
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: FIXED_LABEL });
+              core.info(`Label "${FIXED_LABEL}" exists`);
+            } catch (err) {
+              if (err.status === 404) {
+                core.setFailed(
+                  `Label "${FIXED_LABEL}" does not exist. Run the "Sync Labels" ` +
+                  `workflow (issue-labels-sync.yml) to create it, then re-run.`
+                );
+                return;
+              }
+              throw err;
+            }
+
       - name: Apply close:fixed to auto-closed issues
         uses: actions/github-script@v8
         with:
@@ -72,23 +97,6 @@ jobs:
             }
 
             core.info(`PR #${prNumber} closed issue(s): ${issues.map(i => '#' + i.number).join(', ')}`);
-
-            // The close:fixed label is owned by issue-labels-sync.yml. If it's
-            // missing, fail the run rather than silently creating a default
-            // variant — that signals the label taxonomy is out of sync and
-            // needs the sync workflow to run.
-            try {
-              await github.rest.issues.getLabel({ owner, repo, name: FIXED_LABEL });
-            } catch (err) {
-              if (err.status === 404) {
-                core.setFailed(
-                  `Label "${FIXED_LABEL}" does not exist. Run the "Sync Labels" ` +
-                  `workflow (issue-labels-sync.yml) to create it, then re-run.`
-                );
-                return;
-              }
-              throw err;
-            }
 
             let labeled = 0;
             for (const { number } of issues) {
