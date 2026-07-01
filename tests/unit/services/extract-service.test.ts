@@ -10,6 +10,7 @@ import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/type
 import { ExtractConfig, FilterConfig } from '../../../src/models/config.js';
 import { runExtraction } from '../../../src/services/extract-service.js';
 import { LogLevel } from '../../../src/lib/logger.js';
+import { REDACTION_MARKER } from '../../../src/services/secret-redactor.js';
 
 // Mock IApimClient that returns configurable resources per type
 function createMockClient(resourcesByType: Partial<Record<ResourceType, Record<string, unknown>[]>> = {}) {
@@ -147,6 +148,39 @@ describe('extract-service', () => {
 
       expect(store.writeContent).toHaveBeenCalled();
       expect(result.collectedPolicies.has('service-policy')).toBe(true);
+    });
+
+    it('should redact inline secrets in service policy before storing', async () => {
+      const policyContent = '<policies><inbound><set-query-parameter name="sig"><value>abc123</value></set-query-parameter></inbound></policies>';
+      const redactedPolicy = `<policies><inbound><set-query-parameter name="sig"><value>${REDACTION_MARKER}</value></set-query-parameter></inbound></policies>`;
+      const client = createMockClient({});
+      client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor) => {
+        if (descriptor.type === ResourceType.ServicePolicy) {
+          return {
+            name: 'policy',
+            properties: { value: policyContent },
+          };
+        }
+        return undefined;
+      });
+      const store = createMockStore();
+
+      const config: ExtractConfig = {
+        service: testContext,
+        outputDir: '/output',
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runExtraction(client, store, config);
+
+      expect(store.writeContent).toHaveBeenCalledWith(
+        '/output',
+        expect.objectContaining({ type: ResourceType.ServicePolicy }),
+        redactedPolicy,
+        'policy'
+      );
+      expect(result.collectedPolicies.get('service-policy')).toBe(redactedPolicy);
     });
 
     it('should not crash during transitive dedupe when a singleton (ServicePolicy) is already extracted', async () => {

@@ -116,3 +116,17 @@ When comparing a *link-imported* API (e.g. Petstore via `swagger-link`/`openapi-
 
 Round-trip comparison harness (`tests/integration/all-resource-types`) normalizes both via `RepresentationSchemaRefIgnoredProperties` and `ParameterIgnoredProperties`. Symptom if not stripped: every operation shows a `properties.request/responses/templateParameters` DIFF present-on-one-side-only.
 
+### 2026-07-01: Overriding a policy to clear a redacted secret — possible but rarely the right fix
+
+**Question that comes up:** when the extract-time secret redactor leaves `*** REDACTED ***` inline in a policy, can you clear the publish pre-flight guard by *overriding the policy* instead of fixing the source?
+
+**Answer: yes, technically — but it's almost never the intended path.**
+
+- All five policy types are wired into the override system (`src/services/override-merger.ts`): `ServicePolicy → policies`, `PolicyFragment → policyFragments` (direct); `ApiPolicy → apis.<api>.policies`, `ProductPolicy → products.<product>.policies` (child); `ApiOperationPolicy → apis.<api>.operations.<op>.policies` (grandchild).
+- The publish payload for a policy is `{ properties: { value, format } }`, and `applyOverrides` deep-merges `properties`, so an override supplying `properties.value` replaces the policy XML wholesale.
+- The pre-flight guard (`src/services/secret-redaction-guard.ts`) applies overrides **before** scanning for the marker — by design — so a policy override that yields clean content passes the check.
+
+**Why it's the wrong tool for redacted secrets:**
+- The marker is inserted **inline** inside the XML (e.g. inside a `set-header` `<value>`), but overrides are **whole-value** replacements of `properties.value` — there is no inline/sub-string patch. You'd have to paste the entire policy XML (with the real secret) into a committed override file, re-introducing the plaintext secret that redaction removed.
+- Intended remediation: change the **source** policy to reference a named value (`{{my-secret}}`) so redaction never triggers, then supply the secret via a named-value override or Key Vault reference. The docs' "Gotcha: Redacted secrets" section (`docs/guides/environment-overrides.md`) only covers named values — there is no documented "override a redacted policy" workflow, reflecting this.
+

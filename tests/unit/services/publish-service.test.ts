@@ -343,6 +343,69 @@ describe('publish-service', () => {
       expect(client.putResource).not.toHaveBeenCalled();
     });
 
+    it('should abort the entire publish before any PUT when a redaction marker is found', async () => {
+      const resources = [
+        { type: ResourceType.NamedValue, nameParts: ['nv-secret'] },
+        { type: ResourceType.Api, nameParts: ['api1'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      vi.mocked(store.readResource).mockImplementation(
+        async (_sourceDir: string, descriptor: ResourceDescriptor) => {
+          if (descriptor.type === ResourceType.NamedValue) {
+            return { name: 'nv-secret', properties: { secret: true, value: '*** REDACTED ***' } };
+          }
+          return { name: descriptor.nameParts[0] ?? '', properties: {} };
+        }
+      );
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runPublish(client, store, config);
+
+      expect(result.exitCode).toBe(2);
+      expect(result.totalErrors).toBe(1);
+      expect(result.totalPuts).toBe(0);
+      expect(client.putResource).not.toHaveBeenCalled();
+      expect(publishApi).not.toHaveBeenCalled();
+    });
+
+    it('should fail dry-run when a redaction marker is found and not generate a report', async () => {
+      const resources = [
+        { type: ResourceType.NamedValue, nameParts: ['nv-secret'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      vi.mocked(store.readResource).mockResolvedValue({
+        name: 'nv-secret',
+        properties: { secret: true, value: '*** REDACTED ***' },
+      });
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: true,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runPublish(client, store, config);
+
+      expect(result.exitCode).toBe(2);
+      expect(result.totalErrors).toBe(1);
+      expect(result.dryRunReport).toBeUndefined();
+      expect(generateDryRunReport).not.toHaveBeenCalled();
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
     it('should use computeGitDiff when commitId is set (incremental mode)', async () => {
       const client = createMockClient();
       const store = createMockStore([]);

@@ -1,6 +1,6 @@
 ---
 name: "integration-test-prerequisites"
-description: "Set up Azure and GitHub prerequisites for the integration-test workflow using a user-assigned managed identity, OIDC federated credentials, RBAC roles, and environment secrets. Use when troubleshooting AADSTS70025/AADSTS700213 or authorization failures during integration-test workflow runs."
+description: "Set up Azure and GitHub prerequisites for integration workflows using a user-assigned managed identity, OIDC federated credentials, RBAC roles, and environment secrets. Use when troubleshooting AADSTS70025/AADSTS700213 or authorization failures during integration-test or integration-redact-secrets workflow runs."
 domain: "ci-cd"
 confidence: "high"
 source: "manual + observed from integration-test OIDC and RBAC troubleshooting"
@@ -8,11 +8,14 @@ source: "manual + observed from integration-test OIDC and RBAC troubleshooting"
 
 ## Context
 
-Use this skill when preparing or repairing prerequisites for `.github/workflows/integration-test.yml`.
+Use this skill when preparing or repairing prerequisites for:
 
-This workflow expects:
+- `.github/workflows/integration-test.yml`
+- `.github/workflows/integration-redact-secrets.yml`
+
+These workflows expect:
 - OIDC login through `azure/login@v2`
-- GitHub environment `integration-test`
+- GitHub environment `integration-test` (shared by both workflows)
 - Azure identity with enough permissions to deploy resources and create role assignments in test resource groups
 
 Preferred identity model: user-assigned managed identity (UAMI).
