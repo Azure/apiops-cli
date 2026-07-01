@@ -232,7 +232,24 @@ jobs:
             -TargetApimName '${{ steps.phase1.outputs.targetApimName }}' `
             -LogLevel '${{ steps.settings.outputs.logLevel }}'
 
-      - name: Run Round-Trip Phase 7 (Teardown)
+      - name: Run Round-Trip Phase 7 (Delete Unmatched)
+        if: success()
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+        run: |
+          $extractOutputDir = '${{ steps.phase2.outputs.ExtractOutputDir }}'
+
+          ./tests/integration/all-resource-types/phases/run-phase7-delete-unmatched.ps1 `
+            -TargetSubscriptionId '${{ steps.phase1.outputs.targetSubscriptionId }}' `
+            -TargetResourceGroup '${{ steps.phase1.outputs.targetResourceGroup }}' `
+            -TargetApimName '${{ steps.phase1.outputs.targetApimName }}' `
+            -OverrideFile '${{ steps.phase4.outputs.overrideFile }}' `
+            -LogLevel '${{ steps.settings.outputs.logLevel }}' `
+            -ExtractOutputDir $extractOutputDir
+
+      - name: Run Round-Trip Phase 8 (Teardown)
         if: always()
         shell: pwsh
         run: |
@@ -245,7 +262,7 @@ jobs:
           $location = '${{ steps.phase1.outputs.location }}'
           if ([string]::IsNullOrWhiteSpace($location)) { $location = '${{ inputs.location }}' }
 
-          ./tests/integration/all-resource-types/phases/run-phase7-teardown.ps1 `
+          ./tests/integration/all-resource-types/phases/run-phase8-teardown.ps1 `
             -SourceResourceGroup $sourceResourceGroup `
             -TargetResourceGroup $targetResourceGroup `
             -Location $location

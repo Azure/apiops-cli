@@ -2,7 +2,7 @@
 # Licensed under the MIT license.
 <#
 .SYNOPSIS
-    Master orchestrator for the 7-phase round-trip integration workflow.
+    Master orchestrator for the round-trip integration workflow.
 .DESCRIPTION
     Single entry point that runs the full round-trip sequence:
         1) deploy source + target APIM instances,
@@ -11,6 +11,7 @@
         4) generate target environment overrides,
         5) publish artifacts to target,
         6) compare source and target,
+        6b) validate --delete-unmatched behavior,
         7) teardown.
 
     Works both locally and in CI (writes to GITHUB_OUTPUT when available).
@@ -115,9 +116,10 @@ $phase3ValidateExtractScript = Join-Path $PSScriptRoot 'phases/run-phase3-valida
 $phase4CreateOverridesScript = Join-Path $PSScriptRoot 'phases/run-phase4-create-overrides.ps1'
 $phase5PublishScript = Join-Path $PSScriptRoot 'phases/run-phase5-publish.ps1'
 $phase6CompareScript = Join-Path $PSScriptRoot 'phases/run-phase6-compare.ps1'
-$phase7TeardownScript = Join-Path $PSScriptRoot 'phases/run-phase7-teardown.ps1'
+$phase7DeleteUnmatchedScript = Join-Path $PSScriptRoot 'phases/run-phase7-delete-unmatched.ps1'
+$phase8TeardownScript = Join-Path $PSScriptRoot 'phases/run-phase8-teardown.ps1'
 
-foreach ($requiredFile in @($phase1DeployScript, $phase2ExtractScript, $phase3ValidateExtractScript, $phase4CreateOverridesScript, $phase5PublishScript, $phase6CompareScript, $phase7TeardownScript)) {
+foreach ($requiredFile in @($phase1DeployScript, $phase2ExtractScript, $phase3ValidateExtractScript, $phase4CreateOverridesScript, $phase5PublishScript, $phase6CompareScript, $phase7DeleteUnmatchedScript, $phase8TeardownScript)) {
     if (-not (Test-Path $requiredFile)) {
         Write-Error "Required file not found: $requiredFile"
         exit 2
@@ -244,6 +246,24 @@ try {
     $global:LASTEXITCODE = 0
     & $phase6CompareScript @phase6Args
 
+    if ($LASTEXITCODE -ne 0) {
+        $exitCode = $LASTEXITCODE
+        exit $exitCode
+    }
+
+    # Phase 7: Validate delete-unmatched for revisioned APIs
+    $currentPhase = 'phase7-delete-unmatched'
+    $phase7DeleteUnmatchedArgs = @{
+        TargetResourceGroup = $TargetResourceGroup
+        TargetApimName      = $TargetApimName
+        TargetSubscriptionId = $TargetSubscriptionId
+        OverrideFile        = $overrideFile
+        LogLevel            = $LogLevel
+    }
+    Add-ArgumentIfSet -Hashtable $phase7DeleteUnmatchedArgs -Key 'ExtractOutputDir' -Value $extractOutputDirValue
+    $global:LASTEXITCODE = 0
+    & $phase7DeleteUnmatchedScript @phase7DeleteUnmatchedArgs
+
     $exitCode = $LASTEXITCODE
 }
 catch {
@@ -258,17 +278,17 @@ catch {
     }
 }
 finally {
-    # Phase 7: Teardown apim instances and supporting resources
-    $phase7Args = @{
+    # Phase 8: Teardown apim instances and supporting resources
+    $phase8Args = @{
         SourceResourceGroup = $SourceResourceGroup
         TargetResourceGroup = $TargetResourceGroup
         Location            = $Location
         SkipTeardown        = $SkipTeardown
     }
-    Add-ArgumentIfSet -Hashtable $phase7Args -Key 'SourceSubscriptionId' -Value $SourceSubscriptionId
-    Add-ArgumentIfSet -Hashtable $phase7Args -Key 'TargetSubscriptionId' -Value $TargetSubscriptionId
+    Add-ArgumentIfSet -Hashtable $phase8Args -Key 'SourceSubscriptionId' -Value $SourceSubscriptionId
+    Add-ArgumentIfSet -Hashtable $phase8Args -Key 'TargetSubscriptionId' -Value $TargetSubscriptionId
 
-    & $phase7TeardownScript @phase7Args
+    & $phase8TeardownScript @phase8Args
 }
 
 exit $exitCode

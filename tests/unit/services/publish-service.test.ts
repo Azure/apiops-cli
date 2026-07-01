@@ -526,6 +526,86 @@ describe('publish-service', () => {
       expect(result.totalDeletes).toBe(1);
     });
 
+    it('should delete API revisions before deleting the root API', async () => {
+      const client = createMockClient();
+      const store = createMockStore([]);
+
+      vi.mocked(computeDeleteActions).mockResolvedValue([
+        { type: ResourceType.Api, nameParts: ['orders-api'] },
+        { type: ResourceType.Api, nameParts: ['orders-api;rev=2'] },
+      ]);
+
+      const deleteOrder: string[] = [];
+      vi.mocked(client.deleteResource).mockImplementation(
+        async (_ctx, descriptor) => {
+          const apiName = descriptor.nameParts[0] ?? '';
+          deleteOrder.push(apiName);
+
+          if (apiName === 'orders-api') {
+            const revisionDeleted = deleteOrder.includes('orders-api;rev=2');
+            if (!revisionDeleted) {
+              throw new Error('Cannot delete the current revision of an API.');
+            }
+          }
+
+          return true;
+        }
+      );
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: true,
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runPublish(client, store, config);
+
+      expect(deleteOrder).toEqual(['orders-api;rev=2', 'orders-api']);
+      expect(result.totalDeletes).toBe(2);
+      expect(result.totalErrors).toBe(0);
+    });
+
+    it('should order API deletes deterministically across API families', async () => {
+      const client = createMockClient();
+      const store = createMockStore([]);
+
+      vi.mocked(computeDeleteActions).mockResolvedValue([
+        { type: ResourceType.Api, nameParts: ['products-api'] },
+        { type: ResourceType.Api, nameParts: ['orders-api'] },
+        { type: ResourceType.Api, nameParts: ['orders-api;rev=2'] },
+        { type: ResourceType.Api, nameParts: ['products-api;rev=2'] },
+      ]);
+
+      const deleteOrder: string[] = [];
+      vi.mocked(client.deleteResource).mockImplementation(
+        async (_ctx, descriptor) => {
+          deleteOrder.push(descriptor.nameParts[0] ?? '');
+          return true;
+        }
+      );
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: true,
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runPublish(client, store, config);
+
+      expect(deleteOrder).toEqual([
+        'orders-api;rev=2',
+        'orders-api',
+        'products-api;rev=2',
+        'products-api',
+      ]);
+      expect(result.totalDeletes).toBe(4);
+      expect(result.totalErrors).toBe(0);
+    });
+
     it('should output per-resource status lines', async () => {
       const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 

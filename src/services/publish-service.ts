@@ -705,47 +705,125 @@ async function deleteTier(
   context: ApimServiceContext,
   descriptors: ResourceDescriptor[]
 ): Promise<PublishActionResult[]> {
-  const tasks = descriptors.map((descriptor) => async () => {
-    try {
-      const deleted = await client.deleteResource(context, descriptor);
+  const apiDescriptors = descriptors.filter((d) => d.type === ResourceType.Api);
+  const nonApiDescriptors = descriptors.filter((d) => d.type !== ResourceType.Api);
 
-      return {
-        descriptor,
-        action: 'delete' as const,
-        status: deleted ? ('success' as const) : ('skipped' as const),
-      };
-    } catch (error) {
-      logger.error(
-        `Failed to delete ${buildResourceLabel(descriptor)}:`,
-        error
-      );
-      return {
-        descriptor,
-        action: 'delete' as const,
-        status: 'failed' as const,
-        error: error instanceof Error ? error : new Error(String(error)),
-      };
+  const results: PublishActionResult[] = [];
+
+  if (nonApiDescriptors.length > 0) {
+    const nonApiResults = await deleteDescriptorsInParallel(
+      client,
+      context,
+      nonApiDescriptors
+    );
+    results.push(...nonApiResults);
+  }
+
+  if (apiDescriptors.length > 0) {
+    const orderedApiDescriptors = orderApiDescriptorsForDelete(apiDescriptors);
+    const apiResults = await deleteDescriptorsSequentially(
+      client,
+      context,
+      orderedApiDescriptors
+    );
+    results.push(...apiResults);
+  }
+
+  return results;
+}
+
+function orderApiDescriptorsForDelete(
+  descriptors: ResourceDescriptor[]
+): ResourceDescriptor[] {
+  return [...descriptors].sort((a, b) => {
+    const aName = getNamePart(a.nameParts, 0);
+    const bName = getNamePart(b.nameParts, 0);
+    const aRoot = getApiRootName(aName);
+    const bRoot = getApiRootName(bName);
+
+    if (aRoot !== bRoot) {
+      return aRoot.localeCompare(bRoot);
     }
+
+    const aIsRevision = isApiRevisionName(aName);
+    const bIsRevision = isApiRevisionName(bName);
+
+    if (aIsRevision === bIsRevision) {
+      return aName.localeCompare(bName);
+    }
+
+    return aIsRevision ? -1 : 1;
   });
+}
+
+async function deleteDescriptorsSequentially(
+  client: IApimClient,
+  context: ApimServiceContext,
+  descriptors: ResourceDescriptor[]
+): Promise<PublishActionResult[]> {
+  const results: PublishActionResult[] = [];
+
+  for (const descriptor of descriptors) {
+    results.push(await deleteDescriptor(client, context, descriptor));
+  }
+
+  return results;
+}
+
+async function deleteDescriptorsInParallel(
+  client: IApimClient,
+  context: ApimServiceContext,
+  descriptors: ResourceDescriptor[]
+): Promise<PublishActionResult[]> {
+  const tasks = descriptors.map((descriptor) => async () =>
+    deleteDescriptor(client, context, descriptor)
+  );
 
   const taskResults = await runParallel(tasks, 5);
 
   return taskResults.map((tr, index) => {
     if (tr.status === 'fulfilled' && tr.value) {
       return tr.value;
-    } else {
-      const descriptor = descriptors[index];
-      if (!descriptor) {
-        throw new Error('No descriptor found for failed task');
-      }
-      return {
-        descriptor,
-        action: 'delete' as const,
-        status: 'failed' as const,
-        error: tr.reason || new Error('Unknown error'),
-      };
     }
+
+    const descriptor = descriptors[index];
+    if (!descriptor) {
+      throw new Error('No descriptor found for failed task');
+    }
+    return {
+      descriptor,
+      action: 'delete' as const,
+      status: 'failed' as const,
+      error: tr.reason || new Error('Unknown error'),
+    };
   });
+}
+
+async function deleteDescriptor(
+  client: IApimClient,
+  context: ApimServiceContext,
+  descriptor: ResourceDescriptor
+): Promise<PublishActionResult> {
+  try {
+    const deleted = await client.deleteResource(context, descriptor);
+
+    return {
+      descriptor,
+      action: 'delete' as const,
+      status: deleted ? ('success' as const) : ('skipped' as const),
+    };
+  } catch (error) {
+    logger.error(
+      `Failed to delete ${buildResourceLabel(descriptor)}:`,
+      error
+    );
+    return {
+      descriptor,
+      action: 'delete' as const,
+      status: 'failed' as const,
+      error: error instanceof Error ? error : new Error(String(error)),
+    };
+  }
 }
 
 /**

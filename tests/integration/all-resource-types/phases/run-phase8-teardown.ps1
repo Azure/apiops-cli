@@ -3,7 +3,7 @@
 #requires -Version 7.0
 <#
 .SYNOPSIS
-  Phase 7 — Tear down source and target APIM resource groups.
+  Phase 8 — Tear down source and target APIM resource groups.
 .DESCRIPTION
     Deletes the source and target resource groups, waits for the deletions to complete, and then purges any soft-deleted APIM instances in the specified location.
 
@@ -20,7 +20,7 @@
     Skips teardown when specified.
 
 .EXAMPLE
-    .\run-phase7-teardown.ps1 -SourceResourceGroup rg-src -TargetResourceGroup rg-tgt
+    .\run-phase8-teardown.ps1 -SourceResourceGroup rg-src -TargetResourceGroup rg-tgt
 #>
 
 [CmdletBinding()]
@@ -52,7 +52,7 @@ if ($SkipTeardown) {
     exit 0
 }
 
-Write-Host "🧹 PHASE 7 — Teardown"
+Write-Host "🧹 PHASE 8 — Teardown"
 
 $sourceApimName = $null
 $targetApimName = $null
