@@ -66,17 +66,6 @@ on:
         required: false
         type: string
         default: Verbose
-    secrets:
-      AZURE_CLIENT_ID:
-        required: true
-      AZURE_TENANT_ID:
-        required: true
-      AZURE_SUBSCRIPTION_ID:
-        required: true
-      APIM_PUBLISHER_EMAIL:
-        required: true
-      APIM_SKU:
-        required: false
 
 permissions:
   id-token: write
@@ -110,7 +99,18 @@ jobs:
 
       - run: npm ci && npm run build
 
-      - name: Resolve Workflow Settings
+      - name: Validate Required Secrets
+        shell: bash
+        run: |
+          missing=()
+          [[ -z "${{ secrets.AZURE_CLIENT_ID }}" ]] && missing+=("AZURE_CLIENT_ID")
+          [[ -z "${{ secrets.AZURE_TENANT_ID }}" ]] && missing+=("AZURE_TENANT_ID")
+          [[ -z "${{ secrets.AZURE_SUBSCRIPTION_ID }}" ]] && missing+=("AZURE_SUBSCRIPTION_ID")
+          [[ -z "${{ secrets.APIM_PUBLISHER_EMAIL }}" ]] && missing+=("APIM_PUBLISHER_EMAIL")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "::error::Missing required secrets: ${missing[*]}"
+            exit 1
+          fi
         id: settings
         shell: pwsh
         run: |

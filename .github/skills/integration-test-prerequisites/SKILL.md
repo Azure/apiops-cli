@@ -21,7 +21,7 @@ These workflows expect:
 - GitHub environment `integration-test` (shared by all integration workflows)
 - Azure identity with enough permissions to deploy resources and create role assignments in test resource groups
 
-The `release-tests.yml` orchestrator calls `ci.yml` (no Azure prereqs), then `integration-test.yml` and `integration-redact-secrets.yml` (both use the `integration-test` environment). Secrets are passed through from the orchestrator's repo-level secrets to the called workflows' environment.
+The `release-tests.yml` orchestrator calls `ci.yml` (no Azure prereqs), then `integration-test.yml` and `integration-redact-secrets.yml`. The called workflows access secrets directly from the `integration-test` environment — no secret pass-through from the orchestrator is needed.
 
 Preferred identity model: user-assigned managed identity (UAMI).
 
@@ -146,29 +146,11 @@ gh secret set APIM_PUBLISHER_EMAIL \
   --body "${APIM_PUBLISHER_EMAIL}"
 ```
 
-### 6) Set Repo-Level Secrets (for release-tests orchestrator)
+### 6) Verify Called Workflows Can Access Environment Secrets
 
-The `release-tests.yml` orchestrator passes secrets to called workflows via explicit `secrets:` mapping. Since the orchestrator itself does not declare an `environment:`, it reads from **repo-level** secrets. Set the same values at the repo level:
+The `release-tests.yml` orchestrator does **not** pass secrets to called workflows. Instead, the called workflows (`integration-test.yml`, `integration-redact-secrets.yml`) access secrets directly via their `environment: integration-test` declaration. Each called workflow includes a "Validate Required Secrets" step that fails fast with a clear error if any secret is missing.
 
-```bash
-gh secret set AZURE_CLIENT_ID \
-  --repo "${GITHUB_OWNER}/${GITHUB_REPO}" \
-  --body "${IDENTITY_CLIENT_ID}"
-
-gh secret set AZURE_TENANT_ID \
-  --repo "${GITHUB_OWNER}/${GITHUB_REPO}" \
-  --body "${TENANT_ID}"
-
-gh secret set AZURE_SUBSCRIPTION_ID \
-  --repo "${GITHUB_OWNER}/${GITHUB_REPO}" \
-  --body "${SUBSCRIPTION_ID}"
-
-gh secret set APIM_PUBLISHER_EMAIL \
-  --repo "${GITHUB_OWNER}/${GITHUB_REPO}" \
-  --body "${APIM_PUBLISHER_EMAIL}"
-```
-
-> **Note:** If you only have environment-level secrets without matching repo-level secrets, the `release-tests.yml` workflow will fail because `${{ secrets.* }}` in the orchestrator resolves from repo scope. The called workflows still use the `integration-test` environment for OIDC token issuance.
+No repo-level secrets are required — all secrets are scoped to the `integration-test` environment.
 
 ## Verification
 

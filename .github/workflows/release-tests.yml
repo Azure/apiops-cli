@@ -37,7 +37,6 @@ on:
         default: Verbose
 
 permissions:
-  id-token: write
   contents: read
 
 jobs:
@@ -53,11 +52,6 @@ jobs:
       sku: ${{ inputs.sku || 'StandardV2' }}
       location: ${{ inputs.location || 'centralus' }}
       log_level: ${{ inputs.log_level || 'Verbose' }}
-    secrets:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      APIM_PUBLISHER_EMAIL: ${{ secrets.APIM_PUBLISHER_EMAIL }}
 
   redact-secrets-integration:
     name: Redact Secrets Integration Test
@@ -67,8 +61,3 @@ jobs:
       sku: ${{ inputs.sku || 'StandardV2' }}
       location: ${{ inputs.location || 'centralus' }}
       log_level: ${{ inputs.log_level || 'Verbose' }}
-    secrets:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      APIM_PUBLISHER_EMAIL: ${{ secrets.APIM_PUBLISHER_EMAIL }}
