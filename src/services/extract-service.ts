@@ -29,7 +29,7 @@ import { extractWorkspaces, WorkspaceExtractionResult } from './workspace-extrac
 import {
   findTransitiveDependencies,
 } from './transitive-resolver.js';
-import { redactPolicySecrets, warnPolicySecretRedactions } from './secret-redactor.js';
+import { redactAndWarnPolicySecrets } from './secret-redactor.js';
 import { logger } from '../lib/logger.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
 import { EXIT_SUCCESS, EXIT_PARTIAL, EXIT_FATAL } from '../lib/exit-codes.js';
@@ -402,8 +402,7 @@ async function extractServicePolicy(
   const policyContent = properties?.value as string | undefined;
 
   if (policyContent) {
-    const { redactedContent, findings } = redactPolicySecrets(policyContent);
-    warnPolicySecretRedactions(descriptor, findings);
+    const redactedContent = redactAndWarnPolicySecrets(descriptor, policyContent);
     await store.writeContent(outputDir, descriptor, redactedContent, 'policy');
     result.totalExtracted++;
     result.extractedDescriptors.push(descriptor);

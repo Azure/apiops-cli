@@ -251,9 +251,25 @@ export function redactPolicySecrets(
 }
 
 /**
+ * Redact inline literal secrets in policy XML content and emit a warning log
+ * for every finding. This is the entry point services should use so that
+ * redaction and warning always happen together; the underlying
+ * {@link redactPolicySecrets} (pure, exported) and `warnPolicySecretRedactions`
+ * (private) helpers stay separate for testability.
+ */
+export function redactAndWarnPolicySecrets(
+  descriptor: ResourceDescriptor,
+  policyContent: string
+): string {
+  const { redactedContent, findings } = redactPolicySecrets(policyContent);
+  warnPolicySecretRedactions(descriptor, findings);
+  return redactedContent;
+}
+
+/**
  * Emit warning logs for policy secret redaction findings.
  */
-export function warnPolicySecretRedactions(
+function warnPolicySecretRedactions(
   descriptor: ResourceDescriptor,
   findings: PolicySecretFinding[]
 ): void {
