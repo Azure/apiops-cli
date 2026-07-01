@@ -42,7 +42,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
   ci:
@@ -52,6 +51,9 @@ jobs:
   all-types-integration:
     name: All-Types Integration Test
     needs: ci
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/test-round-trip.yml
     with:
       sku: ${{ inputs.sku || vars.DEFAULT_SKU || 'StandardV2' }}
@@ -61,6 +63,9 @@ jobs:
   redact-secrets-integration:
     name: Redact Secrets Integration Test
     needs: all-types-integration
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/test-redact-secrets.yml
     with:
       sku: ${{ inputs.sku || vars.DEFAULT_SKU || 'StandardV2' }}
