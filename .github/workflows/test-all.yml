@@ -52,7 +52,7 @@ jobs:
   all-types-integration:
     name: All-Types Integration Test
     needs: ci
-    uses: ./.github/workflows/integration-test.yml
+    uses: ./.github/workflows/test-all-types.yml
     with:
       sku: ${{ inputs.sku || vars.DEFAULT_SKU || 'StandardV2' }}
       location: ${{ inputs.location || vars.DEFAULT_LOCATION || 'centralus' }}
@@ -61,7 +61,7 @@ jobs:
   redact-secrets-integration:
     name: Redact Secrets Integration Test
     needs: all-types-integration
-    uses: ./.github/workflows/integration-redact-secrets.yml
+    uses: ./.github/workflows/test-redact-secrets.yml
     with:
       sku: ${{ inputs.sku || vars.DEFAULT_SKU || 'StandardV2' }}
       location: ${{ inputs.location || vars.DEFAULT_LOCATION || 'centralus' }}
