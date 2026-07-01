@@ -27,7 +27,7 @@ apiops publish \
 
 If you ran `apiops init`, a Copilot prompt file was generated at `.github/prompts/apiops-configure-overrides.prompt.md`. Open it in VS Code and ask GitHub Copilot to help you configure environment overrides — it will guide you through setting up environment-specific values interactively.
 
-If you didn't run `apiops init`, you can copy the prompt directly from the repository: [`src/templates/copilot/configure-overrides-prompt.md`](https://github.com/Azure/apiops-cli/blob/main/src/templates/copilot/configure-overrides-prompt.md). Save it as `.github/prompts/apiops-configure-overrides.prompt.md` in your repo and open it in VS Code.
+If you didn't run `apiops init`, see the [Prompt files guide](./prompt-files.md) for instructions on downloading and setting up prompt files manually.
 
 ## IDE Autocompletion with JSON Schema
 
