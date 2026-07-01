@@ -110,21 +110,6 @@ jobs:
             echo "::error::Missing required secrets: ${missing[*]}"
             exit 1
           fi
-        id: settings
-        shell: pwsh
-        run: |
-          $logLevel = '${{ inputs.log_level }}'
-          if ([string]::IsNullOrWhiteSpace($logLevel)) { $logLevel = 'Verbose' }
-          if ($logLevel -notin @('Info', 'Verbose', 'Debug')) {
-            throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
-          }
-
-          $skuName = '${{ secrets.APIM_SKU }}'
-          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = '${{ inputs.sku }}' }
-          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = 'StandardV2' }
-
-          "logLevel=$logLevel" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "skuName=$skuName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Azure Login
         uses: azure/login@v3
@@ -144,9 +129,9 @@ jobs:
             TargetApimName     = '${{ env.TARGET_APIM }}'
             SourceSubscriptionId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}'
             TargetSubscriptionId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}'
-            SkuName            = '${{ steps.settings.outputs.skuName }}'
+            SkuName            = '${{ inputs.sku }}'
             Location           = '${{ inputs.location }}'
-            LogLevel           = '${{ steps.settings.outputs.logLevel }}'
+            LogLevel           = '${{ inputs.log_level }}'
             PublisherEmail     = '${{ secrets.APIM_PUBLISHER_EMAIL || 'apim-integration-test@contoso.com' }}'
           }
           ./tests/integration/all-resource-types/phases/run-phase1-deploy.ps1 @params
@@ -173,7 +158,7 @@ jobs:
             -SourceSubscriptionId '${{ steps.phase1.outputs.sourceSubscriptionId }}' `
             -SourceResourceGroup '${{ steps.phase1.outputs.sourceResourceGroup }}' `
             -SourceApimName '${{ steps.phase1.outputs.sourceApimName }}' `
-            -LogLevel '${{ steps.settings.outputs.logLevel }}' `
+            -LogLevel '${{ inputs.log_level }}' `
             -ExtractOutputDir './extracted-artifacts'
 
       - name: Run Round-Trip Phase 3 (Validate Extract)
@@ -185,7 +170,7 @@ jobs:
 
           ./tests/integration/all-resource-types/phases/run-phase3-validate-extract.ps1 `
             -SkuName $skuName `
-            -LogLevel '${{ steps.settings.outputs.logLevel }}' `
+            -LogLevel '${{ inputs.log_level }}' `
             -ExtractOutputDir $extractOutputDir
 
       - name: Run Round-Trip Phase 4 (Create Overrides)
@@ -198,7 +183,7 @@ jobs:
           ./tests/integration/all-resource-types/phases/run-phase4-create-overrides.ps1 `
             -TargetSubscriptionId '${{ steps.phase1.outputs.targetSubscriptionId }}' `
             -TargetResourceGroup '${{ steps.phase1.outputs.targetResourceGroup }}' `
-            -LogLevel '${{ steps.settings.outputs.logLevel }}' `
+            -LogLevel '${{ inputs.log_level }}' `
             -ExtractOutputDir $extractOutputDir
 
       - name: Run Round-Trip Phase 5 (Publish)
@@ -215,7 +200,7 @@ jobs:
             -TargetResourceGroup '${{ steps.phase1.outputs.targetResourceGroup }}' `
             -TargetApimName '${{ steps.phase1.outputs.targetApimName }}' `
             -OverrideFile '${{ steps.phase4.outputs.overrideFile }}' `
-            -LogLevel '${{ steps.settings.outputs.logLevel }}' `
+            -LogLevel '${{ inputs.log_level }}' `
             -ExtractOutputDir $extractOutputDir
 
       - name: Run Round-Trip Phase 6 (Compare)
@@ -229,7 +214,7 @@ jobs:
             -TargetSubscriptionId '${{ steps.phase1.outputs.targetSubscriptionId }}' `
             -TargetResourceGroup '${{ steps.phase1.outputs.targetResourceGroup }}' `
             -TargetApimName '${{ steps.phase1.outputs.targetApimName }}' `
-            -LogLevel '${{ steps.settings.outputs.logLevel }}'
+            -LogLevel '${{ inputs.log_level }}'
 
       - name: Run Round-Trip Phase 7 (Teardown)
         if: always()
