@@ -67,7 +67,7 @@ Resources scoped to a specific API.
 | ApiWiki | `/apis/{name}/wikis/default` | `apis/{0}` | `wiki.md` | Markdown documentation page for an API |
 | GraphQLResolver | `/apis/{name}/resolvers/{resolver}` | `apis/{0}/resolvers/{1}` | `resolverInformation.json` | GraphQL field resolver configuration |
 | GraphQLResolverPolicy | `/apis/{name}/resolvers/{resolver}/policies/policy` | `apis/{0}/resolvers/{1}` | `policy.xml` | Policy applied to a GraphQL resolver |
-| McpServer | `/apis/{name}/mcpServers/default` | `apis/{0}` | `mcpServerInformation.json` | MCP (Model Context Protocol) server linked to an API |
+| McpServer | `/apis/{name}/mcpServers/default` | `apis/{0}` | _embedded in `apiInformation.json`_ | MCP (Model Context Protocol) server linked to an API |
 
 ## Gateway Resources
 

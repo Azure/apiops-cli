@@ -27,7 +27,6 @@ apim-artifacts/
 │       ├── policy.xml                      # API-level policy
 │       ├── specification.yaml              # OpenAPI spec (if applicable)
 │       ├── wiki.md                         # API wiki (if exists)
-│       ├── mcpServerInformation.json       # MCP server config (if exists)
 │       ├── operations/
 │       │   └── get-pets/
 │       │       └── policy.xml              # Operation-level policy
@@ -151,7 +150,7 @@ All 34 APIM resource types and their artifact mappings:
 | ApiWiki | `apis/{api}` | `wiki.md` |
 | GraphQLResolver | `apis/{api}/resolvers/{resolver}` | `resolverInformation.json` |
 | GraphQLResolverPolicy | `apis/{api}/resolvers/{resolver}` | `policy.xml` |
-| McpServer | `apis/{api}` | `mcpServerInformation.json` |
+| McpServer | `apis/{api}` | _embedded in `apiInformation.json`_ |
 
 ### Gateway Child Resources
 
