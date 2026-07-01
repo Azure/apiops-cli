@@ -104,8 +104,8 @@ describe('init-service', () => {
 
       const result = await initService.run(config);
 
-      expect(result.pipelines).toContain('.github/workflows/run-apim-extractor.yml');
-      expect(result.pipelines).toContain('.github/workflows/run-apim-publisher.yml');
+      expect(result.pipelines).toContain('.github/workflows/run-apiops-extractor.yml');
+      expect(result.pipelines).toContain('.github/workflows/run-apiops-publisher.yml');
     });
 
     it('should generate Azure DevOps pipelines when ciProvider is azure-devops', async () => {
@@ -121,8 +121,8 @@ describe('init-service', () => {
 
       const result = await initService.run(config);
 
-      expect(result.pipelines).toContain('.azdo/pipelines/run-apim-extractor.yml');
-      expect(result.pipelines).toContain('.azdo/pipelines/run-apim-publisher.yml');
+      expect(result.pipelines).toContain('.azdo/pipelines/run-apiops-extractor.yml');
+      expect(result.pipelines).toContain('.azdo/pipelines/run-apiops-publisher.yml');
     });
 
     it('should generate filter configuration file', async () => {
@@ -202,7 +202,7 @@ describe('init-service', () => {
       // Mock file exists for extract workflow and the CLI tarball
       vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
-        if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('run-apim-extractor.yml')) {
+        if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('run-apiops-extractor.yml')) {
           return Promise.resolve();
         }
         throw new Error('ENOENT');
@@ -227,7 +227,7 @@ describe('init-service', () => {
       // Mock file exists for extract workflow and the CLI tarball
       vi.mocked(fs.access).mockImplementation(async (filePath: PathLike) => {
         const p = filePath.toString();
-        if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('run-apim-extractor.yml')) {
+        if (p === TEST_CLI_PACKAGE_RESOLVED || p.includes('run-apiops-extractor.yml')) {
           return Promise.resolve();
         }
         throw new Error('ENOENT');
@@ -310,7 +310,7 @@ describe('init-service', () => {
       await initService.run(config);
 
       const guideCalls = vi.mocked(fs.writeFile).mock.calls.filter(
-        (call) => call[0] === path.join('/test', 'IDENTITY-SETUP-GITHUB.md')
+        (call) => call[0] === path.join('/test', 'APIOPS-WORKFLOW-IDENTITY-SETUP.md')
       );
       expect(guideCalls).toHaveLength(1);
     });
@@ -329,7 +329,7 @@ describe('init-service', () => {
       await initService.run(config);
 
       const guideCalls = vi.mocked(fs.writeFile).mock.calls.filter(
-        (call) => call[0] === path.join('/test', 'IDENTITY-SETUP-AZDO.md')
+        (call) => call[0] === path.join('/test', 'APIOPS-PIPELINE-IDENTITY-SETUP.md')
       );
       expect(guideCalls).toHaveLength(1);
     });
@@ -347,14 +347,15 @@ describe('init-service', () => {
 
       const result = await initService.run(config);
 
-      expect(result.configs).toContain('.github/prompts/apiops-setup-identity.prompt.md');
+      expect(result.configs).toContain('.github/prompts/apiops-setup-workflow-identity.prompt.md');
       const promptCalls = vi.mocked(fs.writeFile).mock.calls.filter(
-        (call) => call[0] === path.join('/test', '.github/prompts/apiops-setup-identity.prompt.md')
+        (call) => call[0] === path.join('/test', '.github/prompts/apiops-setup-workflow-identity.prompt.md')
       );
       expect(promptCalls).toHaveLength(1);
       const content = promptCalls[0][1] as string;
       expect(content).toContain('Setup GitHub Actions Identity');
       expect(content).toContain('gh secret set');
+      expect(content).toContain('pull request creation automatically');
     });
 
     it('should generate Copilot configuration prompts for GitHub Actions', async () => {
@@ -399,14 +400,15 @@ describe('init-service', () => {
 
       const result = await initService.run(config);
 
-      expect(result.configs).toContain('.github/prompts/apiops-setup-identity.prompt.md');
+      expect(result.configs).toContain('.github/prompts/apiops-setup-pipeline-identity.prompt.md');
       const promptCalls = vi.mocked(fs.writeFile).mock.calls.filter(
-        (call) => call[0] === path.join('/test', '.github/prompts/apiops-setup-identity.prompt.md')
+        (call) => call[0] === path.join('/test', '.github/prompts/apiops-setup-pipeline-identity.prompt.md')
       );
       expect(promptCalls).toHaveLength(1);
       const content = promptCalls[0][1] as string;
       expect(content).toContain('Setup Azure DevOps Identity for APIOps');
       expect(content).toContain('az devops service-endpoint create --service-endpoint-configuration');
+      expect(content).toContain('Build Service identity');
     });
 
     it('should detect conflicts for Copilot configuration prompts', async () => {

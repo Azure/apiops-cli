@@ -9,142 +9,86 @@ import { identityGuideService } from '../../../src/services/identity-guide-servi
 
 describe('identity-guide-service', () => {
   describe('generateGitHubActionsGuide', () => {
-    it('should include subscription ID in guide', () => {
-      const guide = identityGuideService.generateGitHubActionsGuide(
-        'sub-12345',
-        'my-rg',
-        ['dev', 'prod']
-      );
-      expect(guide).toContain('sub-12345');
+    it('should return static GitHub Actions guide content', () => {
+      const guide = identityGuideService.generateGitHubActionsGuide();
+      expect(guide).toContain('APIOps GitHub Actions identity setup guide');
     });
 
-    it('should include resource group in guide', () => {
-      const guide = identityGuideService.generateGitHubActionsGuide(
-        'sub-12345',
-        'my-rg',
-        ['dev']
-      );
-      expect(guide).toContain('my-rg');
+    it('should mention the Copilot prompt file and UI flow', () => {
+      const guide = identityGuideService.generateGitHubActionsGuide();
+      expect(guide).toContain('.github/prompts/apiops-setup-workflow-identity.prompt.md');
+      expect(guide).toContain('Azure portal');
+      expect(guide).toContain('GitHub web UI');
     });
 
-    it('should include service principal creation steps', () => {
-      const guide = identityGuideService.generateGitHubActionsGuide(
-        'sub-12345',
-        'my-rg',
-        ['dev']
-      );
-      expect(guide).toContain('Create Service Principal');
-      expect(guide).toContain('az ad app create');
-      expect(guide).toContain('az ad sp create');
+    it('should explain the GitHub identity distinction', () => {
+      const guide = identityGuideService.generateGitHubActionsGuide();
+      expect(guide).toContain('GITHUB_TOKEN');
+      expect(guide).toContain('only for Azure and APIM access');
     });
 
-    it('should include RBAC role assignment steps', () => {
-      const guide = identityGuideService.generateGitHubActionsGuide(
-        'sub-12345',
-        'my-rg',
-        ['dev']
-      );
-      expect(guide).toContain('Assign RBAC Roles');
+    it('should include portal-based Azure access steps', () => {
+      const guide = identityGuideService.generateGitHubActionsGuide();
       expect(guide).toContain('API Management Service Contributor');
-      expect(guide).toContain('az role assignment create');
+      expect(guide).toContain('Access control (IAM)');
+      expect(guide).toContain('Federated credentials');
     });
 
-    it('should include federated credentials setup', () => {
-      const guide = identityGuideService.generateGitHubActionsGuide(
-        'sub-12345',
-        'my-rg',
-        ['dev']
-      );
-      expect(guide).toContain('Configure Federated Credentials');
-      expect(guide).toContain('az ad app federated-credential create');
-      expect(guide).toContain('token.actions.githubusercontent.com');
+    it('should include documentation links', () => {
+      const guide = identityGuideService.generateGitHubActionsGuide();
+      expect(guide).toContain('https://learn.microsoft.com/');
+      expect(guide).toContain('https://docs.github.com/');
     });
 
-    it('should include GitHub secrets configuration', () => {
-      const guide = identityGuideService.generateGitHubActionsGuide(
-        'sub-12345',
-        'my-rg',
-        ['dev']
-      );
-      expect(guide).toContain('Configure GitHub Secrets');
-      expect(guide).toContain('AZURE_CLIENT_ID');
-      expect(guide).toContain('AZURE_TENANT_ID');
-      expect(guide).toContain('AZURE_SUBSCRIPTION_ID');
-    });
-
-    it('should include environment-specific secrets for each environment', () => {
-      const guide = identityGuideService.generateGitHubActionsGuide(
-        'sub-12345',
-        'my-rg',
-        ['dev', 'staging', 'prod']
-      );
-      expect(guide).toContain('dev environment');
-      expect(guide).toContain('staging environment');
-      expect(guide).toContain('prod environment');
-      expect(guide).toContain('APIM_RESOURCE_GROUP_DEV');
-      expect(guide).toContain('APIM_RESOURCE_GROUP_STAGING');
-      expect(guide).toContain('APIM_RESOURCE_GROUP_PROD');
+    it('should describe environment secrets generically', () => {
+      const guide = identityGuideService.generateGitHubActionsGuide();
+      expect(guide).toContain('APIM_RESOURCE_GROUP_<ENV>');
+      expect(guide).toContain('APIM_SERVICE_NAME_<ENV>');
+      expect(guide).toContain('For each environment');
     });
 
     it('should include security notes', () => {
-      const guide = identityGuideService.generateGitHubActionsGuide(
-        'sub-12345',
-        'my-rg',
-        ['dev']
-      );
+      const guide = identityGuideService.generateGitHubActionsGuide();
       expect(guide).toContain('Security Notes');
       expect(guide).toContain('least-privilege');
     });
 
-    it('should create federated credential for each environment', () => {
-      const guide = identityGuideService.generateGitHubActionsGuide(
-        'sub-12345',
-        'my-rg',
-        ['dev', 'prod']
-      );
-      expect(guide).toContain('github-env-dev');
-      expect(guide).toContain('github-env-prod');
-      expect(guide).toContain('environment:dev');
-      expect(guide).toContain('environment:prod');
-    });
-
-    it('should render all template placeholders', () => {
-      const guide = identityGuideService.generateGitHubActionsGuide(
-        'sub-12345',
-        'my-rg',
-        ['dev']
-      );
-      expect(guide).not.toContain('{{');
-      expect(guide).not.toContain('}}');
+    it('should not contain any template placeholders', () => {
+      const guide = identityGuideService.generateGitHubActionsGuide();
+      expect(guide).not.toMatch(/\{\{[^}]+\}\}/);
     });
   });
 
   describe('generateAzureDevOpsGuide', () => {
-    it('should ask for per-environment subscription and resource details', () => {
-      const guide = identityGuideService.generateAzureDevOpsGuide(['dev', 'prod']);
-      expect(guide).toContain('APIM_SUBSCRIPTION_<ENV_UPPER>');
-      expect(guide).toContain('APIM_RG_<ENV_UPPER>');
-      expect(guide).toContain('APIM_NAME_<ENV_UPPER>');
+    it('should return static Azure DevOps guide content', () => {
+      const guide = identityGuideService.generateAzureDevOpsGuide();
+      expect(guide).toContain('Identity setup guide for APIOps extract and publish Azure DevOps Pipelines');
     });
 
-    it('should create non-suffixed variable groups per environment', () => {
-      const guide = identityGuideService.generateAzureDevOpsGuide(['dev', 'prod']);
-      expect(guide).toContain('--name "apim-$env"');
-      expect(guide).toContain('APIM_RESOURCE_GROUP=');
-      expect(guide).toContain('APIM_SERVICE_NAME=');
-      expect(guide).toContain('AZURE_SUBSCRIPTION_ID=');
+    it('should mention the Copilot prompt file and UI flow', () => {
+      const guide = identityGuideService.generateAzureDevOpsGuide();
+      expect(guide).toContain('.github/prompts/apiops-setup-pipeline-identity.prompt.md');
+      expect(guide).toContain('Azure DevOps');
+      expect(guide).toContain('Azure portal');
     });
 
-    it('should render environment arrays for PowerShell and Bash', () => {
-      const guide = identityGuideService.generateAzureDevOpsGuide(['dev', 'prod']);
-      expect(guide).toContain('$ENVIRONMENTS = @("dev", "prod")');
-      expect(guide).toContain('ENVIRONMENTS=("dev" "prod")');
+    it('should explain the Azure DevOps identity distinction', () => {
+      const guide = identityGuideService.generateAzureDevOpsGuide();
+      expect(guide).toContain('Build Service identity');
+      expect(guide).toContain('separate from the Azure app registration');
+      expect(guide).toContain('Create pull request');
     });
 
-    it('should render all template placeholders', () => {
-      const guide = identityGuideService.generateAzureDevOpsGuide(['dev']);
+    it('should describe service connections and variable groups generically', () => {
+      const guide = identityGuideService.generateAzureDevOpsGuide();
+      expect(guide).toContain('AZURE_SERVICE_CONNECTION_<ENV>');
+      expect(guide).toContain('apim-<environment>');
+      expect(guide).toContain('For each environment');
+    });
+
+    it('should not contain any template placeholders', () => {
+      const guide = identityGuideService.generateAzureDevOpsGuide();
       expect(guide).not.toMatch(/\{\{[^}]+\}\}/);
     });
-
   });
 });

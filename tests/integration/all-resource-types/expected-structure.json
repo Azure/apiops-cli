@@ -614,15 +614,13 @@
         },
         {
           "name": "src-mcp-todos",
-          "files": ["apiInformation.json", "mcpServerInformation.json", "policy.xml"],
+          "files": ["apiInformation.json", "policy.xml"],
           "spotChecks": {
             "apiInformation.json": {
               "properties.displayName": "KS MCP Todos Server",
               "properties.path": "ks/mcp-todos",
               "properties.type": "mcp",
-              "properties.subscriptionRequired": false
-            },
-            "mcpServerInformation.json": {
+              "properties.subscriptionRequired": false,
               "properties.mcpProperties.endpoints.mcp.uriTemplate": "/mcp",
               "properties.mcpTools": "exists"
             }

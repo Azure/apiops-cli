@@ -83,18 +83,18 @@ export function createInitCommand(): Command {
         generatedFiles.directories.forEach((dir) => logger.info(`  - ${dir.startsWith('./') ? dir : './' + dir}`));
 
         // Determine which CI provider was actually used by checking generated files
-        const isGitHub = allFiles.some((f) => f.includes('IDENTITY-SETUP-GITHUB.md'));
+        const isGitHub = allFiles.some((f) => f.includes('APIOPS-WORKFLOW-IDENTITY-SETUP.md'));
 
         logger.info('\nNext steps:');
         logger.info('  1. Review and customize the generated configuration files');
         logger.info('  2. Commit the generated files to your repository');
         logger.info('  3. Set up CI/CD identity authentication:');
         if (isGitHub) {
-          logger.info('     - Follow ./IDENTITY-SETUP-GITHUB.md for manual setup, OR');
-          logger.info('     - Open ./.github/prompts/apiops-setup-identity.prompt.md with GitHub Copilot for guided setup');
+          logger.info('     - Follow APIOPS-WORKFLOW-IDENTITY-SETUP.md for manual setup, OR');
+          logger.info('     - Use github/prompts/apiops-setup-workflow-identity.prompt.md prompt file with GitHub Copilot for guided setup');
         } else {
-          logger.info('     - Follow ./IDENTITY-SETUP-AZDO.md for manual setup, OR');
-          logger.info('     - Open ./.github/prompts/apiops-setup-identity.prompt.md with GitHub Copilot for guided setup');
+          logger.info('     - Follow ./APIOPS-PIPELINE-IDENTITY-SETUP.md for manual setup, OR');
+          logger.info('     - Open ./.github/prompts/apiops-setup-pipeline-identity.prompt.md with GitHub Copilot for guided setup');
         }
         logger.info('');
       } catch (error) {

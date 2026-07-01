@@ -78,27 +78,28 @@ In interactive mode (the default when running in a terminal), `apiops init` prom
 
 | File | Purpose |
 |------|---------|
-| `.github/workflows/run-apim-extractor.yml` | Workflow to extract APIM artifacts |
-| `.github/workflows/run-apim-publisher.yml` | Workflow to publish artifacts to APIM |
+| `.github/workflows/run-apiops-extractor.yml` | Workflow to extract APIM artifacts |
+| `.github/workflows/run-apiops-publisher.yml` | Workflow to publish artifacts to APIM |
 | `configuration.extractor.yaml` | Sample filter configuration for extraction |
 | `configuration.{env}.yaml` | Override templates per environment (e.g., `configuration.dev.yaml`, `configuration.prod.yaml`) |
-| `IDENTITY-SETUP-GITHUB.md` | Step-by-step guide for configuring federated credentials |
+| `.github/prompts/apiops-setup-workflow-identity.prompt.md` | Copilot prompt for GitHub Actions identity setup |
+| `APIOPS-WORKFLOW-IDENTITY-SETUP.md` | Step-by-step guide for configuring GitHub Actions Azure access and workflow identity |
 
 ### Azure DevOps (`--ci azure-devops`)
 
 | File | Purpose |
 |------|---------|
-| `.azdo/pipelines/run-apim-extractor.yml` | Pipeline to extract APIM artifacts |
-| `.azdo/pipelines/run-apim-publisher.yml` | Pipeline to publish artifacts to APIM |
+| `.azdo/pipelines/run-apiops-extractor.yml` | Pipeline to extract APIM artifacts |
+| `.azdo/pipelines/run-apiops-publisher.yml` | Pipeline to publish artifacts to APIM |
 | `configuration.extractor.yaml` | Sample filter configuration for extraction |
 | `configuration.{env}.yaml` | Override templates per environment |
-| `IDENTITY-SETUP-AZDO.md` | Step-by-step guide for configuring service connections |
+| `.github/prompts/apiops-setup-pipeline-identity.prompt.md` | Copilot prompt for Azure DevOps identity setup |
+| `APIOPS-PIPELINE-IDENTITY-SETUP.md` | Step-by-step guide for configuring Azure DevOps pipeline identity and repo permissions |
 
 ### Both platforms
 
 | File | Purpose |
 |------|---------|
-| `.github/prompts/apiops-setup-identity.prompt.md` | Copilot prompt for identity setup |
 | `.github/prompts/apiops-configure-filter.prompt.md` | Copilot prompt for creating extraction filter files |
 | `.github/prompts/apiops-configure-overrides.prompt.md` | Copilot prompt for creating environment override files |
 | `<artifact-dir>/` | Empty artifact directory (default: `./apim-artifacts`) |
@@ -118,7 +119,7 @@ If you pass `--cli-package <path>`, the tarball is copied into a `.apiops/` dire
 
 ## Next steps after init
 
-1. **Set up identity** — Follow the generated `IDENTITY-SETUP-*.md` guide to configure Azure credentials for your CI/CD platform. Or use the `.github/prompts/apiops-setup-identity.prompt.md` Copilot prompt.
+1. **Set up identity** — Follow the generated `APIOPS-*-IDENTITY-SETUP.md` guide or provider-specific Copilot prompt to configure Azure credentials for your CI/CD platform.
 2. **Extract your first snapshot** — Run [`apiops extract`](./extract.md) to pull your current APIM configuration into the artifact directory.
 3. **Configure filters** — Edit `configuration.extractor.yaml` to control which resources are extracted. Use the `.github/prompts/apiops-configure-filter.prompt.md` Copilot prompt for guided setup.
 4. **Commit and push** — Check the generated files into version control.

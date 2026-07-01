@@ -162,11 +162,11 @@ This generates:
 | File | Purpose |
 |------|---------|
 | `package.json` | Declares the CLI as a dependency |
-| `pipelines/run-extractor.yaml` | Extract pipeline |
-| `pipelines/run-publisher.yaml` | Publish pipeline |
+| `.azdo/pipelines/run-apiops-extractor.yml` | Extract pipeline |
+| `.azdo/pipelines/run-apiops-publisher.yml` | Publish pipeline |
 | `configuration.*.yaml` | Override templates |
 
-Follow the remaining instructions listed in created `IDENTITY-SETUP-AZDO.md` or run `/apiops-setup-identity` prompt. This creates the necessary variable groups and and service connections.
+Follow the remaining instructions listed in created `APIOPS-PIPELINE-IDENTITY-SETUP.md` or run `/apiops-setup-pipeline-identity` prompt. This creates the necessary variable groups and service connections.
 
 ### 2.2 Generate the Lock File
 
@@ -178,7 +178,7 @@ This creates `package-lock.json`. Commit it — the lock file is **required** fo
 
 ### 2.3 Modify Pipelines for Air-Gapped Operation
 
-The generated pipelines (`pipelines/run-extractor.yaml` and `pipelines/run-publisher.yaml`) need the following edits:
+The generated pipelines (`.azdo/pipelines/run-apiops-extractor.yml` and `.azdo/pipelines/run-apiops-publisher.yml`) need the following edits:
 
 | Edit | What to Change |
 |------|----------------|
@@ -207,8 +207,8 @@ Commit the files required to run the local-registry workflow on self-hosted agen
 | `.npmrc` | Points npm to the local Azure Artifacts feed (`registry=...`, `always-auth=true`). |
 | `package.json` | Declares the CLI dependency. |
 | `package-lock.json` | Required for deterministic installs with `npm ci`. |
-| `pipelines/run-extractor.yaml` | Azure DevOps extract pipeline definition. |
-| `pipelines/run-publisher.yaml` | Azure DevOps publish pipeline definition. |
+| `.azdo/pipelines/run-apiops-extractor.yml` | Azure DevOps extract pipeline definition. |
+| `.azdo/pipelines/run-apiops-publisher.yml` | Azure DevOps publish pipeline definition. |
 | `configuration.*.yaml` | Generated environment override templates. |
 
 ```bash
@@ -216,8 +216,8 @@ git add \
     .npmrc \
     package.json \
     package-lock.json \
-    pipelines/run-extractor.yaml \
-    pipelines/run-publisher.yaml \
+    .azdo/pipelines/run-apiops-extractor.yml \
+    .azdo/pipelines/run-apiops-publisher.yml \
     configuration.*.yaml
 git commit -m "chore: commit local-registry apiops bootstrap files"
 git push
@@ -245,7 +245,7 @@ Verify the following:
 
 ## 4 - Finish `apiops init` for pipeline
 
-If not already done, while on the air-gapped network, follow the remaining instructions listed in created `IDENTITY-SETUP-AZDO.md`. This creates the necessary variable groups and and service connections.
+If not already done, while on the air-gapped network, follow the remaining instructions listed in created `APIOPS-PIPELINE-IDENTITY-SETUP.md`. This creates the necessary variable groups and service connections.
 
 ---
 
