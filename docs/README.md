@@ -66,6 +66,7 @@ docs/
 │   ├── multi-team-workflows.md        — Selective extraction, CODEOWNERS
 │   ├── code-first-workflow.md         — IDE → git → CI/CD → APIM
 │   ├── token-substitution.md          — Pipeline token/placeholder substitution
+│   ├── prompt-files.md                — Copilot prompt files for APIOps tasks
 │   └── migration-from-v1.md           — Migrate from Azure/apiops toolkit
 ├── ci-cd/
 │   ├── github-actions.md              — GitHub Actions integration

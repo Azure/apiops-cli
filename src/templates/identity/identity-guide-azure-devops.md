@@ -1,164 +1,128 @@
-# Azure DevOps Identity Setup Guide
+# Identity setup guide for APIOps extract and publish Azure DevOps Pipelines
 
-{{AZURE_DEVOPS_CORE_STEPS}}
+> Prefer an automated walkthrough? Open `.github/prompts/apiops-setup-pipeline-identity.prompt.md` in VS Code with GitHub Copilot and ask Copilot to guide or automate the setup for you.
 
-## Step 10: Enable Pipeline Contributions
+> **Important identity distinction:** In Azure DevOps, the Azure app registration/service principal is for Azure and APIM access only. Repository contributions and pull request creation come from the project **Build Service identity**, which must be granted repository permissions separately.
 
-Grant the Build Service permission to contribute to the repository. This allows pipelines to push commits (e.g., extracted API artifacts).
+## Before you start
 
-First, get the project and repository IDs:
+- Access to the **Azure portal**
+- Access to the **Azure DevOps web portal**
+- Permission to create or manage app registrations in Microsoft Entra ID
+- Permission to create Azure DevOps service connections, variable groups, environments, and pipelines
 
-**PowerShell:**
-```powershell
-$PROJECT_ID = az devops project show --project $AZDO_PROJECT --query id -o tsv
-$REPO_NAME = $AZDO_PROJECT  # Change if your repo name differs from project name
-$REPO_ID = az repos show --repository $REPO_NAME --query id -o tsv
-```
+Helpful documentation:
 
-**Git Bash:**
-```bash
-PROJECT_ID=$(az devops project show --project "$AZDO_PROJECT" --query id -o tsv)
-REPO_NAME="$AZDO_PROJECT"  # Change if your repo name differs from project name
-REPO_ID=$(az repos show --repository "$REPO_NAME" --query id -o tsv)
-```
+- [Create and manage app registrations in the Azure portal](https://learn.microsoft.com/entra/identity-platform/quickstart-register-app)
+- [Assign Azure roles using the Azure portal](https://learn.microsoft.com/azure/role-based-access-control/role-assignments-portal)
+- [Create Azure Resource Manager service connections with workload identity federation](https://learn.microsoft.com/azure/devops/pipelines/library/connect-to-azure)
+- [Create variable groups in Azure Pipelines](https://learn.microsoft.com/azure/devops/pipelines/library/variable-groups)
+- [Set repository permissions in Azure DevOps](https://learn.microsoft.com/azure/devops/repos/git/set-git-repository-permissions)
 
-Next, find the Build Service identity descriptor:
+## Step 1: Review the generated pipeline files in your repo
 
-**PowerShell:**
-```powershell
-$GRAPH_USERS = az devops invoke --area graph --resource users --query-parameters 'api-version=7.1-preview.1' --http-method GET -o json | ConvertFrom-Json
-$BUILD_SERVICE_NAME = "$AZDO_PROJECT Build Service ($ORG_NAME)"
-$BUILD_SERVICE_DESCRIPTOR = ($GRAPH_USERS.value | Where-Object { $_.displayName -eq $BUILD_SERVICE_NAME }).descriptor
-```
+1. Commit and push the generated files to your Azure DevOps repository.
+2. Confirm these files are available in the repo browser:
+   - `.azdo/pipelines/run-apiops-extractor.yml`
+   - `.azdo/pipelines/run-apiops-publisher.yml`
+3. **IMPORTANT:** Note the environment names you chose when running `apiops init` because you will create matching service connections, variable groups, and approvals.
 
-**Git Bash:**
-```bash
-BUILD_SERVICE_NAME="$AZDO_PROJECT Build Service ($ORG_NAME)"
-BUILD_SERVICE_DESCRIPTOR=$(az devops invoke --area graph --resource users --query-parameters 'api-version=7.1-preview.1' --http-method GET -o json | grep -B5 "\"displayName\": \"$BUILD_SERVICE_NAME\"" | grep '"descriptor"' | head -1 | cut -d'"' -f4)
-```
+## Step 2: Create or choose an app registration in Azure portal
 
-Finally, grant the Contribute permission (bit 4) on the repository:
+> 📖 [Register an application in the Azure portal](https://learn.microsoft.com/entra/identity-platform/quickstart-register-app)
 
-**PowerShell:**
-```powershell
-$GIT_REPOS_NAMESPACE = az devops security permission namespace list --query "[?name=='Git Repositories'].namespaceId" -o tsv
-$TOKEN = "repoV2/$PROJECT_ID/$REPO_ID"
-az devops security permission update --namespace-id $GIT_REPOS_NAMESPACE --subject $BUILD_SERVICE_DESCRIPTOR --token $TOKEN --allow-bit 4
-```
+1. Open the **Azure portal**.
+2. Go to **Microsoft Entra ID** → **App registrations** → **New registration**.
+3. Enter a friendly name such as `apiops-azdo-sp`.
+4. Register the application and open its overview page.
+5. Record:
+   - **Application (client) ID**
+   - **Directory (tenant) ID**
+6. You do not need to create a client secret for this workload identity federation flow.
 
-**Git Bash:**
-```bash
-GIT_REPOS_NAMESPACE=$(az devops security permission namespace list --query "[?name=='Git Repositories'].namespaceId" -o tsv)
-TOKEN="repoV2/$PROJECT_ID/$REPO_ID"
-az devops security permission update --namespace-id "$GIT_REPOS_NAMESPACE" --subject "$BUILD_SERVICE_DESCRIPTOR" --token "$TOKEN" --allow-bit 4
-```
+## Step 3: Grant the Azure identity access to each APIM environment
 
-Verify the permission was set:
+> 📖 [Assign Azure roles using the Azure portal](https://learn.microsoft.com/azure/role-based-access-control/role-assignments-portal)
 
-**PowerShell:**
-```powershell
-az devops security permission show --namespace-id $GIT_REPOS_NAMESPACE --subject $BUILD_SERVICE_DESCRIPTOR --token $TOKEN --query "[].acesDictionary.*.resolvedPermissions" -o json
-```
+For each environment, use the **Azure portal** to grant:
 
-**Git Bash:**
-```bash
-az devops security permission show --namespace-id "$GIT_REPOS_NAMESPACE" --subject "$BUILD_SERVICE_DESCRIPTOR" --token "$TOKEN" --query "[].acesDictionary.*.resolvedPermissions" -o json
-```
+- **Reader** on the resource group that contains the APIM instance
+- **API Management Service Contributor** on the APIM service itself
 
----
+Use **Access control (IAM)** on each resource group and APIM instance to create the assignments.
 
-## Step 11: Verify Setup
+## Step 4: Create one Azure service connection per environment
 
-Verify all resources were created correctly:
+> 📖 [Create an Azure Resource Manager service connection using workload identity federation](https://learn.microsoft.com/azure/devops/pipelines/library/connect-to-azure)
 
-**Service Connections:**
-```bash
-az devops service-endpoint list --query "[].name" -o table
-```
+For each environment, do the following steps:
 
-**Variable Groups:**
-```bash
-az pipelines variable-group list --query "[].name" -o table
-```
+1. In **Azure DevOps**, open **Project settings** → **Service connections** → **New service connection**.
+2. Choose **Azure Resource Manager**.
+3. Select **Workload identity federation**.
+4. Use the app registration from Step 2.
+5. Name the service connection `AZURE_SERVICE_CONNECTION_<ENV>` (replace `<ENV>` with the upper-case environment name) unless you plan to edit the generated pipeline YAML.
+6. Complete the validation flow in Azure DevOps so the service connection can issue the issuer and subject values required for federation.
+7. If Azure DevOps asks you to finish the federated credential in Azure, follow the linked experience or copy the issuer/subject into the app registration's **Federated credentials** blade in the Azure portal.
 
-**Environments:**
+## Step 5: Create variable groups in Azure DevOps
 
-**PowerShell:**
-```powershell
-(az devops invoke --area environments --resource environments --route-parameters project=$AZDO_PROJECT --http-method GET --api-version 7.1 -o json | ConvertFrom-Json).value | Select-Object name
-```
+> 📖 [Add and use variable groups in Azure Pipelines](https://learn.microsoft.com/azure/devops/pipelines/library/variable-groups)
 
-**Git Bash:**
-```bash
-az devops invoke --area environments --resource environments --route-parameters project="$AZDO_PROJECT" --http-method GET --api-version 7.1 -o json | grep -o '"name": *"[^"]*"' | cut -d'"' -f4
-```
+For each environment, do the following steps:
 
-**Service Principal Role Assignment:**
+1. Go to **Pipelines** → **Library** → **+ Variable group**.
+2. Name the variable group `apim-<environment>` (e.g. `apim-dev`, `apim-prod`).
+3. Add the following variables:
+   - `AZURE_SERVICE_CONNECTION` — the service connection name from Step 4
+   - `AZURE_SUBSCRIPTION_ID` — the Azure subscription ID for that environment
+   - `APIM_RESOURCE_GROUP` — the resource group containing the APIM instance
+   - `APIM_SERVICE_NAME` — the APIM service name
+   - `APIM_RESOURCE_GROUP_<ENV>` — same value, upper-case environment suffix (used by the publish pipeline)
+   - `APIM_SERVICE_NAME_<ENV>` — same value, upper-case environment suffix (used by the publish pipeline)
+4. Authorize each variable group for pipeline use when Azure DevOps prompts you.
 
-**PowerShell:**
-```powershell
-az role assignment list --assignee $APP_ID --query "[].{Role:roleDefinitionName, Scope:scope}" -o table
-```
+## Step 6: Create Azure DevOps environments and approvals
 
-**Git Bash:**
-```bash
-az role assignment list --assignee "$APP_ID" --query "[].{Role:roleDefinitionName, Scope:scope}" -o table
-```
+> 📖 [Create and target an environment](https://learn.microsoft.com/azure/devops/pipelines/process/environments)
 
-**Final Test:** Run the extract pipeline manually to verify end-to-end authentication and permissions.
+1. Go to **Pipelines** → **Environments**.
+2. Create an environment for each deployment target used by the publish pipeline.
+3. Add approvals and checks for production or other protected environments as needed by your release process.
 
----
+## Step 7: Grant repository permissions to the Build Service identity
 
-## Step 12: Create Pipelines
+> 📖 [Set repository permissions in Azure DevOps](https://learn.microsoft.com/azure/devops/repos/git/set-git-repository-permissions)
 
-Create Azure Pipelines from the YAML files in your repository.
+1. In **Azure DevOps**, open **Project settings** → **Repositories** → your repository → **Security**.
+2. Find the entry named **`<Project Name> Build Service (<Organization Name>)`**.
+3. Grant the minimum permissions required for your workflow, typically:
+   - **Contribute**
+   - **Create branch**
+   - **Create pull request**
+4. If the pipeline can read APIM but cannot push extracted artifacts or open a PR, this is usually the missing step because the Build Service identity is separate from the Azure app registration.
 
-**Prerequisites:** Ensure your pipeline YAML files are committed to the repository (e.g., `.azdo/pipelines/run-apim-extractor.yml`, `.azdo/pipelines/run-apim-publisher.yml`).
+## Step 8: Create the pipelines in Azure DevOps
 
-**Create Extract Pipeline:**
+> 📖 [Create your first pipeline](https://learn.microsoft.com/azure/devops/pipelines/create-first-pipeline)
 
-**PowerShell:**
-```powershell
-az pipelines create --name "apiops-extract" --repository $REPO_NAME --branch main --yml-path ".azdo/pipelines/run-apim-extractor.yml" --repository-type tfsgit --skip-first-run true
-```
+1. Go to **Pipelines** → **Create Pipeline**.
+2. Choose your repository.
+3. Select **Existing Azure Pipelines YAML file**.
+4. Create a pipeline for each generated YAML file:
+   - `.azdo/pipelines/run-apiops-extractor.yml`
+   - `.azdo/pipelines/run-apiops-publisher.yml`
+5. Save without running if you still need approvals or variable authorization.
 
-**Git Bash:**
-```bash
-az pipelines create --name "apiops-extract" --repository "$REPO_NAME" --branch main --yml-path ".azdo/pipelines/run-apim-extractor.yml" --repository-type tfsgit --skip-first-run true
-```
+## Step 9: Verify the setup
 
-**Create Publish Pipeline:**
+1. Run the extractor pipeline manually.
+2. Confirm the pipeline can authenticate to Azure and read/write the expected APIM resources.
+3. Confirm it can push artifacts and create a pull request in Azure DevOps.
+4. If Azure access works but PR creation fails, re-check repository permissions for the Build Service identity.
 
-**PowerShell:**
-```powershell
-az pipelines create --name "apiops-publish" --repository $REPO_NAME --branch main --yml-path ".azdo/pipelines/run-apim-publisher.yml" --repository-type tfsgit --skip-first-run true
-```
+## Security notes
 
-**Git Bash:**
-```bash
-az pipelines create --name "apiops-publish" --repository "$REPO_NAME" --branch main --yml-path ".azdo/pipelines/run-apim-publisher.yml" --repository-type tfsgit --skip-first-run true
-```
-
-**Verify pipelines were created:**
-```bash
-az pipelines list --query "[].name" -o table
-```
-
-**Run the extract pipeline:**
-
-**PowerShell:**
-```powershell
-az pipelines run --name "apiops-extract"
-```
-
-**Git Bash:**
-```bash
-az pipelines run --name "apiops-extract"
-```
-
----
-
-## Security Notes
-- Enable environment approvals for production deployments
-- Prefer workload identity federation (OIDC) over client secrets
-- Review RBAC assignments regularly
+- Prefer workload identity federation over client secrets.
+- Scope Azure roles and service connections only to the subscriptions and APIM instances each environment needs.
+- Review Build Service repository permissions regularly and remove extra rights if they are no longer needed.

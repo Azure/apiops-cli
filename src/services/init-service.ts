@@ -35,10 +35,6 @@ import { generateIdentitySetupPrompt } from '../templates/copilot/identity-setup
 import { generateConfigureFilterPrompt } from '../templates/copilot/configure-filter-prompt.js';
 import { generateConfigureOverridesPrompt } from '../templates/copilot/configure-overrides-prompt.js';
 
-/** Placeholder values used in generated identity setup guides */
-const PLACEHOLDER_SUBSCRIPTION_ID = '<your-subscription-id>';
-const PLACEHOLDER_RESOURCE_GROUP = '<your-resource-group>';
-
 export interface GeneratedFiles {
   pipelines: string[];
   configs: string[];
@@ -138,15 +134,15 @@ class InitServiceImpl implements InitService {
     if (config.ciProvider === 'github-actions') {
       const extractWorkflow = path.join(
         config.outputDir,
-        '.github/workflows/run-apim-extractor.yml'
+        '.github/workflows/run-apiops-extractor.yml'
       );
       const publishWorkflow = path.join(
         config.outputDir,
-        '.github/workflows/run-apim-publisher.yml'
+        '.github/workflows/run-apiops-publisher.yml'
       );
       const promptFile = path.join(
         config.outputDir,
-        '.github/prompts/apiops-setup-identity.prompt.md'
+        '.github/prompts/apiops-setup-workflow-identity.prompt.md'
       );
       const filterPromptFile = path.join(
         config.outputDir,
@@ -158,7 +154,7 @@ class InitServiceImpl implements InitService {
       );
       const identityGuide = path.join(
         config.outputDir,
-        'IDENTITY-SETUP-GITHUB.md'
+        'APIOPS-WORKFLOW-IDENTITY-SETUP.md'
       );
 
       if (await this.fileExists(extractWorkflow)) {
@@ -182,19 +178,19 @@ class InitServiceImpl implements InitService {
     } else if (config.ciProvider === 'azure-devops') {
       const extractPipeline = path.join(
         config.outputDir,
-        '.azdo/pipelines/run-apim-extractor.yml'
+        '.azdo/pipelines/run-apiops-extractor.yml'
       );
       const publishPipeline = path.join(
         config.outputDir,
-        '.azdo/pipelines/run-apim-publisher.yml'
+        '.azdo/pipelines/run-apiops-publisher.yml'
       );
       const identityGuide = path.join(
         config.outputDir,
-        'IDENTITY-SETUP-AZDO.md'
+        'APIOPS-PIPELINE-IDENTITY-SETUP.md'
       );
       const promptFile = path.join(
         config.outputDir,
-        '.github/prompts/apiops-setup-identity.prompt.md'
+        '.github/prompts/apiops-setup-pipeline-identity.prompt.md'
       );
       const filterPromptFile = path.join(
         config.outputDir,
@@ -332,9 +328,9 @@ class InitServiceImpl implements InitService {
       artifactDir: config.artifactDir,
     };
     const extractContent = generateExtractWorkflow(extractWorkflowConfig);
-    const extractPath = path.join(workflowsDir, 'run-apim-extractor.yml');
+    const extractPath = path.join(workflowsDir, 'run-apiops-extractor.yml');
     await fs.writeFile(extractPath, extractContent);
-    generatedFiles.pipelines.push('.github/workflows/run-apim-extractor.yml');
+    generatedFiles.pipelines.push('.github/workflows/run-apiops-extractor.yml');
 
     // Publish workflow
     const publishWorkflowConfig: PublishWorkflowConfig = {
@@ -342,9 +338,9 @@ class InitServiceImpl implements InitService {
       environments: config.environments,
     };
     const publishContent = generatePublishWorkflow(publishWorkflowConfig);
-    const publishPath = path.join(workflowsDir, 'run-apim-publisher.yml');
+    const publishPath = path.join(workflowsDir, 'run-apiops-publisher.yml');
     await fs.writeFile(publishPath, publishContent);
-    generatedFiles.pipelines.push('.github/workflows/run-apim-publisher.yml');
+    generatedFiles.pipelines.push('.github/workflows/run-apiops-publisher.yml');
 
     await this.generateCopilotIdentitySetupPrompt(config, generatedFiles);
     await this.generateCopilotConfigurationPrompts(config, generatedFiles);
@@ -366,9 +362,9 @@ class InitServiceImpl implements InitService {
       environments: config.environments,
     };
     const extractContent = generateExtractPipeline(extractPipelineConfig);
-    const extractPath = path.join(pipelinesDir, 'run-apim-extractor.yml');
+    const extractPath = path.join(pipelinesDir, 'run-apiops-extractor.yml');
     await fs.writeFile(extractPath, extractContent);
-    generatedFiles.pipelines.push('.azdo/pipelines/run-apim-extractor.yml');
+    generatedFiles.pipelines.push('.azdo/pipelines/run-apiops-extractor.yml');
 
     // Publish pipeline
     const publishPipelineConfig: PublishPipelineConfig = {
@@ -376,9 +372,9 @@ class InitServiceImpl implements InitService {
       environments: config.environments,
     };
     const publishContent = generatePublishPipeline(publishPipelineConfig);
-    const publishPath = path.join(pipelinesDir, 'run-apim-publisher.yml');
+    const publishPath = path.join(pipelinesDir, 'run-apiops-publisher.yml');
     await fs.writeFile(publishPath, publishContent);
-    generatedFiles.pipelines.push('.azdo/pipelines/run-apim-publisher.yml');
+    generatedFiles.pipelines.push('.azdo/pipelines/run-apiops-publisher.yml');
 
     await this.generateCopilotIdentitySetupPrompt(config, generatedFiles);
     await this.generateCopilotConfigurationPrompts(config, generatedFiles);
@@ -394,9 +390,12 @@ class InitServiceImpl implements InitService {
     });
     const promptsDir = path.join(config.outputDir, '.github/prompts');
     await fs.mkdir(promptsDir, { recursive: true });
-    const promptPath = path.join(promptsDir, 'apiops-setup-identity.prompt.md');
+    const promptFileName = config.ciProvider === 'github-actions'
+      ? 'apiops-setup-workflow-identity.prompt.md'
+      : 'apiops-setup-pipeline-identity.prompt.md';
+    const promptPath = path.join(promptsDir, promptFileName);
     await fs.writeFile(promptPath, promptContent);
-    generatedFiles.configs.push('.github/prompts/apiops-setup-identity.prompt.md');
+    generatedFiles.configs.push(`.github/prompts/${promptFileName}`);
   }
 
   private async generateCopilotConfigurationPrompts(
@@ -450,26 +449,18 @@ class InitServiceImpl implements InitService {
    * Save identity setup guide to file and tell user where to find it
    */
   private async outputIdentityGuide(config: InitConfig, generatedFiles: GeneratedFiles): Promise<void> {
-    // Use placeholder values for the guide — users replace these with their actual Azure details
-    const subscriptionId = PLACEHOLDER_SUBSCRIPTION_ID;
-    const resourceGroup = PLACEHOLDER_RESOURCE_GROUP;
-
     let guide: string;
     if (config.ciProvider === 'github-actions') {
-      guide = identityGuideService.generateGitHubActionsGuide(
-        subscriptionId,
-        resourceGroup,
-        config.environments
-      );
+      guide = identityGuideService.generateGitHubActionsGuide();
     } else {
-      guide = identityGuideService.generateAzureDevOpsGuide(config.environments);
+      guide = identityGuideService.generateAzureDevOpsGuide();
     }
 
     // Save guide to file
     const guideFileName =
       config.ciProvider === 'github-actions'
-        ? 'IDENTITY-SETUP-GITHUB.md'
-        : 'IDENTITY-SETUP-AZDO.md';
+        ? 'APIOPS-WORKFLOW-IDENTITY-SETUP.md'
+        : 'APIOPS-PIPELINE-IDENTITY-SETUP.md';
     const guidePath = path.join(config.outputDir, guideFileName);
     await fs.writeFile(guidePath, guide);
     generatedFiles.configs.push(guideFileName);

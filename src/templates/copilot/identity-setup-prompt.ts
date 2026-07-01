@@ -10,7 +10,6 @@
  */
 
 import {
-  azureDevOpsIdentitySetupCoreTemplate,
   copilotAzureDevOpsIdentitySetupPromptTemplate,
   copilotGithubEnvironmentFederatedCredentialTemplate,
   copilotGithubEnvironmentSecretCommandsTemplate,
@@ -32,13 +31,9 @@ export function generateIdentitySetupPrompt(config: IdentitySetupPromptConfig): 
       .map((environment) => `"${environment}"`)
       .join(' ');
 
-    const coreSteps = renderTemplate(azureDevOpsIdentitySetupCoreTemplate, {
+    return renderTemplate(copilotAzureDevOpsIdentitySetupPromptTemplate, {
       ENVIRONMENTS_ARRAY_POWERSHELL: environmentsArrayPowerShell,
       ENVIRONMENTS_ARRAY_BASH: environmentsArrayBash,
-    });
-
-    return renderTemplate(copilotAzureDevOpsIdentitySetupPromptTemplate, {
-      AZURE_DEVOPS_CORE_STEPS: coreSteps,
     });
   }
 
