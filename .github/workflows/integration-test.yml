@@ -44,9 +44,13 @@ on:
         type: string
         default: 'centralus'
       log_level:
-        description: 'PowerShell log level (Info, Verbose, Debug)'
+        description: 'Log level'
         required: false
-        type: string
+        type: choice
+        options:
+          - Info
+          - Verbose
+          - Debug
         default: Verbose
 
   workflow_call:
@@ -62,7 +66,7 @@ on:
         type: string
         default: 'centralus'
       log_level:
-        description: 'PowerShell log level (Info, Verbose, Debug)'
+        description: 'Log level'
         required: false
         type: string
         default: Verbose
@@ -117,6 +121,17 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate Azure Region
+        shell: bash
+        run: |
+          LOCATION="${{ inputs.location }}"
+          if [[ -z "$LOCATION" ]]; then LOCATION="centralus"; fi
+          VALID_LOCATIONS=$(az account list-locations --query "[].name" -o tsv)
+          if ! echo "$VALID_LOCATIONS" | grep -qx "$LOCATION"; then
+            echo "::error::Invalid Azure region: '$LOCATION'. Run 'az account list-locations --query [].name' to see valid options."
+            exit 1
+          fi
 
       - name: Run Round-Trip Phase 1 (Deploy)
         id: phase1

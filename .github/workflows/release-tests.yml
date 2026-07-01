@@ -31,9 +31,14 @@ on:
         type: string
         default: 'centralus'
       log_level:
-        description: 'Log level for all-types integration test (Info, Verbose, Debug)'
+        description: 'Log level'
         required: false
-        type: string
+        type: choice
+        options:
+          - Info
+          - Verbose
+          - Debug
+        default: Verbose
         default: Verbose
 
 permissions:
