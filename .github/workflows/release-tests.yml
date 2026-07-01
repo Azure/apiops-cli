@@ -39,7 +39,6 @@ on:
           - Verbose
           - Debug
         default: Verbose
-        default: Verbose
 
 permissions:
   contents: read
