@@ -12,12 +12,18 @@ jobs:
   test:
     name: Run APIOps Tests
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Test against the supported Node range: the >=22 floor (package.json
+        # engines) and the current Active LTS (24).
+        node-version: ['22', '24']
     steps:
       - uses: actions/checkout@v6
       
       - uses: actions/setup-node@v5
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node-version }}
           cache: 'npm'
       
       - run: npm ci

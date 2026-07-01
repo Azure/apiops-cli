@@ -12,12 +12,6 @@ permissions:
   issues: read
   copilot-requests: write  # use GitHub Actions token-based inference (no PAT) — requires org centralized Copilot billing
 
-# Pin Node to the repo's standard version (Active LTS 22.x) so the CLI runs under
-# the same runtime as CI, rather than gh-aw's default Node 24.
-runtimes:
-  node:
-    version: "22"
-
 timeout-minutes: 10
 
 safe-outputs:
