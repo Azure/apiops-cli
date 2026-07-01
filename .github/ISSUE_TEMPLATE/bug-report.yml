@@ -1,6 +1,6 @@
 name: Bug Report
 description: Report a bug with apiops CLI
-labels: ["bug"]
+labels: ["type:bug"]
 body:
   - type: input
     id: command
