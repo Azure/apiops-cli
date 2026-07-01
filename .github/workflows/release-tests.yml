@@ -58,15 +58,15 @@ jobs:
     needs: ci
     uses: ./.github/workflows/integration-test.yml
     with:
-      sku: ${{ inputs.sku || vars.DEFAULT_SKU || 'StandardV2' }}
-      location: ${{ inputs.location || vars.DEFAULT_LOCATION || 'centralus' }}
-      log_level: ${{ inputs.log_level || vars.DEFAULT_LOG_LEVEL || 'Verbose' }}
+      sku: ${{ inputs.sku || env.DEFAULT_SKU }}
+      location: ${{ inputs.location || env.DEFAULT_LOCATION }}
+      log_level: ${{ inputs.log_level || env.DEFAULT_LOG_LEVEL }}
 
   redact-secrets-integration:
     name: Redact Secrets Integration Test
     needs: all-types-integration
     uses: ./.github/workflows/integration-redact-secrets.yml
     with:
-      sku: ${{ inputs.sku || vars.DEFAULT_SKU || 'StandardV2' }}
-      location: ${{ inputs.location || vars.DEFAULT_LOCATION || 'centralus' }}
-      log_level: ${{ inputs.log_level || vars.DEFAULT_LOG_LEVEL || 'Verbose' }}
+      sku: ${{ inputs.sku || env.DEFAULT_SKU }}
+      location: ${{ inputs.location || env.DEFAULT_LOCATION }}
+      log_level: ${{ inputs.log_level || env.DEFAULT_LOG_LEVEL }}
