@@ -10,7 +10,7 @@ source: "manual + observed from integration-test OIDC and RBAC troubleshooting"
 
 Use this skill when preparing or repairing prerequisites for:
 
-- `.github/workflows/test-resource-types.yml` — Extract→Publish round-trip
+- `.github/workflows/test-round-trip.yml` — Extract→Publish round-trip
 - `.github/workflows/test-redact-secrets.yml` — Secret redaction validation
 - `.github/workflows/test-all.yml` — Orchestrator that calls CI, then both integration-test workflows sequentially
 
@@ -21,7 +21,7 @@ These workflows expect:
 - GitHub environment `integration-test` (shared by all integration workflows)
 - Azure identity with enough permissions to deploy resources and create role assignments in test resource groups
 
-The `test-all.yml` orchestrator calls `ci.yml` (no Azure prereqs), then `test-resource-types.yml` and `test-redact-secrets.yml`. The called workflows access secrets directly from the `integration-test` environment — no secret pass-through from the orchestrator is needed.
+The `test-all.yml` orchestrator calls `ci.yml` (no Azure prereqs), then `test-round-trip.yml` and `test-redact-secrets.yml`. The called workflows access secrets directly from the `integration-test` environment — no secret pass-through from the orchestrator is needed.
 
 Preferred identity model: user-assigned managed identity (UAMI).
 
@@ -149,7 +149,7 @@ gh secret set APIM_PUBLISHER_EMAIL \
 
 ### 6) Verify Called Workflows Can Access Environment Secrets
 
-The `test-all.yml` orchestrator does **not** pass secrets to called workflows. Instead, the called workflows (`test-resource-types.yml`, `test-redact-secrets.yml`) access secrets directly via their `environment: integration-test` declaration. Each called workflow includes a "Validate Required Secrets" step that fails fast with a clear error if any secret is missing.
+The `test-all.yml` orchestrator does **not** pass secrets to called workflows. Instead, the called workflows (`test-round-trip.yml`, `test-redact-secrets.yml`) access secrets directly via their `environment: integration-test` declaration. Each called workflow includes a "Validate Required Secrets" step that fails fast with a clear error if any secret is missing.
 
 No repo-level secrets are required — all secrets are scoped to the `integration-test` environment.
 
