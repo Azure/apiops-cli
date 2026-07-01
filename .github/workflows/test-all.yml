@@ -8,7 +8,7 @@
 # subsequent stages are skipped if any prior stage fails.
 # ===========================================================================
 
-name: "Release Tests"
+name: "Test: Release Tests"
 
 on:
   schedule:
