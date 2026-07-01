@@ -155,8 +155,6 @@ export class ExtractCommand {
    Closes #42
    ```
 
-   When the PR is merged, any issue it auto-closes this way is automatically labeled `close:fixed` by the [Label Fixed Issues on Merge](.github/workflows/issue-label-fixed-on-merge.yml) workflow, so the close reason stays visible in issue triage.
-
 4. **Open a pull request** against `main`. CI automatically runs lint, build, and the full test suite. All checks must pass before merge.
 
 5. **Address review feedback** promptly.
