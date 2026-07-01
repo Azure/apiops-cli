@@ -11,6 +11,8 @@
 name: "Release Tests"
 
 on:
+  schedule:
+    - cron: '0 9 1 * *' # 1st of every month at 9:00 UTC
   workflow_dispatch:
     inputs:
       sku:
@@ -48,9 +50,9 @@ jobs:
     needs: ci
     uses: ./.github/workflows/integration-test.yml
     with:
-      sku: ${{ inputs.sku }}
-      location: ${{ inputs.location }}
-      log_level: ${{ inputs.log_level }}
+      sku: ${{ inputs.sku || 'StandardV2' }}
+      location: ${{ inputs.location || 'centralus' }}
+      log_level: ${{ inputs.log_level || 'Verbose' }}
     secrets:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -62,9 +64,9 @@ jobs:
     needs: all-types-integration
     uses: ./.github/workflows/integration-redact-secrets.yml
     with:
-      sku: ${{ inputs.sku }}
-      location: ${{ inputs.location }}
-      log_level: ${{ inputs.log_level }}
+      sku: ${{ inputs.sku || 'StandardV2' }}
+      location: ${{ inputs.location || 'centralus' }}
+      log_level: ${{ inputs.log_level || 'Verbose' }}
     secrets:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
