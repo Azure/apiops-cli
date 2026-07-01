@@ -8,7 +8,7 @@
 #
 # Required secrets (in the 'integration-test' environment):
 #   - AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID (OIDC login)
-#   - APIM_PUBLISHER_EMAIL
+#   - APIM_PUBLISHER_EMAIL (optional; defaults to apim-integration-test@contoso.com)
 #
 # Required federated credential subject for GitHub OIDC:
 #   - Match the subject claim format configured for this repo/org.
@@ -106,7 +106,6 @@ jobs:
           [[ -z "${{ secrets.AZURE_CLIENT_ID }}" ]] && missing+=("AZURE_CLIENT_ID")
           [[ -z "${{ secrets.AZURE_TENANT_ID }}" ]] && missing+=("AZURE_TENANT_ID")
           [[ -z "${{ secrets.AZURE_SUBSCRIPTION_ID }}" ]] && missing+=("AZURE_SUBSCRIPTION_ID")
-          [[ -z "${{ secrets.APIM_PUBLISHER_EMAIL }}" ]] && missing+=("APIM_PUBLISHER_EMAIL")
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "::error::Missing required secrets: ${missing[*]}"
             exit 1
@@ -148,7 +147,7 @@ jobs:
             SkuName            = '${{ steps.settings.outputs.skuName }}'
             Location           = '${{ inputs.location }}'
             LogLevel           = '${{ steps.settings.outputs.logLevel }}'
-            PublisherEmail     = '${{ secrets.APIM_PUBLISHER_EMAIL }}'
+            PublisherEmail     = '${{ secrets.APIM_PUBLISHER_EMAIL || 'apim-integration-test@contoso.com' }}'
           }
           ./tests/integration/all-resource-types/phases/run-phase1-deploy.ps1 @params
 

@@ -140,6 +140,7 @@ gh secret set AZURE_SUBSCRIPTION_ID \
   --env "${GITHUB_ENVIRONMENT}" \
   --body "${SUBSCRIPTION_ID}"
 
+# Optional — falls back to apim-integration-test@contoso.com if not set
 gh secret set APIM_PUBLISHER_EMAIL \
   --repo "${GITHUB_OWNER}/${GITHUB_REPO}" \
   --env "${GITHUB_ENVIRONMENT}" \
