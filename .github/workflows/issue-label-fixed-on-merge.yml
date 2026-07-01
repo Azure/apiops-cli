@@ -22,12 +22,11 @@ permissions:
   issues: write
   contents: read
 
-# Canonical definition of the target label, kept in sync with
-# .github/workflows/issue-labels-sync.yml (CLOSE_LABELS → close:fixed).
+# The close:fixed label is defined and created by issue-labels-sync.yml
+# (CLOSE_LABELS) — that workflow is the single source of truth for its
+# color/description. This workflow only applies the existing label.
 env:
   FIXED_LABEL: 'close:fixed'
-  FIXED_LABEL_COLOR: '0E8A16'
-  FIXED_LABEL_DESCRIPTION: 'Fixed by a previous PR or release'
 
 jobs:
   label-fixed:
@@ -73,25 +72,6 @@ jobs:
             }
 
             core.info(`PR #${prNumber} closed issue(s): ${issues.map(i => '#' + i.number).join(', ')}`);
-
-            // Ensure the label exists with its canonical color/description so a
-            // fresh repo doesn't get an auto-created default-colored variant.
-            try {
-              await github.rest.issues.getLabel({ owner, repo, name: FIXED_LABEL });
-            } catch (err) {
-              if (err.status === 404) {
-                await github.rest.issues.createLabel({
-                  owner,
-                  repo,
-                  name: FIXED_LABEL,
-                  color: process.env.FIXED_LABEL_COLOR,
-                  description: process.env.FIXED_LABEL_DESCRIPTION
-                });
-                core.info(`Created missing label: ${FIXED_LABEL}`);
-              } else {
-                throw err;
-              }
-            }
 
             let labeled = 0;
             for (const { number } of issues) {
