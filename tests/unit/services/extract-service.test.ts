@@ -150,6 +150,96 @@ describe('extract-service', () => {
       expect(result.collectedPolicies.has('service-policy')).toBe(true);
     });
 
+    it('should skip service policy when filter.policies is an empty array', async () => {
+      // Regression: service policy previously bypassed the filter entirely and
+      // was extracted even when `policies: []` explicitly excluded it.
+      const client = createMockClient({});
+      client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor) => {
+        if (descriptor.type === ResourceType.ServicePolicy) {
+          return {
+            name: 'policy',
+            properties: { value: '<policies><inbound><base /></inbound></policies>' },
+          };
+        }
+        return undefined;
+      });
+      const store = createMockStore();
+
+      const filter: FilterConfig = { policies: [] };
+      const config: ExtractConfig = {
+        service: testContext,
+        outputDir: '/output',
+        filter,
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runExtraction(client, store, config);
+
+      // The mock's getResource may still be called for other types, but writeContent
+      // must NOT have been invoked for the ServicePolicy descriptor.
+      const serviceWrites = (store.writeContent as ReturnType<typeof vi.fn>).mock.calls.filter(
+        (call) => (call[1] as ResourceDescriptor)?.type === ResourceType.ServicePolicy
+      );
+      expect(serviceWrites).toHaveLength(0);
+      expect(result.collectedPolicies.has('service-policy')).toBe(false);
+    });
+
+    it('should extract service policy when filter omits policies key entirely (undefined = include all)', async () => {
+      const client = createMockClient({});
+      client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor) => {
+        if (descriptor.type === ResourceType.ServicePolicy) {
+          return {
+            name: 'policy',
+            properties: { value: '<policies><inbound><base /></inbound></policies>' },
+          };
+        }
+        return undefined;
+      });
+      const store = createMockStore();
+
+      // Filter with no `policies` field — semantics: include all singleton types
+      const filter: FilterConfig = { apis: ['some-api'] };
+      const config: ExtractConfig = {
+        service: testContext,
+        outputDir: '/output',
+        filter,
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runExtraction(client, store, config);
+
+      expect(result.collectedPolicies.has('service-policy')).toBe(true);
+    });
+
+    it('should extract service policy when filter.policies contains the singleton name "policy"', async () => {
+      const client = createMockClient({});
+      client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor) => {
+        if (descriptor.type === ResourceType.ServicePolicy) {
+          return {
+            name: 'policy',
+            properties: { value: '<policies><inbound><base /></inbound></policies>' },
+          };
+        }
+        return undefined;
+      });
+      const store = createMockStore();
+
+      const filter: FilterConfig = { policies: ['policy'] };
+      const config: ExtractConfig = {
+        service: testContext,
+        outputDir: '/output',
+        filter,
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runExtraction(client, store, config);
+
+      expect(result.collectedPolicies.has('service-policy')).toBe(true);
+    });
+
     it('should redact inline secrets in service policy before storing', async () => {
       const policyContent = '<policies><inbound><set-query-parameter name="sig"><value>abc123</value></set-query-parameter></inbound></policies>';
       const redactedPolicy = `<policies><inbound><set-query-parameter name="sig"><value>${REDACTION_MARKER}</value></set-query-parameter></inbound></policies>`;

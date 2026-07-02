@@ -32,7 +32,47 @@ apiops extract \
   --filter configuration.extractor.yaml
 ```
 
-Only `petstore-api`, `orders-api`, and their transitive dependencies are extracted.
+`petstore-api`, `orders-api`, and their transitive dependencies are extracted — along with every backend, named value, product, tag, workspace, and every other resource type, because those keys are omitted and therefore default to "include all". To narrow the extract to just these APIs, see [How To: Extract Just One API](#how-to-extract-just-one-api) below.
+
+---
+
+## How To: Extract Just One API
+
+Each top-level filter key is **independent**. Setting `apis:` narrows only the `apis` type — it does not implicitly exclude other resource types. Every key that is **omitted** from the file defaults to "include all resources of that type".
+
+To extract a single API (plus whatever transitive dependencies it needs) and nothing else, set every other type to `[]`:
+
+```yaml
+# configuration.extractor.yaml — extract only my-own-api and its transitive deps
+apis:
+  - my-own-api
+backends: []
+namedValues: []
+products: []
+tags: []
+versionSets: []
+loggers: []
+diagnostics: []
+groups: []
+policyFragments: []
+gateways: []
+schemas: []
+subscriptions: []
+policies: []
+policyRestrictions: []
+documentations: []
+workspaces: []
+```
+
+With transitive resolution enabled (the default), any version set, backend, named value, policy fragment, or tag directly referenced by `my-own-api` or its policies is still pulled in automatically — even though those keys are set to `[]`. Use `--no-transitive` to disable that behavior.
+
+The three states for every key are:
+
+| Value | Meaning |
+|-------|---------|
+| Key omitted | Include **all** resources of that type (default) |
+| `key: []` | Include **none** of that type |
+| `key: [name1, name2]` | Include only the named resources (case-insensitive, supports `*` and `?` wildcards) |
 
 ---
 

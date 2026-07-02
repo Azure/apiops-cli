@@ -30,6 +30,7 @@ import {
   findTransitiveDependencies,
 } from './transitive-resolver.js';
 import { redactAndWarnPolicySecrets } from './secret-redactor.js';
+import { shouldIncludeResource } from './filter-service.js';
 import { logger } from '../lib/logger.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
 import { EXIT_SUCCESS, EXIT_PARTIAL, EXIT_FATAL } from '../lib/exit-codes.js';
@@ -122,8 +123,8 @@ export async function runExtraction(
     // Phase 4: Tier 4 resources are extracted within API-specific extraction
     // (ApiOperationPolicy, GraphQLResolverPolicy are handled in api-extractor)
 
-    // Phase 5: Extract service-level policy
-    await extractServicePolicy(client, store, service, outputDir, result);
+    // Phase 5: Extract service-level policy (respects `policies` filter key)
+    await extractServicePolicy(client, store, service, outputDir, filter, result);
 
     // Phase 6: Transitive dependency resolution (if enabled)
     if (config.includeTransitive && filter) {
@@ -380,18 +381,29 @@ async function extractProductSubResources(
 
 /**
  * Extract service-level global policy.
+ * Honors the `policies` filter key: when a filter is supplied and its
+ * `policies` field is an empty array (explicit exclude), the service policy
+ * is skipped. When the filter omits `policies` entirely, the policy is
+ * included (undefined = include-all, matching the semantics of every other
+ * filter field).
  */
 async function extractServicePolicy(
   client: IApimClient,
   store: IArtifactStore,
   context: ApimServiceContext,
   outputDir: string,
+  filter: FilterConfig | undefined,
   result: ExtractionResult
 ): Promise<void> {
   const descriptor: ResourceDescriptor = {
     type: ResourceType.ServicePolicy,
     nameParts: [],
   };
+
+  if (!shouldIncludeResource(descriptor, filter)) {
+    logger.debug('Skipping service-level policy (excluded by filter)');
+    return;
+  }
 
   const policyJson = await client.getResource(context, descriptor);
   if (!policyJson) {

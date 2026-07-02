@@ -3,6 +3,40 @@
 # Customize this file to control which resources are extracted
 # For full format details and examples, see:
 # https://github.com/Azure/apiops-cli/blob/main/docs/guides/filtering-resources.md
+#
+# HOW FILTERING WORKS (read this before uncommenting sections below):
+#   Each top-level key is INDEPENDENT. The three states are:
+#     - key omitted    → include ALL resources of that type (default)
+#     - key: []        → include NONE of that type
+#     - key: [names]   → include only the named resources (case-insensitive,
+#                        supports * and ? wildcards)
+#
+#   Tip: to extract JUST one API plus its transitive dependencies, set the
+#   `apis` key to that API and set every other type to []. Every key you
+#   omit still extracts everything of that type. Example:
+#
+#     apis:
+#       - my-own-api
+#     backends: []
+#     namedValues: []
+#     products: []
+#     tags: []
+#     versionSets: []
+#     loggers: []
+#     diagnostics: []
+#     groups: []
+#     policyFragments: []
+#     gateways: []
+#     schemas: []
+#     subscriptions: []
+#     policies: []
+#     policyRestrictions: []
+#     documentations: []
+#     workspaces: []
+#
+#   Transitive dependencies (referenced backends, named values, policy
+#   fragments, tags, version sets) are still pulled in automatically even
+#   when the parent key is []. Use `--no-transitive` to disable that.
 
 # Extract only specific APIs by name (or wildcard pattern)
 # apis:
