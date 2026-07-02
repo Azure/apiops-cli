@@ -59,6 +59,18 @@ const GRANDCHILD_OVERRIDE_MAP: Partial<Record<ResourceType, {
 };
 
 /**
+ * Check whether a named value has an explicit override entry.
+ * Uses case-insensitive matching to align with override-merger behavior.
+ */
+export function hasNamedValueOverride(name: string, overrides?: OverrideConfig): boolean {
+  if (!overrides?.namedValues) return false;
+  const lowerName = name.toLowerCase();
+  return Object.keys(overrides.namedValues).some(
+    (key) => key.toLowerCase() === lowerName
+  );
+}
+
+/**
  * Apply environment overrides from OverrideConfig to a resource JSON payload.
  * Deep-merges matching override properties using case-insensitive key matching.
  * Supports both direct overrides and nested sub-resource overrides.
