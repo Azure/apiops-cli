@@ -4,10 +4,9 @@ description: >
   Assign an approved issue (go:yes) to the maintainer who approved it and route it to
   squad areas. Reads the prior triage analysis and the squad routing table, applies the
   squad label plus matched squad:{member} labels (and squad:copilot to hand the issue
-  off to the Copilot coding agent), and posts an assignment rationale comment. A
-  deterministic post-check verifies the assignment and, when auto-assign is not
-  configured (no COPILOT_ASSIGN_TOKEN), comments to nudge the assignee to assign the
-  Copilot coding agent so work can begin.
+  off to the Copilot coding agent), and posts an assignment rationale comment that,
+  when auto-assign is not configured (no COPILOT_ASSIGN_TOKEN), also nudges the
+  assignee to assign the Copilot coding agent so work can begin.
 
 on:
   issues:
@@ -48,6 +47,10 @@ steps:
       ISSUE_TITLE: ${{ github.event.issue.title }}
       GO_YES_SENDER: ${{ github.event.sender.login }}
       GH_TOKEN: ${{ github.token }}
+      # 'true' only when the repo secret is set — i.e. squad-heartbeat can
+      # auto-assign the coding agent. The secret VALUE is never exposed; only
+      # this boolean is placed in the environment.
+      HAS_ASSIGN_TOKEN: ${{ secrets.COPILOT_ASSIGN_TOKEN != '' }}
     run: |
       mkdir -p /tmp/gh-aw/agent
 
@@ -75,6 +78,22 @@ steps:
       fi
 
       # ---------------------------------------------------------------------
+      # Copilot coding-agent hand-off status (deterministic, trusted context).
+      # NUDGE_NEEDED is true only when auto-assign is unavailable AND the coding
+      # agent is not already an assignee — so the agent should nudge the human.
+      # ---------------------------------------------------------------------
+      CURRENT_ASSIGNEES=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json assignees \
+        --jq '[.assignees[].login] | join(",")' 2>/dev/null | tr 'A-Z' 'a-z' || printf '')
+      AGENT_ALREADY_ASSIGNED=false
+      if printf ',%s,' "$CURRENT_ASSIGNEES" | grep -qE ',(copilot-swe-agent\[bot\]|copilot-swe-agent|copilot),'; then
+        AGENT_ALREADY_ASSIGNED=true
+      fi
+      NUDGE_NEEDED=false
+      if [ "${HAS_ASSIGN_TOKEN:-false}" != "true" ] && [ "$AGENT_ALREADY_ASSIGNED" != "true" ]; then
+        NUDGE_NEEDED=true
+      fi
+
+      # ---------------------------------------------------------------------
       # SYSTEM context (trusted): assignment policy + routing/team tables.
       # Single-quoted printf args keep backticks/`$` literal (no expansion).
       # ---------------------------------------------------------------------
@@ -89,6 +108,11 @@ steps:
         printf '%s\n' '- Apply one `squad:{member}` label for every squad area the issue touches, per the routing table below.'
         printf '%s\n' '- Apply the `squad:copilot` label to hand the issue off to the Copilot coding agent to begin implementation.'
         printf '%s\n' '- Never apply `go:*`, `priority:*`, `override:*`, or `type:*` labels.'
+        if [ "$NUDGE_NEEDED" = "true" ]; then
+          printf -- '- **Copilot hand-off nudge REQUIRED:** automatic coding-agent assignment is not configured and no coding agent is assigned yet. In your single assignment comment, add an `### 🤖 Action needed` section that @-mentions **@%s** and tells them to assign this issue to Copilot from the Assignees menu so implementation can begin, and reference the "Setting up `COPILOT_ASSIGN_TOKEN`" note in `.squad/team.md`.\n' "$GO_YES_SENDER"
+        else
+          printf '%s\n' '- **Copilot hand-off nudge:** NOT required — do not add any Copilot-assignment nudge to the comment (auto-assign is configured or the coding agent is already assigned).'
+        fi
         printf '\n'
       } > "$SYS_FILE"
 
@@ -144,7 +168,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      issues: write  # write so the nudge step can comment when auto-assign is off
+      issues: read
     steps:
       - uses: actions/checkout@v6
       - name: Verify assignee and squad labels
@@ -199,71 +223,6 @@ jobs:
             }
 
             core.info(`✅ Post-check passed: assignee @${sender}, squad labels [${squadLabels.join(', ')}]`);
-      - name: Nudge maintainer to assign the Copilot coding agent
-        uses: actions/github-script@v8
-        env:
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          # 'true' only when the repo secret is set. Used to skip the nudge when
-          # Ralph (squad-heartbeat) will auto-assign the coding agent for us.
-          HAS_ASSIGN_TOKEN: ${{ secrets.COPILOT_ASSIGN_TOKEN != '' }}
-        with:
-          script: |
-            // When COPILOT_ASSIGN_TOKEN is configured, squad-heartbeat auto-assigns
-            // the coding agent shortly after go:yes, so no manual nudge is needed.
-            if (process.env.HAS_ASSIGN_TOKEN === 'true') {
-              core.info('COPILOT_ASSIGN_TOKEN is configured — auto-assign will handle it; skipping nudge.');
-              return;
-            }
-
-            const issue_number = Number(process.env.ISSUE_NUMBER);
-            const { data: issue } = await github.rest.issues.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number
-            });
-
-            // Only relevant when the issue was handed off to the Copilot coding agent.
-            const hasCopilotLabel = (issue.labels || [])
-              .map(l => (typeof l === 'string' ? l : l.name))
-              .includes('squad:copilot');
-            if (!hasCopilotLabel) {
-              core.info('No squad:copilot label — coding-agent hand-off not requested; skipping nudge.');
-              return;
-            }
-
-            // Logins that count as "assigned to the SWE agent".
-            const AGENT_LOGINS = new Set(['copilot-swe-agent[bot]', 'copilot-swe-agent', 'copilot']);
-            const assignees = issue.assignees || [];
-            const agentAssigned = assignees.some(a => AGENT_LOGINS.has((a.login || '').toLowerCase()));
-            if (agentAssigned) {
-              core.info('Copilot coding agent already assigned — no nudge needed.');
-              return;
-            }
-
-            // Tag the human assignee(s) so they know to hand off to Copilot.
-            const humans = assignees
-              .map(a => a.login)
-              .filter(l => l && !l.endsWith('[bot]') && !AGENT_LOGINS.has(l.toLowerCase()));
-            const mention = humans.map(l => `@${l}`).join(' ');
-            const teamMdUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/blob/HEAD/.squad/team.md`;
-
-            const body = [
-              '### 🤖 Action needed: assign this issue to Copilot',
-              '',
-              `${mention ? mention + ' — this' : 'This'} issue is approved (\`go:yes\`) and labeled \`squad:copilot\`, but it is **not assigned to the Copilot coding agent**, so no agent session has started yet.`,
-              '',
-              'Automatic hand-off (Ralph / `squad-heartbeat`) is inactive because the `COPILOT_ASSIGN_TOKEN` secret is not configured. To start the work now, **assign this issue to Copilot** from the Assignees menu.',
-              '',
-              `To enable automatic hand-off for future issues, see the “Setting up \`COPILOT_ASSIGN_TOKEN\`” note in [\`.squad/team.md\`](${teamMdUrl}).`,
-            ].join('\n');
-
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number,
-              body
-            });
-            core.info(`Posted Copilot-assignment nudge${mention ? ' tagging ' + mention : ''}.`);
 ---
 
 # Issue Assignment Agent
@@ -295,6 +254,9 @@ context — you do not decide the assignee yourself.
      `squad` label, `squad:copilot`, and the most relevant matched member labels.
 6. **Comment** exactly once with `add_comment`, explaining the assignee, the matched
    squad areas, and the routing evidence (which routing-table entries matched and why).
+   If the system policy says a **Copilot hand-off nudge** is REQUIRED, append the
+   `### 🤖 Action needed` section (described in that policy) to this same comment. If it
+   says the nudge is NOT required, omit that section entirely.
 
 ## Assignment comment format
 
@@ -310,6 +272,13 @@ context — you do not decide the assignee yourself.
 
 #### Notes
 <Any routing uncertainty, or "none".>
+
+<!-- Include the section below ONLY when the system policy says a Copilot hand-off nudge is REQUIRED. Omit it otherwise. -->
+### 🤖 Action needed
+@<assignee> — this issue is not assigned to the Copilot coding agent yet, so no agent
+session has started. Please assign it to Copilot from the Assignees menu to begin work.
+To enable automatic hand-off for future issues, see the "Setting up `COPILOT_ASSIGN_TOKEN`"
+note in `.squad/team.md`.
 ```
 
 ## Security Rules
