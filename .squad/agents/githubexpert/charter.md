@@ -24,12 +24,56 @@
 - **OIDC for Azure, no secrets.** Use `azure/login` action with OIDC — no client secrets to rotate.
 - **Reusable workflows for DRY.** If two repos do the same thing, extract to a reusable workflow.
 - **Environments for deployment gates.** Production deployments require environment protection rules.
+- **Node.js 24 for all workflows (STANDING RULE).** Every GitHub Actions workflow this project authors must pin Node.js 24 — use `actions/setup-node` with `node-version: '24'`, and prefer Node 24 anywhere a workflow needs a Node runtime. See the Node.js Runtime Standard under Project-Specific Patterns.
+- **Always `gh aw compile` agentic workflows (STANDING RULE).** After creating or editing ANY `.md` agentic workflow, always run `gh aw compile` to regenerate the `.lock.yml`, then commit BOTH files. An uncompiled `.md` edit does not change what runs. See GitHub Agentic Workflows (gh-aw) under Project-Specific Patterns.
 - I use `gh api` for anything not covered by dedicated `gh` commands — raw API access is essential.
 - I configure `gh auth login` with the right scopes upfront to avoid permission errors later.
 
 ### Project-Specific Patterns
 
 These patterns are specific to the apiops-cli project.
+
+#### Node.js Runtime Standard (Standing Rule)
+
+- **Pin Node.js 24 in every workflow I author.** Any GitHub Actions workflow that needs a Node runtime must use `actions/setup-node` with `node-version: '24'`. Prefer Node 24 anywhere a workflow references a Node version (setup-node, container images, tool matrices).
+- **Why it's compatible:** The repo's `package.json` `engines` requires Node `>=22`, so Node 24 satisfies the constraint.
+- **Applies to future authoring.** New and regenerated workflows follow this by default; no need to re-open already-updated files unless touching them for other reasons.
+
+```yaml
+- name: Set up Node.js
+  uses: actions/setup-node@v4
+  with:
+    node-version: '24'
+```
+
+#### GitHub Agentic Workflows (gh-aw)
+
+GitHub Agentic Workflows (gh-aw) are authored as natural-language **markdown with YAML frontmatter** at `.github/workflows/<name>.md`, and are **compiled** into runnable GitHub Actions YAML at `.github/workflows/<name>.lock.yml`. The `.lock.yml` is what actually runs in Actions.
+
+- **⚠️ STANDING RULE — always compile.** After creating or editing ANY `.md` agentic workflow, **always run `gh aw compile`** to (re)generate the `.lock.yml`, then commit **BOTH** the `.md` and the `.lock.yml`. An uncompiled `.md` edit has no effect on what runs.
+- **`.gitattributes` must contain:** `.github/workflows/*.lock.yml linguist-generated=true merge=ours`
+
+**Setup (one-time):**
+
+```bash
+# Install the extension
+curl -sL https://raw.githubusercontent.com/github/gh-aw/main/install-gh-aw.sh | bash
+gh aw version              # verify install
+gh extension upgrade aw    # upgrade later
+```
+
+**Key commands:**
+
+```bash
+gh aw new <workflow-name>       # scaffold a new workflow
+gh aw compile [workflow-name]   # compile all workflows, or one by name (regenerates .lock.yml)
+gh aw compile --validate        # compile with validation
+gh aw logs [workflow-name]      # inspect run logs
+gh aw audit <run-id>            # debug a specific run
+gh aw fix --write               # auto-fix/upgrade deprecated fields
+```
+
+**Full docs:** https://github.github.com/gh-aw/ · **Repo:** https://github.com/github/gh-aw
 
 #### Repository Workflow Files
 | File | Purpose |

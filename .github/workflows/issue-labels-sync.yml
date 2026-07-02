@@ -7,6 +7,8 @@ on:
     paths:
       - '.squad/team.md'
       - '.ai-team/team.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/workflows/issue-labels-sync.yml'
   workflow_dispatch:
 
 permissions:
@@ -19,6 +21,19 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      # Install production dependencies so the github-script step can `require('js-yaml')`.
+      # github-script resolves bare module IDs from the workspace root (process.cwd()).
+      # --ignore-scripts blocks dependency lifecycle scripts (supply-chain hardening);
+      # our runtime deps are pure JS and need no install scripts.
+      - name: Install dependencies
+        run: npm ci --omit=dev --ignore-scripts
+
       - name: Parse roster and sync labels
         uses: actions/github-script@v8
         with:
@@ -29,12 +44,12 @@ jobs:
               teamFile = '.ai-team/team.md';
             }
 
-            if (!fs.existsSync(teamFile)) {
-              core.info('No .squad/team.md or .ai-team/team.md found — skipping label sync');
-              return;
+            const rosterExists = fs.existsSync(teamFile);
+            if (!rosterExists) {
+              core.info('No .squad/team.md or .ai-team/team.md found — skipping squad member labels (static labels still sync and issue templates are still validated)');
             }
 
-            const content = fs.readFileSync(teamFile, 'utf8');
+            const content = rosterExists ? fs.readFileSync(teamFile, 'utf8') : '';
             const lines = content.split('\n');
 
             // Parse the Members table for agent names
@@ -195,3 +210,61 @@ jobs:
             }
 
             core.info(`Label sync complete: ${labels.length} labels synced`);
+
+            // Fail if any issue template references a label this workflow does not define.
+            const yaml = require('js-yaml');
+
+            const definedLabelNames = new Set(labels.map(l => l.name.toLowerCase()));
+            const templateDir = '.github/ISSUE_TEMPLATE';
+            const violations = [];
+            let templateCount = 0;
+
+            if (fs.existsSync(templateDir)) {
+              const templateFiles = fs.readdirSync(templateDir).filter(f => {
+                const lower = f.toLowerCase();
+                return /\.ya?ml$/.test(lower) && lower !== 'config.yml' && lower !== 'config.yaml';
+              });
+              templateCount = templateFiles.length;
+              for (const file of templateFiles) {
+                const templateContent = fs.readFileSync(`${templateDir}/${file}`, 'utf8');
+
+                let parsed;
+                try {
+                  parsed = yaml.load(templateContent);
+                } catch (err) {
+                  violations.push({ file, error: `could not be parsed as YAML: ${err.message}` });
+                  continue;
+                }
+
+                // GitHub issue forms accept `labels` as a YAML sequence or a
+                // comma-delimited string.
+                const rawLabels = parsed && parsed.labels;
+                let templateLabels = [];
+                if (Array.isArray(rawLabels)) {
+                  templateLabels = rawLabels.map(l => String(l).trim()).filter(Boolean);
+                } else if (typeof rawLabels === 'string') {
+                  templateLabels = rawLabels.split(',').map(l => l.trim()).filter(Boolean);
+                }
+
+                for (const label of templateLabels) {
+                  if (!definedLabelNames.has(label.toLowerCase())) {
+                    violations.push({ file, label });
+                  }
+                }
+              }
+            }
+
+            if (violations.length > 0) {
+              const details = violations
+                .map(v => v.error
+                  ? `  - ${v.file}: ${v.error}`
+                  : `  - ${v.file}: "${v.label}" is not a defined label`)
+                .join('\n');
+              core.setFailed(
+                `Issue templates reference labels that are not defined by this workflow:\n${details}\n\n` +
+                `Fix by either adding the label to this workflow's definitions or updating the ` +
+                `template to use an existing label.`
+              );
+            } else {
+              core.info(`Validated ${templateCount} issue template(s): all referenced labels are defined`);
+            }
