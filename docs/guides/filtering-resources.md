@@ -86,6 +86,7 @@ namedValues:
 - Names are matched case-insensitively against APIM resource names
 - Wildcard patterns are supported — `*` matches any characters, `?` matches a single character (see below)
 - Exact names and wildcard patterns can be mixed in the same array
+- Entries beginning with `!` are **exclusions** — see [Excluding resources with `!`](#excluding-resources-with-) below
 - An empty file extracts everything (same as no filter)
 - An empty array (`[]`) excludes ALL resources of that type
 
@@ -122,6 +123,52 @@ namedValues:
 ```
 
 Wildcard matching is case-insensitive, just like exact matching. Special characters in resource names (e.g., dots in `my.api.v1`) are treated literally — `my.api.*` matches `my.api.test` but not `myXapiXtest`.
+
+---
+
+## Excluding resources with `!`
+
+Any filter entry whose first character is `!` is treated as an **exclusion**. Exclusions are applied *after* inclusions for the same list, so you can write patterns like "include everything matching this shape, except these specific ones."
+
+Semantics:
+
+- `!` must be the **first character** of the entry to count as negation. `foo!bar` is a literal name.
+- The rest of the entry is a normal filter value — exact name or wildcard pattern, matched case-insensitively.
+- A resource is included iff at least one inclusion matches it **and** no exclusion matches it.
+- A list containing only exclusions is treated as "include everything, then subtract" — equivalent to prepending an implicit `*`.
+- Exclusions respect the same semantics as inclusions: they match API root names (stripping revision suffixes), and excluding a parent (Api, Product, Gateway, Workspace) cascades to its children.
+
+### Examples
+
+```yaml
+# Include all prod-* APIs except one specific legacy API and any deprecated variants
+apis:
+  - 'prod-*'
+  - '!prod-legacy-billing'
+  - '!prod-*-deprecated'
+
+# Include every backend except the shared infra ones
+backends:
+  - '*'
+  - '!shared-monitoring'
+  - '!shared-*-infra'
+
+# Include every named value except Key Vault-backed ones (pure-exclusion list)
+namedValues:
+  - '!keyvault-*'
+```
+
+Exclusions work anywhere a string list is accepted, including sub-filter fields inside `apiSubFilters` and `workspaceSubFilters`:
+
+```yaml
+apis:
+  - 'my-api'
+apiSubFilters:
+  my-api:
+    operations:
+      - 'get-*'
+      - '!get-internal-*'   # keep all get-* operations except internal ones
+```
 
 ---
 

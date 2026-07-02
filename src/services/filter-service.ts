@@ -239,6 +239,19 @@ export function wildcardMatch(pattern: string, text: string): boolean {
 }
 
 /**
+ * Check whether a single filter entry matches a resource name.
+ * Handles both exact (case-insensitive) and wildcard matching, and
+ * matches against the API root name (revision-suffix stripped) as well.
+ */
+function entryMatches(entry: string, lowerName: string, lowerRoot: string): boolean {
+  if (isWildcardPattern(entry)) {
+    return wildcardMatch(entry, lowerName) || wildcardMatch(entry, lowerRoot);
+  }
+  const lowerEntry = entry.toLowerCase();
+  return lowerName === lowerEntry || lowerRoot === lowerEntry;
+}
+
+/**
  * Match a resource name against a filter allowlist.
  *
  * - undefined allowlist → include all (no filter for this type)
@@ -246,6 +259,16 @@ export function wildcardMatch(pattern: string, text: string): boolean {
  * - non-empty array → case-insensitive exact match or wildcard pattern match
  *
  * Wildcard patterns use `*` (zero or more characters) and `?` (single character).
+ *
+ * Negation: entries beginning with `!` are treated as exclusions. Exclusions
+ * are evaluated after inclusions for the same list:
+ *   - If the list contains only exclusions, an implicit `*` include is assumed
+ *     ("include everything, then subtract").
+ *   - Otherwise a resource is included iff at least one inclusion matches
+ *     AND no exclusion matches.
+ * `!` must be the first character to be interpreted as negation; `foo!bar`
+ * is a literal name. `!` cannot appear in a valid APIM resource name, so a
+ * leading `!` is unambiguous.
  */
 function matchesFilter(name: string, allowlist: string[] | undefined): boolean {
   if (allowlist === undefined) {
@@ -256,17 +279,31 @@ function matchesFilter(name: string, allowlist: string[] | undefined): boolean {
     return false;
   }
 
+  const includes: string[] = [];
+  const excludes: string[] = [];
+  for (const entry of allowlist) {
+    if (entry.startsWith('!')) {
+      excludes.push(entry.slice(1));
+    } else {
+      includes.push(entry);
+    }
+  }
+
   const lowerName = name.toLowerCase();
   // For APIs, also match by root name (strip revision suffix)
   const lowerRoot = extractRootApiName(lowerName);
 
-  return allowlist.some((allowed) => {
-    if (isWildcardPattern(allowed)) {
-      return wildcardMatch(allowed, lowerName) || wildcardMatch(allowed, lowerRoot);
-    }
-    const lowerAllowed = allowed.toLowerCase();
-    return lowerName === lowerAllowed || lowerRoot === lowerAllowed;
-  });
+  // Pure-exclusion list is treated as "include-all, then subtract".
+  const included =
+    includes.length === 0
+      ? true
+      : includes.some((entry) => entryMatches(entry, lowerName, lowerRoot));
+
+  if (!included) {
+    return false;
+  }
+
+  return !excludes.some((entry) => entryMatches(entry, lowerName, lowerRoot));
 }
 
 /**
