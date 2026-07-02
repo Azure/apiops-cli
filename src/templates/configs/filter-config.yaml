@@ -11,10 +11,9 @@
 #     - key: [names]   → include only the named resources (case-insensitive,
 #                        supports * and ? wildcards)
 #
-#   Common pitfall: setting only `apis: [my-api]` does NOT narrow the whole
-#   extract to that API — every other type is still extracted because those
-#   keys are omitted. To extract JUST one API plus its transitive dependencies,
-#   set every other type to [] explicitly. Example:
+#   Tip: to extract JUST one API plus its transitive dependencies, set the
+#   `apis` key to that API and set every other type to []. Every key you
+#   omit still extracts everything of that type. Example:
 #
 #     apis:
 #       - my-own-api

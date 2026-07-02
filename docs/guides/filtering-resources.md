@@ -32,15 +32,15 @@ apiops extract \
   --filter configuration.extractor.yaml
 ```
 
-`petstore-api`, `orders-api`, and their transitive dependencies are extracted — **plus every backend, named value, product, tag, workspace, and every other resource type**, because those keys are omitted from the file and therefore default to "include all". If that is not what you want, see the next section.
+`petstore-api`, `orders-api`, and their transitive dependencies are extracted — along with every backend, named value, product, tag, workspace, and every other resource type, because those keys are omitted and therefore default to "include all". To narrow the extract to just these APIs, see [How To: Extract Just One API](#how-to-extract-just-one-api) below.
 
 ---
 
-## Common Pitfall: Narrowing to Just One API
+## How To: Extract Just One API
 
-Each top-level filter key is **independent**. Setting `apis:` does not implicitly exclude other resource types — it only narrows the `apis` type. Every key that is **omitted** from the file defaults to "include all resources of that type".
+Each top-level filter key is **independent**. Setting `apis:` narrows only the `apis` type — it does not implicitly exclude other resource types. Every key that is **omitted** from the file defaults to "include all resources of that type".
 
-If you want to extract just one API (plus whatever transitive dependencies it needs) and nothing else, you must **explicitly set every other type to `[]`**:
+To extract a single API (plus whatever transitive dependencies it needs) and nothing else, set every other type to `[]`:
 
 ```yaml
 # configuration.extractor.yaml — extract only my-own-api and its transitive deps
