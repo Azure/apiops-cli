@@ -48,9 +48,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $VerbosePreference = if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' }
 $DebugPreference   = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' }
-Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/LogMasking.psm1') -Force
-Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/ScriptRuntime.psm1') -Force
-Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/DeploymentOps.psm1') -Force
+Import-Module (Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'shared/modules/LogMasking.psm1') -Force
+Import-Module (Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'shared/modules/ScriptRuntime.psm1') -Force
+Import-Module (Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'shared/modules/DeploymentOps.psm1') -Force
 
 $bicepFile = Join-Path (Split-Path $PSScriptRoot -Parent) 'bicep/target-apim.bicep'
 
@@ -95,7 +95,7 @@ if (-not [string]::IsNullOrWhiteSpace($apimNameValue)) {
     $deployParameters += "apimName=$apimNameValue"
 }
 
-$raw = New-ResourceGroupDeployment `
+$result = New-ResourceGroupDeployment `
     -ResourceGroupName $ResourceGroupName `
     -DeploymentName    $deploymentName `
     -TemplateFile      $bicepFile `
@@ -104,7 +104,6 @@ $raw = New-ResourceGroupDeployment `
     -Replacements      $azReplacements `
     -FailureLabel      'Target APIM deployment'
 
-$result = $raw | ConvertFrom-Json
 if (-not $result.properties.outputs) {
     throw "Target deployment returned no outputs"
 }

@@ -59,9 +59,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $VerbosePreference = if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' }
 $DebugPreference   = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' }
-Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/LogMasking.psm1') -Force
-Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/ScriptRuntime.psm1') -Force
-Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/DeploymentOps.psm1') -Force
+Import-Module (Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'shared/modules/LogMasking.psm1') -Force
+Import-Module (Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'shared/modules/ScriptRuntime.psm1') -Force
+Import-Module (Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'shared/modules/DeploymentOps.psm1') -Force
 
 # Map this script's LogLevel (Info/Verbose/Debug) to the apiops CLI log level
 # values used in the printed example command.
@@ -178,7 +178,7 @@ if (-not [string]::IsNullOrWhiteSpace($apimNameValue)) {
     $deployParameters += "apimName=$apimNameValue"
 }
 
-$raw = New-ResourceGroupDeployment `
+$result = New-ResourceGroupDeployment `
     -ResourceGroupName $ResourceGroupName `
     -DeploymentName    $deploymentName `
     -TemplateFile      $bicepFile `
@@ -186,8 +186,6 @@ $raw = New-ResourceGroupDeployment `
     -Verbosity         $azVerbosity `
     -Replacements      $azReplacements `
     -FailureLabel      'Source APIM deployment'
-
-$result = $raw | ConvertFrom-Json
 
 # Extract outputs
 $outputs = $result.properties.outputs
@@ -238,9 +236,6 @@ Write-Host "    --service-name    $(Protect-ApimName -Value $outputs.apimService
 Write-Host "    --output-dir      ./extracted \"
 Write-Host "    --log-level       $apiopsLogLevel"
 Write-Host ""
-Write-Host "Gateway URL:        $($outputs.gatewayUrl.value)" -ForegroundColor Gray
-Write-Host "Workspace deployed: $($outputs.workspaceDeployed.value)" -ForegroundColor Gray
-Write-Host "Gateway deployed:   $($outputs.gatewayDeployed.value)" -ForegroundColor Gray
 Write-Host "SKU:                $($outputs.skuName.value)" -ForegroundColor Gray
 Write-Host ""
 

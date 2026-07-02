@@ -56,8 +56,8 @@ $ErrorActionPreference = 'Stop'
 $VerbosePreference = if ($LogLevel -in @('Verbose', 'Debug')) { 'Continue' } else { 'SilentlyContinue' }
 $DebugPreference = if ($LogLevel -eq 'Debug') { 'Continue' } else { 'SilentlyContinue' }
 
-$maskingModule = Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/LogMasking.psm1'
-$scriptArgModule = Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/ScriptRuntime.psm1'
+$maskingModule = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'shared/modules/LogMasking.psm1'
+$scriptArgModule = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'shared/modules/ScriptRuntime.psm1'
 $apiopsCliModule = Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/ApiopsCli.psm1'
 
 foreach ($requiredFile in @($maskingModule, $scriptArgModule, $apiopsCliModule)) {

@@ -354,10 +354,173 @@ function Wait-ForDeletedApimService {
     throw "Timed out waiting for APIM soft-delete entry for '$maskedApim' in location '$ServiceLocation'."
 }
 
+<#
+.SYNOPSIS
+Runs an ARM template/Bicep deployment at resource-group scope.
+
+.DESCRIPTION
+Runs an ARM template/Bicep deployment at resource-group scope, printing masked
+failure details and throwing on error. Returns the parsed deployment result so
+callers don't have to pipe through ConvertFrom-Json themselves.
+
+.PARAMETER ResourceGroupName
+Resource group to deploy into.
+
+.PARAMETER DeploymentName
+Name for the deployment.
+
+.PARAMETER TemplateFile
+Path to the ARM/Bicep template to deploy.
+
+.PARAMETER Parameters
+Deployment parameters as 'key=value' strings, or a '@file.json' parameters-file
+reference.
+
+.PARAMETER SubscriptionId
+Optional subscription ID to target the deployment.
+
+.PARAMETER Verbosity
+Extra az CLI verbosity flags (e.g. '--verbose', '--debug').
+
+.PARAMETER Output
+az CLI output format for the deployment ('json' or 'none').
+
+.PARAMETER Replacements
+Mask replacement map for output.
+
+.PARAMETER FailureLabel
+Human-readable label used in the thrown error message.
+
+.OUTPUTS
+System.Management.Automation.PSCustomObject - the parsed deployment result
+(when Output is 'json'); nothing when Output is 'none'.
+#>
+function New-ResourceGroupDeployment {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)][string]$ResourceGroupName,
+        [Parameter(Mandatory)][string]$DeploymentName,
+        [Parameter(Mandatory)][string]$TemplateFile,
+        [string[]]$Parameters = @(),
+        [string]$SubscriptionId,
+        [string[]]$Verbosity = @(),
+        [ValidateSet('json', 'none')][string]$Output = 'json',
+        [hashtable]$Replacements = @{},
+        [string]$FailureLabel = 'Deployment'
+    )
+
+    if (-not (Test-Path $TemplateFile)) {
+        throw "Template file not found at: $TemplateFile"
+    }
+
+    $maskedRg = Protect-ResourceGroupName -Value $ResourceGroupName
+
+    if (-not $PSCmdlet.ShouldProcess($maskedRg, "Create deployment '$DeploymentName'")) {
+        return
+    }
+
+    # Capture stdout raw so this function can parse the deployment JSON, while
+    # redirecting stderr to a temp file so it can be masked and shown to the
+    # host (rather than leaking secrets or being silently discarded).
+    # Only pass --parameters when there are parameters to supply.
+    $parametersArg = if ($Parameters.Count -gt 0) { @('--parameters') + $Parameters } else { @() }
+    $subscriptionArg = if (-not [string]::IsNullOrWhiteSpace($SubscriptionId)) { @('--subscription', $SubscriptionId) } else { @() }
+    $stderrPath = (New-TemporaryFile).FullName
+    try {
+        $raw = az deployment group create `
+            --resource-group $ResourceGroupName `
+            --name           $DeploymentName `
+            --template-file  $TemplateFile `
+            --output         $Output `
+            $subscriptionArg $parametersArg $Verbosity 2> $stderrPath
+        $deployExit = $LASTEXITCODE
+
+        Get-Content -LiteralPath $stderrPath -ErrorAction SilentlyContinue |
+            Protect-Secret -Replacements $Replacements |
+            Out-Host
+    }
+    finally {
+        Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
+    }
+
+    if ($deployExit -ne 0) {
+        Write-DeploymentFailureDetails `
+            -ResourceGroupName $ResourceGroupName `
+            -DeploymentName    $DeploymentName `
+            -Replacements      $Replacements
+        throw "$FailureLabel failed (deployment '$DeploymentName' in resource group '$maskedRg'). See failed-operation details above."
+    }
+
+    # Return the deployment result as a parsed object so callers don't have to
+    # pipe through ConvertFrom-Json themselves. Output 'none' yields nothing.
+    $rawJson = $raw -join "`n"
+    if ([string]::IsNullOrWhiteSpace($rawJson)) {
+        return
+    }
+
+    return ($rawJson | ConvertFrom-Json)
+}
+
+<#
+.SYNOPSIS
+Tears down a test resource group and purges its soft-deleted APIM service.
+
+.DESCRIPTION
+Discovers the APIM service in the resource group (for the post-deletion
+soft-delete purge), deletes the resource group synchronously, waits for the
+deletion to complete, then purges the soft-deleted APIM so its name is freed
+for reuse. Safe to call when the resource group is already absent.
+
+.PARAMETER ResourceGroup
+Resource group to delete.
+
+.PARAMETER Location
+Azure region used when purging the soft-deleted APIM service.
+
+.PARAMETER SubscriptionId
+Optional subscription ID scoping every operation.
+#>
+function Remove-ApimResourceGroup {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$ResourceGroup,
+        [Parameter(Mandatory)][string]$Location,
+        [string]$SubscriptionId
+    )
+
+    $subscriptionArgs = if (-not [string]::IsNullOrWhiteSpace($SubscriptionId)) { @('--subscription', $SubscriptionId) } else { @() }
+    $maskedRg = Protect-ResourceGroupName -Value $ResourceGroup
+
+    # Capture the APIM name before deleting the group so we can purge its
+    # soft-deleted entry afterward and free the name for reuse.
+    $apimName = az apim list --resource-group $ResourceGroup --query '[0].name' -o tsv @subscriptionArgs 2>$null
+
+    if (Get-GroupExists -ResourceGroup $ResourceGroup -SubscriptionId $SubscriptionId) {
+        Write-Host "   Deleting $maskedRg..."
+        az group delete --name $ResourceGroup --yes @subscriptionArgs 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to delete resource group '$maskedRg'."
+        }
+
+        Wait-ForResourceGroupDeletion -ResourceGroup $ResourceGroup -SubscriptionId $SubscriptionId
+    }
+    else {
+        Write-Host "   Resource group '$maskedRg' already absent"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($apimName)) {
+        Wait-ForDeletedApimService -ServiceName $apimName -ServiceLocation $Location -SubscriptionId $SubscriptionId
+        Write-Host "   🗑️  Purging soft-deleted APIM: $(Protect-ApimName -Value $apimName)..."
+        az apim deletedservice purge --service-name $apimName --location $Location @subscriptionArgs 2>$null
+    }
+}
+
 Export-ModuleMember -Function `
     Write-DeploymentFailureDetails, `
     Wait-ApimActivation, `
     Wait-ApimApiQueryable, `
     Get-GroupExists, `
     Wait-ForResourceGroupDeletion, `
-    Wait-ForDeletedApimService
+    Wait-ForDeletedApimService, `
+    New-ResourceGroupDeployment, `
+    Remove-ApimResourceGroup

@@ -187,32 +187,20 @@ try {
         $tempCertificate.password = '*** REDACTED ***'
     }
 
-    $apimNameArg = if (-not [string]::IsNullOrWhiteSpace($apimNameValue)) { @('--parameters', "apimName=$apimNameValue") } else { @() }
-
-    $deployStderrPath = (New-TemporaryFile).FullName
-    try {
-        $rawDeploy = az deployment group create `
-            --subscription   $resolvedSubscriptionId `
-            --resource-group $ResourceGroupName `
-            --name           $deploymentName `
-            --template-file  $bicepFile `
-            --parameters     "skuName=$SkuName" "location=$Location" "publisherEmail=$PublisherEmail" `
-            --output         json `
-            @apimNameArg 2> $deployStderrPath
-        $deployExit = $LASTEXITCODE
-        Get-Content -LiteralPath $deployStderrPath -ErrorAction SilentlyContinue |
-            Protect-Secret -Replacements $azReplacements |
-            Out-Host
-    }
-    finally {
-        Remove-Item -LiteralPath $deployStderrPath -Force -ErrorAction SilentlyContinue
-    }
-    if ($deployExit -ne 0) {
-        Write-DeploymentFailureDetails -ResourceGroupName $ResourceGroupName -DeploymentName $deploymentName -Replacements $azReplacements
-        throw "Source deployment failed in resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)'."
+    $deployParameters = @("skuName=$SkuName", "location=$Location", "publisherEmail=$PublisherEmail")
+    if (-not [string]::IsNullOrWhiteSpace($apimNameValue)) {
+        $deployParameters += "apimName=$apimNameValue"
     }
 
-    $deployResult = $rawDeploy | ConvertFrom-Json
+    $deployResult = New-ResourceGroupDeployment `
+        -ResourceGroupName $ResourceGroupName `
+        -DeploymentName    $deploymentName `
+        -TemplateFile      $bicepFile `
+        -Parameters        $deployParameters `
+        -SubscriptionId    $resolvedSubscriptionId `
+        -Replacements      $azReplacements `
+        -FailureLabel      'Source deployment'
+
     $outputs = $deployResult.properties.outputs
     $apimServiceName = $outputs.apimServiceName.value
     Write-Verbose "  [deploy] provisioned APIM service: $(Protect-ApimName -Value $apimServiceName)"
@@ -241,27 +229,15 @@ try {
     $postActivationParamsFile = Join-Path ([System.IO.Path]::GetTempPath()) ("source-apim-post-activation-params-$([Guid]::NewGuid().ToString('N')).json")
     $postParams | ConvertTo-Json -Depth 5 | Set-Content -Path $postActivationParamsFile
 
-    $postStderrPath = (New-TemporaryFile).FullName
-    try {
-        az deployment group create `
-            --subscription   $resolvedSubscriptionId `
-            --resource-group $ResourceGroupName `
-            --name           $postDeploymentName `
-            --template-file  $resolvedPostActivationBicepFile `
-            --parameters     "@$postActivationParamsFile" `
-            --output         json 2> $postStderrPath | Out-Null
-        $postExit = $LASTEXITCODE
-        Get-Content -LiteralPath $postStderrPath -ErrorAction SilentlyContinue |
-            Protect-Secret -Replacements $azReplacements |
-            Out-Host
-    }
-    finally {
-        Remove-Item -LiteralPath $postStderrPath -Force -ErrorAction SilentlyContinue
-    }
-    if ($postExit -ne 0) {
-        Write-DeploymentFailureDetails -ResourceGroupName $ResourceGroupName -DeploymentName $postDeploymentName -Replacements $azReplacements
-        throw "Post-activation deployment failed in resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)'."
-    }
+    New-ResourceGroupDeployment `
+        -ResourceGroupName $ResourceGroupName `
+        -DeploymentName    $postDeploymentName `
+        -TemplateFile      $resolvedPostActivationBicepFile `
+        -Parameters        @("@$postActivationParamsFile") `
+        -SubscriptionId    $resolvedSubscriptionId `
+        -Output            'none' `
+        -Replacements      $azReplacements `
+        -FailureLabel      'Post-activation deployment' | Out-Null
 
     Write-Host "✅ Phase 1 deploy complete"
     $result = [ordered]@{

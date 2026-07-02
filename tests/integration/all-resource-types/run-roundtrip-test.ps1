@@ -85,7 +85,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$scriptArgModule = Join-Path $PSScriptRoot 'modules/ScriptRuntime.psm1'
+$scriptArgModule = Join-Path (Split-Path $PSScriptRoot -Parent) 'shared/modules/ScriptRuntime.psm1'
 Import-Module $scriptArgModule -Force
 
 $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'

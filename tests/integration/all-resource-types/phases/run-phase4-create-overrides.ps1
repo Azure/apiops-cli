@@ -39,8 +39,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$maskingModule = Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/LogMasking.psm1'
-$scriptArgModule  = Join-Path (Split-Path $PSScriptRoot -Parent) 'modules/ScriptRuntime.psm1'
+$maskingModule = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'shared/modules/LogMasking.psm1'
+$scriptArgModule  = Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'shared/modules/ScriptRuntime.psm1'
 
 foreach ($requiredFile in @($maskingModule, $scriptArgModule)) {
     if (-not (Test-Path $requiredFile)) {
