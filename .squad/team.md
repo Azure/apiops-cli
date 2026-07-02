@@ -40,6 +40,16 @@ agent session (the label alone does not).
 |------|------|-------------|-------|
 | Copilot | 🤖 Coding Agent | ✅ Enabled | Requires the `COPILOT_ASSIGN_TOKEN` repo secret (a PAT that can assign the coding agent). Without it the assign step is a no-op. |
 
+**Setting up `COPILOT_ASSIGN_TOKEN`:** the default `GITHUB_TOKEN` cannot assign the
+coding agent, so the assign step needs a user token stored as a repo secret. Create a
+[fine-grained personal access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens)
+(ideally on a machine/bot account) with **Repository permissions** — *Metadata*: read,
+and *Actions*, *Contents*, *Issues*, and *Pull requests*: read & write — then add it as a
+[repository secret](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets#creating-secrets-for-a-repository)
+named `COPILOT_ASSIGN_TOKEN`. A classic PAT with the `repo` scope also works. The exact
+token requirements are documented under
+[Assigning issues to Copilot via the API](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/cloud-agent/use-cloud-agent-via-the-api#using-the-issues-api).
+
 ## Issue Source
 
 - **Repository:** Azure/apiops-cli
