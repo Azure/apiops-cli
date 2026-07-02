@@ -1,5 +1,5 @@
-# gh-aw-metadata: {"schema_version":"v4","frontmatter_hash":"60ddfea64f983982e7da70bac227d0bb086de48fd814a6cd6556a22bb6322c84","body_hash":"dab8fe99999fed7d1ef283d6f6a0046aa81ebdda3b72e54fe2b83705f3922bd9","compiler_version":"v0.81.6","strict":true,"agent_id":"copilot","engine_versions":{"copilot":"1.0.65"}}
-# gh-aw-manifest: {"version":1,"secrets":["GH_AW_GITHUB_MCP_SERVER_TOKEN","GH_AW_GITHUB_TOKEN","GITHUB_TOKEN"],"actions":[{"repo":"actions/cache/restore","sha":"27d5ce7f107fe9357f9df03efb73ab90386fccae","version":"v5.0.5"},{"repo":"actions/cache/save","sha":"27d5ce7f107fe9357f9df03efb73ab90386fccae","version":"v5.0.5"},{"repo":"actions/checkout","sha":"9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0","version":"v7.0.0"},{"repo":"actions/checkout","sha":"df4cb1c069e1874edd31b4311f1884172cec0e10","version":"v6.0.3 (source v6)"},{"repo":"actions/download-artifact","sha":"3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c","version":"v8.0.1"},{"repo":"actions/github-script","sha":"3a2844b7e9c422d3c10d287c895573f7108da1b3","version":"v9.0.0"},{"repo":"actions/github-script","sha":"ed597411d8f924073f98dfc5c65a23a2325f34cd","version":"v8"},{"repo":"actions/setup-node","sha":"48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e","version":"v6.4.0"},{"repo":"actions/upload-artifact","sha":"043fb46d1a93c77aae656e7c1c64a875d1fc6a0a","version":"v7.0.1"},{"repo":"github/gh-aw-actions/setup","sha":"ba6380cc6e5be5d21677bebe04d52fb48e3abec7","version":"v0.81.6"}],"containers":[{"image":"ghcr.io/github/gh-aw-firewall/agent:0.27.11","digest":"sha256:979723c628182da7729333f2208bb249fd25ddee579645cf9a3892d681a929c7","pinned_image":"ghcr.io/github/gh-aw-firewall/agent:0.27.11@sha256:979723c628182da7729333f2208bb249fd25ddee579645cf9a3892d681a929c7"},{"image":"ghcr.io/github/gh-aw-firewall/api-proxy:0.27.11","digest":"sha256:807e4831999b44513b0a66e5859d478dc4da7ae74ab1918cec967d513f95bf9d","pinned_image":"ghcr.io/github/gh-aw-firewall/api-proxy:0.27.11@sha256:807e4831999b44513b0a66e5859d478dc4da7ae74ab1918cec967d513f95bf9d"},{"image":"ghcr.io/github/gh-aw-firewall/squid:0.27.11","digest":"sha256:ff27ea0525ad953a6adee28a5fbe9d2e22be47dbec755c15767af4ea3f91df7d","pinned_image":"ghcr.io/github/gh-aw-firewall/squid:0.27.11@sha256:ff27ea0525ad953a6adee28a5fbe9d2e22be47dbec755c15767af4ea3f91df7d"},{"image":"ghcr.io/github/gh-aw-mcpg:v0.3.30","digest":"sha256:35625d1a2269b1238606078c879f59a91cffc4ac33eb54bf39c6418822c1a8be","pinned_image":"ghcr.io/github/gh-aw-mcpg:v0.3.30@sha256:35625d1a2269b1238606078c879f59a91cffc4ac33eb54bf39c6418822c1a8be"},{"image":"ghcr.io/github/gh-aw-node","digest":"sha256:529d02eb970b1161aa25c593a9c3df57fdfad5a8add328cb3b6eccef66f3183b","pinned_image":"ghcr.io/github/gh-aw-node@sha256:529d02eb970b1161aa25c593a9c3df57fdfad5a8add328cb3b6eccef66f3183b"},{"image":"ghcr.io/github/github-mcp-server:v1.4.0","digest":"sha256:2afb26356481d1a350e14544a6e160f7f7ec1561a1ea309b823665abf0309036","pinned_image":"ghcr.io/github/github-mcp-server:v1.4.0@sha256:2afb26356481d1a350e14544a6e160f7f7ec1561a1ea309b823665abf0309036"}]}
+# gh-aw-metadata: {"schema_version":"v4","frontmatter_hash":"2d4bfb2a89483076e06f94eb9df8ed8c34e1ff45b3da94c7caeb6440d4ce4bdc","body_hash":"e0bda517a121787eedd565136e0527cfdb092404f4a9ad76fbf2c38ef2a5378a","compiler_version":"v0.81.6","strict":true,"agent_id":"copilot","engine_versions":{"copilot":"1.0.65"}}
+# gh-aw-manifest: {"version":1,"secrets":["GH_AW_GITHUB_MCP_SERVER_TOKEN","GH_AW_GITHUB_TOKEN","GITHUB_TOKEN"],"actions":[{"repo":"actions/cache/restore","sha":"27d5ce7f107fe9357f9df03efb73ab90386fccae","version":"v5.0.5"},{"repo":"actions/cache/save","sha":"27d5ce7f107fe9357f9df03efb73ab90386fccae","version":"v5.0.5"},{"repo":"actions/checkout","sha":"9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0","version":"v7.0.0"},{"repo":"actions/download-artifact","sha":"3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c","version":"v8.0.1"},{"repo":"actions/github-script","sha":"3a2844b7e9c422d3c10d287c895573f7108da1b3","version":"v9.0.0"},{"repo":"actions/github-script","sha":"ed597411d8f924073f98dfc5c65a23a2325f34cd","version":"v8"},{"repo":"actions/setup-node","sha":"48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e","version":"v6.4.0"},{"repo":"actions/upload-artifact","sha":"043fb46d1a93c77aae656e7c1c64a875d1fc6a0a","version":"v7.0.1"},{"repo":"github/gh-aw-actions/setup","sha":"ba6380cc6e5be5d21677bebe04d52fb48e3abec7","version":"v0.81.6"}],"containers":[{"image":"ghcr.io/github/gh-aw-firewall/agent:0.27.11","digest":"sha256:979723c628182da7729333f2208bb249fd25ddee579645cf9a3892d681a929c7","pinned_image":"ghcr.io/github/gh-aw-firewall/agent:0.27.11@sha256:979723c628182da7729333f2208bb249fd25ddee579645cf9a3892d681a929c7"},{"image":"ghcr.io/github/gh-aw-firewall/api-proxy:0.27.11","digest":"sha256:807e4831999b44513b0a66e5859d478dc4da7ae74ab1918cec967d513f95bf9d","pinned_image":"ghcr.io/github/gh-aw-firewall/api-proxy:0.27.11@sha256:807e4831999b44513b0a66e5859d478dc4da7ae74ab1918cec967d513f95bf9d"},{"image":"ghcr.io/github/gh-aw-firewall/squid:0.27.11","digest":"sha256:ff27ea0525ad953a6adee28a5fbe9d2e22be47dbec755c15767af4ea3f91df7d","pinned_image":"ghcr.io/github/gh-aw-firewall/squid:0.27.11@sha256:ff27ea0525ad953a6adee28a5fbe9d2e22be47dbec755c15767af4ea3f91df7d"},{"image":"ghcr.io/github/gh-aw-mcpg:v0.3.30","digest":"sha256:35625d1a2269b1238606078c879f59a91cffc4ac33eb54bf39c6418822c1a8be","pinned_image":"ghcr.io/github/gh-aw-mcpg:v0.3.30@sha256:35625d1a2269b1238606078c879f59a91cffc4ac33eb54bf39c6418822c1a8be"},{"image":"ghcr.io/github/gh-aw-node","digest":"sha256:529d02eb970b1161aa25c593a9c3df57fdfad5a8add328cb3b6eccef66f3183b","pinned_image":"ghcr.io/github/gh-aw-node@sha256:529d02eb970b1161aa25c593a9c3df57fdfad5a8add328cb3b6eccef66f3183b"},{"image":"ghcr.io/github/github-mcp-server:v1.4.0","digest":"sha256:2afb26356481d1a350e14544a6e160f7f7ec1561a1ea309b823665abf0309036","pinned_image":"ghcr.io/github/github-mcp-server:v1.4.0@sha256:2afb26356481d1a350e14544a6e160f7f7ec1561a1ea309b823665abf0309036"}]}
 # This file was automatically generated by gh-aw (v0.81.6). DO NOT EDIT. To debug this workflow, load the skill at https://github.com/github/gh-aw/blob/main/debug.md
 #
 #    ___                   _   _      
@@ -23,7 +23,7 @@
 #
 # For more information: https://github.github.com/gh-aw/introduction/overview/
 #
-# Assign an approved issue (go:yes) to the maintainer who approved it and route it to squad areas. Reads the prior triage analysis and the squad routing table, applies the squad label plus matched squad:{member} labels (and squad:copilot to hand the issue off to the Copilot coding agent), and posts an assignment rationale comment.
+# When a maintainer marks an issue go:needs-research, help scope it by asking focused clarifying questions — but only if the maintainer has not already asked them. If the maintainer has posted clarifying questions, sharpen or de-ambiguate those instead. Posts at most one comment.
 #
 # Secrets used:
 #   - GH_AW_GITHUB_MCP_SERVER_TOKEN
@@ -34,7 +34,6 @@
 #   - actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
 #   - actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
 #   - actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-#   - actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3 (source v6)
 #   - actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
 #   - actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
 #   - actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0 (source v9)
@@ -51,11 +50,11 @@
 #   - ghcr.io/github/gh-aw-node@sha256:529d02eb970b1161aa25c593a9c3df57fdfad5a8add328cb3b6eccef66f3183b
 #   - ghcr.io/github/github-mcp-server:v1.4.0@sha256:2afb26356481d1a350e14544a6e160f7f7ec1561a1ea309b823665abf0309036
 
-name: "Issue Assignment Agent"
+name: "Issue Go: Clarify"
 on:
   issues:
     # names: # Label filtering applied via job conditions
-    # - go:yes # Label filtering applied via job conditions
+    # - go:needs-research # Label filtering applied via job conditions
     types:
     - labeled
   # roles: # Roles processed as role check in pre-activation job
@@ -67,14 +66,14 @@ permissions: {}
 concurrency:
   group: "gh-aw-${{ github.workflow }}-${{ github.event.issue.number || github.run_id }}"
 
-run-name: "Issue Assignment Agent"
+run-name: "Issue Go: Clarify"
 
 jobs:
   activation:
     needs: pre_activation
     if: >
       needs.pre_activation.outputs.activated == 'true' && (github.event_name != 'issues' || github.event.action != 'labeled' ||
-      github.event.label.name == 'go:yes')
+      github.event.label.name == 'go:needs-research')
     runs-on: ubuntu-slim
     permissions:
       actions: read
@@ -109,8 +108,8 @@ jobs:
           parent-span-id: ${{ needs.pre_activation.outputs.setup-parent-span-id || needs.pre_activation.outputs.setup-span-id }}
           safe-output-artifact-client: ${{ env.GH_AW_MAX_DAILY_AI_CREDITS != '' }}
         env:
-          GH_AW_SETUP_WORKFLOW_NAME: "Issue Assignment Agent"
-          GH_AW_CURRENT_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/issue-assign.lock.yml@${{ github.ref }}
+          GH_AW_SETUP_WORKFLOW_NAME: "Issue Go: Clarify"
+          GH_AW_CURRENT_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/issue-go-clarify.lock.yml@${{ github.ref }}
           GH_AW_INFO_VERSION: "1.0.65"
           GH_AW_INFO_AWF_VERSION: "v0.27.11"
           GH_AW_INFO_ENGINE_ID: "copilot"
@@ -123,7 +122,7 @@ jobs:
           GH_AW_INFO_VERSION: "1.0.65"
           GH_AW_INFO_AGENT_VERSION: "1.0.65"
           GH_AW_INFO_CLI_VERSION: "v0.81.6"
-          GH_AW_INFO_WORKFLOW_NAME: "Issue Assignment Agent"
+          GH_AW_INFO_WORKFLOW_NAME: "Issue Go: Clarify"
           GH_AW_INFO_EXPERIMENTAL: "false"
           GH_AW_INFO_SUPPORTS_TOOLS_ALLOWLIST: "true"
           GH_AW_INFO_STAGED: "false"
@@ -146,8 +145,8 @@ jobs:
         continue-on-error: true
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          key: agentic-workflow-usage-issueassign-${{ github.run_id }}
-          restore-keys: agentic-workflow-usage-issueassign-
+          key: agentic-workflow-usage-issuegoclarify-${{ github.run_id }}
+          restore-keys: agentic-workflow-usage-issuegoclarify-
           path: /tmp/gh-aw/agentic-workflow-usage-cache.jsonl
       - name: Restore daily AIC usage cache (artifact fallback)
         id: restore-daily-aic-cache-fallback
@@ -169,8 +168,8 @@ jobs:
         if: ${{ env.GH_AW_MAX_DAILY_AI_CREDITS != '' }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          GH_AW_WORKFLOW_NAME: "Issue Assignment Agent"
-          GH_AW_WORKFLOW_ID: "issue-assign"
+          GH_AW_WORKFLOW_NAME: "Issue Go: Clarify"
+          GH_AW_WORKFLOW_ID: "issue-go-clarify"
           GH_AW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           GH_AW_WORKFLOW_DISPATCH_AW_CONTEXT: ${{ github.event.inputs.aw_context || '' }}
           GH_AW_HAS_SLASH_COMMAND: "false"
@@ -210,7 +209,7 @@ jobs:
         id: check-lock-file
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          GH_AW_WORKFLOW_FILE: "issue-assign.lock.yml"
+          GH_AW_WORKFLOW_FILE: "issue-go-clarify.lock.yml"
           GH_AW_CONTEXT_WORKFLOW_REF: "${{ github.workflow_ref }}"
         with:
           script: |
@@ -258,20 +257,20 @@ jobs:
         run: |
           bash "${RUNNER_TEMP}/gh-aw/actions/create_prompt_first.sh"
           {
-          cat << 'GH_AW_PROMPT_c55537d93244191d_EOF'
+          cat << 'GH_AW_PROMPT_01bd8eba433163e9_EOF'
           <system>
-          GH_AW_PROMPT_c55537d93244191d_EOF
+          GH_AW_PROMPT_01bd8eba433163e9_EOF
           cat "${RUNNER_TEMP}/gh-aw/prompts/xpia.md"
           cat "${RUNNER_TEMP}/gh-aw/prompts/temp_folder_prompt.md"
           cat "${RUNNER_TEMP}/gh-aw/prompts/markdown.md"
           cat "${RUNNER_TEMP}/gh-aw/prompts/safe_outputs_prompt.md"
-          cat << 'GH_AW_PROMPT_c55537d93244191d_EOF'
+          cat << 'GH_AW_PROMPT_01bd8eba433163e9_EOF'
           <safe-output-tools>
-          Tools: add_comment, add_labels(max:5), assign_to_user, missing_tool, missing_data, noop
+          Tools: add_comment, missing_tool, missing_data, noop
           </safe-output-tools>
-          GH_AW_PROMPT_c55537d93244191d_EOF
+          GH_AW_PROMPT_01bd8eba433163e9_EOF
           cat "${RUNNER_TEMP}/gh-aw/prompts/mcp_cli_tools_prompt.md"
-          cat << 'GH_AW_PROMPT_c55537d93244191d_EOF'
+          cat << 'GH_AW_PROMPT_01bd8eba433163e9_EOF'
           <github-context>
           The following GitHub context information is available for this workflow:
           {{#if github.actor}}
@@ -300,12 +299,12 @@ jobs:
           {{/if}}
           </github-context>
           
-          GH_AW_PROMPT_c55537d93244191d_EOF
+          GH_AW_PROMPT_01bd8eba433163e9_EOF
           cat "${RUNNER_TEMP}/gh-aw/prompts/github_mcp_tools_with_safeoutputs_prompt.md"
-          cat << 'GH_AW_PROMPT_c55537d93244191d_EOF'
+          cat << 'GH_AW_PROMPT_01bd8eba433163e9_EOF'
           </system>
-          {{#runtime-import .github/workflows/issue-assign.md}}
-          GH_AW_PROMPT_c55537d93244191d_EOF
+          {{#runtime-import .github/workflows/issue-go-clarify.md}}
+          GH_AW_PROMPT_01bd8eba433163e9_EOF
           } > "$GH_AW_PROMPT"
       - name: Interpolate variables and render templates
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -399,7 +398,7 @@ jobs:
       GH_AW_ASSETS_MAX_SIZE_KB: 0
       GH_AW_MCP_LOG_DIR: /tmp/gh-aw/mcp-logs/safeoutputs
       GH_AW_RUNTIME_FEATURES: ${{ vars.GH_AW_RUNTIME_FEATURES }}
-      GH_AW_WORKFLOW_ID_SANITIZED: issueassign
+      GH_AW_WORKFLOW_ID_SANITIZED: issuegoclarify
     outputs:
       agentic_engine_timeout: ${{ steps.detect-agent-errors.outputs.agentic_engine_timeout || 'false' }}
       ai_credits_rate_limit_error: ${{ steps.parse-mcp-gateway.outputs.ai_credits_rate_limit_error || 'false' }}
@@ -428,8 +427,8 @@ jobs:
           trace-id: ${{ needs.activation.outputs.setup-trace-id }}
           parent-span-id: ${{ needs.activation.outputs.setup-parent-span-id || needs.activation.outputs.setup-span-id }}
         env:
-          GH_AW_SETUP_WORKFLOW_NAME: "Issue Assignment Agent"
-          GH_AW_CURRENT_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/issue-assign.lock.yml@${{ github.ref }}
+          GH_AW_SETUP_WORKFLOW_NAME: "Issue Go: Clarify"
+          GH_AW_CURRENT_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/issue-go-clarify.lock.yml@${{ github.ref }}
           GH_AW_INFO_VERSION: "1.0.65"
           GH_AW_INFO_AWF_VERSION: "v0.27.11"
           GH_AW_INFO_ENGINE_ID: "copilot"
@@ -453,16 +452,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
       - env:
           GH_TOKEN: ${{ github.token }}
-          GO_YES_SENDER: ${{ github.event.sender.login }}
           ISSUE_AUTHOR: ${{ github.event.issue.user.login }}
           ISSUE_BODY: ${{ github.event.issue.body || '' }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           ISSUE_TITLE: ${{ github.event.issue.title }}
         id: context
-        name: Prepare assignment context
-        run: "mkdir -p /tmp/gh-aw/agent\n\n# ---------------------------------------------------------------------\n# USER context (untrusted): the issue itself + the prior triage comment.\n# ---------------------------------------------------------------------\nUSER_FILE=\"/tmp/gh-aw/agent/issue-content.md\"\n{\n  printf '%s\\n' '---' 'context-role: user' '---' '# Issue Approved for Work (go:yes)' ''\n  printf '**Title:** %s\\n' \"$ISSUE_TITLE\"\n  printf '**Number:** #%s\\n' \"$ISSUE_NUMBER\"\n  printf '**Author:** @%s\\n' \"$ISSUE_AUTHOR\"\n  printf '\\n## Body\\n\\n'\n  printf '%s\\n' \"$ISSUE_BODY\"\n  printf '\\n## Prior Triage Analysis\\n\\n'\n} > \"$USER_FILE\"\n\n# Append the most recent triage recommendation comment, if one exists.\nTRIAGE=$(gh issue view \"$ISSUE_NUMBER\" --repo \"$GITHUB_REPOSITORY\" --json comments \\\n  --jq '[.comments[] | select(.body | test(\"Triage Recommendation|Squad Triage\"))] | last | .body' 2>/dev/null || printf '')\nif [ -n \"$TRIAGE\" ] && [ \"$TRIAGE\" != \"null\" ]; then\n  printf '%s\\n' \"$TRIAGE\" >> \"$USER_FILE\"\nelse\n  printf '%s\\n' '_No prior triage analysis comment found — route from the issue content alone._' >> \"$USER_FILE\"\nfi\n\n# ---------------------------------------------------------------------\n# SYSTEM context (trusted): assignment policy + routing/team tables.\n# Single-quoted printf args keep backticks/`$` literal (no expansion).\n# ---------------------------------------------------------------------\nSYS_FILE=\"/tmp/gh-aw/agent/system-policy.md\"\n{\n  printf '%s\\n' '---' 'context-role: system' '---'\n  printf '%s\\n\\n' '# Issue Assignment Policy'\n  printf '%s\\n\\n' '## Assignment (deterministic — do not deviate)'\n  printf -- '- The maintainer who applied the `go:yes` label is **@%s**.\\n' \"$GO_YES_SENDER\"\n  printf -- '- Assign this issue to **@%s** with the `assign_to_user` tool. Assign no one else.\\n' \"$GO_YES_SENDER\"\n  printf '%s\\n' '- Always apply the `squad` label to mark the issue as squad-routed.'\n  printf '%s\\n' '- Apply one `squad:{member}` label for every squad area the issue touches, per the routing table below.'\n  printf '%s\\n' '- Apply the `squad:copilot` label to hand the issue off to the Copilot coding agent to begin implementation.'\n  printf '%s\\n' '- Never apply `go:*`, `priority:*`, `override:*`, or `type:*` labels.'\n  printf '\\n'\n} > \"$SYS_FILE\"\n\nappend_md() {\n  if [ -f \"$2\" ]; then\n    printf '\\n## %s\\n\\n' \"$1\" >> \"$SYS_FILE\"\n    cat \"$2\" >> \"$SYS_FILE\"\n    printf '\\n' >> \"$SYS_FILE\"\n  fi\n}\nappend_json() {\n  if [ -f \"$2\" ]; then\n    printf '\\n## %s\\n\\n```json\\n' \"$1\" >> \"$SYS_FILE\"\n    cat \"$2\" >> \"$SYS_FILE\"\n    printf '\\n```\\n' >> \"$SYS_FILE\"\n  fi\n}\nappend_md   \"Routing Policy (routing.md)\" \".squad/routing.md\"\nappend_md   \"Team Roster (team.md)\"       \".squad/team.md\"\nappend_json \"Routing Table (routing-table.json)\" \".squad/routing-table.json\"\nappend_json \"Issue Routing (issue-routing.json)\" \".squad/issue-routing.json\"\n\necho \"context_user_file=issue-content.md\" >> \"$GITHUB_OUTPUT\"\necho \"context_system_file=system-policy.md\" >> \"$GITHUB_OUTPUT\"\n"
+        name: Prepare research context
+        run: "mkdir -p /tmp/gh-aw/agent\n\n# ---------------------------------------------------------------------\n# USER context (untrusted): the issue + its full comment thread, so the\n# agent can tell whether the maintainer already asked clarifying questions.\n# ---------------------------------------------------------------------\nUSER_FILE=\"/tmp/gh-aw/agent/issue-content.md\"\n{\n  printf '%s\\n' '---' 'context-role: user' '---' '# Issue Needing Research (go:needs-research)' ''\n  printf '**Title:** %s\\n' \"$ISSUE_TITLE\"\n  printf '**Number:** #%s\\n' \"$ISSUE_NUMBER\"\n  printf '**Author:** @%s\\n' \"$ISSUE_AUTHOR\"\n  printf '\\n## Body\\n\\n'\n  printf '%s\\n' \"$ISSUE_BODY\"\n  printf '\\n## Existing Comments (newest last)\\n\\n'\n} > \"$USER_FILE\"\n\ngh issue view \"$ISSUE_NUMBER\" --repo \"$GITHUB_REPOSITORY\" --json comments \\\n  --jq '.comments[] | \"**@\\(.user.login):**\\n\\n\\(.body)\\n\\n---\\n\"' \\\n  >> \"$USER_FILE\" 2>/dev/null \\\n  || printf '%s\\n' '_No comments on the issue yet._' >> \"$USER_FILE\"\n\n# ---------------------------------------------------------------------\n# SYSTEM context (trusted): what this agent may and may not do.\n# ---------------------------------------------------------------------\nSYS_FILE=\"/tmp/gh-aw/agent/system-policy.md\"\n{\n  printf '%s\\n' '---' 'context-role: system' '---'\n  printf '%s\\n\\n' '# Clarifying-Questions Policy'\n  printf '%s\\n' '- The issue has been marked `go:needs-research` by a maintainer.'\n  printf '%s\\n' '- Your only job is to help scope the work by clarifying what is unknown.'\n  printf '%s\\n' '- If the maintainer has already posted clarifying questions, do NOT repeat them.'\n  printf '%s\\n' '  Instead, sharpen them, resolve ambiguity, or add only the gaps they missed.'\n  printf '%s\\n' '- If no clarifying questions have been asked yet, ask 2–5 focused questions.'\n  printf '%s\\n' '- Post at most ONE comment. Do not assign, label, close, or edit the issue.'\n} > \"$SYS_FILE\"\n\necho \"context_user_file=issue-content.md\" >> \"$GITHUB_OUTPUT\"\necho \"context_system_file=system-policy.md\" >> \"$GITHUB_OUTPUT\"\n"
       - name: Contract test — verify context separation
-        run: "USER_FILE=\"/tmp/gh-aw/agent/issue-content.md\"\nSYSTEM_FILE=\"/tmp/gh-aw/agent/system-policy.md\"\n\nif ! head -n 5 \"$USER_FILE\" | grep -qx \"context-role: user\"; then\n  echo \"::error::Contract violation: user context file has an unexpected role marker\"\n  exit 1\nfi\nif ! head -n 5 \"$SYSTEM_FILE\" | grep -qx \"context-role: system\"; then\n  echo \"::error::Contract violation: system context file has an unexpected role marker\"\n  exit 1\nfi\n# Untrusted issue markers must NOT bleed into the trusted system context.\nif grep -q \"context-role: user\" \"$SYSTEM_FILE\" || grep -q \"^# Issue Approved for Work\" \"$SYSTEM_FILE\"; then\n  echo \"::error::Contract violation: user context leaked into system context\"\n  exit 1\nfi\necho \"✅ Context separation contract verified\"\n"
+        run: "USER_FILE=\"/tmp/gh-aw/agent/issue-content.md\"\nSYSTEM_FILE=\"/tmp/gh-aw/agent/system-policy.md\"\n\nif ! head -n 5 \"$USER_FILE\" | grep -qx \"context-role: user\"; then\n  echo \"::error::Contract violation: user context file has an unexpected role marker\"\n  exit 1\nfi\nif ! head -n 5 \"$SYSTEM_FILE\" | grep -qx \"context-role: system\"; then\n  echo \"::error::Contract violation: system context file has an unexpected role marker\"\n  exit 1\nfi\nif grep -q \"context-role: user\" \"$SYSTEM_FILE\" || grep -q \"^# Issue Needing Research\" \"$SYSTEM_FILE\"; then\n  echo \"::error::Contract violation: user context leaked into system context\"\n  exit 1\nfi\necho \"✅ Context separation contract verified\"\n"
 
       - name: Configure Git credentials
         env:
@@ -527,16 +525,15 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/gh-aw/safeoutputs"
           mkdir -p /tmp/gh-aw/safeoutputs
           mkdir -p /tmp/gh-aw/mcp-logs/safeoutputs
-          cat > "${RUNNER_TEMP}/gh-aw/safeoutputs/config.json" << 'GH_AW_SAFE_OUTPUTS_CONFIG_64ea53ac3ff397b1_EOF'
-          {"add_comment":{"max":1},"add_labels":{"allowed":["squad","squad:*"],"blocked":["go:*","priority:*","override:*","type:*"],"max":5},"assign_to_user":{"max":1},"create_report_incomplete_issue":{},"missing_data":{},"missing_tool":{},"noop":{"max":1,"report-as-issue":"true"},"report_incomplete":{}}
-          GH_AW_SAFE_OUTPUTS_CONFIG_64ea53ac3ff397b1_EOF
+          cat > "${RUNNER_TEMP}/gh-aw/safeoutputs/config.json" << 'GH_AW_SAFE_OUTPUTS_CONFIG_049c1935bf1a6a33_EOF'
+          {"add_comment":{"max":1},"create_report_incomplete_issue":{},"missing_data":{},"missing_tool":{},"noop":{"max":1,"report-as-issue":"true"},"report_incomplete":{}}
+          GH_AW_SAFE_OUTPUTS_CONFIG_049c1935bf1a6a33_EOF
       - name: Generate Safe Outputs Tools
         env:
           GH_AW_TOOLS_META_JSON: |
             {
               "description_suffixes": {
-                "add_comment": " CONSTRAINTS: Maximum 1 comment(s) can be added. Supports reply_to_id for discussion threading.",
-                "add_labels": " CONSTRAINTS: Maximum 5 label(s) can be added. Only these labels are allowed: [\"squad\" \"squad:*\"]."
+                "add_comment": " CONSTRAINTS: Maximum 1 comment(s) can be added. Supports reply_to_id for discussion threading."
               },
               "repo_params": {},
               "dynamic_tools": []
@@ -558,44 +555,6 @@ jobs:
                   "reply_to_id": {
                     "type": "string",
                     "maxLength": 256
-                  },
-                  "repo": {
-                    "type": "string",
-                    "maxLength": 256
-                  }
-                }
-              },
-              "add_labels": {
-                "defaultMax": 5,
-                "fields": {
-                  "item_number": {
-                    "issueNumberOrTemporaryId": true
-                  },
-                  "labels": {
-                    "required": true,
-                    "type": "array"
-                  },
-                  "repo": {
-                    "type": "string",
-                    "maxLength": 256
-                  }
-                }
-              },
-              "assign_to_user": {
-                "defaultMax": 1,
-                "fields": {
-                  "assignee": {
-                    "type": "string",
-                    "sanitize": true,
-                    "maxLength": 39
-                  },
-                  "assignees": {
-                    "type": "[]string",
-                    "sanitize": true,
-                    "maxLength": 39
-                  },
-                  "issue_number": {
-                    "issueOrPRNumber": true
                   },
                   "repo": {
                     "type": "string",
@@ -1030,7 +989,6 @@ jobs:
       - activation
       - agent
       - detection
-      - post-check
       - safe_outputs
     if: >
       always() && (needs.agent.result != 'skipped' || needs.activation.outputs.lockdown_check_failed == 'true' ||
@@ -1041,7 +999,7 @@ jobs:
       issues: write
       pull-requests: write
     concurrency:
-      group: "gh-aw-conclusion-issue-assign"
+      group: "gh-aw-conclusion-issue-go-clarify"
       cancel-in-progress: false
       queue: max
     env:
@@ -1061,8 +1019,8 @@ jobs:
           trace-id: ${{ needs.activation.outputs.setup-trace-id }}
           parent-span-id: ${{ needs.activation.outputs.setup-parent-span-id || needs.activation.outputs.setup-span-id }}
         env:
-          GH_AW_SETUP_WORKFLOW_NAME: "Issue Assignment Agent"
-          GH_AW_CURRENT_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/issue-assign.lock.yml@${{ github.ref }}
+          GH_AW_SETUP_WORKFLOW_NAME: "Issue Go: Clarify"
+          GH_AW_CURRENT_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/issue-go-clarify.lock.yml@${{ github.ref }}
           GH_AW_INFO_VERSION: "1.0.65"
           GH_AW_INFO_AWF_VERSION: "v0.27.11"
           GH_AW_INFO_ENGINE_ID: "copilot"
@@ -1129,8 +1087,8 @@ jobs:
         continue-on-error: true
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          key: agentic-workflow-usage-issueassign-${{ github.run_id }}
-          restore-keys: agentic-workflow-usage-issueassign-
+          key: agentic-workflow-usage-issuegoclarify-${{ github.run_id }}
+          restore-keys: agentic-workflow-usage-issuegoclarify-
           path: /tmp/gh-aw/agentic-workflow-usage-cache.jsonl
       - name: Write daily AIC usage cache entry
         id: write-daily-aic-cache
@@ -1150,7 +1108,7 @@ jobs:
         continue-on-error: true
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
-          key: agentic-workflow-usage-issueassign-${{ github.run_id }}
+          key: agentic-workflow-usage-issuegoclarify-${{ github.run_id }}
           path: /tmp/gh-aw/agentic-workflow-usage-cache.jsonl
       - name: Upload daily AIC usage cache artifact
         id: upload-daily-aic-cache
@@ -1168,15 +1126,15 @@ jobs:
         env:
           GH_AW_AGENT_OUTPUT: ${{ steps.setup-agent-output-env.outputs.GH_AW_AGENT_OUTPUT }}
           GH_AW_NOOP_MAX: "1"
-          GH_AW_WORKFLOW_NAME: "Issue Assignment Agent"
-          GH_AW_WORKFLOW_SOURCE_URL: "${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/issue-assign.md"
+          GH_AW_WORKFLOW_NAME: "Issue Go: Clarify"
+          GH_AW_WORKFLOW_SOURCE_URL: "${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/issue-go-clarify.md"
           GH_AW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           GH_AW_AGENT_CONCLUSION: ${{ needs.agent.result }}
           GH_AW_NOOP_REPORT_AS_ISSUE: "true"
           GH_AW_AIC: ${{ needs.agent.outputs.aic }}
           GH_AW_THREAT_DETECTION_AIC: ${{ needs.detection.outputs.aic }}
           GH_AW_AMBIENT_CONTEXT: ${{ needs.agent.outputs.ambient_context }}
-          GH_AW_WORKFLOW_ID: "issue-assign"
+          GH_AW_WORKFLOW_ID: "issue-go-clarify"
         with:
           github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
@@ -1189,8 +1147,8 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           GH_AW_AGENT_OUTPUT: ${{ steps.setup-agent-output-env.outputs.GH_AW_AGENT_OUTPUT }}
-          GH_AW_WORKFLOW_NAME: "Issue Assignment Agent"
-          GH_AW_WORKFLOW_SOURCE_URL: "${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/issue-assign.md"
+          GH_AW_WORKFLOW_NAME: "Issue Go: Clarify"
+          GH_AW_WORKFLOW_SOURCE_URL: "${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/issue-go-clarify.md"
           GH_AW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           GH_AW_DETECTION_CONCLUSION: ${{ needs.detection.outputs.detection_conclusion }}
           GH_AW_DETECTION_REASON: ${{ needs.detection.outputs.detection_reason }}
@@ -1207,8 +1165,8 @@ jobs:
         env:
           GH_AW_AGENT_OUTPUT: ${{ steps.setup-agent-output-env.outputs.GH_AW_AGENT_OUTPUT }}
           GH_AW_MISSING_TOOL_CREATE_ISSUE: "true"
-          GH_AW_WORKFLOW_NAME: "Issue Assignment Agent"
-          GH_AW_WORKFLOW_SOURCE_URL: "${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/issue-assign.md"
+          GH_AW_WORKFLOW_NAME: "Issue Go: Clarify"
+          GH_AW_WORKFLOW_SOURCE_URL: "${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/issue-go-clarify.md"
         with:
           github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
@@ -1222,8 +1180,8 @@ jobs:
         env:
           GH_AW_AGENT_OUTPUT: ${{ steps.setup-agent-output-env.outputs.GH_AW_AGENT_OUTPUT }}
           GH_AW_REPORT_INCOMPLETE_CREATE_ISSUE: "true"
-          GH_AW_WORKFLOW_NAME: "Issue Assignment Agent"
-          GH_AW_WORKFLOW_SOURCE_URL: "${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/issue-assign.md"
+          GH_AW_WORKFLOW_NAME: "Issue Go: Clarify"
+          GH_AW_WORKFLOW_SOURCE_URL: "${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/issue-go-clarify.md"
         with:
           github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |
@@ -1237,11 +1195,11 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           GH_AW_AGENT_OUTPUT: ${{ steps.setup-agent-output-env.outputs.GH_AW_AGENT_OUTPUT }}
-          GH_AW_WORKFLOW_NAME: "Issue Assignment Agent"
-          GH_AW_WORKFLOW_SOURCE_URL: "${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/issue-assign.md"
+          GH_AW_WORKFLOW_NAME: "Issue Go: Clarify"
+          GH_AW_WORKFLOW_SOURCE_URL: "${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/issue-go-clarify.md"
           GH_AW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           GH_AW_AGENT_CONCLUSION: ${{ needs.agent.result }}
-          GH_AW_WORKFLOW_ID: "issue-assign"
+          GH_AW_WORKFLOW_ID: "issue-go-clarify"
           GH_AW_ACTION_FAILURE_ISSUE_EXPIRES_HOURS: "168"
           GH_AW_ENGINE_ID: "copilot"
           GH_AW_CHECKOUT_PR_SUCCESS: ${{ needs.agent.outputs.checkout_pr_success }}
@@ -1300,8 +1258,8 @@ jobs:
           trace-id: ${{ needs.activation.outputs.setup-trace-id }}
           parent-span-id: ${{ needs.activation.outputs.setup-parent-span-id || needs.activation.outputs.setup-span-id }}
         env:
-          GH_AW_SETUP_WORKFLOW_NAME: "Issue Assignment Agent"
-          GH_AW_CURRENT_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/issue-assign.lock.yml@${{ github.ref }}
+          GH_AW_SETUP_WORKFLOW_NAME: "Issue Go: Clarify"
+          GH_AW_CURRENT_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/issue-go-clarify.lock.yml@${{ github.ref }}
           GH_AW_INFO_VERSION: "1.0.65"
           GH_AW_INFO_AWF_VERSION: "v0.27.11"
           GH_AW_INFO_ENGINE_ID: "copilot"
@@ -1373,8 +1331,8 @@ jobs:
         if: always() && steps.detection_guard.outputs.run_detection == 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          WORKFLOW_NAME: "Issue Assignment Agent"
-          WORKFLOW_DESCRIPTION: "Assign an approved issue (go:yes) to the maintainer who approved it and route it to squad areas. Reads the prior triage analysis and the squad routing table, applies the squad label plus matched squad:{member} labels (and squad:copilot to hand the issue off to the Copilot coding agent), and posts an assignment rationale comment."
+          WORKFLOW_NAME: "Issue Go: Clarify"
+          WORKFLOW_DESCRIPTION: "When a maintainer marks an issue go:needs-research, help scope it by asking focused clarifying questions — but only if the maintainer has not already asked them. If the maintainer has posted clarifying questions, sharpen or de-ambiguate those instead. Posts at most one comment."
           HAS_PATCH: ${{ needs.agent.outputs.has_patch }}
         with:
           script: |
@@ -1522,84 +1480,8 @@ jobs:
               }
             }
 
-  post-check:
-    name: Verify assignment integrity
-    needs:
-      - agent
-      - safe_outputs
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      issues: read
-
-    steps:
-      - name: Configure GH_HOST for enterprise compatibility
-        id: ghes-host-config
-        shell: bash
-        run: | # zizmor: ignore[github-env] - GITHUB_SERVER_URL is set by GitHub Actions, not user input.
-          # Derive GH_HOST from GITHUB_SERVER_URL so the gh CLI targets the correct
-          # GitHub instance (GHES/GHEC). On github.com this is a harmless no-op.
-          GH_HOST="${GITHUB_SERVER_URL#https://}"
-          GH_HOST="${GH_HOST#http://}"
-          echo "GH_HOST=${GH_HOST}" >> "$GITHUB_ENV"
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3 (source v6)
-        with:
-          persist-credentials: false
-      - name: Verify assignee and squad labels
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
-        env:
-          GO_YES_SENDER: ${{ github.event.sender.login }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-        with:
-          script: |
-            const fs = require('fs');
-            const sender = process.env.GO_YES_SENDER;
-            const issue_number = Number(process.env.ISSUE_NUMBER);
-
-            const { data: issue } = await github.rest.issues.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number
-            });
-
-            // 1) Assignee must include the go:yes label sender.
-            const assignees = issue.assignees.map(a => a.login);
-            if (!assignees.includes(sender)) {
-              core.setFailed(
-                `Assignee mismatch: expected @${sender} (go:yes sender) but got [${assignees.join(', ')}]`
-              );
-              return;
-            }
-
-            // 2) Every squad:{member} label must map to a routing-table.json entry
-            //    (squad:copilot is the always-allowed Copilot coding-agent handoff).
-            const routingEntries = JSON.parse(fs.readFileSync('.squad/routing-table.json', 'utf8'));
-            const issueRouting = JSON.parse(fs.readFileSync('.squad/issue-routing.json', 'utf8'));
-
-            const validMembers = new Set();
-            for (const e of routingEntries) {
-              validMembers.add(`squad:${e.routeTo.toLowerCase().replace(/[^a-z0-9]+/g, '')}`);
-            }
-            for (const e of issueRouting) {
-              if (e.label.startsWith('squad:')) validMembers.add(e.label);
-            }
-            validMembers.add('squad:copilot');
-
-            const squadLabels = issue.labels
-              .map(l => l.name)
-              .filter(n => n.startsWith('squad:'));
-            const invalid = squadLabels.filter(l => !validMembers.has(l));
-            if (invalid.length > 0) {
-              core.setFailed(
-                `Invalid squad labels not backed by .squad/routing-table.json: [${invalid.join(', ')}]`
-              );
-              return;
-            }
-
-            core.info(`✅ Post-check passed: assignee @${sender}, squad labels [${squadLabels.join(', ')}]`);
-
   pre_activation:
-    if: github.event_name != 'issues' || github.event.action != 'labeled' || github.event.label.name == 'go:yes'
+    if: github.event_name != 'issues' || github.event.action != 'labeled' || github.event.label.name == 'go:needs-research'
     runs-on: ubuntu-slim
     env:
       GH_AW_RUNTIME_FEATURES: ${{ vars.GH_AW_RUNTIME_FEATURES }}
@@ -1617,8 +1499,8 @@ jobs:
           destination: ${{ runner.temp }}/gh-aw/actions
           job-name: ${{ github.job }}
         env:
-          GH_AW_SETUP_WORKFLOW_NAME: "Issue Assignment Agent"
-          GH_AW_CURRENT_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/issue-assign.lock.yml@${{ github.ref }}
+          GH_AW_SETUP_WORKFLOW_NAME: "Issue Go: Clarify"
+          GH_AW_CURRENT_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/issue-go-clarify.lock.yml@${{ github.ref }}
           GH_AW_INFO_VERSION: "1.0.65"
           GH_AW_INFO_AWF_VERSION: "v0.27.11"
           GH_AW_INFO_ENGINE_ID: "copilot"
@@ -1651,7 +1533,7 @@ jobs:
       GH_AW_AGENT_AIC: ${{ needs.agent.outputs.aic }}
       GH_AW_AIC: ${{ needs.agent.outputs.aic }}
       GH_AW_AMBIENT_CONTEXT: ${{ needs.agent.outputs.ambient_context }}
-      GH_AW_CALLER_WORKFLOW_ID: "${{ github.repository }}/issue-assign"
+      GH_AW_CALLER_WORKFLOW_ID: "${{ github.repository }}/issue-go-clarify"
       GH_AW_DETECTION_CONCLUSION: ${{ needs.detection.outputs.detection_conclusion }}
       GH_AW_DETECTION_REASON: ${{ needs.detection.outputs.detection_reason }}
       GH_AW_EFFECTIVE_TOKENS: ${{ needs.agent.outputs.effective_tokens }}
@@ -1660,11 +1542,10 @@ jobs:
       GH_AW_ENGINE_VERSION: "1.0.65"
       GH_AW_RUNTIME_FEATURES: ${{ vars.GH_AW_RUNTIME_FEATURES }}
       GH_AW_THREAT_DETECTION_AIC: ${{ needs.detection.outputs.aic }}
-      GH_AW_WORKFLOW_ID: "issue-assign"
-      GH_AW_WORKFLOW_NAME: "Issue Assignment Agent"
-      GH_AW_WORKFLOW_SOURCE_URL: "${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/issue-assign.md"
+      GH_AW_WORKFLOW_ID: "issue-go-clarify"
+      GH_AW_WORKFLOW_NAME: "Issue Go: Clarify"
+      GH_AW_WORKFLOW_SOURCE_URL: "${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/.github/workflows/issue-go-clarify.md"
     outputs:
-      assign_to_user_assigned: ${{ steps.process_safe_outputs.outputs.assigned }}
       code_push_failure_count: ${{ steps.process_safe_outputs.outputs.code_push_failure_count }}
       code_push_failure_errors: ${{ steps.process_safe_outputs.outputs.code_push_failure_errors }}
       comment_id: ${{ steps.process_safe_outputs.outputs.comment_id }}
@@ -1683,8 +1564,8 @@ jobs:
           trace-id: ${{ needs.activation.outputs.setup-trace-id }}
           parent-span-id: ${{ needs.activation.outputs.setup-parent-span-id || needs.activation.outputs.setup-span-id }}
         env:
-          GH_AW_SETUP_WORKFLOW_NAME: "Issue Assignment Agent"
-          GH_AW_CURRENT_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/issue-assign.lock.yml@${{ github.ref }}
+          GH_AW_SETUP_WORKFLOW_NAME: "Issue Go: Clarify"
+          GH_AW_CURRENT_WORKFLOW_REF: ${{ github.repository }}/.github/workflows/issue-go-clarify.lock.yml@${{ github.ref }}
           GH_AW_INFO_VERSION: "1.0.65"
           GH_AW_INFO_AWF_VERSION: "v0.27.11"
           GH_AW_INFO_ENGINE_ID: "copilot"
@@ -1720,7 +1601,7 @@ jobs:
           GH_AW_ALLOWED_DOMAINS: "api.business.githubcopilot.com,api.enterprise.githubcopilot.com,api.github.com,api.githubcopilot.com,api.individual.githubcopilot.com,api.snapcraft.io,archive.ubuntu.com,azure.archive.ubuntu.com,crl.geotrust.com,crl.globalsign.com,crl.identrust.com,crl.sectigo.com,crl.thawte.com,crl.usertrust.com,crl.verisign.com,crl3.digicert.com,crl4.digicert.com,crls.ssl.com,github.com,host.docker.internal,json-schema.org,json.schemastore.org,keyserver.ubuntu.com,ocsp.digicert.com,ocsp.geotrust.com,ocsp.globalsign.com,ocsp.identrust.com,ocsp.sectigo.com,ocsp.ssl.com,ocsp.thawte.com,ocsp.usertrust.com,ocsp.verisign.com,packagecloud.io,packages.cloud.google.com,packages.microsoft.com,ppa.launchpad.net,raw.githubusercontent.com,registry.npmjs.org,s.symcb.com,s.symcd.com,security.ubuntu.com,telemetry.enterprise.githubcopilot.com,ts-crl.ws.symantec.com,ts-ocsp.ws.symantec.com,www.googleapis.com"
           GITHUB_SERVER_URL: ${{ github.server_url }}
           GITHUB_API_URL: ${{ github.api_url }}
-          GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG: "{\"add_comment\":{\"max\":1},\"add_labels\":{\"allowed\":[\"squad\",\"squad:*\"],\"blocked\":[\"go:*\",\"priority:*\",\"override:*\",\"type:*\"],\"max\":5},\"assign_to_user\":{\"max\":1},\"create_report_incomplete_issue\":{},\"missing_data\":{},\"missing_tool\":{},\"noop\":{\"max\":1,\"report-as-issue\":\"true\"},\"report_incomplete\":{}}"
+          GH_AW_SAFE_OUTPUTS_HANDLER_CONFIG: "{\"add_comment\":{\"max\":1},\"create_report_incomplete_issue\":{},\"missing_data\":{},\"missing_tool\":{},\"noop\":{\"max\":1,\"report-as-issue\":\"true\"},\"report_incomplete\":{}}"
         with:
           github-token: ${{ secrets.GH_AW_GITHUB_TOKEN || secrets.GITHUB_TOKEN }}
           script: |

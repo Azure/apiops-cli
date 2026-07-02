@@ -133,12 +133,19 @@ jobs:
                 per_page: 5
               });
 
-              const unassigned = copilotIssues.filter(i =>
-                !i.assignees || i.assignees.length === 0
+              // Include issues that don't yet have the coding agent assigned.
+              // issue-go-yes always assigns the go:yes maintainer as owner, so an
+              // issue almost always has a (human) assignee — filtering on "zero
+              // assignees" would skip every routed issue. Filter on the agent's
+              // presence instead; the POST below ADDS the bot as an extra assignee
+              // without removing the human owner.
+              const COPILOT_LOGINS = new Set(['copilot-swe-agent[bot]', 'copilot-swe-agent', 'copilot']);
+              const needsAgent = copilotIssues.filter(i =>
+                !(i.assignees || []).some(a => COPILOT_LOGINS.has((a.login || '').toLowerCase()))
               );
 
-              if (unassigned.length === 0) {
-                core.info('No unassigned squad:copilot issues');
+              if (needsAgent.length === 0) {
+                core.info('No squad:copilot issues awaiting the coding agent');
                 return;
               }
 
@@ -148,7 +155,7 @@ jobs:
                 repo: context.repo.repo
               });
 
-              for (const issue of unassigned) {
+              for (const issue of needsAgent) {
                 try {
                   await github.request('POST /repos/{owner}/{repo}/issues/{issue_number}/assignees', {
                     owner: context.repo.owner,
