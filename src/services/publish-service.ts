@@ -27,6 +27,7 @@ import { generateDryRunReport, DryRunReport } from './dry-run-reporter.js';
 import { computeDeleteActions } from './delete-unmatched-service.js';
 import { computeGitDiff } from './git-diff-service.js';
 import { scanForRedactionMarkers } from './secret-redaction-guard.js';
+import { hasNamedValueOverride } from './override-merger.js';
 import { REDACTION_MARKER } from './secret-redactor.js';
 
 /**
@@ -444,18 +445,6 @@ function splitNamedValues(
   }
 
   return { namedValues, otherTier1 };
-}
-
-/**
- * Check whether a named value has an explicit override entry.
- * Uses case-insensitive matching to align with override-merger behavior.
- */
-function hasNamedValueOverride(name: string, overrides?: OverrideConfig): boolean {
-  if (!overrides?.namedValues) return false;
-  const lowerName = name.toLowerCase();
-  return Object.keys(overrides.namedValues).some(
-    (key) => key.toLowerCase() === lowerName
-  );
 }
 
 /**
