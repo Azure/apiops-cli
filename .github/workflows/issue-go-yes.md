@@ -109,7 +109,7 @@ steps:
         printf '%s\n' '- Apply the `squad:copilot` label to hand the issue off to the Copilot coding agent to begin implementation.'
         printf '%s\n' '- Never apply `go:*`, `priority:*`, `override:*`, or `type:*` labels.'
         if [ "$NUDGE_NEEDED" = "true" ]; then
-          printf -- '- **Copilot hand-off nudge REQUIRED:** automatic coding-agent assignment is not configured and no coding agent is assigned yet. In your single assignment comment, add an `### 🤖 Action needed` section that @-mentions **@%s** and tells them to assign this issue to Copilot from the Assignees menu so implementation can begin, and reference the "Setting up `COPILOT_ASSIGN_TOKEN`" note in `.squad/team.md`.\n' "$GO_YES_SENDER"
+          printf -- '- **Copilot hand-off nudge REQUIRED:** no coding agent is assigned to this issue yet. In your single assignment comment, add an `### 🤖 Action needed` section that @-mentions **@%s** and tells them to assign this issue to Copilot from the Assignees menu so implementation can begin. Do NOT mention COPILOT_ASSIGN_TOKEN, repository secrets, `.squad/team.md`, or any workflow internals in the comment.\n' "$GO_YES_SENDER"
         else
           printf '%s\n' '- **Copilot hand-off nudge:** NOT required — do not add any Copilot-assignment nudge to the comment (auto-assign is configured or the coding agent is already assigned).'
         fi
@@ -273,12 +273,10 @@ context — you do not decide the assignee yourself.
 #### Notes
 <Any routing uncertainty, or "none".>
 
-<!-- Include the section below ONLY when the system policy says a Copilot hand-off nudge is REQUIRED. Omit it otherwise. -->
+<!-- Include the section below ONLY when the system policy says a Copilot hand-off nudge is REQUIRED. Omit it otherwise. Never mention COPILOT_ASSIGN_TOKEN, secrets, or workflow internals here. -->
 ### 🤖 Action needed
 @<assignee> — this issue is not assigned to the Copilot coding agent yet, so no agent
 session has started. Please assign it to Copilot from the Assignees menu to begin work.
-To enable automatic hand-off for future issues, see the "Setting up `COPILOT_ASSIGN_TOKEN`"
-note in `.squad/team.md`.
 ```
 
 ## Security Rules
