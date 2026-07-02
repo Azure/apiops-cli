@@ -121,11 +121,11 @@ diagnostics:
 
 ### Filterable resource types
 
-All 16 supported filter keys:
+All 17 supported filter keys:
 
 | Filter key | Resource type |
 |------------|---------------|
-| `apis` | APIs |
+| `apis` | APIs (accepts nested object entries — see [API sub-filters](#api-sub-filters) below) |
 | `backends` | Backends |
 | `products` | Products |
 | `namedValues` | Named values |
@@ -138,9 +138,57 @@ All 16 supported filter keys:
 | `groups` | Groups |
 | `subscriptions` | Subscriptions |
 | `schemas` | Schemas |
+| `policies` | Service-level policy (singleton — use `- 'policy'` to include, `[]` to exclude) |
 | `policyRestrictions` | Policy restrictions |
 | `documentations` | Documentation resources |
-| `workspaces` | Workspaces |
+| `workspaces` | Workspaces (accepts nested object entries — see [Workspace sub-filters](#workspace-sub-filters) below) |
+
+For every key, the value semantics are:
+
+- **Key omitted** → include all resources of that type (default)
+- **`key: []`** → include none of that type
+- **`key: [name1, name2]`** → include only the named resources (exact match, case-insensitive; supports `*` and `?` wildcards)
+
+### API sub-filters
+
+To restrict which child resources of an API are extracted (operations,
+diagnostics, schemas, releases), use the **nested object entry** form under
+`apis:`. Each entry becomes a `name: { subKey: [...] }` map:
+
+```yaml
+apis:
+  - 'echo-api'                     # plain entry — all child resources included
+  - 'petstore-api':                # nested entry — only listed children
+      operations:
+        - 'listPets'
+        - 'getPet'
+      diagnostics: []              # exclude all diagnostics for this API
+      schemas:
+        - 'pet-schema'
+      releases: []
+```
+
+Supported API sub-filter keys: `operations`, `diagnostics`, `schemas`, `releases`.
+Same value semantics as top-level keys (omitted = include all, `[]` = include none, list = allowlist).
+
+### Workspace sub-filters
+
+Workspaces accept the same nested object entry form. Each workspace can have
+its own inner allowlists for the workspace-scoped resource types:
+
+```yaml
+workspaces:
+  - 'team-a-workspace':
+      apis:
+        - 'team-a-orders'
+      backends: []                 # exclude all workspace backends
+      namedValues:
+        - 'team-a-secret'
+```
+
+Supported workspace sub-filter keys: `apis`, `backends`, `diagnostics`,
+`groups`, `loggers`, `namedValues`, `policyFragments`, `products`, `schemas`,
+`subscriptions`, `tags`, `versionSets`.
 
 ### Transitive dependencies
 

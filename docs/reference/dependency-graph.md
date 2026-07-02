@@ -161,7 +161,17 @@ If a Tier 2 resource fails to publish, its dependents in Tier 3 and 4 will also 
 
 ### Filtering Considerations
 
-When using `filter.yaml` to include specific resources, be aware of dependencies. For example, including an **ApiPolicy** without its parent **Api** will cause a publish failure. apiops-cli does **not** auto-include dependencies — your filter must explicitly include all required parents.
+When using `filter.yaml` to include specific resources, be aware of dependencies.
+
+**During publish**, apiops-cli does **not** auto-include dependencies at the
+artifact level — your filter (and hence your extracted artifact tree) must
+already contain every required parent. For example, publishing an **ApiPolicy**
+without its parent **Api** present in the artifact tree will fail.
+
+**During extract**, apiops-cli **does** auto-follow a limited set of transitive
+references when a filter is applied and `--no-transitive` is not passed. See
+[`apiops extract` — Transitive dependencies](../commands/extract.md#transitive-dependencies)
+for the full list of reference types the extractor scans.
 
 ## Related Docs
 
