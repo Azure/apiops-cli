@@ -354,3 +354,5 @@ backends:
 ## Copilot-Assisted Configuration
 
 If you ran `apiops init`, a Copilot prompt file was generated at `.github/prompts/apiops-configure-filter.prompt.md`. Open it in VS Code and ask GitHub Copilot to help you configure your filter — it will walk you through selecting resources interactively.
+
+If you didn't run `apiops init`, see the [Prompt files guide](./prompt-files.md) for instructions on downloading and setting up prompt files manually.
