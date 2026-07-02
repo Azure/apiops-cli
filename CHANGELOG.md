@@ -20,6 +20,7 @@ This project uses [Semantic Versioning](https://semver.org/) with alpha pre-rele
 
 ### Bug Fixes
 
+- **Publish no longer aborts on auto-generated logger-credential named values** — the pre-flight secret-redaction guard scanned APIM auto-generated `Logger-Credentials--<hex>` named values (created to back Application Insights / Event Hub loggers) and aborted `apiops publish` on their `*** REDACTED ***` markers, even though the publisher already skips these resources (APIM recreates them when the referencing logger is published). The guard now mirrors the publisher and skips auto-generated named values that have no explicit override ([#220](https://github.com/Azure/apiops-cli/pull/220))
 - **Removed stale `mcpServerInformation.json` references** — follow-up to #173, which moved MCP server configuration into `apiInformation.json`. Documentation (`docs/reference/artifact-format.md`, `docs/reference/resource-types.md`) and the `all-resource-types` integration test manifest now match the post-#173 artifact layout ([#205](https://github.com/Azure/apiops-cli/pull/205))
 
 ## [0.3.0-alpha.0] — 2026-06-25
