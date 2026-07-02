@@ -138,6 +138,8 @@ Semantics:
 - A list containing only exclusions is treated as "include everything, then subtract" — equivalent to prepending an implicit `*`.
 - Exclusions respect the same semantics as inclusions: they match API root names (stripping revision suffixes), and excluding a parent (Api, Product, Gateway, Workspace) cascades to its children.
 
+> **Always quote `!`-prefixed entries in YAML.** An unquoted leading `!` (e.g. `- !prod-legacy-billing`) is parsed by YAML as a **tag** and produces an "unknown tag" error before the filter code ever sees the value. Wrap the entry in single or double quotes, exactly like the examples in this guide: `- '!prod-legacy-billing'`.
+
 ### Examples
 
 ```yaml

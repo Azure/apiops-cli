@@ -116,3 +116,12 @@
 # - Use ? to match a single character: api-v? matches api-v1, api-v2
 # - Exact names and wildcard patterns can be mixed in the same list
 # - All matching is case-insensitive
+# - Prefix an entry with `!` to EXCLUDE it (e.g. '!prod-legacy-*'). A list
+#   containing only `!` entries means "include everything, then subtract."
+#   IMPORTANT: always QUOTE `!`-prefixed entries in YAML — an unquoted
+#   leading `!` is parsed as a YAML tag and fails to load.
+#   Example:
+#   apis:
+#     - 'prod-*'
+#     - '!prod-legacy-billing'
+#     - '!prod-*-deprecated'

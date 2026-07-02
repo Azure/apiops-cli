@@ -94,7 +94,9 @@ For local development, `az login` is the simplest option. For CI/CD pipelines, u
 
 By default, `apiops extract` exports **all** resources from the APIM instance (34 resource types including APIs, products, backends, named values, tags, policies, and more).
 
-To extract only specific resources, pass a YAML filter file with `--filter`. Filter entries support exact names and wildcard patterns (`*` for any characters, `?` for a single character):
+To extract only specific resources, pass a YAML filter file with `--filter`. Filter entries support exact names, wildcard patterns (`*` for any characters, `?` for a single character), and `!`-prefixed **exclusions** (e.g. `'!prod-legacy'` — see [`filtering-resources.md`](../guides/filtering-resources.md#excluding-resources-with-) for details):
+
+> **Always quote `!`-prefixed entries** — unquoted `- !prod-legacy` is parsed by YAML as a tag and fails to load.
 
 ```yaml
 # configuration.extractor.yaml
@@ -102,6 +104,7 @@ apis:
   - echo-api
   - petstore-api
   - 'prod-*'             # Wildcard: all APIs starting with prod-
+  - '!prod-legacy-*'     # Exclusion: skip legacy prod APIs
 products:
   - starter
 backends:
