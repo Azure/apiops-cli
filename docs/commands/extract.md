@@ -149,6 +149,8 @@ For every key, the value semantics are:
 - **`key: []`** → include none of that type
 - **`key: [name1, name2]`** → include only the named resources (exact match, case-insensitive; supports `*` and `?` wildcards)
 
+> **Common pitfall.** Each key is independent. A filter that only sets `apis: [my-api]` still extracts every backend, named value, product, tag, workspace, and other resource type, because those keys are omitted and default to "include all". To narrow to a single API plus its transitive dependencies, set every other key to `[]` explicitly. See [Common Pitfall: Narrowing to Just One API](../guides/filtering-resources.md#common-pitfall-narrowing-to-just-one-api) in the filtering guide.
+
 ### API sub-filters
 
 To restrict which child resources of an API are extracted (operations,
