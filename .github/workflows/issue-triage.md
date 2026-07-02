@@ -7,6 +7,13 @@ on:
   issues:
     types: [opened]
 
+permissions:
+  contents: read
+  issues: read
+  copilot-requests: write  # use GitHub Actions token-based inference (no PAT) — requires org centralized Copilot billing
+
+timeout-minutes: 10
+
 safe-outputs:
   add-labels:
     allowed:
