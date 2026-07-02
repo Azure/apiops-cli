@@ -1,0 +1,76 @@
+name: Issue No-Go
+
+# Deterministic Workflow: No-Go decision
+# Trigger: a maintainer applies the "go:no" label to reject an issue.
+# Effect: add the close:wont-fix label and close the issue as "not planned".
+#
+# ─── SECURITY CONSTRAINTS ───────────────────────────────────────────────
+# Only repository maintainers/admins may drive a go:* decision. A non-maintainer
+# applying go:no fails the permission gate and no state change is made.
+# This workflow does NOT post comments — the maintainer supplies the rejection
+# rationale manually, per the go/no-go process.
+# ────────────────────────────────────────────────────────────────────────
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  close-nogo:
+    if: github.event.label.name == 'go:no'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify maintainer-triggered event
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const sender = context.payload.sender.login;
+            const { data: permission } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: sender
+            });
+
+            // The legacy `permission` field collapses the maintain role to
+            // "write" (and triage to "read"), so it cannot distinguish a
+            // maintainer from a writer. Use the cumulative permission booleans
+            // instead — admin/maintain are set for admins and maintainers and
+            // are robust to custom org roles.
+            const perms = (permission.user && permission.user.permissions) || {};
+            const isMaintainer = perms.admin === true || perms.maintain === true;
+
+            if (!isMaintainer) {
+              core.setFailed(
+                `Only repository maintainers may apply go:* labels. ${sender} has ${permission.role_name || permission.permission} access.`
+              );
+              return;
+            }
+
+            core.info(`Verified ${sender} as a ${permission.role_name || permission.permission} collaborator`);
+
+      - name: Add close:wont-fix and close as not planned
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const issue_number = context.payload.issue.number;
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              labels: ['close:wont-fix']
+            });
+
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              state: 'closed',
+              state_reason: 'not_planned'
+            });
+
+            core.info(`Closed issue #${issue_number} as not_planned with the close:wont-fix label`);
