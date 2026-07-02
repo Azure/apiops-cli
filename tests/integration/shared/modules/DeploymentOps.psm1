@@ -36,13 +36,13 @@ function Write-DeploymentFailureDetails {
     $query = "[?properties.provisioningState=='Failed'].{resource:properties.targetResource.resourceName, type:properties.targetResource.resourceType, code:properties.statusMessage.error.code, message:properties.statusMessage.error.message, details:properties.statusMessage.error.details}"
 
     try {
-        Invoke-MaskedProcess -FilePath 'az' -Replacements $Replacements -Arguments @(
-            'deployment', 'operation', 'group', 'list',
-            '--resource-group', $ResourceGroupName,
-            '--name',           $DeploymentName,
-            '--query',          $query,
-            '--output',         'json'
-        )
+        az deployment operation group list `
+            --resource-group $ResourceGroupName `
+            --name           $DeploymentName `
+            --query          $query `
+            --output         json 2>&1 |
+            Protect-Secret -Replacements $Replacements |
+            Out-Host
     } catch {
         $maskedErr = Protect-LogLine -Line ($_.Exception.Message) -Replacements $Replacements
         Write-Host "Failed to retrieve deployment operations: $maskedErr" -ForegroundColor Red
@@ -188,18 +188,23 @@ function Wait-ApimApiQueryable {
     $apiListUri = "https://management.azure.com/subscriptions/$subscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.ApiManagement/service/$ApimServiceName/apis?api-version=2025-09-01-preview"
 
     $probe = {
-        $probeArgs = @(
-            'rest',
-            '--method', 'get',
-            '--uri', $apiListUri,
-            '--query', "length(value[?name=='$ApiId'])",
-            '--output', 'tsv'
-        )
-        $probeResult = Invoke-MaskedAzCommand -Replacements $Replacements -Arguments $probeArgs
-        if ($LASTEXITCODE -eq 0 -and "$probeResult" -eq '1') {
-            return $true
+        # Merge stderr into the stream and mask it so probe failures are visible
+        # (and redacted) instead of being swallowed by a redirect to $null.
+        $probeOutput = az rest `
+            --method get `
+            --uri $apiListUri `
+            --query "length(value[?name=='$ApiId'])" `
+            --output tsv 2>&1 |
+            Protect-Secret -Replacements $Replacements
+        if ($LASTEXITCODE -eq 0) {
+            # The query returns length(value[?name==ApiId]) as a bare count. API
+            # names are unique, so the result is '0' (not visible yet) or '1'
+            # (now queryable). -contains tolerates an incidental stderr line
+            # merged in by 2>&1.
+            return (@($probeOutput) -contains '1')
         }
 
+        $probeOutput | ForEach-Object { Write-Host "  [api-probe] $_" -ForegroundColor DarkYellow }
         return $false
     }
 

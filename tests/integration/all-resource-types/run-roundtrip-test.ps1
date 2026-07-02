@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft Corporation.
+﻿# Copyright (c) Microsoft Corporation.
 # Licensed under the MIT license.
 <#
 .SYNOPSIS
@@ -11,8 +11,11 @@
         4) generate target environment overrides,
         5) publish artifacts to target,
         6) compare source and target,
-        6b) validate --delete-unmatched behavior,
         7) teardown.
+
+    When -TestDeleteUnmatched is set, phase 1 seeds extra "unmatched" resources
+    into the target APIM, phase 5 publishes with --delete-unmatched, and the
+    phase 6 compare verifies those resources were removed.
 
     Works both locally and in CI (writes to GITHUB_OUTPUT when available).
 
@@ -71,7 +74,11 @@ param(
 
     [string]$ExtractOutputDir = "$PSScriptRoot/extracted-artifacts",
 
-    [switch]$SkipTeardown
+    [switch]$SkipTeardown,
+
+    # Seed unmatched resources into the target and publish with
+    # --delete-unmatched to exercise the delete-unmatched code path.
+    [switch]$TestDeleteUnmatched
 )
 
 # Strict mode is inherited by all `&`-invoked phase scripts (child scopes).
@@ -107,7 +114,6 @@ if (-not $TargetSubscriptionId) {
 
 $extractOutputDirValue = Get-BoundParameterValueOrNull -BoundParameters $PSBoundParameters -Name 'ExtractOutputDir'
 $skuNameValue = Get-BoundParameterValueOrNull -BoundParameters $PSBoundParameters -Name 'SkuName'
-$locationValue = Get-BoundParameterValueOrNull -BoundParameters $PSBoundParameters -Name 'Location'
 
 # Verify scripts for all phases available
 $phase1DeployScript = Join-Path $PSScriptRoot 'phases/run-phase1-deploy.ps1'
@@ -116,10 +122,9 @@ $phase3ValidateExtractScript = Join-Path $PSScriptRoot 'phases/run-phase3-valida
 $phase4CreateOverridesScript = Join-Path $PSScriptRoot 'phases/run-phase4-create-overrides.ps1'
 $phase5PublishScript = Join-Path $PSScriptRoot 'phases/run-phase5-publish.ps1'
 $phase6CompareScript = Join-Path $PSScriptRoot 'phases/run-phase6-compare.ps1'
-$phase7DeleteUnmatchedScript = Join-Path $PSScriptRoot 'phases/run-phase7-delete-unmatched.ps1'
-$phase8TeardownScript = Join-Path $PSScriptRoot 'phases/run-phase8-teardown.ps1'
+$phase7TeardownScript = Join-Path $PSScriptRoot 'phases/run-phase7-teardown.ps1'
 
-foreach ($requiredFile in @($phase1DeployScript, $phase2ExtractScript, $phase3ValidateExtractScript, $phase4CreateOverridesScript, $phase5PublishScript, $phase6CompareScript, $phase7DeleteUnmatchedScript, $phase8TeardownScript)) {
+foreach ($requiredFile in @($phase1DeployScript, $phase2ExtractScript, $phase3ValidateExtractScript, $phase4CreateOverridesScript, $phase5PublishScript, $phase6CompareScript, $phase7TeardownScript)) {
     if (-not (Test-Path $requiredFile)) {
         Write-Error "Required file not found: $requiredFile"
         exit 2
@@ -143,6 +148,9 @@ try {
     Add-ArgumentIfSet -Hashtable $phase1Args -Key 'SkuName' -Value $skuNameValue
     Add-ArgumentIfSet -Hashtable $phase1Args -Key 'SourceSubscriptionId' -Value $SourceSubscriptionId
     Add-ArgumentIfSet -Hashtable $phase1Args -Key 'TargetSubscriptionId' -Value $TargetSubscriptionId
+    if ($TestDeleteUnmatched) {
+        $phase1Args['TestDeleteUnmatched'] = $true
+    }
     $global:LASTEXITCODE = 0
     $phase1Output = & $phase1DeployScript @phase1Args
 
@@ -224,6 +232,9 @@ try {
         LogLevel = $LogLevel
     }
     Add-ArgumentIfSet -Hashtable $phase5Args -Key 'ExtractOutputDir' -Value $extractOutputDirValue
+    if ($TestDeleteUnmatched) {
+        $phase5Args['TestDeleteUnmatched'] = $true
+    }
     $global:LASTEXITCODE = 0
     & $phase5PublishScript @phase5Args
 
@@ -250,21 +261,6 @@ try {
         $exitCode = $LASTEXITCODE
         exit $exitCode
     }
-
-    # Phase 7: Validate delete-unmatched for revisioned APIs
-    $currentPhase = 'phase7-delete-unmatched'
-    $phase7DeleteUnmatchedArgs = @{
-        TargetResourceGroup = $TargetResourceGroup
-        TargetApimName      = $TargetApimName
-        TargetSubscriptionId = $TargetSubscriptionId
-        OverrideFile        = $overrideFile
-        LogLevel            = $LogLevel
-    }
-    Add-ArgumentIfSet -Hashtable $phase7DeleteUnmatchedArgs -Key 'ExtractOutputDir' -Value $extractOutputDirValue
-    $global:LASTEXITCODE = 0
-    & $phase7DeleteUnmatchedScript @phase7DeleteUnmatchedArgs
-
-    $exitCode = $LASTEXITCODE
 }
 catch {
     $errorMessage = $_.Exception.Message
@@ -278,17 +274,17 @@ catch {
     }
 }
 finally {
-    # Phase 8: Teardown apim instances and supporting resources
-    $phase8Args = @{
+    # Phase 7: Teardown apim instances and supporting resources
+    $phase7Args = @{
         SourceResourceGroup = $SourceResourceGroup
         TargetResourceGroup = $TargetResourceGroup
         Location            = $Location
         SkipTeardown        = $SkipTeardown
     }
-    Add-ArgumentIfSet -Hashtable $phase8Args -Key 'SourceSubscriptionId' -Value $SourceSubscriptionId
-    Add-ArgumentIfSet -Hashtable $phase8Args -Key 'TargetSubscriptionId' -Value $TargetSubscriptionId
+    Add-ArgumentIfSet -Hashtable $phase7Args -Key 'SourceSubscriptionId' -Value $SourceSubscriptionId
+    Add-ArgumentIfSet -Hashtable $phase7Args -Key 'TargetSubscriptionId' -Value $TargetSubscriptionId
 
-    & $phase8TeardownScript @phase8Args
+    & $phase7TeardownScript @phase7Args
 }
 
 exit $exitCode

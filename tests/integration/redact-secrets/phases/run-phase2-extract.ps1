@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft Corporation.
+﻿# Copyright (c) Microsoft Corporation.
 # Licensed under the MIT license.
 #requires -Version 7.0
 
@@ -60,18 +60,6 @@ if (Test-Path $ExtractOutputDir) {
     Remove-Item -Path $ExtractOutputDir -Recurse -Force
 }
 
-$extractArgs = @(
-    'extract',
-    '--resource-group', $SourceResourceGroup,
-    '--service-name', $SourceApimName,
-    '--output', $ExtractOutputDir,
-    '--log-level', $apiopsLogLevel
-)
-if (-not [string]::IsNullOrWhiteSpace($sourceSubscriptionIdValue)) {
-    $extractArgs += @('--subscription-id', $sourceSubscriptionIdValue)
-}
-$extractArgs += $apiopsAuthArgs
-
 $replacements = @{
     $SourceResourceGroup = Protect-ResourceGroupName -Value $SourceResourceGroup
     $SourceApimName      = Protect-ApimName -Value $SourceApimName
@@ -79,7 +67,16 @@ $replacements = @{
 Add-ArgumentIfSet -Hashtable $replacements -Key $sourceSubscriptionIdValue -Value (Protect-SubscriptionId -Value $sourceSubscriptionIdValue)
 
 Write-Host "  → Running apiops extract"
-$extractExitCode = Invoke-MaskedApiopsCommand -Replacements $replacements -Arguments $extractArgs
+$subscriptionArg = if (-not [string]::IsNullOrWhiteSpace($sourceSubscriptionIdValue)) { @('--subscription-id', $sourceSubscriptionIdValue) } else { @() }
+apiops extract `
+    --resource-group $SourceResourceGroup `
+    --service-name   $SourceApimName `
+    --output         $ExtractOutputDir `
+    --log-level      $apiopsLogLevel `
+    @subscriptionArg @apiopsAuthArgs 2>&1 |
+    Protect-Secret -Replacements $replacements |
+    Out-Host
+$extractExitCode = $LASTEXITCODE
 if ($extractExitCode -ne 0) {
     throw "Extract failed with exit code $extractExitCode"
 }

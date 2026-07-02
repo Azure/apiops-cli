@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft Corporation.
+﻿# Copyright (c) Microsoft Corporation.
 # Licensed under the MIT license.
 <#
 .SYNOPSIS
@@ -37,7 +37,12 @@ param(
     [string]$ApimName,
 
     [ValidateSet('Info', 'Verbose', 'Debug')]
-    [string]$LogLevel = 'Info'
+    [string]$LogLevel = 'Info',
+
+    # When set, seed extra "unmatched" resources into the target APIM that do
+    # NOT exist in the source. Phase 5 then publishes with --delete-unmatched
+    # and phase 6 compare verifies these resources were removed.
+    [switch]$TestDeleteUnmatched
 )
 
 $ErrorActionPreference = 'Stop'
@@ -85,34 +90,59 @@ $azReplacements = @{
 
 $deploymentName = "target-apim-$(Get-Date -Format 'yyyyMMddHHmmss')"
 
-$azArgs = @(
-    'deployment', 'group', 'create',
-    '--resource-group', $ResourceGroupName,
-    '--name',           $deploymentName,
-    '--template-file',  $bicepFile,
-    '--parameters',     "skuName=$SkuName", "location=$Location", "publisherEmail=$PublisherEmail",
-    '--output',         'json'
-) + $azVerbosity
-
+$deployParameters = @("skuName=$SkuName", "location=$Location", "publisherEmail=$PublisherEmail")
 if (-not [string]::IsNullOrWhiteSpace($apimNameValue)) {
-  $azArgs += @('--parameters', "apimName=$apimNameValue")
+    $deployParameters += "apimName=$apimNameValue"
 }
 
-$raw = Invoke-MaskedAzCommand -Replacements $azReplacements -Arguments $azArgs
-
-if ($LASTEXITCODE -ne 0) {
-    Write-DeploymentFailureDetails `
-        -ResourceGroupName $ResourceGroupName `
-        -DeploymentName    $deploymentName `
-        -Replacements      $azReplacements
-    throw "Target APIM deployment failed (deployment '$deploymentName' in resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)'). See failed-operation details above."
-}
+$raw = New-ResourceGroupDeployment `
+    -ResourceGroupName $ResourceGroupName `
+    -DeploymentName    $deploymentName `
+    -TemplateFile      $bicepFile `
+    -Parameters        $deployParameters `
+    -Verbosity         $azVerbosity `
+    -Replacements      $azReplacements `
+    -FailureLabel      'Target APIM deployment'
 
 $result = $raw | ConvertFrom-Json
 if (-not $result.properties.outputs) {
     throw "Target deployment returned no outputs"
 }
 
-Write-Host "✅ Target APIM deployed successfully: $(Protect-ApimName -Value $result.properties.outputs.apimServiceName.value)"
+$apimServiceName = $result.properties.outputs.apimServiceName.value
+Write-Host "✅ Target APIM deployed successfully: $(Protect-ApimName -Value $apimServiceName)"
+
+if ($TestDeleteUnmatched) {
+    Write-Host "🌱 Seeding unmatched resources into target APIM for --delete-unmatched coverage..."
+
+    $unmatchedBicepFile = Join-Path (Split-Path $PSScriptRoot -Parent) 'bicep/target-apim-unmatched.bicep'
+    if (-not (Test-Path $unmatchedBicepFile)) {
+        throw "Unmatched-resources bicep file not found at: $unmatchedBicepFile"
+    }
+
+    # Seed only after the APIM instance has finished activating — child
+    # resources cannot be created while the service is still provisioning.
+    Wait-ApimActivation `
+        -ResourceGroupName $ResourceGroupName `
+        -ApimName $apimServiceName `
+        -TimeoutSeconds 2700 `
+        -PollIntervalSeconds 60 | Out-Null
+
+    $seedReplacements = $azReplacements.Clone()
+    $seedReplacements[$apimServiceName] = Protect-ApimName -Value $apimServiceName
+
+    $seedDeploymentName = "target-apim-unmatched-$(Get-Date -Format 'yyyyMMddHHmmss')"
+    New-ResourceGroupDeployment `
+        -ResourceGroupName $ResourceGroupName `
+        -DeploymentName    $seedDeploymentName `
+        -TemplateFile      $unmatchedBicepFile `
+        -Parameters        @("apimName=$apimServiceName") `
+        -Verbosity         $azVerbosity `
+        -Output            'none' `
+        -Replacements      $seedReplacements `
+        -FailureLabel      'Unmatched-resources deployment' | Out-Null
+
+    Write-Host "✅ Unmatched resource seeding complete"
+}
 
 return $result.properties.outputs

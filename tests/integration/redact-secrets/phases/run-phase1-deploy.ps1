@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft Corporation.
+﻿# Copyright (c) Microsoft Corporation.
 # Licensed under the MIT license.
 #requires -Version 7.0
 
@@ -187,21 +187,27 @@ try {
         $tempCertificate.password = '*** REDACTED ***'
     }
 
-    $deployArgs = @(
-        'deployment', 'group', 'create',
-        '--subscription', $resolvedSubscriptionId,
-        '--resource-group', $ResourceGroupName,
-        '--name', $deploymentName,
-        '--template-file', $bicepFile,
-        '--parameters', "skuName=$SkuName", "location=$Location", "publisherEmail=$PublisherEmail",
-        '--output', 'json'
-    )
-    if (-not [string]::IsNullOrWhiteSpace($apimNameValue)) {
-        $deployArgs += @('--parameters', "apimName=$apimNameValue")
-    }
+    $apimNameArg = if (-not [string]::IsNullOrWhiteSpace($apimNameValue)) { @('--parameters', "apimName=$apimNameValue") } else { @() }
 
-    $rawDeploy = Invoke-MaskedAzCommand -Replacements $azReplacements -Arguments $deployArgs
-    if ($LASTEXITCODE -ne 0) {
+    $deployStderrPath = (New-TemporaryFile).FullName
+    try {
+        $rawDeploy = az deployment group create `
+            --subscription   $resolvedSubscriptionId `
+            --resource-group $ResourceGroupName `
+            --name           $deploymentName `
+            --template-file  $bicepFile `
+            --parameters     "skuName=$SkuName" "location=$Location" "publisherEmail=$PublisherEmail" `
+            --output         json `
+            @apimNameArg 2> $deployStderrPath
+        $deployExit = $LASTEXITCODE
+        Get-Content -LiteralPath $deployStderrPath -ErrorAction SilentlyContinue |
+            Protect-Secret -Replacements $azReplacements |
+            Out-Host
+    }
+    finally {
+        Remove-Item -LiteralPath $deployStderrPath -Force -ErrorAction SilentlyContinue
+    }
+    if ($deployExit -ne 0) {
         Write-DeploymentFailureDetails -ResourceGroupName $ResourceGroupName -DeploymentName $deploymentName -Replacements $azReplacements
         throw "Source deployment failed in resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)'."
     }
@@ -235,18 +241,24 @@ try {
     $postActivationParamsFile = Join-Path ([System.IO.Path]::GetTempPath()) ("source-apim-post-activation-params-$([Guid]::NewGuid().ToString('N')).json")
     $postParams | ConvertTo-Json -Depth 5 | Set-Content -Path $postActivationParamsFile
 
-    $postArgs = @(
-        'deployment', 'group', 'create',
-        '--subscription', $resolvedSubscriptionId,
-        '--resource-group', $ResourceGroupName,
-        '--name', $postDeploymentName,
-        '--template-file', $resolvedPostActivationBicepFile,
-        '--parameters', "@$postActivationParamsFile",
-        '--output', 'json'
-    )
-
-    Invoke-MaskedAzCommand -Replacements $azReplacements -Arguments $postArgs | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    $postStderrPath = (New-TemporaryFile).FullName
+    try {
+        az deployment group create `
+            --subscription   $resolvedSubscriptionId `
+            --resource-group $ResourceGroupName `
+            --name           $postDeploymentName `
+            --template-file  $resolvedPostActivationBicepFile `
+            --parameters     "@$postActivationParamsFile" `
+            --output         json 2> $postStderrPath | Out-Null
+        $postExit = $LASTEXITCODE
+        Get-Content -LiteralPath $postStderrPath -ErrorAction SilentlyContinue |
+            Protect-Secret -Replacements $azReplacements |
+            Out-Host
+    }
+    finally {
+        Remove-Item -LiteralPath $postStderrPath -Force -ErrorAction SilentlyContinue
+    }
+    if ($postExit -ne 0) {
         Write-DeploymentFailureDetails -ResourceGroupName $ResourceGroupName -DeploymentName $postDeploymentName -Replacements $azReplacements
         throw "Post-activation deployment failed in resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)'."
     }

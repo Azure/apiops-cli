@@ -19,6 +19,15 @@ cd tests/integration/all-resource-types
 ./run-roundtrip-test.ps1 -PublisherEmail admin@contoso.com
 ```
 
+### Run full round trip with delete-unmatched coverage
+
+Seeds extra "unmatched" resources into the target APIM, publishes with `--delete-unmatched`, and lets the compare phase confirm they were removed. This keeps the default round trip fast while still exercising the delete-unmatched path on demand.
+
+```powershell
+cd tests/integration/all-resource-types
+./run-roundtrip-test.ps1 -PublisherEmail admin@contoso.com -TestDeleteUnmatched
+```
+
 ### Run full round trip with log:
 
 #### Bash
@@ -84,14 +93,14 @@ An apim instance with the following apis
 
 **Phase 1: Deploy source + target** (`phases/run-phase1-deploy.ps1`).
 
-Deploys source and target APIM environments in parallel. 
+Deploys source and target APIM environments in parallel. Add `-TestDeleteUnmatched` to seed extra "unmatched" resources (a revisioned API plus a named value and backend) into the target instance so the `--delete-unmatched` publish path can be exercised.
 
 ```powershell
 # Minimum parameters
 ./phases/run-phase1-deploy.ps1 -SourceResourceGroup rg-src -TargetResourceGroup rg-tgt -PublisherEmail admin@contoso.com
 
 # All parameters
-./phases/run-phase1-deploy.ps1 -SourceResourceGroup rg-src -TargetResourceGroup rg-tgt -PublisherEmail admin@contoso.com -SkuName StandardV2 -Location eastus2 -LogLevel Verbose -SourceApimName src-apim -TargetApimName tgt-apim -SourceSubscriptionId 11111111-1111-1111-1111-111111111111 -TargetSubscriptionId 22222222-2222-2222-2222-222222222222
+./phases/run-phase1-deploy.ps1 -SourceResourceGroup rg-src -TargetResourceGroup rg-tgt -PublisherEmail admin@contoso.com -SkuName StandardV2 -Location eastus2 -LogLevel Verbose -SourceApimName src-apim -TargetApimName tgt-apim -SourceSubscriptionId 11111111-1111-1111-1111-111111111111 -TargetSubscriptionId 22222222-2222-2222-2222-222222222222 -TestDeleteUnmatched
 ```
 
 Script returns resolved names, which can be for later phases, especially in the case minimal parameters are passed to the script.  Example return value:
@@ -159,19 +168,19 @@ Script returns path to created configuration overrides file. Example return valu
 
 **Phase 5: Publish** (`phases/run-phase5-publish.ps1`).
 
-Publishes extracted artifacts to the target APIM instance using the generated overrides file.
+Publishes extracted artifacts to the target APIM instance using the generated overrides file. Add `-TestDeleteUnmatched` to publish with `--delete-unmatched`, removing resources present in the target but absent from the extracted artifacts.
 
 ```powershell
 # Minimum parameters
 ./phases/run-phase5-publish.ps1 -TargetResourceGroup rg-tgt -TargetApimName tgt-apim -OverrideFile ./phases/extracted-artifacts/.overrides.yaml
 
 # All parameters
-./phases/run-phase5-publish.ps1 -TargetSubscriptionId 22222222-2222-2222-2222-222222222222 -TargetResourceGroup rg-tgt -TargetApimName tgt-apim -LogLevel Debug -OverrideFile ./phases/extracted-artifacts/.overrides.yaml -ExtractOutputDir ./phases/extracted-artifacts
+./phases/run-phase5-publish.ps1 -TargetSubscriptionId 22222222-2222-2222-2222-222222222222 -TargetResourceGroup rg-tgt -TargetApimName tgt-apim -LogLevel Debug -OverrideFile ./phases/extracted-artifacts/.overrides.yaml -ExtractOutputDir ./phases/extracted-artifacts -TestDeleteUnmatched
 ```
 
 **Phase 6: Compare source and target API Management instances** (`phases/run-phase6-compare.ps1`).
 
-Compares source and target APIM resources and reports differences or parity.
+Compares source and target APIM resources and reports differences or parity. When the round trip runs with `-TestDeleteUnmatched`, this phase also confirms the seeded unmatched resources were removed by the `--delete-unmatched` publish.
 
 ```powershell
 # Minimum parameters
@@ -181,28 +190,16 @@ Compares source and target APIM resources and reports differences or parity.
 ./phases/run-phase6-compare.ps1 -SourceSubscriptionId 11111111-1111-1111-1111-111111111111 -SourceResourceGroup rg-src -SourceApimName src-apim -TargetSubscriptionId 22222222-2222-2222-2222-222222222222 -TargetResourceGroup rg-tgt -TargetApimName tgt-apim -LogLevel Verbose
 ```
 
-**Phase 7: Delete-unmatched validation** (`phases/run-phase7-delete-unmatched.ps1`).
-
-Removes a revisioned API from extracted artifacts, runs `apiops publish --delete-unmatched`, and verifies the removed API revisions are deleted from target APIM.
-
-```powershell
-# Minimum parameters
-./phases/run-phase7-delete-unmatched.ps1 -TargetResourceGroup rg-tgt -TargetApimName tgt-apim -OverrideFile ./phases/extracted-artifacts/.overrides.yaml
-
-# All parameters
-./phases/run-phase7-delete-unmatched.ps1 -TargetSubscriptionId 22222222-2222-2222-2222-222222222222 -TargetResourceGroup rg-tgt -TargetApimName tgt-apim -LogLevel Verbose -OverrideFile ./phases/extracted-artifacts/.overrides.yaml -ExtractOutputDir ./phases/extracted-artifacts
-```
-
-**Phase 8: Teardown** (`phases/run-phase8-teardown.ps1`).
+**Phase 7: Teardown** (`phases/run-phase7-teardown.ps1`).
 
 Deletes source and target resource groups and purges soft-deleted APIM services. This phase always run, regardless of the success of previous phases, unles `-SkipTeardown` switch is specified.
 
 ```powershell
 # Minimum parameters
-./phases/run-phase8-teardown.ps1 -SourceResourceGroup rg-src -TargetResourceGroup rg-tgt
+./phases/run-phase7-teardown.ps1 -SourceResourceGroup rg-src -TargetResourceGroup rg-tgt
 
 # All parameters
-./phases/run-phase8-teardown.ps1 -SourceResourceGroup rg-src -TargetResourceGroup rg-tgt -Location eastus2 -SkipTeardown
+./phases/run-phase7-teardown.ps1 -SourceResourceGroup rg-src -TargetResourceGroup rg-tgt -Location eastus2 -SkipTeardown
 ```
 
 ## CI

@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft Corporation.
+﻿# Copyright (c) Microsoft Corporation.
 # Licensed under the MIT license.
 # MaskingHelpers — secret-redaction utilities for the round-trip integration test scripts.
 
@@ -180,29 +180,36 @@ function Protect-LogLine {
 
 <#
 .SYNOPSIS
-Resolves native executable paths, including Windows cmd wrappers.
+Masks secrets in pipeline input, emitting redacted lines.
 
-.PARAMETER Name
-Command name to resolve.
+.DESCRIPTION
+Pipeline-friendly wrapper around Protect-LogLine so native command output can be
+redacted with a pipe instead of the array-argument Invoke-Masked* helpers, e.g.:
+
+    az deployment group create ... | Protect-Secret -Replacements $Replacements
+
+Each line flowing through the pipe is passed through the same literal-replacement
+and regex-redaction rules as Protect-LogLine.
+
+.PARAMETER InputObject
+Pipeline line to mask.
+
+.PARAMETER Replacements
+Literal replacement map applied before regex redaction.
 
 .OUTPUTS
-System.Management.Automation.PSCustomObject
+System.String
 #>
-function Resolve-NativeExecutable {
-    param([string]$Name)
+function Protect-Secret {
+    [CmdletBinding()]
+    param(
+        [Parameter(ValueFromPipeline)][AllowNull()][AllowEmptyString()][string]$InputObject,
+        [hashtable]$Replacements
+    )
 
-    $resolved = Get-Command -Name $Name -CommandType Application -ErrorAction Stop |
-        Select-Object -First 1
-
-    $exePath = $resolved.Source
-    $prefix  = @()
-
-    if ($IsWindows -and ($exePath -like '*.cmd' -or $exePath -like '*.bat')) {
-        $prefix  = @('/c', $exePath)
-        $exePath = $env:ComSpec
+    process {
+        Protect-LogLine -Line $InputObject -Replacements $Replacements
     }
-
-    return [pscustomobject]@{ FilePath = $exePath; Prefix = $prefix }
 }
 
 <#
@@ -244,194 +251,19 @@ function Resolve-ApiopsInvocation {
 
 <#
 .SYNOPSIS
-Runs a process and streams masked output.
+Invokes the apiops CLI directly so scripts can call it like a native command:
 
-.PARAMETER FilePath
-Executable to run.
+    apiops extract --resource-group $rg ... 2>&1 | Protect-Secret -Replacements $map
 
-.PARAMETER Arguments
-Argument list for the executable.
-
-.PARAMETER Replacements
-Mask replacement map for streamed lines.
-
-.PARAMETER CaptureStdout
-Capture and return stdout instead of streaming.
+Resolves the node + dist/cli entrypoint and forwards every argument. $LASTEXITCODE
+is set from the CLI process.
 
 .OUTPUTS
-System.String
+The CLI's stdout/stderr stream.
 #>
-function Invoke-MaskedProcess {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string]$FilePath,
-        [string[]]$Arguments = @(),
-        [hashtable]$Replacements,
-        [switch]$CaptureStdout
-    )
-
-    $exe = Resolve-NativeExecutable -Name $FilePath
-
-    $psi = [System.Diagnostics.ProcessStartInfo]::new()
-    $psi.FileName               = $exe.FilePath
-    $psi.WorkingDirectory       = $PWD.Path
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError  = $true
-    $psi.RedirectStandardInput  = $true
-    $psi.UseShellExecute        = $false
-    $psi.CreateNoWindow         = $true
-    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-    $psi.StandardErrorEncoding  = [System.Text.Encoding]::UTF8
-
-    if ($exe.Prefix.Count -ge 2 -and $exe.Prefix[0] -eq '/c') {
-        # cmd.exe /c has special quoting rules that conflict with ArgumentList.
-        # Use the Arguments string property with double-quote wrapping so cmd.exe
-        # preserves the inner quotes around paths that contain spaces.
-        $cmdTarget = $exe.Prefix[1]
-        $quotedParts = @("`"$cmdTarget`"")
-        foreach ($a in $Arguments) {
-            $s = [string]$a
-            # Quote every argument individually so cmd.exe treats all content
-            # (including metacharacters like parentheses) as literals.
-            $escaped = $s -replace '"', '\"'
-            $quotedParts += "`"$escaped`""
-        }
-        $psi.Arguments = "/c `"$($quotedParts -join ' ')`""
-    } else {
-        $finalArgs = @() + $exe.Prefix + $Arguments
-        foreach ($a in $finalArgs) {
-            [void]$psi.ArgumentList.Add([string]$a)
-        }
-    }
-
-    $stdoutQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
-    $stderrQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
-
-    $proc = [System.Diagnostics.Process]::new()
-    $proc.StartInfo = $psi
-
-    $stdoutBuffer = $null
-    if ($CaptureStdout) {
-        $stdoutBuffer = [System.Collections.Generic.List[string]]::new()
-    }
-
-    $readerScript = {
-        param([System.IO.StreamReader]$Reader,
-              [System.Collections.Concurrent.ConcurrentQueue[string]]$Queue)
-        try {
-            while ($null -ne ($line = $Reader.ReadLine())) {
-                [void]$Queue.Enqueue($line)
-            }
-        } catch {
-            # IO errors on process teardown are expected; main thread owns exit.
-        }
-    }
-
-    $outJob = $null
-    $errJob = $null
-
-    try {
-        [void]$proc.Start()
-        $proc.StandardInput.Close()
-
-        $outJob = Start-ThreadJob -ScriptBlock $readerScript -ArgumentList $proc.StandardOutput, $stdoutQueue
-        $errJob = Start-ThreadJob -ScriptBlock $readerScript -ArgumentList $proc.StandardError,  $stderrQueue
-
-        $line = $null
-        while (-not $proc.HasExited -or
-               $outJob.State -eq 'Running' -or
-               $errJob.State -eq 'Running') {
-            Start-Sleep -Milliseconds 100
-            while ($stderrQueue.TryDequeue([ref]$line)) {
-                Write-Host (Protect-LogLine -Line $line -Replacements $Replacements)
-            }
-            while ($stdoutQueue.TryDequeue([ref]$line)) {
-                if ($CaptureStdout) {
-                    [void]$stdoutBuffer.Add($line)
-                } else {
-                    Write-Host (Protect-LogLine -Line $line -Replacements $Replacements)
-                }
-            }
-        }
-
-        Wait-Job -Job $outJob, $errJob | Out-Null
-
-        while ($stderrQueue.TryDequeue([ref]$line)) {
-            Write-Host (Protect-LogLine -Line $line -Replacements $Replacements)
-        }
-        while ($stdoutQueue.TryDequeue([ref]$line)) {
-            if ($CaptureStdout) {
-                [void]$stdoutBuffer.Add($line)
-            } else {
-                Write-Host (Protect-LogLine -Line $line -Replacements $Replacements)
-            }
-        }
-
-        $global:LASTEXITCODE = $proc.ExitCode
-    }
-    finally {
-        if ($outJob) { Remove-Job -Job $outJob -Force -ErrorAction SilentlyContinue }
-        if ($errJob) { Remove-Job -Job $errJob -Force -ErrorAction SilentlyContinue }
-        $proc.Dispose()
-    }
-
-    if ($CaptureStdout) {
-        return ($stdoutBuffer -join "`n")
-    }
-}
-
-<#
-.SYNOPSIS
-Runs npx apiops with masked output and returns exit code.
-
-.PARAMETER Arguments
-Arguments passed to `apiops`.
-
-.PARAMETER Replacements
-Mask replacement map for output.
-
-.OUTPUTS
-System.Int32
-#>
-function Invoke-MaskedApiopsCommand {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string[]]$Arguments,
-        [hashtable]$Replacements
-    )
-
-    $apiops = Resolve-ApiopsInvocation
-    Invoke-MaskedProcess -FilePath $apiops.FilePath `
-        -Arguments (@($apiops.Prefix) + $Arguments) `
-        -Replacements $Replacements
-
-    return $LASTEXITCODE
-}
-
-<#
-.SYNOPSIS
-Runs az with masked output and returns captured stdout.
-
-.PARAMETER Arguments
-Arguments passed to `az`.
-
-.PARAMETER Replacements
-Mask replacement map for output.
-
-.OUTPUTS
-System.String
-#>
-function Invoke-MaskedAzCommand {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)][string[]]$Arguments,
-        [hashtable]$Replacements
-    )
-
-    return Invoke-MaskedProcess -FilePath 'az' `
-        -Arguments $Arguments `
-        -Replacements $Replacements `
-        -CaptureStdout
+function apiops {
+    $invocation = Resolve-ApiopsInvocation
+    & $invocation.FilePath $invocation.Prefix @args
 }
 
 Export-ModuleMember -Function `
@@ -440,8 +272,6 @@ Export-ModuleMember -Function `
     Protect-ResourceGroupName, `
     Protect-ApimName, `
     Protect-LogLine, `
-    Resolve-NativeExecutable, `
+    Protect-Secret, `
     Resolve-ApiopsInvocation, `
-    Invoke-MaskedProcess, `
-    Invoke-MaskedApiopsCommand, `
-    Invoke-MaskedAzCommand
+    apiops

@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft Corporation.
+﻿# Copyright (c) Microsoft Corporation.
 # Licensed under the MIT license.
 #requires -Version 7.0
 <#
@@ -45,7 +45,11 @@ param(
 
     [string]$OverrideFile,
 
-    [string]$ExtractOutputDir = "$PSScriptRoot/extracted-artifacts"
+    [string]$ExtractOutputDir = "$PSScriptRoot/extracted-artifacts",
+
+    # When set, publish with --delete-unmatched so resources present in the
+    # target but absent from the extracted artifacts are removed.
+    [switch]$TestDeleteUnmatched
 )
 
 $ErrorActionPreference = 'Stop'
@@ -90,18 +94,12 @@ if (-not (Test-Path $overrideFileValue)) {
 $overrideFile = (Resolve-Path $overrideFileValue).Path
 
 Write-Host "📤 Publish — Publish artifacts to target APIM"
-$publishArgs = @(
-    'publish',
-    '--resource-group', $TargetResourceGroup,
-    '--service-name',   $TargetApimName,
-    '--source',         $ExtractOutputDir,
-    '--overrides',      $overrideFile,
-    '--log-level',      $apiopsLogLevel
-)
-if (-not [string]::IsNullOrWhiteSpace($targetSubscriptionIdValue)) {
-    $publishArgs += @('--subscription-id', $targetSubscriptionIdValue)
+$deleteUnmatchedArg = @()
+if ($TestDeleteUnmatched) {
+    Write-Host "🧹 --delete-unmatched enabled — unmatched target resources will be removed"
+    $deleteUnmatchedArg = @('--delete-unmatched')
 }
-$publishArgs += $apiopsAuthArgs
+$subscriptionArg = if (-not [string]::IsNullOrWhiteSpace($targetSubscriptionIdValue)) { @('--subscription-id', $targetSubscriptionIdValue) } else { @() }
 
 $replacements = @{
     $TargetResourceGroup = Protect-ResourceGroupName -Value $TargetResourceGroup
@@ -110,7 +108,16 @@ $replacements = @{
 Add-ArgumentIfSet -Hashtable $replacements -Key $targetSubscriptionIdValue -Value (Protect-SubscriptionId -Value $targetSubscriptionIdValue)
 Add-ArgumentIfSet -Hashtable $replacements -Key $overrideFile -Value '.overrides.yaml'
 
-$publishExitCode = Invoke-MaskedApiopsCommand -Replacements $replacements -Arguments $publishArgs
+apiops publish `
+    --resource-group $TargetResourceGroup `
+    --service-name   $TargetApimName `
+    --source         $ExtractOutputDir `
+    --overrides      $overrideFile `
+    --log-level      $apiopsLogLevel `
+    @deleteUnmatchedArg @subscriptionArg @apiopsAuthArgs 2>&1 |
+    Protect-Secret -Replacements $replacements |
+    Out-Host
+$publishExitCode = $LASTEXITCODE
 
 if ($publishExitCode -ne 0) {
     Write-Host "❌ Publish failed (exit code $publishExitCode)"

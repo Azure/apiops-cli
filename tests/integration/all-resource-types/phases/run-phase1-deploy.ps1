@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft Corporation.
+﻿# Copyright (c) Microsoft Corporation.
 # Licensed under the MIT license.
 #requires -Version 7.0
 
@@ -71,7 +71,11 @@ param(
 
     [string]$SourceSubscriptionId,
 
-    [string]$TargetSubscriptionId
+    [string]$TargetSubscriptionId,
+
+    # When set, seed extra "unmatched" resources into the target APIM so the
+    # later publish (--delete-unmatched) and compare phases can verify cleanup.
+    [switch]$TestDeleteUnmatched
 )
 
 $ErrorActionPreference = 'Stop'
@@ -128,6 +132,9 @@ $targetDeployArgs = @{
     LogLevel          = $LogLevel
 }
 Add-ArgumentIfSet -Hashtable $targetDeployArgs -Key 'ApimName' -Value $TargetApimName
+if ($TestDeleteUnmatched) {
+    $targetDeployArgs['TestDeleteUnmatched'] = $true
+}
 
 $sourceJob = Start-Job -Name 'DeploySource' -ScriptBlock {
             param($script, $scriptArgs, $transcriptFile)

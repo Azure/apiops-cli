@@ -1,9 +1,9 @@
-# Copyright (c) Microsoft Corporation.
+﻿# Copyright (c) Microsoft Corporation.
 # Licensed under the MIT license.
 #requires -Version 7.0
 <#
 .SYNOPSIS
-  Phase 8 — Tear down source and target APIM resource groups.
+  Phase 7 — Tear down source and target APIM resource groups.
 .DESCRIPTION
     Deletes the source and target resource groups, waits for the deletions to complete, and then purges any soft-deleted APIM instances in the specified location.
 
@@ -20,7 +20,7 @@
     Skips teardown when specified.
 
 .EXAMPLE
-    .\run-phase8-teardown.ps1 -SourceResourceGroup rg-src -TargetResourceGroup rg-tgt
+    .\run-phase7-teardown.ps1 -SourceResourceGroup rg-src -TargetResourceGroup rg-tgt
 #>
 
 [CmdletBinding()]
@@ -52,7 +52,7 @@ if ($SkipTeardown) {
     exit 0
 }
 
-Write-Host "🧹 PHASE 8 — Teardown"
+Write-Host "🧹 PHASE 7 — Teardown"
 
 $sourceApimName = $null
 $targetApimName = $null
@@ -72,41 +72,6 @@ $targetListArgs = @('apim', 'list', '--resource-group', $TargetResourceGroup, '-
 
 $sourceApimName = az @sourceListArgs 2>$null
 $targetApimName = az @targetListArgs 2>$null
-
-function Wait-ForResourceGroupsDeletion {
-    param(
-        [hashtable[]]$Groups,
-        [int]$TimeoutMinutes = 60,
-        [int]$IntervalSeconds = 30
-    )
-
-    $waitedSeconds = 0
-    $timeoutSeconds = $TimeoutMinutes * 60
-
-    while ($waitedSeconds -lt $timeoutSeconds) {
-        $existingGroups = @()
-
-        foreach ($group in $Groups) {
-            if (Get-GroupExists -ResourceGroup $group.ResourceGroup -SubscriptionId $group.SubscriptionId) {
-                $existingGroups += $group.ResourceGroup
-            }
-        }
-
-        if ($existingGroups.Count -eq 0) {
-            Write-Host "   ✅ Resource groups deleted"
-            return
-        }
-
-        $maskedNames = $existingGroups | ForEach-Object { Protect-ResourceGroupName -Value $_ }
-        Write-Host "   ... waiting for resource group deletion (${waitedSeconds}s elapsed): $($maskedNames -join ', ')"
-        Start-Sleep -Seconds $IntervalSeconds
-        $waitedSeconds += $IntervalSeconds
-    }
-
-    $maskedGroups = $Groups | ForEach-Object { Protect-ResourceGroupName -Value $_.ResourceGroup }
-    throw "Timed out waiting for resource group deletion for: $($maskedGroups -join ', ')."
-}
-
 
 Write-Host "   Deleting $(Protect-ResourceGroupName -Value $SourceResourceGroup)..."
 if (Get-GroupExists -ResourceGroup $SourceResourceGroup -SubscriptionId $SourceSubscriptionId) {
@@ -133,11 +98,8 @@ else {
 }
 
 Write-Host "   ⏳ Waiting for resource group deletions to complete for hard-delete..."
-$groups = @(
-    @{ ResourceGroup = $SourceResourceGroup; SubscriptionId = $SourceSubscriptionId },
-    @{ ResourceGroup = $TargetResourceGroup; SubscriptionId = $TargetSubscriptionId }
-)
-Wait-ForResourceGroupsDeletion -Groups $groups
+Wait-ForResourceGroupDeletion -ResourceGroup $SourceResourceGroup -SubscriptionId $SourceSubscriptionId 
+Wait-ForResourceGroupDeletion -ResourceGroup $TargetResourceGroup -SubscriptionId $TargetSubscriptionId 
 
 if ($sourceApimName) {
     Wait-ForDeletedApimService -ServiceName $sourceApimName -ServiceLocation $Location -SubscriptionId $SourceSubscriptionId

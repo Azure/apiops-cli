@@ -1,4 +1,4 @@
-# Copyright (c) Microsoft Corporation.
+﻿# Copyright (c) Microsoft Corporation.
 # Licensed under the MIT license.
 <#
 .SYNOPSIS
@@ -173,28 +173,19 @@ $azReplacements = @{
     $ResourceGroupName = Protect-ResourceGroupName   -Value $ResourceGroupName
 }
 
-$azArgs = @(
-    'deployment', 'group', 'create',
-    '--resource-group', $ResourceGroupName,
-    '--name',           $deploymentName,
-    '--template-file',  $bicepFile,
-    '--parameters',     "skuName=$SkuName", "location=$Location", "publisherEmail=$PublisherEmail",
-    '--output',         'json'
-) + $azVerbosity
-
+$deployParameters = @("skuName=$SkuName", "location=$Location", "publisherEmail=$PublisherEmail")
 if (-not [string]::IsNullOrWhiteSpace($apimNameValue)) {
-    $azArgs += @('--parameters', "apimName=$apimNameValue")
+    $deployParameters += "apimName=$apimNameValue"
 }
 
-$raw = Invoke-MaskedAzCommand -Replacements $azReplacements -Arguments $azArgs
-
-if ($LASTEXITCODE -ne 0) {
-    Write-DeploymentFailureDetails `
-        -ResourceGroupName $ResourceGroupName `
-        -DeploymentName    $deploymentName `
-        -Replacements      $azReplacements
-    throw "Source APIM deployment failed (deployment '$deploymentName' in resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)'). See failed-operation details above."
-}
+$raw = New-ResourceGroupDeployment `
+    -ResourceGroupName $ResourceGroupName `
+    -DeploymentName    $deploymentName `
+    -TemplateFile      $bicepFile `
+    -Parameters        $deployParameters `
+    -Verbosity         $azVerbosity `
+    -Replacements      $azReplacements `
+    -FailureLabel      'Source APIM deployment'
 
 $result = $raw | ConvertFrom-Json
 
@@ -221,25 +212,17 @@ Wait-ApimApiQueryable `
     -Replacements $postReplacements | Out-Null
 
 $postDeploymentName = "source-apim-post-activation-$(Get-Date -Format 'yyyyMMddHHmmss')"
-$postArgs = @(
-    'deployment', 'group', 'create',
-    '--resource-group', $ResourceGroupName,
-    '--name',           $postDeploymentName,
-    '--template-file',  $postActivationBicepFile,
-    '--parameters',     "apimName=$apimServiceName", "skuName=$SkuName",
-    '--output',         'json'
-) + $azVerbosity
 
 Write-Host "Applying post-activation APIM resources..." -ForegroundColor Cyan
 # Out-Null — else the az JSON leaks, making the job return an array (breaks strict-mode member access).
-Invoke-MaskedAzCommand -Replacements $postReplacements -Arguments $postArgs | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    Write-DeploymentFailureDetails `
-        -ResourceGroupName $ResourceGroupName `
-        -DeploymentName    $postDeploymentName `
-        -Replacements      $postReplacements
-    throw "Source post-activation deployment failed (deployment '$postDeploymentName' in resource group '$(Protect-ResourceGroupName -Value $ResourceGroupName)'). See failed-operation details above."
-}
+New-ResourceGroupDeployment `
+    -ResourceGroupName $ResourceGroupName `
+    -DeploymentName    $postDeploymentName `
+    -TemplateFile      $postActivationBicepFile `
+    -Parameters        @("apimName=$apimServiceName", "skuName=$SkuName") `
+    -Verbosity         $azVerbosity `
+    -Replacements      $postReplacements `
+    -FailureLabel      'Source post-activation deployment' | Out-Null
 
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green

@@ -36,13 +36,13 @@ function Write-DeploymentFailureDetails {
     $query = "[?properties.provisioningState=='Failed'].{resource:properties.targetResource.resourceName, type:properties.targetResource.resourceType, code:properties.statusMessage.error.code, message:properties.statusMessage.error.message, details:properties.statusMessage.error.details}"
 
     try {
-        Invoke-MaskedProcess -FilePath 'az' -Replacements $Replacements -Arguments @(
-            'deployment', 'operation', 'group', 'list',
-            '--resource-group', $ResourceGroupName,
-            '--name',           $DeploymentName,
-            '--query',          $query,
-            '--output',         'json'
-        )
+        az deployment operation group list `
+            --resource-group $ResourceGroupName `
+            --name           $DeploymentName `
+            --query          $query `
+            --output         json 2>&1 |
+            Protect-Secret -Replacements $Replacements |
+            Out-Host
     } catch {
         $maskedErr = Protect-LogLine -Line ($_.Exception.Message) -Replacements $Replacements
         Write-Host "Failed to retrieve deployment operations: $maskedErr" -ForegroundColor Red
@@ -188,18 +188,23 @@ function Wait-ApimApiQueryable {
     $apiListUri = "https://management.azure.com/subscriptions/$subscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.ApiManagement/service/$ApimServiceName/apis?api-version=2025-09-01-preview"
 
     $probe = {
-        $probeArgs = @(
-            'rest',
-            '--method', 'get',
-            '--uri', $apiListUri,
-            '--query', "length(value[?name=='$ApiId'])",
-            '--output', 'tsv'
-        )
-        $probeResult = Invoke-MaskedAzCommand -Replacements $Replacements -Arguments $probeArgs
-        if ($LASTEXITCODE -eq 0 -and "$probeResult" -eq '1') {
-            return $true
+        # Merge stderr into the stream and mask it so probe failures are visible
+        # (and redacted) instead of being swallowed by a redirect to $null.
+        $probeOutput = az rest `
+            --method get `
+            --uri $apiListUri `
+            --query "length(value[?name=='$ApiId'])" `
+            --output tsv 2>&1 |
+            Protect-Secret -Replacements $Replacements
+        if ($LASTEXITCODE -eq 0) {
+            # The query returns length(value[?name==ApiId]) as a bare count. API
+            # names are unique, so the result is '0' (not visible yet) or '1'
+            # (now queryable). -contains tolerates an incidental stderr line
+            # merged in by 2>&1.
+            return (@($probeOutput) -contains '1')
         }
 
+        $probeOutput | ForEach-Object { Write-Host "  [api-probe] $_" -ForegroundColor DarkYellow }
         return $false
     }
 
@@ -210,7 +215,97 @@ function Wait-ApimApiQueryable {
         -TimeoutMessage "Timed out waiting for API '$ApiId' to be queryable in APIM '$maskedApim' within ${TimeoutSeconds}s"
 }
 
+<#
+.SYNOPSIS
+Runs an ARM template/Bicep deployment at resource-group scope, printing masked
+failure details and throwing on error.
+
+.PARAMETER ResourceGroupName
+Resource group to deploy into.
+
+.PARAMETER DeploymentName
+Name for the deployment.
+
+.PARAMETER TemplateFile
+Path to the ARM/Bicep template to deploy.
+
+.PARAMETER Parameters
+Deployment parameters as 'key=value' strings.
+
+.PARAMETER Verbosity
+Extra az CLI verbosity flags (e.g. '--verbose', '--debug').
+
+.PARAMETER Output
+az CLI output format for the deployment ('json' or 'none').
+
+.PARAMETER Replacements
+Mask replacement map for output.
+
+.PARAMETER FailureLabel
+Human-readable label used in the thrown error message.
+
+.OUTPUTS
+System.String - the raw az CLI output (when Output is 'json').
+#>
+function New-ResourceGroupDeployment {
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)][string]$ResourceGroupName,
+        [Parameter(Mandatory)][string]$DeploymentName,
+        [Parameter(Mandatory)][string]$TemplateFile,
+        [string[]]$Parameters = @(),
+        [string[]]$Verbosity = @(),
+        [ValidateSet('json', 'none')][string]$Output = 'json',
+        [hashtable]$Replacements = @{},
+        [string]$FailureLabel = 'Deployment'
+    )
+
+    if (-not (Test-Path $TemplateFile)) {
+        throw "Template file not found at: $TemplateFile"
+    }
+
+    $maskedRg = Protect-ResourceGroupName -Value $ResourceGroupName
+
+    if (-not $PSCmdlet.ShouldProcess($maskedRg, "Create deployment '$DeploymentName'")) {
+        return
+    }
+
+    # Capture stdout raw so callers can parse the deployment JSON, while
+    # redirecting stderr to a temp file so it can be masked and shown to the
+    # host (rather than leaking secrets or being silently discarded).
+    # Only pass --parameters when there are parameters to supply.
+    $parametersArg = if ($Parameters.Count -gt 0) { @('--parameters') + $Parameters } else { @() }
+    $stderrPath = (New-TemporaryFile).FullName
+    try {
+        $raw = az deployment group create `
+            --resource-group $ResourceGroupName `
+            --name           $DeploymentName `
+            --template-file  $TemplateFile `
+            --output         $Output `
+            $parametersArg $Verbosity 2> $stderrPath
+        $deployExit = $LASTEXITCODE
+
+        Get-Content -LiteralPath $stderrPath -ErrorAction SilentlyContinue |
+            Protect-Secret -Replacements $Replacements |
+            Out-Host
+    }
+    finally {
+        Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
+    }
+
+    if ($deployExit -ne 0) {
+        Write-DeploymentFailureDetails `
+            -ResourceGroupName $ResourceGroupName `
+            -DeploymentName    $DeploymentName `
+            -Replacements      $Replacements
+        throw "$FailureLabel failed (deployment '$DeploymentName' in resource group '$maskedRg'). See failed-operation details above."
+    }
+
+    return ($raw -join "`n")
+}
+
 Export-ModuleMember -Function `
     Write-DeploymentFailureDetails, `
     Wait-ApimActivation, `
-    Wait-ApimApiQueryable
+    Wait-ApimApiQueryable, `
+    New-ResourceGroupDeployment
