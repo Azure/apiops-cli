@@ -1,4 +1,5 @@
 ---
+name: "Issue Go: Clarify"
 description: >
   When a maintainer marks an issue go:needs-research, help scope it by asking focused
   clarifying questions — but only if the maintainer has not already asked them. If the

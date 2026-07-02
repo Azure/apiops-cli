@@ -1,4 +1,5 @@
 ---
+name: "Issue Go: Yes"
 description: >
   Assign an approved issue (go:yes) to the maintainer who approved it and route it to
   squad areas. Reads the prior triage analysis and the squad routing table, applies the

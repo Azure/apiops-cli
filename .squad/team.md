@@ -26,6 +26,20 @@
 | SecurityExpert | 🔒 Security Expert | [charter](.squad/agents/securityexpert/charter.md) | ✅ Active |
 | Ralph | 🔄 Work Monitor | — | ✅ Active |
 
+## Coding Agent
+
+<!-- copilot-auto-assign: true -->
+
+GitHub's Copilot coding agent (`@copilot`) autonomously implements issues labeled
+`squad:copilot`. Ralph (`squad-heartbeat.yml`) assigns `copilot-swe-agent[bot]` to
+every open `squad:copilot` issue that does not already have the agent assigned —
+in addition to the human maintainer who owns it — which is what actually starts an
+agent session (the label alone does not).
+
+| Name | Role | Auto-assign | Notes |
+|------|------|-------------|-------|
+| Copilot | 🤖 Coding Agent | ✅ Enabled | Requires the `COPILOT_ASSIGN_TOKEN` repo secret (a PAT that can assign the coding agent). Without it the assign step is a no-op. |
+
 ## Issue Source
 
 - **Repository:** Azure/apiops-cli

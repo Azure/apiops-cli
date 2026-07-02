@@ -1,4 +1,4 @@
-name: Issue No-Go
+name: "Issue Go: No"
 
 # Deterministic Workflow: No-Go decision
 # Trigger: a maintainer applies the "go:no" label to reject an issue.
