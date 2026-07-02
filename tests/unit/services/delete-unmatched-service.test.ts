@@ -163,6 +163,30 @@ describe('delete-unmatched-service', () => {
       expect(apis).toContain('custom-api');
     });
 
+    it('should skip auto-generated named values (logger credentials) but delete user-named ones', async () => {
+      const apimResources = new Map<ResourceType, Record<string, unknown>[]>([
+        [ResourceType.NamedValue, [
+          // Auto-generated 24-char hex logger credentials — APIM-managed, in use by loggers.
+          { name: '6a469e80e15d3120e035315f', id: '/namedValues/6a469e80e15d3120e035315f' },
+          { name: '6a469e80c3c8a82b4430066f', id: '/namedValues/6a469e80c3c8a82b4430066f' },
+          // User-named unmatched named value — should still be deleted.
+          { name: 'tgt-unmatched-nv', id: '/namedValues/tgt-unmatched-nv' },
+        ]],
+      ]);
+
+      const client = createMockClient(apimResources);
+      const store = createMockStore([]);
+
+      const result = await computeDeleteActions(client, store, testContext, testConfig);
+
+      const namedValues = result
+        .filter((d) => d.type === ResourceType.NamedValue)
+        .map((d) => d.nameParts[0]);
+      expect(namedValues).not.toContain('6a469e80e15d3120e035315f');
+      expect(namedValues).not.toContain('6a469e80c3c8a82b4430066f');
+      expect(namedValues).toContain('tgt-unmatched-nv');
+    });
+
     it('should handle empty artifact store (nothing to delete)', async () => {
       const apimResources = new Map<ResourceType, Record<string, unknown>[]>([
         [ResourceType.NamedValue, []],
