@@ -117,6 +117,7 @@ Scaffold a new APIM artifacts repository with CI/CD pipelines.
 |------|-------------|
 | `--cli-package <path>` | Path to a local `.tgz` tarball |
 | `--ci <platform>` | `github-actions` or `azure-devops` |
+| `--artifact-dir <dir>` | Artifact directory path (default: `./apim-artifacts`) |
 | `--environments <list>` | Comma-separated environments (e.g. `dev,prod`) |
 | `--non-interactive` | Skip all prompts |
 | `--force` | Overwrite existing files |
