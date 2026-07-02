@@ -1,5 +1,10 @@
 {
   "entries": {
+    "actions/github-script@v8": {
+      "repo": "actions/github-script",
+      "version": "v8",
+      "sha": "ed597411d8f924073f98dfc5c65a23a2325f34cd"
+    },
     "github/gh-aw-actions/setup-cli@v0.81.6": {
       "repo": "github/gh-aw-actions/setup-cli",
       "version": "v0.81.6",

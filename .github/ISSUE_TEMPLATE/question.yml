@@ -1,6 +1,6 @@
 name: Question
 description: Ask a usage question or request clarification
-labels: ["question"]
+labels: ["type:question"]
 body:
   - type: textarea
     id: question

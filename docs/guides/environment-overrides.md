@@ -27,6 +27,8 @@ apiops publish \
 
 If you ran `apiops init`, a Copilot prompt file was generated at `.github/prompts/apiops-configure-overrides.prompt.md`. Open it in VS Code and ask GitHub Copilot to help you configure environment overrides — it will guide you through setting up environment-specific values interactively.
 
+If you didn't run `apiops init`, see the [Prompt files guide](./prompt-files.md) for instructions on downloading and setting up prompt files manually.
+
 ## IDE Autocompletion with JSON Schema
 
 A JSON Schema is available for `configuration.{env}.yaml` override files. Add yaml-language-server comment at the top of your override file. Requires yaml language extension in VSCode.
