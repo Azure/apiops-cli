@@ -583,4 +583,137 @@ describe('filter-service', () => {
       expect(shouldIncludeResource(excluded, filter)).toBe(false);
     });
   });
+
+  describe('negation (`!` prefix) exclusions', () => {
+    it('should treat a leading `!` as an exclusion in an otherwise-inclusive list', () => {
+      const filter: FilterConfig = { apis: ['prod-*', '!prod-legacy-billing'] };
+      const included: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['prod-users'],
+      };
+      const excluded: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['prod-legacy-billing'],
+      };
+      expect(shouldIncludeResource(included, filter)).toBe(true);
+      expect(shouldIncludeResource(excluded, filter)).toBe(false);
+    });
+
+    it('should support wildcard exclusions', () => {
+      const filter: FilterConfig = { apis: ['prod-*', '!prod-*-deprecated'] };
+      const included: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['prod-users'],
+      };
+      const excluded: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['prod-users-deprecated'],
+      };
+      expect(shouldIncludeResource(included, filter)).toBe(true);
+      expect(shouldIncludeResource(excluded, filter)).toBe(false);
+    });
+
+    it('should treat a pure-exclusion list as "include all, then subtract"', () => {
+      const filter: FilterConfig = { apis: ['!prod-legacy-billing'] };
+      const kept: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['prod-users'],
+      };
+      const dropped: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['prod-legacy-billing'],
+      };
+      expect(shouldIncludeResource(kept, filter)).toBe(true);
+      expect(shouldIncludeResource(dropped, filter)).toBe(false);
+    });
+
+    it('should treat a list with only wildcard exclusions as include-all-minus', () => {
+      const filter: FilterConfig = { namedValues: ['!keyvault-*'] };
+      const kept: ResourceDescriptor = {
+        type: ResourceType.NamedValue,
+        nameParts: ['api-token'],
+      };
+      const dropped: ResourceDescriptor = {
+        type: ResourceType.NamedValue,
+        nameParts: ['keyvault-secret'],
+      };
+      expect(shouldIncludeResource(kept, filter)).toBe(true);
+      expect(shouldIncludeResource(dropped, filter)).toBe(false);
+    });
+
+    it('should match exclusions case-insensitively', () => {
+      const filter: FilterConfig = { apis: ['*', '!Prod-Legacy-Billing'] };
+      const excluded: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['prod-legacy-billing'],
+      };
+      expect(shouldIncludeResource(excluded, filter)).toBe(false);
+    });
+
+    it('should exclude API revisions when the root name matches an exclusion', () => {
+      const filter: FilterConfig = { apis: ['prod-*', '!prod-legacy-billing'] };
+      const revision: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['prod-legacy-billing;rev=2'],
+      };
+      expect(shouldIncludeResource(revision, filter)).toBe(false);
+    });
+
+    it('should cascade parent exclusions to child resources', () => {
+      const filter: FilterConfig = { apis: ['prod-*', '!prod-legacy-billing'] };
+      const policyOfExcludedApi: ResourceDescriptor = {
+        type: ResourceType.ApiPolicy,
+        nameParts: ['prod-legacy-billing'],
+      };
+      const policyOfIncludedApi: ResourceDescriptor = {
+        type: ResourceType.ApiPolicy,
+        nameParts: ['prod-users'],
+      };
+      const opOfExcludedApi: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['prod-legacy-billing', 'get-invoices'],
+      };
+      expect(shouldIncludeResource(policyOfExcludedApi, filter)).toBe(false);
+      expect(shouldIncludeResource(policyOfIncludedApi, filter)).toBe(true);
+      expect(shouldIncludeResource(opOfExcludedApi, filter)).toBe(false);
+    });
+
+    it('should treat `!` only as negation when it is the first character', () => {
+      // "foo!bar" is a literal name, not an exclusion of "bar" that starts with "foo".
+      const filter: FilterConfig = { apis: ['foo!bar'] };
+      const literal: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['foo!bar'],
+      };
+      const other: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['bar'],
+      };
+      // APIM resource names can't actually contain `!`, but the matcher must
+      // still treat non-leading `!` as a literal character rather than negation.
+      expect(shouldIncludeResource(literal, filter)).toBe(true);
+      expect(shouldIncludeResource(other, filter)).toBe(false);
+    });
+
+    it('should apply negation inside apiSubFilters', () => {
+      const filter: FilterConfig = {
+        apis: ['my-api'],
+        apiSubFilters: {
+          'my-api': {
+            operations: ['get-*', '!get-internal-*'],
+          },
+        },
+      };
+      const included: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['my-api', 'get-users'],
+      };
+      const excluded: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['my-api', 'get-internal-metrics'],
+      };
+      expect(shouldIncludeResource(included, filter)).toBe(true);
+      expect(shouldIncludeResource(excluded, filter)).toBe(false);
+    });
+  });
 });

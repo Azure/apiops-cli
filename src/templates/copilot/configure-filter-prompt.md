@@ -47,7 +47,7 @@ Walk through the resource types **one type at a time**. For each type, ask the u
 
 - **Extract ALL** — include every resource of this type. Leave this type **out** of the filter (APIOps extracts everything by default).
 - **Extract NONE** — exclude all resources of this type. Add the type with an empty array: `tags: []`.
-- **Extract SOME** — include only specific resources. The user provides which names (or wildcard patterns) to include. Matching is case-insensitive and supports `*` and `?` wildcards.
+- **Extract SOME** — include only specific resources. The user provides which names (or wildcard patterns) to include. Matching is case-insensitive and supports `*` and `?` wildcards. Entries can also be prefixed with `!` to **exclude** a name or pattern (e.g. `'!prod-legacy-*'`); a list containing only `!` entries means "include everything, then subtract." **Always quote `!`-prefixed entries in YAML** — an unquoted leading `!` is parsed as a YAML tag and fails to load.
 
 **Single-resource-type cadence for Step 1:**
 
