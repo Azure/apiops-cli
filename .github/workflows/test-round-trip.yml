@@ -8,7 +8,7 @@
 #
 # Required secrets (in the 'integration-test' environment):
 #   - AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID (OIDC login)
-#   - APIM_PUBLISHER_EMAIL
+#   - APIM_PUBLISHER_EMAIL (optional; defaults to apim-integration-test@contoso.com)
 #
 # Required federated credential subject for GitHub OIDC:
 #   - Match the subject claim format configured for this repo/org.
@@ -44,9 +44,13 @@ on:
         type: string
         default: 'centralus'
       log_level:
-        description: 'PowerShell log level (Info, Verbose, Debug)'
+        description: 'Log level'
         required: false
-        type: string
+        type: choice
+        options:
+          - Info
+          - Verbose
+          - Debug
         default: Verbose
 
   workflow_call:
@@ -62,21 +66,10 @@ on:
         type: string
         default: 'centralus'
       log_level:
-        description: 'PowerShell log level (Info, Verbose, Debug)'
+        description: 'Log level'
         required: false
         type: string
         default: Verbose
-    secrets:
-      AZURE_CLIENT_ID:
-        required: true
-      AZURE_TENANT_ID:
-        required: true
-      AZURE_SUBSCRIPTION_ID:
-        required: true
-      APIM_PUBLISHER_EMAIL:
-        required: true
-      APIM_SKU:
-        required: false
 
 permissions:
   id-token: write
@@ -87,6 +80,8 @@ concurrency:
   cancel-in-progress: false # Don't cancel — would leave resources running
 
 env:
+  DEFAULT_LOCATION: centralus
+  DEFAULT_PUBLISHER_EMAIL: apim-integration-test@contoso.com
   SOURCE_RG: rg-apiops-bvt-src-${{ github.run_id }}
   TARGET_RG: rg-apiops-bvt-tgt-${{ github.run_id }}
   SOURCE_APIM: apiops-bvt-src-${{ github.run_id }}
@@ -110,22 +105,17 @@ jobs:
 
       - run: npm ci && npm run build
 
-      - name: Resolve Workflow Settings
-        id: settings
-        shell: pwsh
+      - name: Validate Required Secrets
+        shell: bash
         run: |
-          $logLevel = '${{ inputs.log_level }}'
-          if ([string]::IsNullOrWhiteSpace($logLevel)) { $logLevel = 'Verbose' }
-          if ($logLevel -notin @('Info', 'Verbose', 'Debug')) {
-            throw "Invalid log_level '$logLevel'. Allowed values: Info, Verbose, Debug."
-          }
-
-          $skuName = '${{ secrets.APIM_SKU }}'
-          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = '${{ inputs.sku }}' }
-          if ([string]::IsNullOrWhiteSpace($skuName)) { $skuName = 'StandardV2' }
-
-          "logLevel=$logLevel" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "skuName=$skuName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          missing=()
+          [[ -z "${{ secrets.AZURE_CLIENT_ID }}" ]] && missing+=("AZURE_CLIENT_ID")
+          [[ -z "${{ secrets.AZURE_TENANT_ID }}" ]] && missing+=("AZURE_TENANT_ID")
+          [[ -z "${{ secrets.AZURE_SUBSCRIPTION_ID }}" ]] && missing+=("AZURE_SUBSCRIPTION_ID")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "::error::Missing required secrets: ${missing[*]}"
+            exit 1
+          fi
 
       - name: Azure Login
         uses: azure/login@v3
@@ -133,6 +123,17 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate Azure Region
+        shell: bash
+        run: |
+          LOCATION="${{ inputs.location }}"
+          if [[ -z "$LOCATION" ]]; then LOCATION="${{ env.DEFAULT_LOCATION }}"; fi
+          VALID_LOCATIONS=$(az account list-locations --query "[].name" -o tsv)
+          if ! echo "$VALID_LOCATIONS" | grep -qx "$LOCATION"; then
+            echo "::error::Invalid Azure region: '$LOCATION'. Run 'az account list-locations --query [].name' to see valid options."
+            exit 1
+          fi
 
       - name: Run Round-Trip Phase 1 (Deploy)
         id: phase1
@@ -145,10 +146,10 @@ jobs:
             TargetApimName     = '${{ env.TARGET_APIM }}'
             SourceSubscriptionId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}'
             TargetSubscriptionId = '${{ secrets.AZURE_SUBSCRIPTION_ID }}'
-            SkuName            = '${{ steps.settings.outputs.skuName }}'
+            SkuName            = '${{ inputs.sku }}'
             Location           = '${{ inputs.location }}'
-            LogLevel           = '${{ steps.settings.outputs.logLevel }}'
-            PublisherEmail     = '${{ secrets.APIM_PUBLISHER_EMAIL }}'
+            LogLevel           = '${{ inputs.log_level }}'
+            PublisherEmail     = '${{ secrets.APIM_PUBLISHER_EMAIL || env.DEFAULT_PUBLISHER_EMAIL }}'
           }
           ./tests/integration/all-resource-types/phases/run-phase1-deploy.ps1 @params
 
@@ -174,7 +175,7 @@ jobs:
             -SourceSubscriptionId '${{ steps.phase1.outputs.sourceSubscriptionId }}' `
             -SourceResourceGroup '${{ steps.phase1.outputs.sourceResourceGroup }}' `
             -SourceApimName '${{ steps.phase1.outputs.sourceApimName }}' `
-            -LogLevel '${{ steps.settings.outputs.logLevel }}' `
+            -LogLevel '${{ inputs.log_level }}' `
             -ExtractOutputDir './extracted-artifacts'
 
       - name: Run Round-Trip Phase 3 (Validate Extract)
@@ -186,7 +187,7 @@ jobs:
 
           ./tests/integration/all-resource-types/phases/run-phase3-validate-extract.ps1 `
             -SkuName $skuName `
-            -LogLevel '${{ steps.settings.outputs.logLevel }}' `
+            -LogLevel '${{ inputs.log_level }}' `
             -ExtractOutputDir $extractOutputDir
 
       - name: Run Round-Trip Phase 4 (Create Overrides)
@@ -199,7 +200,7 @@ jobs:
           ./tests/integration/all-resource-types/phases/run-phase4-create-overrides.ps1 `
             -TargetSubscriptionId '${{ steps.phase1.outputs.targetSubscriptionId }}' `
             -TargetResourceGroup '${{ steps.phase1.outputs.targetResourceGroup }}' `
-            -LogLevel '${{ steps.settings.outputs.logLevel }}' `
+            -LogLevel '${{ inputs.log_level }}' `
             -ExtractOutputDir $extractOutputDir
 
       - name: Run Round-Trip Phase 5 (Publish)
@@ -216,7 +217,7 @@ jobs:
             -TargetResourceGroup '${{ steps.phase1.outputs.targetResourceGroup }}' `
             -TargetApimName '${{ steps.phase1.outputs.targetApimName }}' `
             -OverrideFile '${{ steps.phase4.outputs.overrideFile }}' `
-            -LogLevel '${{ steps.settings.outputs.logLevel }}' `
+            -LogLevel '${{ inputs.log_level }}' `
             -ExtractOutputDir $extractOutputDir
 
       - name: Run Round-Trip Phase 6 (Compare)
@@ -230,7 +231,7 @@ jobs:
             -TargetSubscriptionId '${{ steps.phase1.outputs.targetSubscriptionId }}' `
             -TargetResourceGroup '${{ steps.phase1.outputs.targetResourceGroup }}' `
             -TargetApimName '${{ steps.phase1.outputs.targetApimName }}' `
-            -LogLevel '${{ steps.settings.outputs.logLevel }}'
+            -LogLevel '${{ inputs.log_level }}'
 
       - name: Run Round-Trip Phase 7 (Teardown)
         if: always()
