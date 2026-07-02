@@ -139,9 +139,9 @@ jobs:
               // assignees" would skip every routed issue. Filter on the agent's
               // presence instead; the POST below ADDS the bot as an extra assignee
               // without removing the human owner.
-              const COPILOT_LOGINS = ['copilot-swe-agent[bot]', 'copilot-swe-agent', 'Copilot'];
+              const COPILOT_LOGINS = new Set(['copilot-swe-agent[bot]', 'copilot-swe-agent', 'copilot']);
               const needsAgent = copilotIssues.filter(i =>
-                !(i.assignees || []).some(a => COPILOT_LOGINS.includes(a.login))
+                !(i.assignees || []).some(a => COPILOT_LOGINS.has((a.login || '').toLowerCase()))
               );
 
               if (needsAgent.length === 0) {
