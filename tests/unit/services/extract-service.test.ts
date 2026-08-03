@@ -518,6 +518,78 @@ describe('extract-service', () => {
       expect(result.exitCode).toBe(0);
     });
 
+    it('should extract backend pool members and policy fragment dependencies transitively', async () => {
+      const backendId =
+        '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a/backends/member';
+      const client = createMockClient({
+        [ResourceType.Backend]: [
+          {
+            name: 'pool',
+            properties: {
+              type: 'Pool',
+              pool: { services: [{ id: backendId }] },
+            },
+          },
+        ],
+        [ResourceType.PolicyFragment]: [
+          {
+            name: 'shared-fragment',
+            properties: {
+              value: '<set-header name="key"><value>{{shared-secret}}</value></set-header>',
+            },
+          },
+        ],
+      });
+      client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor) => {
+        if (descriptor.type === ResourceType.Backend && descriptor.nameParts[0] === 'member') {
+          return { name: 'member', properties: {} };
+        }
+        if (
+          descriptor.type === ResourceType.NamedValue &&
+          descriptor.nameParts[0] === 'shared-secret'
+        ) {
+          return { name: 'shared-secret', properties: { secret: true, value: 'secret' } };
+        }
+        return undefined;
+      });
+      const store = createMockStore();
+
+      const result = await runExtraction(client, store, {
+        service: testContext,
+        outputDir: '/output',
+        includeTransitive: true,
+        filter: {
+          apis: [],
+          backends: ['pool'],
+          namedValues: [],
+          policyFragments: ['shared-fragment'],
+        },
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(store.writeResource).toHaveBeenCalledWith(
+        '/output',
+        expect.objectContaining({
+          type: ResourceType.Backend,
+          nameParts: ['member'],
+        }),
+        expect.anything()
+      );
+      expect(store.writeResource).toHaveBeenCalledWith(
+        '/output',
+        expect.objectContaining({
+          type: ResourceType.NamedValue,
+          nameParts: ['shared-secret'],
+        }),
+        expect.objectContaining({
+          properties: expect.objectContaining({
+            value: REDACTION_MARKER,
+          }),
+        })
+      );
+    });
+
     it('should handle transitive dependency not found (getResource returns null)', async () => {
       const client = createMockClient({});
 

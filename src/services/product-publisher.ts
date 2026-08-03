@@ -12,10 +12,11 @@ import type { PublishConfig } from '../models/config.js';
 import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { publishResource, type ResourcePublishResult } from './resource-publisher.js';
 import { logger } from '../lib/logger.js';
-import { getNamePart } from '../lib/resource-path.js';
+import { getNamePart, sameResourceDescriptor } from '../lib/resource-path.js';
 import { parseArmUri } from '../lib/resource-uri.js';
 import { isWorkspaceScope, buildLinkPayload } from '../lib/workspace-link.js';
 import { isLinkAlreadyExistsError } from '../clients/apim-client.js';
+import { hasExplicitTypeFilter, resolveWorkspaceFilter, shouldIncludeResource } from './filter-service.js';
 
 /**
  * Publish a Product with all its associations (APIs, Groups, Tags).
@@ -26,7 +27,8 @@ export async function publishProduct(
   store: IArtifactStore,
   context: ApimServiceContext,
   descriptor: ResourceDescriptor,
-  config: PublishConfig
+  config: PublishConfig,
+  allowedDescriptors?: ResourceDescriptor[]
 ): Promise<ResourcePublishResult> {
   try {
     const productName = getNamePart(descriptor.nameParts, 0);
@@ -50,7 +52,8 @@ export async function publishProduct(
       descriptor,
       config,
       'apis',
-      ResourceType.ProductApi
+      ResourceType.ProductApi,
+      allowedDescriptors
     );
 
     // Step 3: Publish ProductGroup associations
@@ -61,12 +64,13 @@ export async function publishProduct(
       descriptor,
       config,
       'groups',
-      ResourceType.ProductGroup
+      ResourceType.ProductGroup,
+      allowedDescriptors
     );
 
     // Step 4: Publish ProductTag associations
     // Tags are stored in the product directory, need to check for tags
-    await publishProductTags(client, store, context, descriptor, config);
+    await publishProductTags(client, store, context, descriptor, config, allowedDescriptors);
 
     // Step 5: Publish ProductPolicy if exists
     const policyDescriptor: ResourceDescriptor = {
@@ -75,7 +79,7 @@ export async function publishProduct(
       workspace: descriptor.workspace,
     };
     const policyContent = await store.readContent(config.sourceDir, policyDescriptor, 'policy');
-    if (policyContent) {
+    if (policyContent && isDescriptorAllowed(policyDescriptor, config, allowedDescriptors)) {
       await publishResource(client, store, context, policyDescriptor, config);
       logger.debug(`Published policy for product: ${productName}`);
     }
@@ -164,7 +168,8 @@ async function publishProductAssociations(
   productDescriptor: ResourceDescriptor,
   config: PublishConfig,
   associationType: 'apis' | 'groups',
-  resourceType: ResourceType
+  resourceType: ResourceType,
+  allowedDescriptors?: ResourceDescriptor[]
 ): Promise<void> {
   const productName = getNamePart(productDescriptor.nameParts, 0);
   
@@ -194,6 +199,17 @@ async function publishProductAssociations(
       nameParts: [productName, name],
       workspace: productDescriptor.workspace,
     };
+    const targetDescriptor: ResourceDescriptor = {
+      type: associationType === 'apis' ? ResourceType.Api : ResourceType.Group,
+      nameParts: [name],
+      workspace: entry.scope === 'service' ? undefined : productDescriptor.workspace,
+    };
+    if (!isAssociationAllowed(assocDescriptor, targetDescriptor, config, allowedDescriptors)) {
+      logger.warn(
+        `Skipping ${resourceType} association "${assocDescriptor.nameParts.join('/')}" because its target is excluded by the filter or unavailable in the publish set`
+      );
+      continue;
+    }
     
     try {
       // In workspace scope, PUT with link payload; otherwise empty body.
@@ -226,7 +242,8 @@ async function publishProductTags(
   store: IArtifactStore,
   context: ApimServiceContext,
   productDescriptor: ResourceDescriptor,
-  config: PublishConfig
+  config: PublishConfig,
+  allowedDescriptors?: ResourceDescriptor[]
 ): Promise<void> {
   const productName = getNamePart(productDescriptor.nameParts, 0);
   
@@ -253,6 +270,17 @@ async function publishProductTags(
       nameParts: [productName, tagName],
       workspace: productDescriptor.workspace,
     };
+    const targetDescriptor: ResourceDescriptor = {
+      type: ResourceType.Tag,
+      nameParts: [tagName],
+      workspace: productDescriptor.workspace,
+    };
+    if (!isAssociationAllowed(tagDescriptor, targetDescriptor, config, allowedDescriptors)) {
+      logger.warn(
+        `Skipping ProductTag association "${tagDescriptor.nameParts.join('/')}" because its target is excluded by the filter or unavailable in the publish set`
+      );
+      continue;
+    }
     
     try {
       // The workspace ProductTag link references the product (productId), which
@@ -273,4 +301,60 @@ async function publishProductTags(
   }
   
   logger.info(`Published ${tagEntries.length} tags for product: ${productName}`);
+}
+
+function isDescriptorAllowed(
+  descriptor: ResourceDescriptor,
+  config: PublishConfig,
+  allowedDescriptors?: ResourceDescriptor[]
+): boolean {
+  if (!allowedDescriptors) {
+    return true;
+  }
+
+  if (allowedDescriptors.some((allowed) => sameResourceDescriptor(allowed, descriptor))) {
+    return true;
+  }
+
+  // Incremental mode only diffs changed files; an unchanged product policy
+  // can still need republishing when its product does.
+  return config.commitId !== undefined;
+}
+
+function isAssociationAllowed(
+  association: ResourceDescriptor,
+  target: ResourceDescriptor,
+  config: PublishConfig,
+  allowedDescriptors?: ResourceDescriptor[]
+): boolean {
+  if (!allowedDescriptors) {
+    return true;
+  }
+
+  const effectiveFilter = target.workspace
+    ? resolveWorkspaceFilter(target.workspace, config.filter)
+    : config.filter;
+  if (effectiveFilter && !shouldIncludeResource(target, effectiveFilter)) {
+    return false;
+  }
+
+  if (allowedDescriptors.some((allowed) => sameResourceDescriptor(allowed, association))) {
+    return true;
+  }
+
+  if (allowedDescriptors.some((allowed) => sameResourceDescriptor(allowed, target))) {
+    return true;
+  }
+
+  // Incremental targets contain only changed resources. An unchanged target
+  // can still exist in APIM and remain explicitly allowed by the filter.
+  if (config.commitId) {
+    return true;
+  }
+
+  if (hasExplicitTypeFilter(target.type, effectiveFilter)) {
+    return false;
+  }
+
+  return true;
 }

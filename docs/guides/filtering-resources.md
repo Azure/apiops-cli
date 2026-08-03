@@ -64,7 +64,7 @@ documentations: []
 workspaces: []
 ```
 
-With transitive resolution enabled (the default), any version set, backend, named value, policy fragment, or tag directly referenced by `my-own-api` or its policies is still pulled in automatically — even though those keys are set to `[]`. Use `--no-transitive` to disable that behavior.
+With transitive resolution enabled (the default), any version set, backend, named value, or policy fragment directly referenced by `my-own-api` or its policies is still pulled in automatically — even though those keys are set to `[]`. Use `--no-transitive` to disable that behavior.
 
 The three states for every key are:
 
@@ -200,16 +200,14 @@ namedValues:
   - '!keyvault-*'
 ```
 
-Exclusions work anywhere a string list is accepted, including sub-filter fields inside `apiSubFilters` and `workspaceSubFilters`:
+Exclusions work anywhere a string list is accepted, including nested API and workspace sub-filters:
 
 ```yaml
 apis:
-  - 'my-api'
-apiSubFilters:
-  my-api:
-    operations:
-      - 'get-*'
-      - '!get-internal-*'   # keep all get-* operations except internal ones
+  - 'my-api':
+      operations:
+        - 'get-*'
+        - '!get-internal-*'   # keep all get-* operations except internal ones
 ```
 
 ---
@@ -260,7 +258,7 @@ Supported workspace sub-filter keys: `apis`, `backends`, `diagnostics`, `groups`
 
 ---
 
-## All 16 Filterable Resource Types
+## All 17 Filterable Resource Types
 
 | Filter Field | APIM Resource | Example Values |
 |-------------|---------------|----------------|
@@ -295,10 +293,9 @@ flowchart TD
     A[Filtered API] --> B[Backends referenced in policies]
     A --> C[Named Values referenced in policies]
     A --> D[Policy Fragments included in policies]
-    A --> E[Tags attached to the API]
-    A --> F[Products containing the API]
-    A --> G[Diagnostics configured on the API]
-    A --> H[Version Set the API belongs to]
+    A --> E[Version Set the API belongs to]
+    B --> F[Backend pool members]
+    D --> G[Resources referenced by fragment content]
 ```
 
 ### Example
@@ -315,11 +312,23 @@ If `petstore-api` has a policy that references:
 - Named value `petstore-api-key` → **auto-included**
 - Policy fragment `rate-limit-fragment` → **auto-included**
 
-And `petstore-api` is assigned to:
-- Product `starter` → **auto-included**
-- Tag `production` → **auto-included**
+The extract output includes these dependencies even though only `apis` was specified in the filter.
+Product, gateway, tag, and subscription links do not reverse the dependency direction or
+auto-include composite API or Product targets.
 
-The extract output includes all of these, even though only `apiNames` was specified in the filter.
+### API Children Are Still Extracted
+
+Tags and diagnostics were not removed from API extraction. They are API child artifacts, not
+transitive dependencies:
+
+- Selecting an API also extracts its API tag associations and API diagnostics.
+- Use a nested API `diagnostics` filter to narrow or exclude API diagnostics.
+- Product selection remains independent. Selecting an API does not find and include Products that
+  contain it; omit `products` to include all Products, list specific Products, or use `products: []`
+  to include none.
+
+Top-level `tags` and `diagnostics` filter their resource definitions independently from API child
+artifacts. This follows the general rule that every top-level filter key is independent.
 
 ### Why Transitive Matters
 
@@ -329,7 +338,7 @@ Without transitive resolution, publishing the extracted artifacts to a new APIM 
 
 ## Disabling Transitive Dependencies
 
-Use `--no-transitive` to extract **only** the explicitly listed resources:
+Use `--no-transitive` to disable referenced dependency expansion:
 
 ```bash
 apiops extract \
@@ -344,6 +353,9 @@ apiops extract \
 - You manage dependencies separately (e.g., shared backends are in a different repo)
 - You want a minimal extract and will handle missing references manually
 - Debugging — to see exactly what was explicitly filtered
+
+Selected parent resources still include their normal child artifacts. For example, selecting an API
+still extracts its tags and diagnostics unless nested API sub-filters exclude them.
 
 > ⚠️ **Caution:** Extracted artifacts without transitive dependencies may not be publishable standalone. You'll need to ensure all referenced resources exist in the target APIM instance.
 
@@ -401,7 +413,15 @@ backends:
 
 ### Full Extract Minus Specific Resources
 
-There is no "exclude" syntax. To extract everything except certain resources, list all the resources you _do_ want. For large instances, it's often easier to extract everything and use `.gitignore` or separate branches to manage visibility.
+Use `!`-prefixed entries to extract everything except specific resources. For example:
+
+```yaml
+apis:
+  - '*'
+  - '!legacy-api'
+```
+
+For large instances, it can still be easier to extract everything and use `.gitignore` or separate branches to manage visibility.
 
 ### Pattern-Based Team Filtering
 

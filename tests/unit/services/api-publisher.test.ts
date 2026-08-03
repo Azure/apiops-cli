@@ -94,6 +94,224 @@ describe('api-publisher', () => {
   });
 
   describe('publishApi', () => {
+    it('should publish only API children included in the filtered target set', async () => {
+      const client = createMockClient();
+      const operation: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['orders-api', 'get-orders'],
+      };
+      const diagnostic: ResourceDescriptor = {
+        type: ResourceType.ApiDiagnostic,
+        nameParts: ['orders-api', 'application-insights'],
+      };
+      const store = createMockStore([operation, diagnostic]);
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig, [
+        apiDescriptor,
+        operation,
+      ]);
+
+      const publishedTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
+        return sum + (call[0] as unknown[]).length;
+      }, 0);
+      expect(publishedTasks).toBe(1);
+    });
+
+    it('should not import a full specification when filtered children are excluded', async () => {
+      const client = createMockClient();
+      const operation: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['orders-api', 'get-orders'],
+      };
+      const schema: ResourceDescriptor = {
+        type: ResourceType.ApiSchema,
+        nameParts: ['orders-api', 'order-schema'],
+      };
+      const store = createMockStore([operation, schema]);
+      store.readContent.mockResolvedValue({ content: 'openapi: 3.0.0', format: 'yaml' });
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig, [
+        apiDescriptor,
+        operation,
+      ]);
+
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        apiDescriptor,
+        expect.not.objectContaining({
+          properties: expect.objectContaining({ format: expect.anything() }),
+        })
+      );
+    });
+
+    it('should retain specification import when filtered APIs have no child artifacts', async () => {
+      const client = createMockClient();
+      const store = createMockStore([]);
+      store.readContent.mockResolvedValue({ content: 'openapi: 3.0.0', format: 'yaml' });
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig, [apiDescriptor]);
+
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        apiDescriptor,
+        expect.objectContaining({
+          properties: expect.objectContaining({ format: 'openapi' }),
+        })
+      );
+    });
+
+    it('should restore filter-eligible children after an incremental specification import', async () => {
+      const client = createMockClient();
+      const operation: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['orders-api', 'get-orders'],
+      };
+      const schema: ResourceDescriptor = {
+        type: ResourceType.ApiSchema,
+        nameParts: ['orders-api', 'order-schema'],
+      };
+      const operationPolicy: ResourceDescriptor = {
+        type: ResourceType.ApiOperationPolicy,
+        nameParts: ['orders-api', 'get-orders'],
+      };
+      const store = createMockStore([operation, schema, operationPolicy]);
+      store.readContent.mockResolvedValue({ content: 'openapi: 3.0.0', format: 'yaml' });
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        commitId: 'abc123',
+        filter: { apis: ['orders-api'] },
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, config, [apiDescriptor]);
+
+      const totalTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
+        return sum + (call[0] as unknown[]).length;
+      }, 0);
+      expect(totalTasks).toBe(3);
+    });
+
+    it('should republish an unchanged, filter-eligible child when its API changes in incremental mode', async () => {
+      const client = createMockClient();
+      const tag: ResourceDescriptor = {
+        type: ResourceType.ApiTag,
+        nameParts: ['orders-api', 'production'],
+      };
+      const store = createMockStore([tag]);
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        commitId: 'abc123',
+        filter: { apis: ['orders-api'] },
+      };
+
+      // Only the API itself is in the incremental diff/expansion set — the
+      // tag association did not change in this commit.
+      await publishApi(client, store, testContext, apiDescriptor, config, [apiDescriptor]);
+
+      const publishedTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
+        return sum + (call[0] as unknown[]).length;
+      }, 0);
+      expect(publishedTasks).toBe(1);
+    });
+
+    it('should not republish a child excluded by an API sub-filter in incremental mode', async () => {
+      const client = createMockClient();
+      const diagnostic: ResourceDescriptor = {
+        type: ResourceType.ApiDiagnostic,
+        nameParts: ['orders-api', 'application-insights'],
+      };
+      const store = createMockStore([diagnostic]);
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        commitId: 'abc123',
+        filter: {
+          apis: ['orders-api'],
+          apiSubFilters: { 'orders-api': { diagnostics: [] } },
+        },
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, config, [apiDescriptor]);
+
+      const publishedTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
+        return sum + (call[0] as unknown[]).length;
+      }, 0);
+      expect(publishedTasks).toBe(0);
+    });
+
+    it('should republish an unchanged API revision when the root API changes in incremental mode', async () => {
+      const client = createMockClient();
+      const revision: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api;rev=2'],
+      };
+      const store = createMockStore([revision]);
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        commitId: 'abc123',
+        filter: { apis: ['orders-api'] },
+      };
+
+      // Only the root API is in the incremental diff/expansion set — the
+      // revision itself did not change in this commit.
+      await publishApi(client, store, testContext, apiDescriptor, config, [apiDescriptor]);
+
+      expect(mockPublishResource).toHaveBeenCalledTimes(1);
+      expect(mockPublishResource.mock.calls[0][3]).toEqual(revision);
+    });
+
+    it('should ignore managed children from other workspaces when deciding specification import', async () => {
+      const client = createMockClient();
+      const otherWorkspaceSchema: ResourceDescriptor = {
+        type: ResourceType.ApiSchema,
+        nameParts: ['orders-api', 'other-schema'],
+        workspace: 'other',
+      };
+      const store = createMockStore([otherWorkspaceSchema]);
+      store.readContent.mockResolvedValue({ content: 'openapi: 3.0.0', format: 'yaml' });
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+        workspace: 'current',
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig, [apiDescriptor]);
+
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        apiDescriptor,
+        expect.objectContaining({
+          properties: expect.objectContaining({ format: 'openapi' }),
+        })
+      );
+    });
+
     it('should publish root API first', async () => {
       const client = createMockClient();
       const store = createMockStore([]);
@@ -411,6 +629,45 @@ describe('api-publisher', () => {
       // Only orders-api;rev=2 should be published
       expect(mockPublishResource).toHaveBeenCalledTimes(1);
       expect(mockPublishResource.mock.calls[0][3].nameParts[0]).toBe('orders-api;rev=2');
+    });
+
+    it('should publish only allowed revisions from the same workspace', async () => {
+      const client = createMockClient();
+      const allowedRevision: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api;rev=2'],
+        workspace: 'team-a',
+      };
+      const revisions: ResourceDescriptor[] = [
+        allowedRevision,
+        {
+          type: ResourceType.Api,
+          nameParts: ['orders-api;rev=3'],
+          workspace: 'team-a',
+        },
+        {
+          type: ResourceType.Api,
+          nameParts: ['orders-api;rev=4'],
+        },
+      ];
+      const store = createMockStore(revisions);
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+        workspace: 'team-a',
+      };
+
+      await publishApi(
+        client,
+        store,
+        testContext,
+        apiDescriptor,
+        { ...testConfig, filter: { workspaces: ['team-a'] } },
+        [apiDescriptor, allowedRevision]
+      );
+
+      expect(mockPublishResource).toHaveBeenCalledTimes(1);
+      expect(mockPublishResource.mock.calls[0][3]).toEqual(allowedRevision);
     });
 
     it('should publish API child resources in parallel', async () => {

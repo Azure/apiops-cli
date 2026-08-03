@@ -75,6 +75,8 @@ export interface FilterConfig {
 export interface PublishConfig {
   service: ApimServiceContext;
   sourceDir: string;
+  filter?: FilterConfig;
+  includeTransitive?: boolean;
   overrides?: OverrideConfig;
   dryRun: boolean;
   deleteUnmatched: boolean;

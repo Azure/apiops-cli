@@ -26,9 +26,7 @@ import { isSingletonType, isChildType } from '../lib/resource-path.js';
 import { extractApiResources, ApiExtractionResult } from './api-extractor.js';
 import { extractProductResources, ProductExtractionResult } from './product-extractor.js';
 import { extractWorkspaces, WorkspaceExtractionResult } from './workspace-extractor.js';
-import {
-  findTransitiveDependencies,
-} from './transitive-resolver.js';
+import { extractTransitiveDependencies } from './transitive-extractor.js';
 import { redactAndWarnPolicySecrets } from './secret-redactor.js';
 import { shouldIncludeResource } from './filter-service.js';
 import { logger } from '../lib/logger.js';
@@ -132,7 +130,15 @@ export async function runExtraction(
     }
 
     // Phase 7: Extract workspace-scoped resources
-    await extractWorkspaceResources(client, store, service, outputDir, filter, result);
+    await extractWorkspaceResources(
+      client,
+      store,
+      service,
+      outputDir,
+      filter,
+      config.includeTransitive,
+      result
+    );
 
     // Compute exit code
     if (result.totalErrors > 0 && result.totalExtracted > 0) {
@@ -464,14 +470,6 @@ async function extractGatewayAssociations(
 }
 
 /**
- * Result of extracting a single transitive dependency.
- */
-interface TransitiveTaskResult {
-  dep: ResourceDescriptor;
-  success: boolean;
-}
-
-/**
  * Resolve transitive dependencies and extract any additional resources.
  * Collects results per-task and merges after all tasks complete to avoid
  * concurrent mutations on the shared result object.
@@ -499,61 +497,27 @@ async function resolveAndExtractTransitive(
     }
   }
 
-  // Find transitive dependencies
-  const transitiveDeps = findTransitiveDependencies(
+  const resources = result.typeResults.flatMap((typeResult) =>
+    typeResult.extracted
+      .filter((extracted) => extracted.status === 'success')
+      .map((extracted) => ({
+        descriptor: extracted.descriptor,
+        json: extracted.json,
+      }))
+  );
+  const transitiveResult = await extractTransitiveDependencies(
+    client,
+    store,
+    context,
+    outputDir,
     result.collectedPolicies,
-    apiJsonMap
+    apiJsonMap,
+    resources,
+    result.extractedDescriptors
   );
-
-  // Filter out already-extracted resources
-  // Use buildResourceLabel for the key — it handles singleton types (e.g.
-  // ServicePolicy) whose nameParts are empty, avoiding a getNamePart crash.
-  const alreadyExtracted = new Set(
-    result.extractedDescriptors.map(
-      (d) => `${d.type}:${buildResourceLabel(d).toLowerCase()}`
-    )
-  );
-
-  const newDeps = transitiveDeps.filter(
-    (dep) => !alreadyExtracted.has(`${dep.type}:${buildResourceLabel(dep).toLowerCase()}`)
-  );
-
-  if (newDeps.length === 0) {
-    logger.debug('No additional transitive dependencies found');
-    return;
-  }
-
-  logger.info(`Found ${newDeps.length} transitive dependencies to extract`);
-
-  // Extract each transitive dependency
-  const tasks = newDeps.map((dep) => async (): Promise<TransitiveTaskResult> => {
-    try {
-      const json = await client.getResource(context, dep);
-      if (json) {
-        await store.writeResource(outputDir, dep, json);
-        logger.info(`Extracted transitive dependency ${buildResourceLabel(dep)}`);
-        return { dep, success: true };
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.warn(`Failed to extract transitive dependency ${buildResourceLabel(dep)}: ${errorMessage}`);
-    }
-    return { dep, success: false };
-  });
-
-  const taskResults = await runParallel(tasks, DEFAULT_CONCURRENCY);
-
-  // Merge results sequentially after parallel execution completes
-  for (const taskResult of taskResults) {
-    if (taskResult.status === 'fulfilled' && taskResult.value) {
-      if (taskResult.value.success) {
-        result.totalExtracted++;
-        result.extractedDescriptors.push(taskResult.value.dep);
-      } else {
-        result.totalErrors++;
-      }
-    }
-  }
+  result.totalExtracted += transitiveResult.extractedDescriptors.length;
+  result.totalErrors += transitiveResult.errorCount;
+  result.extractedDescriptors.push(...transitiveResult.extractedDescriptors);
 }
 
 /**
@@ -565,10 +529,11 @@ async function extractWorkspaceResources(
   context: ApimServiceContext,
   outputDir: string,
   filter: FilterConfig | undefined,
+  includeTransitive: boolean,
   result: ExtractionResult
 ): Promise<void> {
   const wsResults = await extractWorkspaces(
-    client, store, context, outputDir, filter
+    client, store, context, outputDir, filter, includeTransitive
   );
 
   result.workspaceResults = wsResults;

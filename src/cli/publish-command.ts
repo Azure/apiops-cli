@@ -3,7 +3,7 @@
 /**
  * Publish command CLI registration
  * Commander subcommand with --resource-group, --service-name, --source,
- * --overrides, --dry-run, --delete-unmatched flags.
+ * --overrides, --filter, --no-transitive, --dry-run, --delete-unmatched flags.
  * Includes --format json: machine-readable JSON output mode.
  */
 
@@ -11,7 +11,7 @@ import { Command } from 'commander';
 import { PublishConfig } from '../models/config.js';
 import { ApimServiceContext } from '../models/types.js';
 import { runPublish, PublishResult } from '../services/publish-service.js';
-import { loadOverrideConfig } from '../lib/config-loader.js';
+import { loadFilterConfig, loadOverrideConfig } from '../lib/config-loader.js';
 import { logger, parseLogLevel } from '../lib/logger.js';
 import { ApimClient } from '../clients/apim-client.js';
 import { ArtifactStore } from '../clients/artifact-store.js';
@@ -25,6 +25,8 @@ interface PublishOptions {
   serviceName: string;
   source: string;
   overrides?: string;
+  filter?: string;
+  transitive: boolean;
   commitId?: string;
   dryRun: boolean;
   deleteUnmatched: boolean;
@@ -40,6 +42,8 @@ export function createPublishCommand(): Command {
     .requiredOption('--service-name <name>', 'APIM service instance name')
     .option('--source <dir>', 'Source directory with artifacts', './apim-artifacts')
     .option('--overrides <path>', 'Override configuration YAML file')
+    .option('--filter <path>', 'Filter configuration YAML file')
+    .option('--no-transitive', 'Disable transitive dependency inclusion')
     .option(
       '--commit-id <sha>',
       'Git commit SHA for incremental publish (overrides COMMIT_ID env var)'
@@ -121,15 +125,24 @@ async function executePublish(
     }
   }
 
+  let filterConfig;
+  if (options.filter) {
+    filterConfig = await loadFilterConfig(options.filter);
+    if (!filterConfig) {
+      logger.error(`Filter file not found: ${options.filter}`);
+      process.exit(2);
+    }
+  }
+
   // Resolve commit ID for incremental publish
   const commitId = options.commitId ?? process.env.COMMIT_ID;
   if (commitId) {
     logger.debug(`Using incremental publish with commit ID: ${commitId}`);
   }
 
-  if (hasMutuallyExclusivePublishOptions(options.deleteUnmatched, commitId)) {
+  if (hasMutuallyExclusivePublishOptions(options.deleteUnmatched, commitId, Boolean(options.filter))) {
     logger.error(
-      'Options --commit-id (or COMMIT_ID) and --delete-unmatched are mutually exclusive.'
+      'Option --delete-unmatched cannot be combined with --filter or --commit-id (or COMMIT_ID).'
     );
     process.exit(2);
   }
@@ -138,6 +151,8 @@ async function executePublish(
   const publishConfig: PublishConfig = {
     service: context,
     sourceDir: options.source,
+    filter: filterConfig,
+    includeTransitive: options.transitive,
     overrides: overrideConfig,
     dryRun: options.dryRun,
     deleteUnmatched: options.deleteUnmatched,
@@ -167,9 +182,10 @@ async function executePublish(
  */
 export function hasMutuallyExclusivePublishOptions(
   deleteUnmatched: boolean,
-  commitId?: string
+  commitId?: string,
+  hasFilter = false
 ): boolean {
-  return deleteUnmatched && Boolean(commitId);
+  return deleteUnmatched && (Boolean(commitId) || hasFilter);
 }
 
 /**

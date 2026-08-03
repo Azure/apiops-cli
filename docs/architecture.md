@@ -109,6 +109,7 @@ flowchart TB
     extract_svc --> apim_client
     extract_svc --> store
 
+    publish_svc --> filter_svc
     publish_svc --> override_svc
     publish_svc --> git_svc
     publish_svc --> dry_svc

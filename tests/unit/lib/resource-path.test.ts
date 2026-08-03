@@ -9,6 +9,8 @@ import {
   parseTemplatePath,
   getNamePart,
   getNameFromNameParts,
+  getResourceDescriptorKey,
+  sameResourceDescriptor,
   buildArtifactDirectory,
   buildArtifactFilePath,
   buildPolicyFilePath,
@@ -647,6 +649,36 @@ describe('getNamePart', () => {
 
   it('throws RangeError for negative index', () => {
     expect(() => getNamePart(['a'], -1)).toThrow(RangeError);
+  });
+});
+
+describe('resource descriptor identity', () => {
+  const descriptor: ResourceDescriptor = {
+    type: ResourceType.ApiOperation,
+    nameParts: ['Orders', 'Get-Order'],
+    workspace: 'Team-A',
+  };
+
+  it('creates a case-insensitive key containing type, workspace, and name parts', () => {
+    expect(getResourceDescriptorKey(descriptor)).toBe(
+      'apioperation:team-a:orders/get-order'
+    );
+  });
+
+  it('matches equivalent descriptors case-insensitively without crossing scopes', () => {
+    expect(
+      sameResourceDescriptor(descriptor, {
+        type: ResourceType.ApiOperation,
+        nameParts: ['orders', 'get-order'],
+        workspace: 'team-a',
+      })
+    ).toBe(true);
+    expect(
+      sameResourceDescriptor(descriptor, {
+        type: ResourceType.ApiOperation,
+        nameParts: ['orders', 'get-order'],
+      })
+    ).toBe(false);
   });
 });
 

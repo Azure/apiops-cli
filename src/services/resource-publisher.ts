@@ -22,6 +22,8 @@ import { REDACTION_MARKER } from './secret-redactor.js';
 import { isLinkAlreadyExistsError } from '../clients/apim-client.js';
 import type { OverrideConfig } from '../models/config.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
+import { hasExplicitTypeFilter, resolveWorkspaceFilter, shouldIncludeResource } from './filter-service.js';
+import { findSubscriptionTargets } from './transitive-resolver.js';
 
 export interface ResourcePublishResult {
   descriptor: ResourceDescriptor;
@@ -93,6 +95,24 @@ export async function publishResource(
         config,
         associationType
       );
+    }
+
+    if (descriptor.type === ResourceType.ApiTag) {
+      const targetDescriptor: ResourceDescriptor = {
+        type: ResourceType.Tag,
+        nameParts: [getNamePart(descriptor.nameParts, 1)],
+        workspace: descriptor.workspace,
+      };
+      if (!(await isTargetAllowedByFilter(store, targetDescriptor, config))) {
+        logger.warn(
+          `Skipping ApiTag association "${descriptor.nameParts.join('/')}" because its target is excluded by the filter or was never extracted`
+        );
+        return {
+          descriptor,
+          status: 'skipped',
+          action: 'noop',
+        };
+      }
     }
 
     // Handle workspace ApiTag — uses link endpoint with link payload.
@@ -223,6 +243,17 @@ export async function publishResource(
         };
       }
 
+      if (!(await areSubscriptionTargetsAllowed(store, json, descriptor, config))) {
+        logger.warn(
+          `Skipping subscription "${subscriptionName}" because its API or Product target is excluded by the filter or was never extracted`
+        );
+        return {
+          descriptor,
+          status: 'skipped',
+          action: 'noop',
+        };
+      }
+
       json = normalizeSubscriptionScope(json, context);
     }
 
@@ -309,7 +340,23 @@ async function publishAssociation(
       const assocDescriptor: ResourceDescriptor = {
         type: descriptor.type,
         nameParts: [getNamePart(descriptor.nameParts, 0), entry.name],
+        workspace: descriptor.workspace,
       };
+      const targetDescriptor: ResourceDescriptor = {
+        type: descriptor.type === ResourceType.GatewayApi
+          ? ResourceType.Api
+          : descriptor.type === ResourceType.ProductApi
+            ? ResourceType.Api
+            : ResourceType.Group,
+        nameParts: [entry.name],
+        workspace: entry.scope === 'service' ? undefined : descriptor.workspace,
+      };
+      if (!(await isTargetAllowedByFilter(store, targetDescriptor, config))) {
+        logger.warn(
+          `Skipping ${descriptor.type} association "${assocDescriptor.nameParts.join('/')}" because its target is excluded by the filter or was never extracted`
+        );
+        continue;
+      }
       try {
         // PUT empty body for association (APIM uses PUT to create association)
         await client.putResource(context, assocDescriptor, {});
@@ -334,6 +381,45 @@ async function publishAssociation(
       error: error instanceof Error ? error : new Error(String(error)),
     };
   }
+}
+
+async function areSubscriptionTargetsAllowed(
+  store: IArtifactStore,
+  json: Record<string, unknown>,
+  descriptor: ResourceDescriptor,
+  config: PublishConfig
+): Promise<boolean> {
+  for (const target of findSubscriptionTargets(json, descriptor.workspace)) {
+    if (!(await isTargetAllowedByFilter(store, target, config))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+async function isTargetAllowedByFilter(
+  store: IArtifactStore,
+  target: ResourceDescriptor,
+  config: PublishConfig
+): Promise<boolean> {
+  if (!config.filter) {
+    return true;
+  }
+
+  const effectiveFilter = target.workspace
+    ? resolveWorkspaceFilter(target.workspace, config.filter)
+    : config.filter;
+  if (effectiveFilter && !shouldIncludeResource(target, effectiveFilter)) {
+    return false;
+  }
+
+  // Explicitly scoped types must actually exist among the artifacts, not
+  // just pass the filter — catches dangling references (mirrors publishProduct).
+  if (hasExplicitTypeFilter(target.type, effectiveFilter)) {
+    return (await store.readResource(config.sourceDir, target)) !== undefined;
+  }
+
+  return true;
 }
 
 /**

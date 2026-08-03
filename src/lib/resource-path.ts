@@ -144,6 +144,23 @@ export function getNamePart(nameParts: string[], index: number): string {
 }
 
 /**
+ * Create a case-insensitive identity key for a resource descriptor.
+ */
+export function getResourceDescriptorKey(descriptor: ResourceDescriptor): string {
+  return `${descriptor.type}:${descriptor.workspace ?? ''}:${descriptor.nameParts.join('/')}`.toLowerCase();
+}
+
+/**
+ * Compare resource descriptors using APIM's case-insensitive names.
+ */
+export function sameResourceDescriptor(
+  left: ResourceDescriptor,
+  right: ResourceDescriptor
+): boolean {
+  return getResourceDescriptorKey(left) === getResourceDescriptorKey(right);
+}
+
+/**
  * Converts a positional template string to a capturing regex.
  * Each `{i}` placeholder becomes a `([^/]+)` capture group; all other
  * regex-special characters are escaped.  A trailing slash (if present)

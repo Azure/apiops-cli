@@ -137,6 +137,345 @@ describe('publish-service', () => {
       expect(result.totalErrors).toBe(0);
     });
 
+    it('should publish only resources matched by a filter', async () => {
+      const resources = [
+        { type: ResourceType.NamedValue, nameParts: ['keep'] },
+        { type: ResourceType.NamedValue, nameParts: ['skip'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+
+      const result = await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { namedValues: ['keep'] },
+        includeTransitive: false,
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(result.totalPuts).toBe(1);
+      expect(client.putResource).toHaveBeenCalledTimes(1);
+      expect(client.putResource.mock.calls[0]?.[1].nameParts).toEqual(['keep']);
+    });
+
+    it('should include an artifact-backed version set transitively', async () => {
+      const resources = [
+        { type: ResourceType.Api, nameParts: ['orders'] },
+        { type: ResourceType.VersionSet, nameParts: ['orders-v1'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      store.readResource.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.Api) {
+          return {
+            name: 'orders',
+            properties: {
+              apiVersionSetId: '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a/apiVersionSets/orders-v1',
+            },
+          };
+        }
+        return { name: descriptor.nameParts[0] ?? '', properties: {} };
+      });
+
+      const result = await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { apis: ['orders'], versionSets: [] },
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(result.totalPuts).toBe(2);
+      expect(client.putResource.mock.calls.some((call) =>
+        call[1].type === ResourceType.VersionSet &&
+        call[1].nameParts[0] === 'orders-v1'
+      )).toBe(true);
+    });
+
+    it('should include every dependency type supported by extract', async () => {
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.Api, nameParts: ['orders'] },
+        { type: ResourceType.ApiPolicy, nameParts: ['orders'] },
+        { type: ResourceType.NamedValue, nameParts: ['orders-key'] },
+        { type: ResourceType.Backend, nameParts: ['orders-backend'] },
+        { type: ResourceType.PolicyFragment, nameParts: ['shared-auth'] },
+        { type: ResourceType.VersionSet, nameParts: ['orders-v1'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      store.readResource.mockImplementation(async (_sourceDir, descriptor) =>
+        descriptor.type === ResourceType.Api
+          ? {
+              name: 'orders',
+              properties: {
+                apiVersionSetId:
+                  '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a/apiVersionSets/orders-v1',
+              },
+            }
+          : { name: descriptor.nameParts[0] ?? '', properties: {} }
+      );
+      store.readContent.mockImplementation(async (_sourceDir, descriptor) =>
+        descriptor.type === ResourceType.ApiPolicy
+          ? {
+              content: [
+                '<policies><inbound>',
+                '<set-header name="key"><value>{{orders-key}}</value></set-header>',
+                '<set-backend-service backend-id="orders-backend" />',
+                '<include-fragment fragment-id="shared-auth" />',
+                '</inbound></policies>',
+              ].join(''),
+              format: 'xml',
+            }
+          : undefined
+      );
+
+      const result = await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: {
+          apis: ['orders'],
+          namedValues: [],
+          backends: [],
+          policyFragments: [],
+          versionSets: [],
+        },
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(result.totalPuts).toBe(5);
+      expect(publishApi).toHaveBeenCalledWith(
+        client,
+        store,
+        testContext,
+        expect.objectContaining({ type: ResourceType.Api, nameParts: ['orders'] }),
+        expect.anything(),
+        expect.arrayContaining([
+          expect.objectContaining({ type: ResourceType.ApiPolicy, nameParts: ['orders'] }),
+          expect.objectContaining({ type: ResourceType.NamedValue, nameParts: ['orders-key'] }),
+          expect.objectContaining({ type: ResourceType.Backend, nameParts: ['orders-backend'] }),
+          expect.objectContaining({ type: ResourceType.PolicyFragment, nameParts: ['shared-auth'] }),
+          expect.objectContaining({ type: ResourceType.VersionSet, nameParts: ['orders-v1'] }),
+        ])
+      );
+    });
+
+    it('should not scan unrelated resources that share the selected parent name', async () => {
+      const resources = [
+        { type: ResourceType.Api, nameParts: ['orders'] },
+        { type: ResourceType.Product, nameParts: ['orders'] },
+        { type: ResourceType.Api, nameParts: ['shipping'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      store.readAssociation.mockImplementation(
+        async (_sourceDir: string, descriptor: ResourceDescriptor, associationType: string) =>
+          descriptor.type === ResourceType.Product && associationType === 'apis'
+            ? [{ name: 'shipping' }]
+            : []
+      );
+
+      await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { apis: ['orders'], products: [] },
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(publishApi).toHaveBeenCalledTimes(1);
+      expect(publishApi).toHaveBeenCalledWith(
+        client,
+        store,
+        testContext,
+        expect.objectContaining({ nameParts: ['orders'] }),
+        expect.anything(),
+        expect.anything()
+      );
+    });
+
+    it('should not pull composite API targets from product associations', async () => {
+      const resources = [
+        { type: ResourceType.Product, nameParts: ['starter'] },
+        { type: ResourceType.Api, nameParts: ['legacy-api'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      store.readAssociation.mockResolvedValue([{ name: 'legacy-api' }]);
+
+      const result = await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { products: ['starter'], apis: [] },
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(result.totalPuts).toBe(1);
+      expect(publishProduct).toHaveBeenCalledTimes(1);
+      expect(publishApi).not.toHaveBeenCalled();
+    });
+
+    it('should include backend pool members transitively', async () => {
+      const resources = [
+        { type: ResourceType.Backend, nameParts: ['pool'] },
+        { type: ResourceType.Backend, nameParts: ['member'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      store.readResource.mockImplementation(async (_sourceDir, descriptor) =>
+        descriptor.nameParts[0] === 'pool'
+          ? {
+              properties: {
+                type: 'Pool',
+                pool: {
+                  services: [{
+                    id: '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a/backends/member',
+                  }],
+                },
+              },
+            }
+          : { properties: {} }
+      );
+
+      const result = await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { backends: ['pool'] },
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(result.totalPuts).toBe(2);
+      expect(client.putResource.mock.calls.some((call) =>
+        call[1].type === ResourceType.Backend &&
+        call[1].nameParts[0] === 'member'
+      )).toBe(true);
+    });
+
+    it('should not include transitive dependencies when disabled', async () => {
+      const resources = [
+        { type: ResourceType.Api, nameParts: ['orders'] },
+        { type: ResourceType.VersionSet, nameParts: ['orders-v1'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      store.readResource.mockResolvedValue({
+        name: 'orders',
+        properties: {
+          apiVersionSetId: '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a/apiVersionSets/orders-v1',
+        },
+      });
+
+      const result = await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { apis: ['orders'], versionSets: [] },
+        includeTransitive: false,
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(result.totalPuts).toBe(1);
+      expect(client.putResource.mock.calls.some((call) => call[1].type === ResourceType.VersionSet)).toBe(false);
+    });
+
+    it('should intersect incremental changes with a filter', async () => {
+      const changedDescriptors = [
+        { type: ResourceType.NamedValue, nameParts: ['keep'] },
+        { type: ResourceType.NamedValue, nameParts: ['skip'] },
+      ];
+      vi.mocked(computeGitDiff).mockResolvedValue({
+        changedDescriptors,
+        deletedDescriptors: [],
+      });
+      const client = createMockClient();
+      const store = createMockStore(changedDescriptors);
+
+      const result = await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { namedValues: ['keep'] },
+        includeTransitive: false,
+        commitId: 'abc123',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(result.totalPuts).toBe(1);
+      expect(client.putResource.mock.calls[0]?.[1].nameParts).toEqual(['keep']);
+    });
+
+    it('should resolve policy dependencies from unchanged child artifacts in incremental mode', async () => {
+      const api = { type: ResourceType.Api, nameParts: ['orders'] };
+      const apiPolicy = { type: ResourceType.ApiPolicy, nameParts: ['orders'] };
+      const backend = { type: ResourceType.Backend, nameParts: ['orders-backend'] };
+      vi.mocked(computeGitDiff).mockResolvedValue({
+        changedDescriptors: [api],
+        deletedDescriptors: [],
+      });
+      const client = createMockClient();
+      const store = createMockStore([api, apiPolicy, backend]);
+      store.readContent.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) =>
+        descriptor.type === ResourceType.ApiPolicy
+          ? { content: '<set-backend-service backend-id="orders-backend" />' }
+          : undefined
+      );
+
+      const result = await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { apis: ['orders'], backends: [] },
+        commitId: 'abc123',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(result.totalPuts).toBe(2);
+      expect(client.putResource.mock.calls.some((call) =>
+        call[1].type === ResourceType.Backend &&
+        call[1].nameParts[0] === 'orders-backend'
+      )).toBe(true);
+    });
+
+    it('should report filtered targets in dry-run mode', async () => {
+      const resources = [
+        { type: ResourceType.NamedValue, nameParts: ['keep'] },
+        { type: ResourceType.NamedValue, nameParts: ['skip'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+
+      await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { namedValues: ['keep'] },
+        includeTransitive: false,
+        dryRun: true,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(generateDryRunReport).toHaveBeenCalledWith(
+        store,
+        client,
+        testContext,
+        expect.objectContaining({ filter: { namedValues: ['keep'] } }),
+        [{ type: ResourceType.NamedValue, nameParts: ['keep'] }],
+        []
+      );
+    });
+
     it('should return exit code 1 when some fail', async () => {
       const resources = [
         { type: ResourceType.NamedValue, nameParts: ['nv1'] },

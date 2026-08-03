@@ -350,6 +350,125 @@ describe('resource-publisher', () => {
       );
     });
 
+    it('should skip GatewayApi entries whose API target is excluded', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockResolvedValue([{ name: 'legacy-api' }]);
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.GatewayApi,
+        nameParts: ['my-gateway'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          gateways: ['my-gateway'],
+          apis: ['!legacy-api', '*'],
+        },
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, config);
+
+      expect(result.status).toBe('success');
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
+    it('should skip ApiTag links whose Tag target is excluded', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ApiTag,
+        nameParts: ['orders', 'internal'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          apis: ['orders'],
+          tags: ['!internal', '*'],
+        },
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, config);
+
+      expect(result.status).toBe('skipped');
+      expect(store.readResource).not.toHaveBeenCalled();
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
+    it('should publish a GatewayApi association when its target passes an explicit filter and was extracted', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockResolvedValue([{ name: 'orders-api' }]);
+      store.readResource.mockResolvedValue({ name: 'orders-api', properties: {} });
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.GatewayApi,
+        nameParts: ['my-gateway'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          gateways: ['my-gateway'],
+          apis: ['orders-api'],
+        },
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, config);
+
+      expect(result.status).toBe('success');
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({ type: ResourceType.GatewayApi, nameParts: ['my-gateway', 'orders-api'] }),
+        {}
+      );
+    });
+
+    it('should skip a GatewayApi association whose target passes the filter but was never extracted', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockResolvedValue([{ name: 'orders-api' }]);
+      // readResource left unmocked (resolves undefined) — simulates a dangling
+      // reference to an API name that matches the filter but has no artifact.
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.GatewayApi,
+        nameParts: ['my-gateway'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          gateways: ['my-gateway'],
+          apis: ['orders-api'],
+        },
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, config);
+
+      expect(result.status).toBe('success');
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
+    it('should skip an ApiTag link whose Tag target passes the filter but was never extracted', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ApiTag,
+        nameParts: ['orders', 'production'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          apis: ['orders'],
+          tags: ['production'],
+        },
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, config);
+
+      expect(result.status).toBe('skipped');
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
     it('should strip properties.value from KeyVault-backed NamedValue PUT payload', async () => {
       const client = createMockClient();
       const store = createMockStore();
@@ -610,6 +729,71 @@ describe('resource-publisher', () => {
       const putJson = putCall[2] as Record<string, unknown>;
       const props = putJson.properties as Record<string, unknown>;
       expect(props.scope).toBe('/products/my-product');
+    });
+
+    it('should skip a Subscription whose Product target is excluded', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const armScopePrefix =
+        '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1';
+      store.readResource.mockResolvedValue({
+        name: 'sub-1',
+        properties: {
+          scope: `${armScopePrefix}/products/legacy-product`,
+        },
+      });
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Subscription,
+        nameParts: ['sub-1'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          subscriptions: ['sub-1'],
+          products: ['!legacy-product', '*'],
+        },
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, config);
+
+      expect(result.status).toBe('skipped');
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
+    it('should skip a Subscription whose Product target passes the filter but was never extracted', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const armScopePrefix =
+        '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1';
+      const subscriptionJson = {
+        name: 'sub-1',
+        properties: {
+          scope: `${armScopePrefix}/products/orders-product`,
+        },
+      };
+      // Only the subscription's own artifact exists; the referenced product
+      // ("orders-product") was never extracted, even though it passes the filter.
+      store.readResource.mockImplementation(async (_dir: string, desc: ResourceDescriptor) =>
+        desc.type === ResourceType.Subscription ? subscriptionJson : undefined
+      );
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Subscription,
+        nameParts: ['sub-1'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          subscriptions: ['sub-1'],
+          products: ['orders-product'],
+        },
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, config);
+
+      expect(result.status).toBe('skipped');
+      expect(client.putResource).not.toHaveBeenCalled();
     });
 
     it('should leave scope unchanged when it is already a relative APIM path', async () => {

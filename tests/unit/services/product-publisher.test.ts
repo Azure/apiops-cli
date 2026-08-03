@@ -178,6 +178,94 @@ describe('product-publisher', () => {
       );
     });
 
+    it('does not let resolved targets override explicit API exclusions', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation
+        .mockResolvedValueOnce([{ name: 'legacy-api' }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+      const legacyApi: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['legacy-api'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          products: ['my-product'],
+          apis: ['!legacy-api', '*'],
+        },
+      };
+
+      await publishProduct(
+        client,
+        store,
+        testContext,
+        productDescriptor,
+        config,
+        [productDescriptor, legacyApi]
+      );
+
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
+    it('publishes links to unchanged targets allowed during incremental publish', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation
+        .mockResolvedValueOnce([{ name: 'orders-api' }])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+      const config: PublishConfig = {
+        ...testConfig,
+        commitId: 'abc123',
+        filter: {
+          products: ['my-product'],
+          apis: ['orders-api'],
+        },
+      };
+
+      await publishProduct(
+        client,
+        store,
+        testContext,
+        productDescriptor,
+        config,
+        [productDescriptor]
+      );
+
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({
+          type: ResourceType.ProductApi,
+          nameParts: ['my-product', 'orders-api'],
+        }),
+        {}
+      );
+    });
+
+    it('republishes an unchanged product policy when the product changes in incremental mode', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockResolvedValue([]);
+      store.readContent.mockResolvedValue({ content: '<policies><inbound/></policies>', format: 'xml' });
+      const config: PublishConfig = {
+        ...testConfig,
+        commitId: 'abc123',
+        filter: { products: ['my-product'] },
+      };
+
+      // Only the product itself is in the incremental diff/expansion set —
+      // policy.xml did not change in this commit.
+      await publishProduct(client, store, testContext, productDescriptor, config, [productDescriptor]);
+
+      expect(mockPublishResource).toHaveBeenCalledWith(
+        client, store, testContext,
+        expect.objectContaining({ type: ResourceType.ProductPolicy, nameParts: ['my-product'] }),
+        config
+      );
+    });
+
     it('groups association: calls putResource with ProductGroup descriptor', async () => {
       const client = createMockClient();
       const store = createMockStore();
