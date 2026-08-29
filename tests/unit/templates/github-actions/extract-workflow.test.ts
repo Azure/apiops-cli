@@ -121,6 +121,7 @@ describe('github-actions/extract-workflow', () => {
       const workflow = generateExtractWorkflow({ artifactDir: './apim-artifacts' });
       expect(workflow).toContain('npm install');
       expect(workflow).toContain('npx apiops extract');
+      expect(workflow).toContain('--remove-stale');
     });
   });
 });

@@ -88,4 +88,14 @@ export interface IArtifactStore {
     baseDir: string,
     descriptor: ResourceDescriptor
   ): Promise<void>;
+
+  /**
+   * Merge staged extraction output and optionally remove stale managed files.
+   */
+  commitStagedExtraction(
+    stagingDir: string,
+    baseDir: string,
+    isInScope: (descriptor: ResourceDescriptor) => boolean,
+    removeStale: boolean
+  ): Promise<void>;
 }

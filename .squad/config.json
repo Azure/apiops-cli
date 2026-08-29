@@ -1,8 +1,4 @@
 {
   "version": 1,
-  "defaultModel": "claude-opus-4.6",
-  "agentModelOverrides": {
-    "ralph": "claude-haiku-4.5",
-    "scribe": "claude-haiku-4.5"
-  }
+  "defaultModel": "gpt-5.6-sol"
 }

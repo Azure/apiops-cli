@@ -86,7 +86,8 @@ jobs:
             --subscription-id \${{ secrets.AZURE_SUBSCRIPTION_ID }} \\
             --resource-group \${{ env.APIM_RESOURCE_GROUP }} \\
             --service-name \${{ env.APIM_SERVICE_NAME }} \\
-            --output ${config.artifactDir}
+            --output ${config.artifactDir} \\
+            --remove-stale
 
       - name: Run APIM Extract (With Configuration)
         if: \${{ github.event.inputs.CONFIGURATION_YAML_PATH != 'Extract All APIs' }}
@@ -96,7 +97,8 @@ jobs:
             --resource-group \${{ env.APIM_RESOURCE_GROUP }} \\
             --service-name \${{ env.APIM_SERVICE_NAME }} \\
             --output ${config.artifactDir} \\
-            --filter configuration.extractor.yaml
+            --filter configuration.extractor.yaml \\
+            --remove-stale
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

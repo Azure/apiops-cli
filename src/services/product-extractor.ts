@@ -21,6 +21,7 @@ import { isWorkspaceScope, extractNameFromLink, extractLinkTarget } from '../lib
  */
 export interface ProductExtractionResult {
   productName: string;
+  errorCount: number;
   apis: string[];
   groups: string[];
   policy: string | undefined;
@@ -45,6 +46,7 @@ export async function extractProductResources(
   const productName = getNamePart(productDescriptor.nameParts, 0);
   const result: ProductExtractionResult = {
     productName,
+    errorCount: 0,
     apis: [],
     groups: [],
     policy: undefined,
@@ -55,12 +57,12 @@ export async function extractProductResources(
 
   // Extract product API associations
   result.apis = await extractProductAssociations(
-    client, store, context, productDescriptor, outputDir, 'apis'
+    client, store, context, productDescriptor, outputDir, 'apis', () => result.errorCount++
   );
 
   // Extract product group associations
   result.groups = await extractProductAssociations(
-    client, store, context, productDescriptor, outputDir, 'groups'
+    client, store, context, productDescriptor, outputDir, 'groups', () => result.errorCount++
   );
 
   // Extract product policy
@@ -73,7 +75,7 @@ export async function extractProductResources(
 
   // Extract product wiki
   result.wiki = await extractProductWiki(
-    client, store, context, productDescriptor, outputDir
+    client, store, context, productDescriptor, outputDir, () => result.errorCount++
   );
 
   // Extract product tags - store as tags.json association file.
@@ -82,7 +84,7 @@ export async function extractProductResources(
   // in the workspace extractor.
   if (!isWorkspaceScope(context)) {
     result.tags = await extractProductTags(
-      client, store, context, productDescriptor, outputDir
+      client, store, context, productDescriptor, outputDir, () => result.errorCount++
     );
   }
 
@@ -98,7 +100,8 @@ async function extractProductAssociations(
   context: ApimServiceContext,
   productDescriptor: ResourceDescriptor,
   outputDir: string,
-  associationType: 'apis' | 'groups'
+  associationType: 'apis' | 'groups',
+  onError: () => void
 ): Promise<string[]> {
   const entries: AssociationEntry[] = [];
   const resourceType = associationType === 'apis'
@@ -121,6 +124,7 @@ async function extractProductAssociations(
           const target = extractLinkTarget(json, linkProperty);
           if (!target) {
             logger.warn(`Failed to extract ${associationType} link target from workspace link response`);
+            onError();
             continue;
           }
           entries.push({ name: target.name, scope: target.scope });
@@ -129,6 +133,7 @@ async function extractProductAssociations(
         }
       } catch (error) {
         logger.warn(`Failed to extract ${associationType} association name: ${(error as Error).message}`);
+        onError();
       }
     }
 
@@ -139,6 +144,7 @@ async function extractProductAssociations(
     }
   } catch (error) {
     logger.warn(`Failed to list ${associationType} for product "${getNamePart(productDescriptor.nameParts, 0)}": ${(error as Error).message}`);
+    onError();
   }
 
   return entries.map(entry => entry.name);
@@ -153,7 +159,8 @@ async function extractProductTags(
   store: IArtifactStore,
   context: ApimServiceContext,
   productDescriptor: ResourceDescriptor,
-  outputDir: string
+  outputDir: string,
+  onError: () => void
 ): Promise<string[]> {
   const entries: AssociationEntry[] = [];
   const workspaceScoped = isWorkspaceScope(context);
@@ -168,6 +175,7 @@ async function extractProductTags(
           const target = extractLinkTarget(json, linkProperty);
           if (!target) {
             logger.warn('Failed to extract tag name from workspace link response');
+            onError();
             continue;
           }
           entries.push({ name: target.name, scope: target.scope });
@@ -176,6 +184,7 @@ async function extractProductTags(
         }
       } catch (error) {
         logger.warn(`Failed to extract tag name: ${(error as Error).message}`);
+        onError();
       }
     }
 
@@ -186,6 +195,7 @@ async function extractProductTags(
     }
   } catch (error) {
     logger.warn(`Failed to list tags for product "${getNamePart(productDescriptor.nameParts, 0)}": ${(error as Error).message}`);
+    onError();
   }
 
   return entries.map(entry => entry.name);
@@ -233,7 +243,8 @@ async function extractProductWiki(
   store: IArtifactStore,
   context: ApimServiceContext,
   productDescriptor: ResourceDescriptor,
-  outputDir: string
+  outputDir: string,
+  onError: () => void
 ): Promise<boolean> {
   try {
     const wikiDescriptor: ResourceDescriptor = {
@@ -252,6 +263,7 @@ async function extractProductWiki(
     return true;
   } catch (error) {
     logger.debug(`No wiki for product "${getNamePart(productDescriptor.nameParts, 0)}": ${(error as Error).message}`);
+    onError();
     return false;
   }
 }
@@ -302,8 +314,7 @@ export async function extractWorkspaceProductTags(
       for await (const linkJson of client.listResources(context, ResourceType.ProductTag, tagDescriptor)) {
         const productName = extractNameFromLink(linkJson, linkProperty);
         if (!productName) {
-          logger.warn(`Failed to extract product name from tag "${tagName}" productLink response`);
-          continue;
+          throw new Error(`Failed to extract product name from tag "${tagName}" productLink response`);
         }
 
         if (!productTagsMap.has(productName)) {
@@ -313,6 +324,7 @@ export async function extractWorkspaceProductTags(
       }
     } catch (error) {
       logger.warn(`Failed to list productLinks for tag "${tagName}": ${(error as Error).message}`);
+      throw error;
     }
   }
 

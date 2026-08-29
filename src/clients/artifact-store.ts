@@ -17,10 +17,18 @@ import {
   buildSpecificationFilePath,
   buildAssociationFilePath,
   parseArtifactPath,
+  parseArtifactChangePath,
 } from '../lib/resource-path.js';
 import { logger } from '../lib/logger.js';
 
+interface CommitFileSystem {
+  rename: typeof fs.rename;
+  rm: typeof fs.rm;
+}
+
 export class ArtifactStore implements IArtifactStore {
+  constructor(private readonly commitFileSystem: CommitFileSystem = fs) {}
+
   async writeResource(
     baseDir: string,
     descriptor: ResourceDescriptor,
@@ -218,6 +226,73 @@ export class ArtifactStore implements IArtifactStore {
     }
   }
 
+  async commitStagedExtraction(
+    stagingDir: string,
+    baseDir: string,
+    isInScope: (descriptor: ResourceDescriptor) => boolean,
+    removeStale: boolean
+  ): Promise<void> {
+    const parentDir = path.dirname(baseDir);
+    const candidateDir = await fs.mkdtemp(path.join(parentDir, `.${path.basename(baseDir)}.candidate-`));
+    const backupDir = path.join(parentDir, `.${path.basename(baseDir)}.backup-${path.basename(candidateDir)}`);
+    const baseExists = await this.fileExists(baseDir);
+
+    try {
+      if (baseExists) {
+        await fs.cp(baseDir, candidateDir, { recursive: true, force: true });
+      }
+
+      if (removeStale && baseExists) {
+        const existingFiles = await this.listFiles(baseDir);
+        for (const existingFile of existingFiles) {
+          const descriptor = this.getOwningDescriptor(baseDir, existingFile);
+          if (!descriptor || !isInScope(descriptor)) {
+            continue;
+          }
+
+          const relativePath = path.relative(baseDir, existingFile);
+          const stagedFile = path.join(stagingDir, relativePath);
+          if (!(await this.fileExists(stagedFile))) {
+            await this.commitFileSystem.rm(path.join(candidateDir, relativePath), { force: true });
+          }
+        }
+      }
+
+      await fs.cp(stagingDir, candidateDir, { recursive: true, force: true });
+
+      if (baseExists) {
+        await this.commitFileSystem.rename(baseDir, backupDir);
+      }
+      try {
+        await this.commitFileSystem.rename(candidateDir, baseDir);
+      } catch (commitError) {
+        if (baseExists) {
+          try {
+            await this.commitFileSystem.rename(backupDir, baseDir);
+          } catch (restoreError) {
+            throw new AggregateError(
+              [commitError, restoreError],
+              `Failed to commit staged extraction and restore the original output. Backup remains at ${backupDir}`,
+              { cause: restoreError }
+            );
+          }
+        }
+        throw commitError;
+      }
+
+      if (baseExists) {
+        try {
+          await this.commitFileSystem.rm(backupDir, { recursive: true, force: true });
+        } catch (error) {
+          logger.warn(`Committed extraction but could not remove backup ${backupDir}: ${(error as Error).message}`);
+        }
+      }
+      logger.debug(`Committed staged extraction from ${stagingDir} to ${baseDir}`);
+    } finally {
+      await this.commitFileSystem.rm(candidateDir, { recursive: true, force: true });
+    }
+  }
+
   private async ensureDirectory(dirPath: string): Promise<void> {
     try {
       await fs.mkdir(dirPath, { recursive: true });
@@ -248,6 +323,51 @@ export class ArtifactStore implements IArtifactStore {
           }
         }
       }
+    }
+  }
+
+  private async listFiles(directory: string): Promise<string[]> {
+    const files: string[] = [];
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        files.push(...await this.listFiles(entryPath));
+      } else if (entry.isFile()) {
+        files.push(entryPath);
+      }
+    }
+
+    return files;
+  }
+
+  private getOwningDescriptor(baseDir: string, filePath: string): ResourceDescriptor | undefined {
+    const descriptor = parseArtifactChangePath(baseDir, filePath);
+    if (descriptor) {
+      return descriptor;
+    }
+
+    const fileName = path.basename(filePath);
+    if (!['apis.json', 'groups.json', 'tags.json'].includes(fileName)) {
+      return undefined;
+    }
+
+    const parentFile = fileName === 'apis.json' && path.basename(path.dirname(path.dirname(filePath))) === 'gateways'
+      ? 'gatewayInformation.json'
+      : 'productInformation.json';
+    return parseArtifactPath(baseDir, path.join(path.dirname(filePath), parentFile));
+  }
+
+  private async fileExists(filePath: string): Promise<boolean> {
+    try {
+      await fs.access(filePath);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return false;
+      }
+      throw error;
     }
   }
 

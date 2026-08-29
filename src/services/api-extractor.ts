@@ -25,6 +25,7 @@ import { isWorkspaceScope, extractNameFromLink } from '../lib/workspace-link.js'
  */
 export interface ApiExtractionResult {
   apiName: string;
+  errorCount: number;
   revisions: ExtractedResource[];
   specification: boolean;
   operations: ExtractedResource[];
@@ -58,6 +59,7 @@ export async function extractApiResources(
   const apiName = getNamePart(apiDescriptor.nameParts, 0);
   const result: ApiExtractionResult = {
     apiName,
+    errorCount: 0,
     revisions: [],
     specification: false,
     operations: [],
@@ -78,6 +80,7 @@ export async function extractApiResources(
   result.revisions = await extractApiRevisions(
     client, store, context, apiName, outputDir, filter, workspace
   );
+  result.errorCount += result.revisions.filter((revision) => revision.status === 'error').length;
 
   // Extract API schemas FIRST. For synthetic GraphQL APIs the SDL lives in an
   // ApiSchema resource; by extracting schemas first we can detect that case
@@ -88,12 +91,15 @@ export async function extractApiResources(
     outputDir, filter, apiDescriptor, workspace
   );
   result.schemas = schemaResult.extracted;
+  result.errorCount += schemaResult.errorCount;
 
   // Extract API specification (uses already-extracted schemas to detect
   // synthetic GraphQL without a second list call).
-  result.specification = await extractApiSpecification(
+  const specificationResult = await extractApiSpecification(
     client, store, context, apiDescriptor, apiJson, outputDir, result.schemas
   );
+  result.specification = specificationResult.extracted;
+  result.errorCount += specificationResult.errorCount;
 
   // Extract API policy
   const policyContent = await extractApiPolicy(
@@ -110,6 +116,7 @@ export async function extractApiResources(
   result.operations = opsResult.operations;
   result.operationPolicies = opsResult.operationPolicies;
   result.policies.push(...opsResult.policies);
+  result.errorCount += opsResult.errorCount;
 
   // Extract API tags
   // In workspace scope, the classic `apis/{api}/tags` endpoint returns HTTP 500.
@@ -123,6 +130,7 @@ export async function extractApiResources(
       outputDir, filter, apiDescriptor, workspace
     );
     result.tags = tagsResult.extracted;
+    result.errorCount += tagsResult.errorCount;
   }
 
   // Extract API diagnostics
@@ -131,6 +139,7 @@ export async function extractApiResources(
     outputDir, filter, apiDescriptor, workspace
   );
   result.diagnostics = diagResult.extracted;
+  result.errorCount += diagResult.errorCount;
 
   // Extract API releases
   const releaseResult = await extractResourceType(
@@ -138,6 +147,7 @@ export async function extractApiResources(
     outputDir, filter, apiDescriptor, workspace
   );
   result.releases = releaseResult.extracted;
+  result.errorCount += releaseResult.errorCount;
 
   // Extract API tag descriptions (not supported in workspace scope)
   if (!workspace) {
@@ -146,12 +156,15 @@ export async function extractApiResources(
       outputDir, filter, apiDescriptor, workspace
     );
     result.tagDescriptions = tagDescResult.extracted;
+    result.errorCount += tagDescResult.errorCount;
   }
 
   // Extract API wiki
-  result.wiki = await extractApiWiki(
+  const wikiResult = await extractApiWiki(
     client, store, context, apiDescriptor, outputDir
   );
+  result.wiki = wikiResult.extracted;
+  result.errorCount += wikiResult.errorCount;
 
   // Extract GraphQL resolvers and their policies
   const resolverResult = await extractGraphQLResolvers(
@@ -160,6 +173,7 @@ export async function extractApiResources(
   result.resolvers = resolverResult.resolvers;
   result.resolverPolicies = resolverResult.resolverPolicies;
   result.policies.push(...resolverResult.policies);
+  result.errorCount += resolverResult.errorCount;
 
   return result;
 }
@@ -208,6 +222,13 @@ async function extractApiRevisions(
           await store.writeResource(outputDir, descriptor, revJson);
           results.push({ descriptor, json: revJson, status: 'success' });
           logger.info(`Extracted revision ${buildResourceLabel(descriptor)}`);
+        } else {
+          results.push({
+            descriptor,
+            json: {},
+            status: 'error',
+            error: `Revision disappeared during extraction: ${buildResourceLabel(descriptor)}`,
+          });
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -221,7 +242,14 @@ async function extractApiRevisions(
       }
     }
   } catch (error) {
-    logger.warn(`Failed to list revisions for API "${apiName}": ${(error as Error).message}`);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.warn(`Failed to list revisions for API "${apiName}": ${errorMessage}`);
+    results.push({
+      descriptor: { type: ResourceType.Api, nameParts: [`${apiName};rev=?`], workspace },
+      json: {},
+      status: 'error',
+      error: errorMessage,
+    });
   }
 
   return results;
@@ -244,29 +272,29 @@ async function extractApiSpecification(
   apiJson: Record<string, unknown>,
   outputDir: string,
   extractedSchemas: ExtractedResource[]
-): Promise<boolean> {
+): Promise<{ extracted: boolean; errorCount: number }> {
   const properties = apiJson.properties as Record<string, unknown> | undefined;
   const apiType = properties?.type as string | undefined;
   if (apiType?.toLowerCase() === 'websocket') {
     logger.debug(`OpenAPI does not apply to WebSocket APIs`);
-    return false;
+    return { extracted: false, errorCount: 0 };
   }
 
   if (apiType?.toLowerCase() === 'mcp') {
     logger.debug(`Skipping spec export for MCP API "${getNamePart(apiDescriptor.nameParts, 0)}" — MCP APIs use the Model Context Protocol endpoint, not OpenAPI`);
-    return false;
+    return { extracted: false, errorCount: 0 };
   }
 
   if (apiType?.toLowerCase() === 'a2a') {
     logger.debug(`Skipping spec export for A2A API "${getNamePart(apiDescriptor.nameParts, 0)}" — A2A APIs use JSON-RPC + agent card endpoints, not OpenAPI`);
-    return false;
+    return { extracted: false, errorCount: 0 };
   }
 
   if (apiType?.toLowerCase() === 'graphql' && hasGraphQLSchema(extractedSchemas)) {
     logger.debug(
       `Skipping spec export for synthetic GraphQL API "${getNamePart(apiDescriptor.nameParts, 0)}" — schema is captured via ApiSchema`
     );
-    return false;
+    return { extracted: false, errorCount: 0 };
   }
 
   // REST APIs natively imported as Swagger 2.0 expose auto-generated schemas
@@ -282,7 +310,7 @@ async function extractApiSpecification(
     const spec = await client.getApiSpecification(context, getNamePart(apiDescriptor.nameParts, 0), apiType, specDialect);
     if (!spec) {
       logger.debug(`No specification found for API "${getNamePart(apiDescriptor.nameParts, 0)}"`);
-      return false;
+      return { extracted: false, errorCount: 0 };
     }
 
     await store.writeContent(
@@ -294,11 +322,11 @@ async function extractApiSpecification(
     );
 
     logger.info(`Extracted specification ${buildResourceLabel(apiDescriptor)} (${spec.format})`);
-    return true;
+    return { extracted: true, errorCount: 0 };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.warn(`Failed to extract specification ${buildResourceLabel(apiDescriptor)}: ${errorMessage}`);
-    return false;
+    return { extracted: false, errorCount: 1 };
   }
 }
 
@@ -393,6 +421,7 @@ async function extractApiOperations(
   operations: ExtractedResource[];
   operationPolicies: ExtractedResource[];
   policies: string[];
+  errorCount: number;
 }> {
   const operations: ExtractedResource[] = [];
   const operationPolicies: ExtractedResource[] = [];
@@ -434,7 +463,7 @@ async function extractApiOperations(
     }
   }
 
-  return { operations, operationPolicies, policies };
+  return { operations, operationPolicies, policies, errorCount: opsResult.errorCount };
 }
 
 /**
@@ -446,7 +475,7 @@ async function extractApiWiki(
   context: ApimServiceContext,
   apiDescriptor: ResourceDescriptor,
   outputDir: string
-): Promise<boolean> {
+): Promise<{ extracted: boolean; errorCount: number }> {
   const wikiDescriptor: ResourceDescriptor = {
     type: ResourceType.ApiWiki,
     nameParts: [...apiDescriptor.nameParts],
@@ -456,7 +485,7 @@ async function extractApiWiki(
   try {
     const wikiJson = await client.getResource(context, wikiDescriptor);
     if (!wikiJson) {
-      return false;
+      return { extracted: false, errorCount: 0 };
     }
 
     // Extract markdown content from wiki JSON
@@ -474,11 +503,11 @@ async function extractApiWiki(
       await store.writeResource(outputDir, wikiDescriptor, wikiJson);
     }
     logger.info(`Extracted ${buildResourceLabel(wikiDescriptor)}`);
-    return true;
+    return { extracted: true, errorCount: 0 };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     logger.debug(`No wiki ${buildResourceLabel(wikiDescriptor)}: ${errorMessage}`);
-    return false;
+    return { extracted: false, errorCount: 1 };
   }
 }
 
@@ -498,6 +527,7 @@ async function extractGraphQLResolvers(
   resolvers: ExtractedResource[];
   resolverPolicies: ExtractedResource[];
   policies: string[];
+  errorCount: number;
 }> {
   const resolvers: ExtractedResource[] = [];
   const resolverPolicies: ExtractedResource[] = [];
@@ -507,7 +537,7 @@ async function extractGraphQLResolvers(
   const properties = apiJson.properties as Record<string, unknown> | undefined;
   const apiType = properties?.type as string | undefined;
   if (apiType?.toLowerCase() !== 'graphql') {
-    return { resolvers, resolverPolicies, policies };
+    return { resolvers, resolverPolicies, policies, errorCount: 0 };
   }
 
   // Extract resolvers
@@ -546,7 +576,7 @@ async function extractGraphQLResolvers(
     }
   }
 
-  return { resolvers, resolverPolicies, policies };
+  return { resolvers, resolverPolicies, policies, errorCount: resolverResult.errorCount };
 }
 
 /**
@@ -596,8 +626,7 @@ export async function extractWorkspaceApiTags(
       for await (const linkJson of client.listResources(context, ResourceType.ApiTag, tagDescriptor)) {
         const apiName = extractNameFromLink(linkJson, linkProperty);
         if (!apiName) {
-          logger.warn(`Failed to extract API name from tag "${tagName}" apiLink response`);
-          continue;
+          throw new Error(`Failed to extract API name from tag "${tagName}" apiLink response`);
         }
 
         // Only create ApiTag artifacts for APIs that were extracted
@@ -626,6 +655,7 @@ export async function extractWorkspaceApiTags(
       }
     } catch (error) {
       logger.warn(`Failed to list apiLinks for tag "${tagName}": ${(error as Error).message}`);
+      throw error;
     }
   }
 

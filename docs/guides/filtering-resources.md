@@ -200,7 +200,7 @@ namedValues:
   - '!keyvault-*'
 ```
 
-Exclusions work anywhere a string list is accepted, including nested API and workspace sub-filters:
+Exclusions work anywhere a string list is accepted, including nested API and workspace sub-filter entries:
 
 ```yaml
 apis:
@@ -413,15 +413,7 @@ backends:
 
 ### Full Extract Minus Specific Resources
 
-Use `!`-prefixed entries to extract everything except specific resources. For example:
-
-```yaml
-apis:
-  - '*'
-  - '!legacy-api'
-```
-
-For large instances, it can still be easier to extract everything and use `.gitignore` or separate branches to manage visibility.
+Use quoted `!`-prefixed entries to exclude specific resources. A list containing only exclusions includes every resource that does not match them; combine `'*'` with exclusions when you want to make the include-all intent explicit. See [Excluding resources with `!`](#excluding-resources-with-) for examples and matching rules.
 
 ### Pattern-Based Team Filtering
 

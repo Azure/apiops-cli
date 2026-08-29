@@ -7,7 +7,7 @@
 | Guide | Description |
 |-------|-------------|
 | [Getting Started](getting-started.md) | Install and run your first extract → publish cycle in 10 minutes |
-| [Command Reference](commands/) | Detailed docs for [extract](commands/extract.md), [publish](commands/publish.md), [init](commands/init.md) |
+| [Command Reference](commands/) | Detailed docs for [extract](commands/extract.md), [publish](commands/publish.md), [init](commands/init.md), and [API Center backup/restore](commands/apic.md) |
 | [CI/CD Integration](ci-cd/) | Set up [GitHub Actions](ci-cd/github-actions.md) or [Azure DevOps](ci-cd/azure-devops.md) pipelines |
 | [Walkthroughs](walkthrough/) | Step-by-step guides: [Air-gapped GitHub Actions](walkthrough/air-gapped-github-actions.md) (local registry or offline tarball), [Air-gapped Azure DevOps](walkthrough/air-gapped-azure-devops.md) (local registry or offline tarball) |
 
@@ -29,7 +29,7 @@ flowchart LR
 ## Install
 
 ```bash
-npm install -g @peterhauge/apiops-cli
+npm install -g @azure-tools/apiops-cli
 ```
 
 Requires Node.js 22 or later.
@@ -42,6 +42,7 @@ Requires Node.js 22 or later.
 - **Incremental publish** — Deploy only changed resources via git diff
 - **Dry-run mode** — Preview changes before applying them
 - **CI/CD scaffolding** — `apiops init` generates GitHub Actions or Azure DevOps pipelines
+- **API Center backup and restore** — `apiops apic` extracts and publishes Azure API Center resources and specifications
 - **Token substitution** — Replace `{#[TOKEN_NAME]#}` placeholders in config files with pipeline secrets before publish
 - **Multiple auth methods** — Azure CLI, managed identity, workload identity (OIDC), service principal
 
@@ -54,7 +55,8 @@ docs/
 ├── commands/
 │   ├── extract.md                     — apiops extract reference
 │   ├── publish.md                     — apiops publish reference
-│   └── init.md                        — apiops init reference
+│   ├── init.md                        — apiops init reference
+│   └── apic.md                        — apiops apic reference
 ├── guides/
 │   ├── scenarios-and-workflows.md     — Portal-first vs code-first workflows
 │   ├── authentication.md              — Auth methods for local dev and CI/CD

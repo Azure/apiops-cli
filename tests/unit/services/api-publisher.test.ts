@@ -1324,6 +1324,10 @@ describe('api-publisher', () => {
     });
 
     it('should reconcile operations via PATCH even in incremental mode (commitId set)', async () => {
+      mockRunParallel.mockImplementation(async (tasks: Array<() => Promise<unknown>>) => {
+        for (const task of tasks) await task();
+      });
+
       const client = createMockClient();
       const children = [
         { type: ResourceType.ApiPolicy, nameParts: ['petstore', 'policy-1'] },
@@ -1342,8 +1346,11 @@ describe('api-publisher', () => {
           return {
             name: 'create-item',
             properties: {
+              displayName: 'Create item',
               request: {
-                representations: [{ contentType: 'application/json', schemaId: 'my-schema' }],
+                representations: [
+                  { contentType: 'application/json', schemaId: 'my-schema', example: { id: 1 } },
+                ],
               },
             },
           };
@@ -1374,6 +1381,14 @@ describe('api-publisher', () => {
         return sum + tasks.length;
       }, 0);
       expect(totalTasks).toBe(2);
+
+      // Schema-bound request must NOT be re-sent — the spec import owns it.
+      // Only importer-agnostic metadata is reconciled.
+      expect(client.patchResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({ type: ResourceType.ApiOperation, nameParts: ['petstore', 'create-item'] }),
+        { properties: { displayName: 'Create item' } }
+      );
     });
 
     it('should skip operation republish in incremental mode when operation description is null', async () => {
@@ -1431,7 +1446,11 @@ describe('api-publisher', () => {
       expect(totalTasks).toBe(1);
     });
 
-    it('should re-publish operations with schema references in response representations', async () => {
+    it('should not re-send schema-bound response representations in reconcile PATCH', async () => {
+      mockRunParallel.mockImplementation(async (tasks: Array<() => Promise<unknown>>) => {
+        for (const task of tasks) await task();
+      });
+
       const client = createMockClient();
       const children = [
         { type: ResourceType.ApiOperation, nameParts: ['petstore', 'get-item'] },
@@ -1469,12 +1488,71 @@ describe('api-publisher', () => {
 
       await publishApi(client, store, testContext, apiDescriptor, testConfig);
 
-      // get-item reconcile task (1 total, no initial child publish tasks)
-      const totalTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
-        const tasks = call[0] as unknown[];
-        return sum + tasks.length;
-      }, 0);
-      expect(totalTasks).toBe(1);
+      // The operation only has schema-bound responses, which the spec import
+      // owns entirely — nothing is left to reconcile, so no PATCH is sent.
+      expect(client.patchResource).not.toHaveBeenCalled();
+    });
+
+    it('should still strip schema refs when representations have no schema binding elsewhere', async () => {
+      mockRunParallel.mockImplementation(async (tasks: Array<() => Promise<unknown>>) => {
+        for (const task of tasks) await task();
+      });
+
+      const client = createMockClient();
+      const children = [
+        { type: ResourceType.ApiOperation, nameParts: ['petstore', 'get-item'] },
+      ];
+      const store = createMockStore(children);
+
+      store.readResource.mockImplementation(async (_dir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.Api) {
+          return { name: 'petstore', properties: { path: 'petstore' } };
+        }
+        if (descriptor.type === ResourceType.ApiOperation) {
+          return {
+            name: 'get-item',
+            properties: {
+              templateParameters: [{ name: 'id', type: 'string', schemaId: 'stale-schema' }],
+              responses: [
+                {
+                  statusCode: 200,
+                  representations: [{ contentType: 'application/json', example: { ok: true } }],
+                },
+              ],
+            },
+          };
+        }
+        return null;
+      });
+      store.readContent.mockResolvedValue({
+        content: 'openapi: "3.0.0"',
+        format: 'yaml',
+      });
+
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['petstore'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      // No representation carries a schema binding, so responses are still sent
+      // (preserving examples) and stale refs elsewhere are stripped.
+      expect(client.patchResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({ type: ResourceType.ApiOperation, nameParts: ['petstore', 'get-item'] }),
+        {
+          properties: {
+            templateParameters: [{ name: 'id', type: 'string' }],
+            responses: [
+              {
+                statusCode: 200,
+                representations: [{ contentType: 'application/json', example: { ok: true } }],
+              },
+            ],
+          },
+        }
+      );
     });
 
     it('should PATCH operations with only allow-listed properties after spec import', async () => {

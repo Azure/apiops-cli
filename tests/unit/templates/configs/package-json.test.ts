@@ -53,10 +53,10 @@ describe('configs/package-json', () => {
         expect(() => JSON.parse(content)).not.toThrow();
       });
 
-      it('should include @peterhauge/apiops-cli dependency', () => {
+      it('should include @azure-tools/apiops-cli dependency', () => {
         const content = generatePackageJson({ mode: 'npm' });
         const pkg = JSON.parse(content);
-        expect(pkg.dependencies['@peterhauge/apiops-cli']).toBe('latest');
+        expect(pkg.dependencies['@azure-tools/apiops-cli']).toBe('latest');
       });
 
       it('should NOT include apiops dependency', () => {

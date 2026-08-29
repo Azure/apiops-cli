@@ -53,10 +53,10 @@ flowchart LR
 On the connected workstation:
 
 ```bash
-npm pack @peterhauge/apiops-cli
+npm pack @azure-tools/apiops-cli
 ```
 
-This produces `peterhauge-apiops-cli-<version>.tgz` in the current directory.
+This produces `azure-tools-apiops-cli-<version>.tgz` in the current directory.
 
 ---
 
@@ -70,7 +70,7 @@ Pass `--cli-package` so the generated `package.json` references the local tarbal
 apiops init \
   --ci azure-devops \
   --environments dev,prod \
-  --cli-package <path-to-tarball>/peterhauge-apiops-cli-<version>.tgz 
+  --cli-package <path-to-tarball>/azure-tools-apiops-cli-<version>.tgz 
 ```
 
 This command generates:
@@ -111,7 +111,7 @@ For the offline-tarball workflow, commit the files that make the pipeline fully 
 
 | File Name | Description |
 |-----------|-------------|
-| `.apiops/peterhauge-apiops-cli-<version>.tgz` | CLI package consumed by the pipelines. |
+| `.apiops/azure-tools-apiops-cli-<version>.tgz` | CLI package consumed by the pipelines. |
 | `package.json` | Contains the `file:` dependency pointing to the tarball. |
 | `package-lock.json` | Required for deterministic offline installs with `npm ci --offline`. |
 | `.azdo/pipelines/run-apiops-extractor.yml` | Azure DevOps extract pipeline definition. |
@@ -120,7 +120,7 @@ For the offline-tarball workflow, commit the files that make the pipeline fully 
 
 ```bash
 git add \
-    .apiops/peterhauge-apiops-cli-*.tgz \
+    .apiops/azure-tools-apiops-cli-*.tgz \
     package.json \
     package-lock.json \
     .azdo/pipelines/run-apiops-extractor.yml \
@@ -179,8 +179,8 @@ Trigger the extract pipeline manually from **Pipelines → Run pipeline** and ve
 
 ## Upgrading the CLI Version
 
-1. On a connected workstation, run `npm pack @peterhauge/apiops-cli` for the new version
-2. Replace `.apiops/peterhauge-apiops-cli-*.tgz` with the new tarball and update the `file:` path in `package.json`
+1. On a connected workstation, run `npm pack @azure-tools/apiops-cli` for the new version
+2. Replace `.apiops/azure-tools-apiops-cli-*.tgz` with the new tarball and update the `file:` path in `package.json`
 3. Regenerate `package-lock.json` 
     ```bash
     npm install
@@ -197,7 +197,7 @@ Trigger the extract pipeline manually from **Pipelines → Run pipeline** and ve
 5. Commit the tarball and updated lock file
     ```bash
     git add \
-        .apiops/peterhauge-apiops-cli-*.tgz \
+        .apiops/azure-tools-apiops-cli-*.tgz \
         package.json \
         package-lock.json \
     git commit -m "chore: commit updated offline-tarball apiops bootstrap files"

@@ -366,6 +366,155 @@ describe('extract-service', () => {
       expect(result.exitCode).toBeGreaterThanOrEqual(1);
     });
 
+    it('should return partial when API specification extraction fails', async () => {
+      const client = createMockClient({
+        [ResourceType.Api]: [{ name: 'echo-api', properties: {} }],
+      });
+      client.getApiSpecification = vi.fn().mockRejectedValue(new Error('spec export failed'));
+      const store = createMockStore();
+
+      const result = await runExtraction(client, store, {
+        service: testContext,
+        outputDir: '/output',
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(result.totalExtracted).toBeGreaterThan(0);
+      expect(result.totalErrors).toBeGreaterThan(0);
+      expect(result.exitCode).toBe(1);
+    });
+
+    it('should count a rejected resource type task as an extraction error', async () => {
+      const client = createMockClient({
+        [ResourceType.Tag]: [{ name: 'tag-1', properties: {} }],
+      });
+      const store = createMockStore();
+      store.writeResource = vi.fn().mockRejectedValue(new Error('disk unavailable'));
+
+      const result = await runExtraction(client, store, {
+        service: testContext,
+        outputDir: '/output',
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(result.totalErrors).toBeGreaterThan(0);
+      expect(result.exitCode).toBe(2);
+    });
+
+    it('should return partial when a workspace container cannot be read', async () => {
+      const client = createMockClient({
+        [ResourceType.Tag]: [{ name: 'tag-1', properties: {} }],
+      });
+      const store = createMockStore();
+
+      const result = await runExtraction(client, store, {
+        service: testContext,
+        outputDir: '/output',
+        filter: { workspaces: ['ws-1'] },
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(result.totalExtracted).toBeGreaterThan(0);
+      expect(result.totalErrors).toBeGreaterThan(0);
+      expect(result.exitCode).toBe(1);
+    });
+
+    it('should aggregate API wiki and product supplemental failures', async () => {
+      const client = createMockClient({
+        [ResourceType.Api]: [{ name: 'api-1', properties: {} }],
+        [ResourceType.Product]: [{ name: 'product-1', properties: {} }],
+      });
+      const originalListResources = client.listResources;
+      client.listResources = async function* (context, type, parent) {
+        if ([ResourceType.ProductApi, ResourceType.ProductGroup, ResourceType.ProductTag].includes(type)) {
+          throw new Error(`${type} list failed`);
+        }
+        yield* originalListResources(context, type, parent);
+      };
+      client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor) => {
+        if (descriptor.type === ResourceType.ApiWiki || descriptor.type === ResourceType.ProductWiki) {
+          throw new Error(`${descriptor.type} read failed`);
+        }
+        return undefined;
+      });
+      const store = createMockStore();
+
+      const result = await runExtraction(client, store, {
+        service: testContext,
+        outputDir: '/output',
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(result.totalErrors).toBeGreaterThanOrEqual(5);
+      expect(result.exitCode).toBe(1);
+    });
+
+    it('should aggregate workspace tag-link failures', async () => {
+      const client = createMockClient({
+        [ResourceType.Tag]: [{ name: 'service-tag', properties: {} }],
+      });
+      const originalListResources = client.listResources;
+      client.listResources = async function* (context, type, parent) {
+        if (context.baseUrl.includes('/workspaces/')) {
+          if (type === ResourceType.Tag) yield { name: 'tag-1', properties: {} };
+          if (type === ResourceType.Api) yield { name: 'api-1', properties: {} };
+          if (type === ResourceType.ApiTag) throw new Error('apiLinks failed');
+          return;
+        }
+        yield* originalListResources(context, type, parent);
+      };
+      client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor) =>
+        descriptor.type === ResourceType.Workspace ? { name: 'ws-1', properties: {} } : undefined
+      );
+      const store = createMockStore();
+
+      const result = await runExtraction(client, store, {
+        service: testContext,
+        outputDir: '/output',
+        filter: { workspaces: ['ws-1'] },
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(result.totalErrors).toBeGreaterThan(0);
+      expect(result.exitCode).toBe(1);
+    });
+
+    it('should aggregate workspace product tag-link failures', async () => {
+      const client = createMockClient({
+        [ResourceType.Tag]: [{ name: 'service-tag', properties: {} }],
+      });
+      const originalListResources = client.listResources;
+      client.listResources = async function* (context, type, parent) {
+        if (context.baseUrl.includes('/workspaces/')) {
+          if (type === ResourceType.Tag) yield { name: 'tag-1', properties: {} };
+          if (type === ResourceType.Product) yield { name: 'product-1', properties: {} };
+          if (type === ResourceType.ProductTag) throw new Error('productLinks failed');
+          return;
+        }
+        yield* originalListResources(context, type, parent);
+      };
+      client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor) =>
+        descriptor.type === ResourceType.Workspace ? { name: 'ws-1', properties: {} } : undefined
+      );
+      const store = createMockStore();
+
+      const result = await runExtraction(client, store, {
+        service: testContext,
+        outputDir: '/output',
+        filter: { workspaces: ['ws-1'] },
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(result.totalErrors).toBeGreaterThan(0);
+      expect(result.exitCode).toBe(1);
+    });
+
     it('should handle empty APIM instance', async () => {
       const client = createMockClient({});
       const store = createMockStore();

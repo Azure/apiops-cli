@@ -53,17 +53,17 @@ flowchart LR
 On the connected workstation:
 
 ```bash
-npm pack @peterhauge/apiops-cli
+npm pack @azure-tools/apiops-cli
 ```
 
-This produces `peterhauge-apiops-cli-<version>.tgz` in the current directory.
+This produces `azure-tools-apiops-cli-<version>.tgz` in the current directory.
 
 Commit the tarball into your repository (e.g., under `.apiops/`) so the workflow can reference it by path:
 
 ```bash
 mkdir -p .apiops
-mv peterhauge-apiops-cli-*.tgz .apiops/
-git add .apiops/peterhauge-apiops-cli-*.tgz
+mv azure-tools-apiops-cli-*.tgz .apiops/
+git add .apiops/azure-tools-apiops-cli-*.tgz
 ```
 
 ---
@@ -76,7 +76,7 @@ Pass `--cli-package` so the generated `package.json` references the local tarbal
 apiops init \
   --ci github-actions \
   --environments dev,prod \
-  --cli-package ./.apiops/peterhauge-apiops-cli-<version>.tgz \
+  --cli-package ./.apiops/azure-tools-apiops-cli-<version>.tgz \
   --non-interactive
 ```
 
@@ -215,8 +215,8 @@ Trigger the extract workflow manually from **Actions → Run workflow** and veri
 
 ## Upgrading the CLI Version
 
-1. On a connected workstation, run `npm pack @peterhauge/apiops-cli` for the new version
-2. Replace `.apiops/peterhauge-apiops-cli-*.tgz` with the new tarball and update the `file:` path in `package.json`
+1. On a connected workstation, run `npm pack @azure-tools/apiops-cli` for the new version
+2. Replace `.apiops/azure-tools-apiops-cli-*.tgz` with the new tarball and update the `file:` path in `package.json`
 3. Regenerate `package-lock.json` (`npm install`)
 4. Re-populate and re-transfer the npm cache (`npm ci` on the workstation, then copy `~/.npm/_cacache/`)
 5. Commit the tarball and updated lock file

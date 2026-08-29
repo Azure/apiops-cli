@@ -97,11 +97,12 @@ steps:
       scriptType: 'bash'
       scriptLocation: 'inlineScript'
       inlineScript: |
-        npx @peterhauge/apiops-cli extract \\
+        npx @azure-tools/apiops-cli extract \\
           --resource-group "$(APIM_RESOURCE_GROUP)" \\
           --service-name "$(APIM_SERVICE_NAME)" \\
           --output ${config.artifactDir} \\
-          --subscription-id "$(AZURE_SUBSCRIPTION_ID)"
+          --subscription-id "$(AZURE_SUBSCRIPTION_ID)" \\
+          --remove-stale
 
   - task: AzureCLI@2
     displayName: 'Run APIM Extract (With Configuration)'
@@ -111,12 +112,13 @@ steps:
       scriptType: 'bash'
       scriptLocation: 'inlineScript'
       inlineScript: |
-        npx @peterhauge/apiops-cli extract \\
+        npx @azure-tools/apiops-cli extract \\
           --resource-group "$(APIM_RESOURCE_GROUP)" \\
           --service-name "$(APIM_SERVICE_NAME)" \\
           --output ${config.artifactDir} \\
           --filter configuration.extractor.yaml \\
-          --subscription-id "$(AZURE_SUBSCRIPTION_ID)"
+          --subscription-id "$(AZURE_SUBSCRIPTION_ID)" \\
+          --remove-stale
 
   - task: PublishPipelineArtifact@1
     displayName: 'Publish artifacts'

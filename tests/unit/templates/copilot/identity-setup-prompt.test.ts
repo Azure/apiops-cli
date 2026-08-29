@@ -77,6 +77,65 @@ describe('copilot/identity-setup-prompt', () => {
       expect(prompt).toContain('gh secret set AZURE_SUBSCRIPTION_ID');
     });
 
+    it('should detect and resolve existing secret conflicts before writing', () => {
+      const prompt = generateIdentitySetupPrompt({ environments: ['dev', 'prod'] });
+
+      expect(prompt).toContain('Never overwrite an existing secret silently');
+      expect(prompt).toContain('gh secret list --repo');
+      expect(prompt).toContain('--env "dev" --json name');
+      expect(prompt).toContain('--env "prod" --json name');
+      expect(prompt).toContain('**Overwrite**');
+      expect(prompt).toContain('**Rename**');
+      expect(prompt).toContain('**Reuse**');
+      expect(prompt).toContain('skip its `gh secret set` command');
+      expect(prompt).toContain('case-insensitive reserved-name set');
+      expect(prompt).toContain('add each chosen name immediately');
+      expect(prompt).toContain('not starting with `GITHUB_`');
+    });
+
+    it('should update workflow references and summarize secret decisions', () => {
+      const prompt = generateIdentitySetupPrompt({ environments: ['dev'] });
+
+      expect(prompt).toContain('secrets.AZURE_CLIENT_ID');
+      expect(prompt).toContain('.github/workflows/');
+      expect(prompt).toContain("secrets[format('APIM_RESOURCE_GROUP_{0}', ...)]");
+      expect(prompt).toContain('environment-keyed expression that covers every environment mapping');
+      expect(prompt).toContain('retain the original computed lookup as the fallback');
+      expect(prompt).toContain('environment-scoped `AZURE_SUBSCRIPTION_ID` renames');
+      expect(prompt).toContain('scope-aware mapping');
+      expect(prompt).toContain('Show the complete mapping and proposed file changes');
+      expect(prompt).toContain('**created**, **overwritten**, **renamed**, or **reused**');
+      expect(prompt).toContain('Never print secret values');
+    });
+
+    it('should target the selected repository for every secret write', () => {
+      const prompt = generateIdentitySetupPrompt({ environments: ['dev'] });
+      const setCommands = prompt.split('\n').filter(line => line.startsWith('gh secret set '));
+      const listCommands = prompt.split('\n').filter(line => line.startsWith('gh secret list '));
+
+      expect(setCommands.length).toBeGreaterThan(0);
+      expect(listCommands.length).toBe(2);
+      expect(listCommands.every(line => line.includes('--repo "${GITHUB_ORG}/${GITHUB_REPO}"'))).toBe(true);
+      expect(setCommands.every(line => line.includes('--repo "${GITHUB_ORG}/${GITHUB_REPO}"'))).toBe(true);
+      expect(setCommands.filter(line => line.includes('--env ')).every(line => line.includes('--env "dev"'))).toBe(true);
+    });
+
+    it('should safely render custom environment names used in shell variables', () => {
+      const prompt = generateIdentitySetupPrompt({ environments: ['qa_east_2'] });
+
+      expect(prompt).toContain('--env "qa_east_2"');
+      expect(prompt).toContain('APIM_RESOURCE_GROUP_QA_EAST_2');
+    });
+
+    it('should reject GitHub environment names that are unsafe in generated commands', () => {
+      expect(() => generateIdentitySetupPrompt({ environments: ['qa east'] })).toThrow(
+        'Invalid GitHub environment name "qa east"'
+      );
+      expect(() => generateIdentitySetupPrompt({ environments: ['qa"east'] })).toThrow(
+        'Invalid GitHub environment name'
+      );
+    });
+
     it('should include per-environment secret set commands', () => {
       const prompt = generateIdentitySetupPrompt({ environments: ['dev', 'prod'] });
       expect(prompt).toContain('gh secret set APIM_RESOURCE_GROUP_DEV');

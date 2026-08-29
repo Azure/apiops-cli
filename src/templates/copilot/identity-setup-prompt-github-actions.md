@@ -191,11 +191,34 @@ az ad app federated-credential create `
 
 > ⚠️ **Platform Note:** GitHub CLI secret commands work identically on all platforms, but variable syntax differs between Bash and PowerShell.
 
+### Check for existing secrets before writing
+
+**Never overwrite an existing secret silently.** First list repository and environment secret names (GitHub does not expose their values):
+
+```bash
+gh secret list --repo "${GITHUB_ORG}/${GITHUB_REPO}" --json name
+{{GH_SECRET_ENV_LIST_COMMANDS}}
+```
+
+Compare the returned names with every secret this setup intends to create. For each conflict, ask the user to choose one option before running any `gh secret set` command:
+
+1. **Overwrite** — replace the existing secret with the new value.
+2. **Rename** — ask for or confirm an alternative name, such as `APIOPS_AZURE_CLIENT_ID`. Accept only GitHub secret names containing letters, numbers, and underscores, starting with a letter or underscore, and not starting with `GITHUB_`. For each scope, maintain a case-insensitive reserved-name set initialized from its inventory. Check the alternative against that set and add each chosen name immediately; if it is already reserved, resolve that conflict before writing.
+3. **Reuse** — keep the existing secret and skip its `gh secret set` command.
+
+Do not infer that an existing secret has the intended value because GitHub cannot return secret values. Reuse is an explicit user decision.
+
+Keep a scope-aware mapping with the repository, scope (`repository` or `environment`), environment name when applicable, expected name, chosen name, and action. The same expected name may map differently in different environments.
+
+If any secret is renamed, inspect generated workflow files under `.github/workflows/` and update references for that exact scope. Handle both literal expressions such as `secrets.AZURE_CLIENT_ID` and computed expressions such as `secrets[format('APIM_RESOURCE_GROUP_{0}', ...)]`. When an expected name maps differently by environment, replace the shared computed lookup with an environment-keyed expression that covers every environment mapping; retain the original computed lookup as the fallback for unchanged environments. Apply the same rule to environment-scoped `AZURE_SUBSCRIPTION_ID` renames. Show the complete mapping and proposed file changes, then obtain confirmation before editing. Do not replace unrelated text or secret names.
+
+After all conflicts are resolved, run only the `gh secret set` commands approved by the user, using the mapped names where applicable.
+
 **On macOS/Linux (Bash):**
 ```bash
 # Repository-level secrets (shared across all workflows)
-gh secret set AZURE_CLIENT_ID --body "$APP_ID"
-gh secret set AZURE_TENANT_ID --body "${AZURE_TENANT_ID}"
+gh secret set AZURE_CLIENT_ID --body "$APP_ID" --repo "${GITHUB_ORG}/${GITHUB_REPO}"
+gh secret set AZURE_TENANT_ID --body "${AZURE_TENANT_ID}" --repo "${GITHUB_ORG}/${GITHUB_REPO}"
 
 {{GH_SECRET_ENV_COMMANDS}}
 ```
@@ -203,11 +226,13 @@ gh secret set AZURE_TENANT_ID --body "${AZURE_TENANT_ID}"
 **On Windows (PowerShell):**
 ```powershell
 # Repository-level secrets (shared across all workflows)
-gh secret set AZURE_CLIENT_ID --body $APP_ID
-gh secret set AZURE_TENANT_ID --body "${AZURE_TENANT_ID}"
+gh secret set AZURE_CLIENT_ID --body $APP_ID --repo "${GITHUB_ORG}/${GITHUB_REPO}"
+gh secret set AZURE_TENANT_ID --body "${AZURE_TENANT_ID}" --repo "${GITHUB_ORG}/${GITHUB_REPO}"
 
 {{GH_SECRET_ENV_COMMANDS}}
 ```
+
+Summarize each secret as **created**, **overwritten**, **renamed**, or **reused**, and list any workflow files updated for renamed secrets. Never print secret values in the summary.
 
 ---
 

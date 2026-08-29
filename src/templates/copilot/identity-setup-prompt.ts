@@ -37,6 +37,15 @@ export function generateIdentitySetupPrompt(config: IdentitySetupPromptConfig): 
     });
   }
 
+  const invalidEnvironment = config.environments.find(
+    (environment) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(environment)
+  );
+  if (invalidEnvironment !== undefined) {
+    throw new Error(
+      `Invalid GitHub environment name "${invalidEnvironment}". Use letters, numbers, and underscores, starting with a letter or underscore.`
+    );
+  }
+
   const envSecrets = config.environments.map((env) =>
     `- \`AZURE_SUBSCRIPTION_ID\` — Azure subscription ID for **${env}** environment
 - \`APIM_RESOURCE_GROUP_${env.toUpperCase()}\` — Resource group containing the **${env}** APIM instance
@@ -60,6 +69,10 @@ export function generateIdentitySetupPrompt(config: IdentitySetupPromptConfig): 
     `# Create the ${env} environment (requires GitHub CLI)
 gh api --method PUT "repos/\${GITHUB_ORG}/\${GITHUB_REPO}/environments/${env}"`
   ).join('\n\n');
+
+  const ghSecretEnvListCommands = config.environments.map((env) =>
+    `gh secret list --repo "\${GITHUB_ORG}/\${GITHUB_REPO}" --env "${env}" --json name`
+  ).join('\n');
 
   const envSubscriptionTableRows = config.environments.map((env) =>
     `| \`AZURE_SUBSCRIPTION_ID_${env.toUpperCase()}\` | Azure subscription ID for **${env}** environment | \`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\` |`
@@ -94,6 +107,7 @@ az role assignment create \\
     ENV_SECRETS_REFERENCE: envSecrets,
     ENV_FEDERATED_CREDENTIALS: envFedCreds,
     GH_SECRET_ENV_COMMANDS: ghSecretEnvCmds,
+    GH_SECRET_ENV_LIST_COMMANDS: ghSecretEnvListCommands,
     ENVIRONMENT_CREATION_COMMANDS: environmentCreationCommands,
     ENV_SUBSCRIPTION_TABLE_ROWS: envSubscriptionTableRows,
     ENV_APIM_TABLE_ROWS: envApimTableRows,

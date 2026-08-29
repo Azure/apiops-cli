@@ -21,7 +21,7 @@ apiops-cli is a single Node.js CLI that covers the full workflow with less setup
 |---------|-------------------|-----------------|
 | **Runtime** | .NET SDK or Docker | Node.js 22+ |
 | **CLI** | Separate Extractor/Publisher binaries | Single `apiops` CLI |
-| **Install** | Docker pull or .NET tool install | `npm install -g @peterhauge/apiops-cli` |
+| **Install** | Docker pull or .NET tool install | `npm install -g @azure-tools/apiops-cli` |
 | **Configuration** | `configuration.extractor.yaml` + `configuration.publisher.yaml` | Single filter YAML + override YAML |
 | **Authentication** | Azure service connections / env vars | `DefaultAzureCredential` (Azure CLI, OIDC, service principal, managed identity) |
 | **Scaffolding** | Manual pipeline setup | `apiops init` generates pipelines, config, directory structure |
@@ -44,7 +44,7 @@ apiops-cli supports all APIOps Toolkit resource types plus: `GlobalSchema`, `Pol
 ### 1. Install apiops-cli
 
 ```bash
-npm install -g @peterhauge/apiops-cli
+npm install -g @azure-tools/apiops-cli
 ```
 
 Verify:
@@ -274,7 +274,7 @@ apiops extract --cloud usgov ...
 
 | Issue | Cause | Fix |
 |-------|-------|-----|
-| `apiops: command not found` | CLI not installed globally | Run `npm install -g @peterhauge/apiops-cli` |
+| `apiops: command not found` | CLI not installed globally | Run `npm install -g @azure-tools/apiops-cli` |
 | Artifacts not recognized | Unexpected directory structure | Verify your artifacts follow the standard layout (`apis/{name}/apiInformation.json`, etc.) |
 | Authentication fails in pipeline | APIOps Toolkit used service connection env vars; apiops-cli uses `DefaultAzureCredential` | See [Authentication Guide](./authentication.md). For GitHub Actions, use `azure/login` with OIDC. For Azure DevOps, use `AzureCLI@2` task. |
 | Override values not applied | Wrong override file format or path | Check YAML structure matches apiops-cli format. Pass with `--overrides <path>`. |

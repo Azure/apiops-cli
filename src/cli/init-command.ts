@@ -33,7 +33,7 @@ export function createInitCommand(): Command {
     .option('--non-interactive', 'Skip interactive prompts (requires --ci)', false)
     .option('--artifact-dir <dir>', 'Artifact directory path', './apim-artifacts')
     .option('--environments <list>', 'Comma-separated environment names', 'dev,prod')
-    .option('--cli-package <path>', 'Path to apiops npm tarball (from npm pack). If not provided, uses @peterhauge/apiops-cli from npm registry')
+    .option('--cli-package <path>', 'Path to apiops npm tarball (from npm pack). If not provided, uses @azure-tools/apiops-cli from npm registry')
     .option('--force', 'Overwrite existing files without prompting', false)
     .action(async (options: InitOptions) => {
       try {

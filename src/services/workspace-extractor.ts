@@ -114,6 +114,7 @@ export async function extractWorkspaces(
     // before workspace-scoped children (named values, APIs, products, etc.).
     const wsDescriptor = { type: ResourceType.Workspace, nameParts: [wsName] };
     const wsJson = await client.getResource(context, wsDescriptor);
+    const workspaceContainerError = wsJson ? 0 : 1;
     if (!wsJson) {
       logger.error(
         `Workspace container "${wsName}" was discovered but could not be read. Continuing with workspace child extraction.`
@@ -127,6 +128,7 @@ export async function extractWorkspaces(
       resolveWorkspaceFilter(wsName, filter),
       includeTransitive
     );
+    wsResult.errorCount += workspaceContainerError;
     results.push(wsResult);
   }
 
@@ -209,6 +211,7 @@ async function extractWorkspace(
             resourceCount += apiResult.operations.length +
               apiResult.tags.length +
               apiResult.schemas.length;
+            errorCount += apiResult.errorCount;
           } catch (error) {
             logger.warn(`Failed to extract API details for workspace "${workspaceName}": ${(error as Error).message}`);
             errorCount++;
@@ -233,6 +236,7 @@ async function extractWorkspace(
               }
             }
             resourceCount++;
+            errorCount += productResult.errorCount;
           } catch (error) {
             logger.warn(`Failed to extract product details for workspace "${workspaceName}": ${(error as Error).message}`);
             errorCount++;

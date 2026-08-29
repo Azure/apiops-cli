@@ -8,25 +8,45 @@
  */
 
 import { Command } from 'commander';
-import { ExtractConfig } from '../models/config.js';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import { ExtractConfig, FilterConfig } from '../models/config.js';
 import { ApimServiceContext } from '../models/types.js';
 import { runExtraction, ExtractionResult } from '../services/extract-service.js';
+import { shouldReconcileResource } from '../services/filter-service.js';
 import { loadFilterConfig } from '../lib/config-loader.js';
 import { logger, parseLogLevel } from '../lib/logger.js';
 import { ApimClient } from '../clients/apim-client.js';
 import { ArtifactStore } from '../clients/artifact-store.js';
+import { IArtifactStore } from '../clients/iartifact-store.js';
 import { getCloudConfig, buildArmBaseUrl } from '../lib/cloud-config.js';
+import { EXIT_FATAL, EXIT_SUCCESS } from '../lib/exit-codes.js';
 
 /**
  * Interface for extract command options (from CLI flags).
  */
-interface ExtractOptions {
+export interface ExtractOptions {
   resourceGroup: string;
   serviceName: string;
   output: string;
   filter?: string;
   transitive: boolean;
+  removeStale?: boolean;
 }
+
+export interface ExtractCommandDependencies {
+  runExtraction: typeof runExtraction;
+  createClient: (authScope: string) => ApimClient;
+  createStore: () => IArtifactStore;
+  exit: (code: number) => void;
+}
+
+const DEFAULT_DEPENDENCIES: ExtractCommandDependencies = {
+  runExtraction,
+  createClient: (authScope) => new ApimClient(authScope),
+  createStore: () => new ArtifactStore(),
+  exit: (code) => process.exit(code),
+};
 
 /**
  * Create and return the extract command for Commander.
@@ -39,6 +59,7 @@ export function createExtractCommand(): Command {
     .option('--output <dir>', 'Output directory path', './apim-artifacts')
     .option('--filter <path>', 'Filter configuration YAML file')
     .option('--no-transitive', 'Disable transitive dependency inclusion')
+    .option('--remove-stale', 'Remove stale managed artifacts in the selected scope')
     .action(async (options: ExtractOptions, command: Command) => {
       const globalOpts = command.optsWithGlobals<{
         logLevel?: string;
@@ -57,7 +78,7 @@ export function createExtractCommand(): Command {
 /**
  * Execute the extract command.
  */
-async function executeExtract(
+export async function executeExtract(
   options: ExtractOptions,
   globalOpts: {
     logLevel?: string;
@@ -65,13 +86,15 @@ async function executeExtract(
     cloud?: string;
     format?: string;
     apiVersion?: string;
-  }
+  },
+  dependencies: ExtractCommandDependencies = DEFAULT_DEPENDENCIES
 ): Promise<void> {
   const subscriptionId = globalOpts.subscriptionId ?? process.env.AZURE_SUBSCRIPTION_ID;
 
   if (!subscriptionId) {
     logger.error('Subscription ID required: use --subscription-id or set AZURE_SUBSCRIPTION_ID');
-    process.exit(2);
+    dependencies.exit(2);
+    return;
   }
 
   // Build service context
@@ -92,30 +115,49 @@ async function executeExtract(
   };
 
   // Load filter config if specified
-  let filterConfig;
+  let filterConfig: FilterConfig | undefined;
   if (options.filter) {
     filterConfig = await loadFilterConfig(options.filter);
     if (!filterConfig) {
       logger.error(`Filter file not found: ${options.filter}`);
-      process.exit(2);
+      dependencies.exit(2);
+      return;
     }
   }
 
-  // Build extract config
-  const extractConfig: ExtractConfig = {
-    service: context,
-    outputDir: options.output,
-    filter: filterConfig,
-    includeTransitive: options.transitive,
-    logLevel: parseLogLevel(globalOpts.logLevel ?? 'info'),
-  };
-
   // Create client and store
-  const client = new ApimClient(cloudConfig.authScope);
-  const store = new ArtifactStore();
+  const client = dependencies.createClient(cloudConfig.authScope);
+  const store = dependencies.createStore();
 
-  // Run extraction
-  const result = await runExtraction(client, store, extractConfig);
+  const outputDir = path.resolve(options.output);
+  const outputParent = path.dirname(outputDir);
+  const stagingPrefix = path.join(outputParent, `.${path.basename(outputDir)}.apiops-extract-`);
+  await fs.mkdir(outputParent, { recursive: true });
+  const stagingDir = await fs.mkdtemp(stagingPrefix);
+
+  let result: ExtractionResult;
+  try {
+    const extractConfig: ExtractConfig = {
+      service: context,
+      outputDir: stagingDir,
+      filter: filterConfig,
+      includeTransitive: options.transitive,
+      logLevel: parseLogLevel(globalOpts.logLevel ?? 'info'),
+    };
+
+    result = await dependencies.runExtraction(client, store, extractConfig);
+
+    if (result.exitCode !== EXIT_FATAL) {
+      await store.commitStagedExtraction(
+        stagingDir,
+        outputDir,
+        descriptor => shouldReconcileResource(descriptor, filterConfig),
+        shouldRemoveStaleArtifacts(result, options.removeStale ?? false)
+      );
+    }
+  } finally {
+    await fs.rm(stagingDir, { recursive: true, force: true });
+  }
 
   // Output results
   if (globalOpts.format === 'json') {
@@ -124,7 +166,14 @@ async function executeExtract(
     outputText(result);
   }
 
-  process.exit(result.exitCode);
+  dependencies.exit(result.exitCode);
+}
+
+export function shouldRemoveStaleArtifacts(
+  result: Pick<ExtractionResult, 'exitCode'>,
+  requested: boolean
+): boolean {
+  return requested && result.exitCode === EXIT_SUCCESS;
 }
 
 /**

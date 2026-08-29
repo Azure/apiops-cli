@@ -1,0 +1,636 @@
+# =====================================================================
+# APIM Spectral Lint pipeline — STANDALONE API linting.
+#
+# Lints the OpenAPI specifications already committed to this repo under
+# <targetRepoFolder>/apis/<api>/specification.*, using Spectral and a
+# shared ruleset. Unlike the Extract pipeline (which lints freshly
+# extracted artifacts before pushing them), this pipeline needs NO
+# Azure authentication and does NOT talk to APIM — it only reads files
+# from the checked-out branch. Use it to:
+#   * Gate pull requests that touch API specs (enable the `pr` trigger
+#     and/or a branch-policy build validation on this pipeline).
+#   * Run linting on demand against any branch.
+#
+# Output:
+#   * A JUnit report published to the run's Tests tab. Each rule that
+#     fired is a Failed test (severity in the name); every other active
+#     rule is a Passed test per spec. Specs that crash Spectral are
+#     surfaced as explicit failures.
+#   * The raw Spectral JSON + ruleset are published as a build artifact.
+#
+# By default findings do NOT fail the pipeline (they are reported via
+# the Tests tab). Set `failOnLintIssues = true` to fail the run when any
+# finding at or above `failSeverity` is present.
+# =====================================================================
+
+name: 'apim-lint-$(Date:yyyyMMdd)-$(Rev:r)'
+
+trigger: none          # run on demand
+pr: none               # set to a branch list (or configure a build-validation policy) to gate PRs
+
+parameters:
+  - name: targetRepoFolder
+    displayName: 'Folder (inside repo) where API artifacts live'
+    type: string
+    default: 'apim-artifacts'
+
+  - name: ENVIRONMENT
+    displayName: 'Environment (loads variable group apim-<env> for the agent pool)'
+    type: string
+    default: 'dev'
+    values:
+      - 'dev'
+      - 'prod'
+
+  - name: rulesetUrl
+    displayName: 'Spectral ruleset (URL or repo-relative path)'
+    type: string
+    default: 'https://raw.githubusercontent.com/connectedcircuits/devops-api-linter/main/rules.yaml'
+
+  - name: spectralVersion
+    displayName: 'Spectral CLI npm version'
+    type: string
+    default: '6.11.1'
+
+  - name: failSeverity
+    displayName: 'Minimum severity Spectral treats as a finding'
+    type: string
+    default: 'warn'
+    values:
+      - 'error'
+      - 'warn'
+      - 'info'
+      - 'hint'
+
+  - name: failOnLintIssues
+    displayName: 'Fail the pipeline when findings are present (otherwise report only)'
+    type: boolean
+    default: false
+
+variables:
+  # AGENT_POOL comes from the 'apim-<env>' variable group (Pipelines > Library).
+  - group: 'apim-${{ parameters.ENVIRONMENT }}'
+  - name: SPEC_ROOT
+    value: '$(Build.SourcesDirectory)/${{ parameters.targetRepoFolder }}/apis'
+
+jobs:
+- job: lint
+  displayName: 'Spectral lint APIs in ${{ parameters.targetRepoFolder }}'
+  pool:
+    name: '$(AGENT_POOL)'
+  timeoutInMinutes: 30
+  steps:
+
+  - checkout: self
+    clean: true
+    fetchDepth: 1
+
+  - task: PowerShell@2
+    displayName: 'Validate selected branch contains API artifacts'
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      workingDirectory: '$(Build.SourcesDirectory)'
+      script: |
+        $ErrorActionPreference = 'Stop'
+        Write-Host "Ref:    $(Build.SourceBranch)"
+        Write-Host "Commit: $(Build.SourceVersion)"
+
+        $specRoot = '$(SPEC_ROOT)'
+        if (-not (Test-Path -LiteralPath $specRoot)) {
+          throw "Expected API folder '$specRoot' not found on this branch. Pick a branch that contains '${{ parameters.targetRepoFolder }}/apis'."
+        }
+        Write-Host "API root: $specRoot"
+
+  # -------- Validate Node.js is available on the agent --------
+  - task: PowerShell@2
+    displayName: 'Validate Node.js'
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      script: |
+        $ErrorActionPreference = 'Stop'
+        $node = Get-Command node -ErrorAction SilentlyContinue
+        if (-not $node) { throw 'Node.js was not found on the agent. Spectral requires Node.js (install an LTS release on the agent).' }
+        Write-Host "Node.js: $(node --version) at $($node.Source)"
+        Write-Host "npm:     $(npm --version)"
+
+  # ----------------- Spectral API linting (START) -----------------
+  - task: PowerShell@2
+    displayName: 'Install Spectral'
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      script: |
+        $ErrorActionPreference = 'Stop'
+        # Pin a known-good version. Unpinned 'latest' has shipped regressions that crash
+        # with "Cannot read properties of null (reading 'enum')" on some specs. Change the
+        # version via the 'spectralVersion' parameter if you need a different build.
+        $spectralPackage = '@stoplight/spectral-cli@${{ parameters.spectralVersion }}'
+        npm install -g $spectralPackage
+        if ($LASTEXITCODE -ne 0) { throw "npm install -g $spectralPackage failed (exit $LASTEXITCODE)" }
+
+        # npm's global bin is often NOT on PATH for the agent service account, so
+        # resolve the spectral launcher explicitly and hand it to the next step.
+        $npmPrefix = (& npm prefix -g).Trim()
+        $spectral  = $null
+        foreach ($name in @('spectral.cmd','spectral.exe','spectral')) {
+          $candidate = Join-Path $npmPrefix $name
+          if (Test-Path $candidate) { $spectral = $candidate; break }
+        }
+        if (-not $spectral) {
+          $cmd = Get-Command spectral -ErrorAction SilentlyContinue
+          if ($cmd) { $spectral = $cmd.Source }
+        }
+        if (-not $spectral) { throw "Spectral CLI not found after global install (npm prefix: $npmPrefix)." }
+        Write-Host "Spectral CLI: $spectral"
+        Write-Host "##vso[task.setvariable variable=SPECTRAL_PATH]$spectral"
+
+  - task: PowerShell@2
+    displayName: 'Resolve ruleset (for passed-checks reporting)'
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      script: |
+        $ErrorActionPreference = 'Stop'
+        # Spectral only ever emits VIOLATIONS -- never the rules that passed. To report real
+        # passed checks we need the full ACTIVE rule set (the recommended spectral:oas rules
+        # that 'extends: spectral:oas' enables, plus the custom rules). We read it straight
+        # from the installed Spectral packages + the ruleset file, so the denominator is
+        # accurate. If anything here fails, the report falls back to the rules observed in
+        # this run, so reporting never breaks.
+        $ruleset      = '${{ parameters.rulesetUrl }}'
+        $rulesetLocal = '$(Build.ArtifactStagingDirectory)/spectral-ruleset.yaml'
+        $rulesFile    = '$(Build.ArtifactStagingDirectory)/spectral-rules.txt'
+        $scriptFile   = '$(Build.ArtifactStagingDirectory)/extract-rules.cjs'
+        Remove-Item -LiteralPath $rulesFile -ErrorAction SilentlyContinue
+
+        # Ruleset may be an http(s) URL or a repo-relative path; normalise to a local file
+        # so the rule-extraction script and the lint step both consume the same content.
+        if ($ruleset -match '^(?i)https?://') {
+          try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Invoke-WebRequest -Uri $ruleset -OutFile $rulesetLocal -UseBasicParsing
+          } catch {
+            Write-Host "##vso[task.logissue type=warning]Could not download ruleset for rule extraction: $($_.Exception.Message)"
+          }
+        } else {
+          $localRuleset = Join-Path '$(Build.SourcesDirectory)' $ruleset
+          if (Test-Path -LiteralPath $localRuleset) {
+            Copy-Item -LiteralPath $localRuleset -Destination $rulesetLocal -Force
+          } else {
+            Write-Host "##vso[task.logissue type=warning]Ruleset path '$localRuleset' not found; passed-checks reporting will fall back to observed rules."
+          }
+        }
+
+        $gRoot = (& npm root -g).Trim()
+
+        # Node script: union of (recommended OpenAPI rules from @stoplight/spectral-rulesets)
+        # and (custom rules parsed from the ruleset YAML, honouring false/off disables).
+        $js = @(
+          'const fs = require("fs");',
+          'const path = require("path");',
+          'const { createRequire } = require("module");',
+          'try {',
+          '  const gRoot = process.env.SPECTRAL_GLOBAL_MODULES;',
+          '  const req = createRequire(path.join(gRoot, "@stoplight", "spectral-cli", "package.json"));',
+          '  const set = new Set();',
+          '  try {',
+          '    const { oas } = req("@stoplight/spectral-rulesets");',
+          '    for (const [k, v] of Object.entries(oas.rules)) { if (v && v.recommended !== false) set.add(k); }',
+          '  } catch (e) { process.stderr.write("OAS_RULES_ERROR: " + e + "\n"); }',
+          '  try {',
+          '    const yaml = req("@stoplight/yaml");',
+          '    const doc = yaml.parse(fs.readFileSync(process.env.SPECTRAL_RULESET_FILE, "utf8"));',
+          '    if (doc && doc.rules) {',
+          '      for (const [k, v] of Object.entries(doc.rules)) {',
+          '        if (v === false || v === "off" || v === 0) { set.delete(k); continue; }',
+          '        set.add(k);',
+          '      }',
+          '    }',
+          '  } catch (e) { process.stderr.write("CUSTOM_RULES_ERROR: " + e + "\n"); }',
+          '  process.stdout.write(Array.from(set).join("\n"));',
+          '} catch (e) {',
+          '  process.stderr.write("RULE_EXTRACT_ERROR: " + (e && e.stack ? e.stack : String(e)));',
+          '  process.exit(3);',
+          '}'
+        )
+        Set-Content -LiteralPath $scriptFile -Value $js -Encoding utf8
+
+        $env:SPECTRAL_GLOBAL_MODULES = $gRoot
+        $env:SPECTRAL_RULESET_FILE   = $rulesetLocal
+        # Node prints deprecation warnings (e.g. punycode DEP0040) to stderr. In Windows
+        # PowerShell 5.1 ANY native stderr is turned into a NativeCommandError that terminates
+        # under $ErrorActionPreference='Stop' -- even when redirected with 2> to a file. Run
+        # node via Start-Process so stdout/stderr go straight to files and never touch
+        # PowerShell's error stream; success is decided solely by the process exit code.
+        $outFile = '$(Build.ArtifactStagingDirectory)/extract-rules.out'
+        $errFile = '$(Build.ArtifactStagingDirectory)/extract-rules.err'
+        $proc = Start-Process -FilePath 'node' -ArgumentList "`"$scriptFile`"" -NoNewWindow -Wait -PassThru -RedirectStandardOutput $outFile -RedirectStandardError $errFile
+        $code = $proc.ExitCode
+        $out  = if (Test-Path -LiteralPath $outFile) { Get-Content -LiteralPath $outFile } else { @() }
+        if ((Test-Path -LiteralPath $errFile) -and (Get-Item -LiteralPath $errFile).Length -gt 0) {
+          Write-Host "node stderr:`n$(Get-Content -LiteralPath $errFile -Raw)"
+        }
+        # stdout = rule names (one per line); stderr diagnostics carry known prefixes.
+        $ruleNames = @($out | Where-Object { $_ -and ($_ -notmatch '^(OAS_RULES_ERROR|CUSTOM_RULES_ERROR|RULE_EXTRACT_ERROR)') })
+        if ($code -eq 0 -and $ruleNames.Count -gt 0) {
+          $ruleNames | Set-Content -LiteralPath $rulesFile -Encoding utf8
+          Write-Host "Resolved active rule set: $($ruleNames.Count) rules."
+        } else {
+          Write-Host "##vso[task.logissue type=warning]Could not resolve full rule set (node exit $code); passed-checks will fall back to the rules observed in this run."
+          Write-Host ($out -join "`n")
+        }
+        exit 0
+
+  - task: PowerShell@2
+    displayName: 'Run Spectral Linting'
+    continueOnError: true
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      script: |
+        $ErrorActionPreference = 'Stop'
+        $spectral = '$(SPECTRAL_PATH)'
+        $json     = '$(Build.ArtifactStagingDirectory)/spectral-result.json'
+        $crashLog = '$(Build.ArtifactStagingDirectory)/spectral-crashes.txt'
+        $specRoot = '$(SPEC_ROOT)'
+        # Prefer the locally-resolved ruleset (URL or repo path already normalised); fall
+        # back to the original value so the step still runs if resolution was skipped.
+        $ruleset  = '$(Build.ArtifactStagingDirectory)/spectral-ruleset.yaml'
+        if (-not (Test-Path -LiteralPath $ruleset)) { $ruleset = '${{ parameters.rulesetUrl }}' }
+
+        Remove-Item -LiteralPath $json, $crashLog -ErrorAction SilentlyContinue
+
+        # Lint ONLY the per-API OpenAPI specification file: apis/<api>/specification.*.
+        # Match at ONE level under 'apis' (NOT -Recurse) so nested specification.* files under
+        # operations/, schemas/, etc. are excluded -- we want exactly one spec per API.
+        $specNames = @('specification.json','specification.yaml','specification.yml')
+        $specFiles = @()
+        if (Test-Path -LiteralPath $specRoot) {
+          $specFiles = Get-ChildItem -LiteralPath $specRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            Get-ChildItem -LiteralPath $_.FullName -File -ErrorAction SilentlyContinue | Where-Object { $specNames -contains $_.Name }
+          } | Select-Object -ExpandProperty FullName
+        }
+
+        Write-Host "Spectral CLI:  $spectral"
+        Write-Host "Spec root:     $specRoot"
+        Write-Host "Ruleset:       $ruleset"
+        Write-Host "Fail severity: ${{ parameters.failSeverity }}"
+        Write-Host "Spec files:    $($specFiles.Count)"
+
+        # Lint each API spec individually so one malformed spec that crashes Spectral/Nimma
+        # ("Cannot read properties of null (reading 'enum')") is isolated to that file instead
+        # of aborting the whole run; every other spec still gets reported.
+        # Per-file wall-clock time is captured so the JUnit report carries real durations
+        # (otherwise the Tests tab shows a misleading "0s Run duration").
+        $all       = New-Object System.Collections.Generic.List[object]
+        $worst     = 0
+        $durations = @{}
+        foreach ($f in $specFiles) {
+          Write-Host "----- Linting: $f"
+          $per = [System.IO.Path]::GetTempFileName()
+          $sw  = [System.Diagnostics.Stopwatch]::StartNew()
+          & $spectral lint --format stylish --format json --output.json $per --fail-severity ${{ parameters.failSeverity }} $f -r $ruleset
+          $code = $LASTEXITCODE
+          $sw.Stop()
+          $durations[$f] = [Math]::Round($sw.Elapsed.TotalSeconds, 3)
+          if ($code -ge 2) {
+            Write-Host "##vso[task.logissue type=warning]Spectral CRASHED on: $f (exit $code)"
+            Add-Content -LiteralPath $crashLog -Value $f
+            if ($code -gt $worst) { $worst = $code }
+          } elseif ($code -eq 1 -and $worst -lt 1) {
+            $worst = 1
+          }
+          if (Test-Path -LiteralPath $per) {
+            $raw = Get-Content -LiteralPath $per -Raw
+            if (-not [string]::IsNullOrWhiteSpace($raw)) {
+              try {
+                $parsed = ConvertFrom-Json -InputObject $raw
+                # PS 5.1 may surface the JSON array as a single nested object; flatten one level
+                # so EACH finding is added individually (not the whole array as one element).
+                foreach ($item in @($parsed)) {
+                  if ($item -is [System.Collections.IEnumerable] -and $item -isnot [string]) {
+                    foreach ($sub in $item) { [void]$all.Add($sub) }
+                  } else {
+                    [void]$all.Add($item)
+                  }
+                }
+              } catch {
+                Write-Host "##vso[task.logissue type=warning]Could not parse Spectral JSON for: $f"
+              }
+            }
+            Remove-Item -LiteralPath $per -ErrorAction SilentlyContinue
+          }
+        }
+
+        # Merge all per-file findings into the single JSON the report builder consumes.
+        if ($all.Count -gt 0) {
+          ($all | ConvertTo-Json -Depth 50) | Set-Content -LiteralPath $json -Encoding utf8
+        } else {
+          '[]' | Set-Content -LiteralPath $json -Encoding utf8
+        }
+
+        # Persist per-file lint durations (seconds) so the report builder can stamp the
+        # JUnit report with real times instead of leaving the run at 0s.
+        $durFile = '$(Build.ArtifactStagingDirectory)/spectral-durations.json'
+        if ($durations.Count -gt 0) {
+          ($durations | ConvertTo-Json -Depth 3) | Set-Content -LiteralPath $durFile -Encoding utf8
+        } else {
+          '{}' | Set-Content -LiteralPath $durFile -Encoding utf8
+        }
+
+        $crashed = if (Test-Path -LiteralPath $crashLog) { @(Get-Content -LiteralPath $crashLog).Count } else { 0 }
+        Write-Host "Linted $($specFiles.Count) spec file(s); $($all.Count) finding(s); $crashed crashed."
+        # 0 = all clean, 1 = findings, 2+ = at least one spec crashed Spectral.
+        Write-Host "##vso[task.setvariable variable=SPECTRAL_EXIT]$worst"
+        # Findings/crashes are surfaced via the published test results, not via this task's
+        # exit code, so end cleanly to avoid a misleading red '##[error]'.
+        $global:LASTEXITCODE = 0
+        exit 0
+
+  - task: PowerShell@2
+    displayName: 'Build severity-labelled lint report'
+    condition: always()
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      script: |
+        $ErrorActionPreference = 'Stop'
+        $json     = '$(Build.ArtifactStagingDirectory)/spectral-result.json'
+        $junit    = '$(Build.ArtifactStagingDirectory)/spectral-result.xml'
+        $specRoot = '$(SPEC_ROOT)'
+        $crashLog = '$(Build.ArtifactStagingDirectory)/spectral-crashes.txt'
+        # Exit code from the 'Run Spectral Linting' step: 0 clean, 1 findings, 2+ Spectral error.
+        $spectralExit = '$(SPECTRAL_EXIT)'
+
+        # Per-file lint durations (seconds) captured by the lint step, keyed by normalized
+        # spec path, so each JUnit testsuite/testcase carries a real time (avoids "0s").
+        $durByNorm = @{}
+        $durFile   = '$(Build.ArtifactStagingDirectory)/spectral-durations.json'
+        if (Test-Path -LiteralPath $durFile) {
+          try {
+            $dobj = Get-Content -LiteralPath $durFile -Raw | ConvertFrom-Json
+            if ($dobj) {
+              foreach ($p in $dobj.PSObject.Properties) {
+                $norm = ($p.Name -replace '\\','/').ToLowerInvariant()
+                $durByNorm[$norm] = [double]$p.Value
+              }
+            }
+          } catch { }
+        }
+
+        # Spec files that crashed Spectral (one absolute path per line) -> flagged as failures.
+        $crashedSet = @{}
+        if (Test-Path -LiteralPath $crashLog) {
+          foreach ($line in (Get-Content -LiteralPath $crashLog)) {
+            $t = $line.Trim()
+            if ($t) { $crashedSet[($t -replace '\\','/').ToLowerInvariant()] = $t }
+          }
+        }
+
+        # Spectral severity codes -> labels used as a prefix in each test name.
+        $sevName = @{ 0 = 'ERROR'; 1 = 'WARN'; 2 = 'INFO'; 3 = 'HINT' }
+
+        $results = @()
+        if (Test-Path -LiteralPath $json) {
+          $raw = Get-Content -LiteralPath $json -Raw
+          if (-not [string]::IsNullOrWhiteSpace($raw)) {
+            $parsed = ConvertFrom-Json -InputObject $raw
+            # Windows PowerShell 5.1 can surface the JSON array as a single nested object;
+            # flatten one level so each element is an individual Spectral result.
+            foreach ($item in @($parsed)) {
+              if ($item -is [System.Collections.IEnumerable] -and $item -isnot [string]) {
+                foreach ($sub in $item) { $results += $sub }
+              } else {
+                $results += $item
+              }
+            }
+          }
+        }
+
+        # Enumerate the SAME per-API specs the lint step used (apis/<api>/specification.*),
+        # one level under 'apis' (NOT -Recurse), so report counts match the lint scope exactly.
+        $specNames = @('specification.json','specification.yaml','specification.yml')
+        $specFiles = @()
+        if (Test-Path -LiteralPath $specRoot) {
+          $specFiles = Get-ChildItem -LiteralPath $specRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            Get-ChildItem -LiteralPath $_.FullName -File -ErrorAction SilentlyContinue | Where-Object { $specNames -contains $_.Name }
+          } | Select-Object -ExpandProperty FullName
+        }
+
+        $doc  = New-Object System.Xml.XmlDocument
+        [void]$doc.AppendChild($doc.CreateXmlDeclaration('1.0','utf-8',$null))
+        $root = $doc.AppendChild($doc.CreateElement('testsuites'))
+
+        function Add-LintSuite {
+          param($Doc, $Root, $SevName, [string]$Source, $Items, $AllCodes, [double]$DurationSeconds = 0)
+          $Items = @($Items)
+          $AllCodes = @($AllCodes)
+          $ts = $Doc.CreateElement('testsuite')
+          $ts.SetAttribute('name', $Source)
+          $ts.SetAttribute('errors','0')
+          # Wall-clock lint time for this spec (whole seconds; no milliseconds).
+          $ts.SetAttribute('time', [string]([int][Math]::Round($DurationSeconds, 0)))
+
+          # Codes that FIRED on this spec become failures; every other rule in the
+          # run-wide rule set is reported as a real PASSED check for this spec.
+          $firedCodes = @{}
+          foreach ($r in $Items) { $c = [string]$r.code; if ($c) { $firedCodes[$c] = $true } }
+          $passedCodes = @($AllCodes | Where-Object { $_ -and -not $firedCodes.ContainsKey($_) })
+
+          $failCount = $Items.Count
+          $passCount = $passedCodes.Count
+          if ($failCount -eq 0 -and $passCount -eq 0) {
+            # Nothing fired anywhere in the run -> a single generic passing check.
+            $ts.SetAttribute('tests','1')
+            $ts.SetAttribute('failures','0')
+            $tc = $Doc.CreateElement('testcase')
+            $tc.SetAttribute('name','No lint issues found')
+            $tc.SetAttribute('classname',$Source)
+            $tc.SetAttribute('time', [string]([int][Math]::Round($DurationSeconds, 0)))
+            [void]$ts.AppendChild($tc)
+            [void]$Root.AppendChild($ts)
+            return
+          }
+
+          $ts.SetAttribute('tests',[string]($failCount + $passCount))
+          $ts.SetAttribute('failures',[string]$failCount)
+          # Report whole-second durations only (no milliseconds). Put the spec's full lint
+          # time on the first testcase and 0 on the rest, so the run total (sum of testcase
+          # times) stays an integer number of seconds that ADO renders as "Xs" / "Xm Ys".
+          $durWhole    = [int][Math]::Round($DurationSeconds, 0)
+          $durAssigned = $false
+
+          # Derive the API folder name from the spec path so passed checks can be linked
+          # back to a specific API (a passed rule applies to the whole spec, not one path).
+          $apiName = ''
+          if ($Source) {
+            $apiName = (($Source -replace '\\','/') -split '/apis/')[-1].Split('/')[0]
+          }
+
+          # One PASSED testcase per rule that did NOT fire on this spec.
+          foreach ($pc in $passedCodes) {
+            $tc = $Doc.CreateElement('testcase')
+            $passName = "[PASS] $pc"
+            if ($apiName) { $passName += " ($apiName)" }
+            $tc.SetAttribute('name',$passName)
+            $tc.SetAttribute('classname',$Source)
+            $tcTime = if (-not $durAssigned) { $durAssigned = $true; $durWhole } else { 0 }
+            $tc.SetAttribute('time', [string]$tcTime)
+            [void]$ts.AppendChild($tc)
+          }
+          foreach ($r in $Items) {
+            $sevRaw = $r.severity
+            if ($sevRaw -is [System.Array]) { $sevRaw = $sevRaw[0] }
+            $sev   = if ($null -ne $sevRaw) { [int]$sevRaw } else { 1 }
+            $label = if ($SevName.ContainsKey($sev)) { $SevName[$sev] } else { "SEV$sev" }
+            $pathStr = if ($r.path) { ($r.path -join '/') } else { '' }
+            $line = 0; $col = 0
+            if ($r.range -and $r.range.start) {
+              $line = [int]$r.range.start.line + 1
+              $col  = [int]$r.range.start.character + 1
+            }
+            $code = [string]$r.code
+            $name = "[$label] $code"
+            if ($pathStr) { $name += " ($pathStr)" }
+
+            $tc = $Doc.CreateElement('testcase')
+            $tc.SetAttribute('name',$name)
+            $tc.SetAttribute('classname',$Source)
+            $tcTime = if (-not $durAssigned) { $durAssigned = $true; $durWhole } else { 0 }
+            $tc.SetAttribute('time', [string]$tcTime)
+
+            # Every finding stays a Failed outcome; severity is conveyed via name + failure type.
+            $fail = $Doc.CreateElement('failure')
+            $fail.SetAttribute('message',[string]$r.message)
+            $fail.SetAttribute('type',$label)
+            $detail = "line $line, col $col, $($r.message) ($code) at path #/$pathStr"
+            [void]$fail.AppendChild($Doc.CreateCDataSection($detail))
+            [void]$tc.AppendChild($fail)
+
+            # Attach the offending spec file to this result (ADO Server 2022.2+/cloud).
+            if ($Source -and (Test-Path -LiteralPath $Source)) {
+              $so = $Doc.CreateElement('system-out')
+              $so.InnerText = "[[ATTACHMENT|$Source]]"
+              [void]$tc.AppendChild($so)
+            }
+            [void]$ts.AppendChild($tc)
+          }
+          [void]$Root.AppendChild($ts)
+        }
+
+        # Index findings by normalized source path so each spec file can be matched
+        # to its findings regardless of slash/case differences.
+        $findingsByNorm = @{}
+        foreach ($r in $results) {
+          $src  = [string]$r.source
+          $norm = ($src -replace '\\','/').ToLowerInvariant()
+          if (-not $findingsByNorm.ContainsKey($norm)) {
+            $findingsByNorm[$norm] = [pscustomobject]@{ Source = $src; Items = @() }
+          }
+          $findingsByNorm[$norm].Items += $r
+        }
+
+        # Denominator for passed-checks = the full ACTIVE rule set resolved from the installed
+        # Spectral packages + ruleset (written by the 'Resolve ruleset' step). Falls back to
+        # the rules observed in this run if resolution was unavailable.
+        $rulesFile  = '$(Build.ArtifactStagingDirectory)/spectral-rules.txt'
+        $firedCodes = @($results | ForEach-Object { [string]$_.code } | Where-Object { $_ } | Select-Object -Unique)
+        $ruleUniverse = @()
+        if (Test-Path -LiteralPath $rulesFile) {
+          $ruleUniverse = @(Get-Content -LiteralPath $rulesFile | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        }
+        # Union so any rule that fired but is missing from the resolved set still appears.
+        $allCodes = @($ruleUniverse + $firedCodes | Where-Object { $_ } | Select-Object -Unique)
+
+        if ($specFiles.Count -eq 0 -and $results.Count -eq 0 -and $crashedSet.Count -eq 0) {
+          Add-LintSuite $doc $root $sevName 'API lint' @() @() 0
+        } else {
+          $seen = @{}
+          foreach ($file in $specFiles) {
+            $norm = ($file -replace '\\','/').ToLowerInvariant()
+            $seen[$norm] = $true
+            $fileDur = if ($durByNorm.ContainsKey($norm)) { [double]$durByNorm[$norm] } else { 0 }
+            if ($crashedSet.ContainsKey($norm)) {
+              # This spec crashed Spectral -> explicit failure (NOT counted as passed).
+              $ts = $doc.CreateElement('testsuite')
+              $ts.SetAttribute('name',$file)
+              $ts.SetAttribute('tests','1'); $ts.SetAttribute('failures','1'); $ts.SetAttribute('errors','0')
+              $ts.SetAttribute('time', [string]([int][Math]::Round($fileDur, 0)))
+              $tc = $doc.CreateElement('testcase')
+              $tc.SetAttribute('name','Spectral crashed while linting this spec')
+              $tc.SetAttribute('classname',$file)
+              $tc.SetAttribute('time', [string]([int][Math]::Round($fileDur, 0)))
+              $fail = $doc.CreateElement('failure')
+              $fail.SetAttribute('message','Spectral threw an error on this specification (unsupported or malformed construct).')
+              $fail.SetAttribute('type','ERROR')
+              [void]$fail.AppendChild($doc.CreateCDataSection("Spectral failed on $file. This spec was NOT linted; fix the spec or exclude it. See the 'Run Spectral Linting' log."))
+              [void]$tc.AppendChild($fail)
+              if (Test-Path -LiteralPath $file) {
+                $so = $doc.CreateElement('system-out'); $so.InnerText = "[[ATTACHMENT|$file]]"; [void]$tc.AppendChild($so)
+              }
+              [void]$ts.AppendChild($tc)
+              [void]$root.AppendChild($ts)
+            } elseif ($findingsByNorm.ContainsKey($norm)) {
+              Add-LintSuite $doc $root $sevName $findingsByNorm[$norm].Source $findingsByNorm[$norm].Items $allCodes $fileDur
+            } else {
+              Add-LintSuite $doc $root $sevName $file @() $allCodes $fileDur
+            }
+          }
+          # Findings whose source was not matched to an enumerated spec file.
+          foreach ($norm in $findingsByNorm.Keys) {
+            if (-not $seen.ContainsKey($norm)) {
+              $unDur = if ($durByNorm.ContainsKey($norm)) { [double]$durByNorm[$norm] } else { 0 }
+              Add-LintSuite $doc $root $sevName $findingsByNorm[$norm].Source $findingsByNorm[$norm].Items $allCodes $unDur
+            }
+          }
+        }
+
+        # Stamp the run-level total as whole seconds (sum of the per-file rounded seconds),
+        # so the Tests tab shows minutes/seconds without milliseconds.
+        $totalDur = 0
+        foreach ($v in $durByNorm.Values) { $totalDur += [int][Math]::Round([double]$v, 0) }
+        $root.SetAttribute('time', [string]$totalDur)
+
+        $doc.Save($junit)
+        $filesWithIssues = $findingsByNorm.Count
+        $crashedFiles = $crashedSet.Count
+        $cleanFiles = [Math]::Max(0, $specFiles.Count - $filesWithIssues - $crashedFiles)
+        Write-Host "Wrote JUnit report: $($results.Count) finding(s) across $filesWithIssues file(s); $crashedFiles crashed; $cleanFiles passed -> $junit"
+
+  - task: PublishTestResults@2
+    displayName: 'Publish Spectral lint results'
+    condition: always()
+    inputs:
+      testResultsFormat: 'JUnit'
+      testResultsFiles: '**/spectral-result.xml'
+      searchFolder: '$(Build.ArtifactStagingDirectory)'
+      testRunTitle: 'API lint results $(Build.SourceBranchName)'
+      failTaskOnFailedTests: false
+
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Spectral raw output'
+    condition: always()
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+      ArtifactName: 'spectral-lint'
+      publishLocation: 'Container'
+
+  # Optional gate: fail the run when findings/crashes are present. Runs LAST so the
+  # report + artifacts are always published first. Controlled by 'failOnLintIssues'.
+  - task: PowerShell@2
+    displayName: 'Fail pipeline on lint findings'
+    condition: and(succeeded(), eq('${{ parameters.failOnLintIssues }}', true))
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      script: |
+        $ErrorActionPreference = 'Stop'
+        # SPECTRAL_EXIT: 0 clean, 1 findings at/above failSeverity, 2+ Spectral crashed a spec.
+        $exit = [int]('0' + '$(SPECTRAL_EXIT)'.Trim())
+        if ($exit -ge 1) {
+          throw "Spectral reported lint findings or crashes (severity threshold '${{ parameters.failSeverity }}', code $exit). See the Tests tab for details."
+        }
+        Write-Host 'No lint findings at or above the configured severity.'
+  # ----------------- Spectral API linting (END) -----------------

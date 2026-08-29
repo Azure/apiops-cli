@@ -123,6 +123,55 @@ export function shouldIncludeResource(
   return true;
 }
 
+export function shouldReconcileResource(
+  descriptor: ResourceDescriptor,
+  filter?: FilterConfig
+): boolean {
+  if (!descriptor.workspace) {
+    return shouldIncludeResource(descriptor, filter);
+  }
+
+  const workspaceDescriptor: ResourceDescriptor = {
+    type: ResourceType.Workspace,
+    nameParts: [descriptor.workspace],
+  };
+  if (!shouldIncludeResource(workspaceDescriptor, filter)) {
+    return false;
+  }
+
+  const workspaceFilter = getWorkspaceFilter(descriptor.workspace, filter);
+  return shouldIncludeResource(descriptor, workspaceFilter);
+}
+
+function getWorkspaceFilter(
+  workspaceName: string,
+  filter?: FilterConfig
+): FilterConfig | undefined {
+  const matchingKey = Object.keys(filter?.workspaceSubFilters ?? {}).find(
+    key => key.toLowerCase() === workspaceName.toLowerCase()
+  );
+  if (!matchingKey) {
+    return undefined;
+  }
+
+  const subFilter = filter?.workspaceSubFilters?.[matchingKey];
+  return subFilter ? {
+    apis: subFilter.apis,
+    apiSubFilters: subFilter.apiSubFilters,
+    backends: subFilter.backends,
+    diagnostics: subFilter.diagnostics,
+    groups: subFilter.groups,
+    loggers: subFilter.loggers,
+    namedValues: subFilter.namedValues,
+    policyFragments: subFilter.policyFragments,
+    products: subFilter.products,
+    schemas: subFilter.schemas,
+    subscriptions: subFilter.subscriptions,
+    tags: subFilter.tags,
+    versionSets: subFilter.versionSets,
+  } : undefined;
+}
+
 /**
  * Resolve the resource filter configured for a workspace.
  * Returns undefined when the workspace has no nested filter.

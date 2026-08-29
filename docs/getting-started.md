@@ -18,7 +18,7 @@ Extract your Azure API Management configuration, version it in git, and publish 
 ## Install
 
 ```bash
-npm install -g @peterhauge/apiops-cli
+npm install -g @azure-tools/apiops-cli
 ```
 
 Verify the installation:

@@ -1,0 +1,261 @@
+# =====================================================================
+# APIM "Delete ALL resources" pipeline  ***DESTRUCTIVE / IRREVERSIBLE***
+#
+# Runs Delete-ALL-API-From-Root.ps1 against a chosen APIM instance to
+# remove ALL APIs, API Version Sets, Products, Subscriptions, Users and
+# Tags (Root or Workspace scope).
+#
+# Safety model (three independent gates):
+#   1. Operator must type the exact APIM name AND type "DELETE" to confirm.
+#   2. Stage 1 runs a DRY RUN first and prints everything that WOULD be
+#      deleted — nothing is removed in this stage.
+#   3. Stage 2 (the real deletion) is a deployment job targeting the
+#      'apim-delete-approval' Environment, which MUST be configured in
+#      Azure DevOps with a manual Approval check. The deletion does not
+#      start until an approver signs off.
+#
+# Auth: Managed Identity on a self-hosted agent (same model as Extract/Publish).
+# =====================================================================
+
+name: 'apim-delete-all-$(Date:yyyyMMdd)-$(Rev:r)'
+
+trigger: none          # run on demand only
+pr: none
+
+parameters:
+  - name: ENVIRONMENT
+    displayName: 'Environment to PURGE (loads variable group apim-<env>; the target APIM is APIM_SERVICE_NAME from that group)'
+    type: string
+    default: 'dev'
+    values:
+      - 'dev'
+      - 'prod'
+
+  - name: confirmServiceName
+    displayName: 'Type the exact APIM service name of the selected environment to confirm'
+    type: string
+
+  - name: confirmDelete
+    displayName: 'Type DELETE to confirm you want to remove ALL resources'
+    type: string
+
+  - name: scopeType
+    displayName: 'Scope'
+    type: string
+    default: 'Root'
+    values:
+      - 'Root'
+      - 'Workspace'
+
+  - name: workspaceId
+    displayName: 'Workspace id (only used when Scope = Workspace)'
+    type: string
+    default: 'none'
+
+  - name: apiVersion
+    displayName: 'APIM REST API version'
+    type: string
+    default: '2024-05-01'
+
+variables:
+  # Environment-specific settings come from the 'apim-<env>' variable group
+  # (Pipelines > Library). Required variables:
+  #   AGENT_POOL              - self-hosted agent pool name
+  #   APIM_RESOURCE_GROUP     - APIM resource group
+  #   APIM_SERVICE_NAME       - APIM service name to purge
+  #   AZURE_SUBSCRIPTION_ID   - target subscription id
+  # Optional (managed identity):
+  #   IDENTITY_TYPE           - 'system' (default) or 'user'
+  #   USER_ASSIGNED_CLIENT_ID - client id of the user-assigned MI (IDENTITY_TYPE=user)
+  - group: 'apim-${{ parameters.ENVIRONMENT }}'
+
+stages:
+# ---------------------------------------------------------------------
+# STAGE 1 — Validate input + DRY RUN (no deletion happens here)
+# ---------------------------------------------------------------------
+- stage: DryRun
+  displayName: 'Validate + Dry run (no deletion)'
+  jobs:
+  - job: dryrun
+    displayName: 'List resources that WOULD be deleted'
+    pool:
+      name: '$(AGENT_POOL)'
+    timeoutInMinutes: 60
+    steps:
+    - checkout: self
+      clean: true
+      fetchDepth: 1
+
+    - task: PowerShell@2
+      displayName: 'Validate confirmation inputs'
+      inputs:
+        targetType: 'inline'
+        pwsh: false
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $service     = '$(APIM_SERVICE_NAME)'
+          $confirmName = '${{ parameters.confirmServiceName }}'
+          $confirmWord = '${{ parameters.confirmDelete }}'
+
+          if ([string]::IsNullOrWhiteSpace($service) -or $service -like '$(*') {
+            throw "APIM_SERVICE_NAME is not defined in the 'apim-${{ parameters.ENVIRONMENT }}' variable group."
+          }
+          if ($service -cne $confirmName) {
+            throw "Confirmation mismatch: 'confirmServiceName' ('$confirmName') does not exactly match the APIM service of environment '${{ parameters.ENVIRONMENT }}' ('$service')."
+          }
+          if ($confirmWord -cne 'DELETE') {
+            throw "You must type DELETE (in capitals) in the 'confirmDelete' parameter to proceed."
+          }
+          Write-Host "Confirmation accepted for APIM service '$service'."
+
+    - task: PowerShell@2
+      displayName: 'az login (managed identity)'
+      inputs:
+        targetType: 'inline'
+        pwsh: false
+        script: |
+          $ErrorActionPreference = 'Stop'
+          # IDENTITY_TYPE / USER_ASSIGNED_CLIENT_ID come from the variable group;
+          # an unexpanded macro means the variable is not defined in the group.
+          $identityType = '$(IDENTITY_TYPE)'
+          if ($identityType -like '$(*') { $identityType = 'system' }
+          $clientId = '$(USER_ASSIGNED_CLIENT_ID)'
+          if ($clientId -eq 'none' -or $clientId -eq '-' -or $clientId -like '$(*') { $clientId = '' }
+
+          if ($identityType -eq 'user') {
+            if ([string]::IsNullOrWhiteSpace($clientId)) {
+              Write-Host "##vso[task.logissue type=error]USER_ASSIGNED_CLIENT_ID is required when IDENTITY_TYPE=user"
+              exit 1
+            }
+            Write-Host 'Logging in with USER-assigned managed identity...'
+            az login --identity --client-id "$clientId" 1>$null
+          } else {
+            Write-Host 'Logging in with SYSTEM-assigned managed identity...'
+            az login --identity 1>$null
+          }
+          if ($LASTEXITCODE -ne 0) { throw "az login failed (exit $LASTEXITCODE)" }
+
+          az account set --subscription "$(AZURE_SUBSCRIPTION_ID)"
+          if ($LASTEXITCODE -ne 0) { throw "az account set failed (exit $LASTEXITCODE)" }
+          az account show --query '{sub:name, tenant:tenantId, user:user.name}' -o table
+
+    - task: PowerShell@2
+      displayName: 'Verify access to APIM'
+      inputs:
+        targetType: 'inline'
+        pwsh: false
+        script: |
+          $ErrorActionPreference = 'Stop'
+          az apim show `
+            --resource-group '$(APIM_RESOURCE_GROUP)' `
+            --name           '$(APIM_SERVICE_NAME)' `
+            --query '{name:name, sku:sku.name, location:location}' -o table
+          if ($LASTEXITCODE -ne 0) { throw "az apim show failed (exit $LASTEXITCODE)" }
+
+    - task: PowerShell@2
+      displayName: 'DRY RUN: list resources to be deleted'
+      inputs:
+        targetType: 'filePath'
+        pwsh: false
+        filePath: '$(Build.SourcesDirectory)/Delete-ALL-API-From-Root.ps1'
+        arguments: >
+          -SubscriptionId '$(AZURE_SUBSCRIPTION_ID)'
+          -ResourceGroup '$(APIM_RESOURCE_GROUP)'
+          -ApimName '$(APIM_SERVICE_NAME)'
+          -ApiVersion '${{ parameters.apiVersion }}'
+          -ScopeType '${{ parameters.scopeType }}'
+          -WorkspaceId '${{ parameters.workspaceId }}'
+          -PerformDeletion $false
+
+    - task: PowerShell@2
+      displayName: 'az logout'
+      condition: always()
+      inputs:
+        targetType: 'inline'
+        pwsh: false
+        script: |
+          try { az logout } catch {}
+          try { az cache purge } catch {}
+          exit 0
+
+# ---------------------------------------------------------------------
+# STAGE 2 — Manual approval gate + REAL deletion
+#   The deployment job below targets the 'apim-delete-approval'
+#   Environment. Configure a manual Approval check on that Environment
+#   in Azure DevOps (Pipelines > Environments > apim-delete-approval >
+#   Approvals and checks) so a human must approve before deletion runs.
+# ---------------------------------------------------------------------
+- stage: Delete
+  displayName: 'Delete ALL resources (requires approval)'
+  dependsOn: DryRun
+  condition: succeeded()
+  jobs:
+  - deployment: delete
+    displayName: 'Run destructive deletion'
+    pool:
+      name: '$(AGENT_POOL)'
+    environment: 'apim-delete-approval'
+    timeoutInMinutes: 120
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+            clean: true
+            fetchDepth: 1
+
+          - task: PowerShell@2
+            displayName: 'az login (managed identity)'
+            inputs:
+              targetType: 'inline'
+              pwsh: false
+              script: |
+                $ErrorActionPreference = 'Stop'
+                # IDENTITY_TYPE / USER_ASSIGNED_CLIENT_ID come from the variable group.
+                $identityType = '$(IDENTITY_TYPE)'
+                if ($identityType -like '$(*') { $identityType = 'system' }
+                $clientId = '$(USER_ASSIGNED_CLIENT_ID)'
+                if ($clientId -eq 'none' -or $clientId -eq '-' -or $clientId -like '$(*') { $clientId = '' }
+
+                if ($identityType -eq 'user') {
+                  if ([string]::IsNullOrWhiteSpace($clientId)) {
+                    Write-Host "##vso[task.logissue type=error]USER_ASSIGNED_CLIENT_ID is required when IDENTITY_TYPE=user"
+                    exit 1
+                  }
+                  Write-Host 'Logging in with USER-assigned managed identity...'
+                  az login --identity --client-id "$clientId" 1>$null
+                } else {
+                  Write-Host 'Logging in with SYSTEM-assigned managed identity...'
+                  az login --identity 1>$null
+                }
+                if ($LASTEXITCODE -ne 0) { throw "az login failed (exit $LASTEXITCODE)" }
+
+                az account set --subscription "$(AZURE_SUBSCRIPTION_ID)"
+                if ($LASTEXITCODE -ne 0) { throw "az account set failed (exit $LASTEXITCODE)" }
+                az account show --query '{sub:name, tenant:tenantId, user:user.name}' -o table
+
+          - task: PowerShell@2
+            displayName: 'DELETE ALL resources from $(APIM_SERVICE_NAME)'
+            inputs:
+              targetType: 'filePath'
+              pwsh: false
+              filePath: '$(Build.SourcesDirectory)/Delete-ALL-API-From-Root.ps1'
+              arguments: >
+                -SubscriptionId '$(AZURE_SUBSCRIPTION_ID)'
+                -ResourceGroup '$(APIM_RESOURCE_GROUP)'
+                -ApimName '$(APIM_SERVICE_NAME)'
+                -ApiVersion '${{ parameters.apiVersion }}'
+                -ScopeType '${{ parameters.scopeType }}'
+                -WorkspaceId '${{ parameters.workspaceId }}'
+                -PerformDeletion $true
+
+          - task: PowerShell@2
+            displayName: 'az logout'
+            condition: always()
+            inputs:
+              targetType: 'inline'
+              pwsh: false
+              script: |
+                try { az logout } catch {}
+                try { az cache purge } catch {}
+                exit 0

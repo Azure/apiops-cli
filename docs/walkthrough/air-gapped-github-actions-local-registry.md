@@ -52,7 +52,7 @@ flowchart LR
 Set up the [GitHub Packages](https://docs.github.com/en/enterprise-server@latest/admin/packages/getting-started-with-github-packages-for-your-enterprise) npm registry on your GHES instance so it serves packages to your air-gapped runners without requiring internet access at install time.
 
 1. **[Enable GitHub Packages on GHES](https://docs.github.com/en/enterprise-server@latest/admin/packages/getting-started-with-github-packages-for-your-enterprise)** — turn on the Packages service for your enterprise and configure the storage backend. The npm registry endpoint is `https://npm.<ghes-host>/`.
-2. **Populate the registry** from a connected workstation by running `npm install @peterhauge/apiops-cli` against the GHES npm registry URL. This pulls the package and its transitive dependencies into the registry cache.
+2. **Populate the registry** from a connected workstation by running `npm install @azure-tools/apiops-cli` against the GHES npm registry URL. This pulls the package and its transitive dependencies into the registry cache.
 3. **Add a project `.npmrc`** that points `registry=` at your GHES npm endpoint and sets `//npm.<ghes-host>/:_authToken=${NODE_AUTH_TOKEN}` so authentication is read from an environment variable injected at workflow runtime. Commit `.npmrc` so workflows and developers resolve against the local registry.
 
 > **Tip:** Follow [Authenticating to GitHub Packages](https://docs.github.com/en/enterprise-server@latest/packages/working-with-a-github-packages-registry/working-with-the-npm-registry#authenticating-to-github-packages) for the exact `.npmrc` format your GHES version expects.

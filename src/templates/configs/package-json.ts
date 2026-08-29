@@ -24,7 +24,7 @@ export function generatePackageJson(config: PackageJsonConfig): string {
     (pkg.dependencies as Record<string, string>).apiops = `file:${posixPath}`;
   } else {
     // Public npm registry mode
-    (pkg.dependencies as Record<string, string>)['@peterhauge/apiops-cli'] = 'latest';
+    (pkg.dependencies as Record<string, string>)['@azure-tools/apiops-cli'] = 'latest';
   }
 
   return JSON.stringify(pkg, null, 2) + '\n';

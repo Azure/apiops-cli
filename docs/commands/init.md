@@ -106,7 +106,7 @@ In interactive mode (the default when running in a terminal), `apiops init` prom
 
 ## Package consumption modes
 
-By default, generated pipeline files reference the published npm package `@peterhauge/apiops-cli`. This is the standard consumption pattern — no local files are needed.
+By default, generated pipeline files reference the published npm package `@azure-tools/apiops-cli`. This is the standard consumption pattern — no local files are needed.
 
 If you pass `--cli-package <path>`, the tarball is copied into a `.apiops/` directory and the generated `package.json` references it as a local file dependency. This mode is useful for local development and testing before the package is published to npm.
 

@@ -507,6 +507,103 @@ describe('ApimClient.putResource provisioning polling', () => {
   const descriptor = { type: ResourceType.NamedValue, nameParts: ['my-nv'] };
   const succeededResource = { name: 'my-nv', properties: { provisioningState: 'Succeeded' } };
 
+  it('should poll Azure-AsyncOperation when an update returns 200', async () => {
+    const operationUrl = 'https://management.azure.com/operations/update-named-value';
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ properties: { provisioningState: 'InProgress' } }), {
+          status: 200,
+          headers: {
+            'Azure-AsyncOperation': operationUrl,
+            'Content-Type': 'application/json',
+          },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: 'Succeeded' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(succeededResource), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      );
+
+    const result = await client.putResource(testContext, descriptor, { name: 'my-nv' });
+
+    expect(result).toEqual(succeededResource);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(fetchSpy.mock.calls[1]?.[0]).toBe(operationUrl);
+  });
+
+  it('should surface a failed Azure-AsyncOperation when an update returns 200', async () => {
+    const operationUrl = 'https://management.azure.com/operations/update-named-value';
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ properties: { provisioningState: 'InProgress' } }), {
+          status: 200,
+          headers: { 'Azure-AsyncOperation': operationUrl },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          status: 'Failed',
+          error: { code: 'InvalidKeyVault', message: 'The referenced Key Vault does not exist.' },
+        }), { status: 200 })
+      );
+
+    await expect(client.putResource(testContext, descriptor, { name: 'my-nv' }))
+      .rejects.toThrow('InvalidKeyVault');
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('should parse a normal 200 response with only a Location header without polling', async () => {
+    const responseBody = { name: 'my-nv', properties: { provisioningState: 'Succeeded' } };
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify(responseBody), {
+        status: 200,
+        headers: { Location: 'https://management.azure.com/resources/my-nv' },
+      })
+    );
+
+    await expect(client.putResource(testContext, descriptor, {})).resolves.toEqual(responseBody);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('should not poll a non-HTTPS async operation URL', async () => {
+    const responseBody = { name: 'my-nv', properties: { provisioningState: 'Succeeded' } };
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify(responseBody), {
+        status: 200,
+        headers: { 'Azure-AsyncOperation': 'http://management.azure.com/operations/unsafe' },
+      })
+    );
+
+    await expect(client.putResource(testContext, descriptor, {})).resolves.toEqual(responseBody);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('should not poll async headers for association resources that do not support GET', async () => {
+    const association = {
+      type: ResourceType.ProductApi,
+      nameParts: ['starter', 'my-api'],
+    };
+    fetchSpy.mockResolvedValueOnce(
+      new Response('', {
+        status: 201,
+        headers: {
+          'Azure-AsyncOperation': 'https://management.azure.com/operations/association',
+        },
+      })
+    );
+
+    await expect(client.putResource(testContext, association, {})).resolves.toEqual({});
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('should poll when PUT returns 201 and eventually return the resource', async () => {
     fetchSpy
       // Initial PUT → 201

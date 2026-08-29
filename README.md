@@ -13,7 +13,7 @@
 **Prerequisites:** An Azure subscription with an existing APIM resource, and Node.js ≥ 22.
 
 ```bash
-npm install -g @peterhauge/apiops-cli
+npm install -g @azure-tools/apiops-cli
 ```
 
 ## Authentication
@@ -45,8 +45,10 @@ Extract APIM service configuration to local artifact files.
 | `--resource-group <rg>` | *(required)* | Azure resource group |
 | `--service-name <name>` | *(required)* | APIM service name |
 | `--output <dir>` | `./apim-artifacts` | Output directory |
-| `--filter <path>` | | Extract only matching resources |
+| `--filter <path>` | | Extract matching resources; supports wildcards and `!` exclusions |
 | `--no-transitive` | | Skip transitive dependencies |
+
+Filter files support exact names, wildcards, quoted `!`-prefixed exclusions, and the singleton `policies` key. See the [extract command filter reference](docs/commands/extract.md#filter-configuration) for all 17 filter keys and the [filtering guide](docs/guides/filtering-resources.md) for detailed examples.
 
 ```bash
 apiops extract --help
@@ -142,6 +144,30 @@ apiops init \
   --ci github-actions \
   --environments dev,prod
 ```
+
+### `apiops apic`
+
+Back up and restore Azure API Center (`Microsoft.ApiCenter`) services. This command group is separate from the Azure API Management `extract` and `publish` commands.
+
+| Command | Description |
+|---------|-------------|
+| `apiops apic extract` | Extract API Center configuration and API definition specifications to `./apic-artifacts` |
+| `apiops apic publish` | Publish API Center artifacts and specifications to an API Center service |
+
+```bash
+# Back up an API Center service
+apiops apic extract \
+  --resource-group <rg> \
+  --service-name <name>
+
+# Preview a restore without applying changes
+apiops apic publish \
+  --resource-group <rg> \
+  --service-name <name> \
+  --dry-run
+```
+
+See the [`apiops apic` command reference](docs/commands/apic.md) for flags, workspace extraction, and specification options.
 
 ## Global options
 

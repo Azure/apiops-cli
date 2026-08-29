@@ -653,6 +653,7 @@ describe('api-extractor', () => {
       );
 
       expect(result.wiki).toBe(false);
+      expect(result.errorCount).toBe(1);
     });
 
     it('should return specification=false and not throw when getApiSpecification throws', async () => {
@@ -673,6 +674,7 @@ describe('api-extractor', () => {
       );
 
       expect(result.specification).toBe(false);
+      expect(result.errorCount).toBe(1);
     });
 
     it('should record error status when an individual revision getResource throws', async () => {
@@ -701,7 +703,7 @@ describe('api-extractor', () => {
       expect(result.revisions[0]?.status).toBe('error');
     });
 
-    it('should return empty revisions and not throw when listApiRevisions throws', async () => {
+    it('should report an error revision and not throw when listApiRevisions throws', async () => {
       const client = createMockClient({
         // eslint-disable-next-line require-yield
         listApiRevisions: async function* () {
@@ -719,10 +721,12 @@ describe('api-extractor', () => {
         '/output'
       );
 
-      expect(result.revisions).toHaveLength(0);
+      expect(result.revisions).toHaveLength(1);
+      expect(result.revisions[0]?.status).toBe('error');
+      expect(result.errorCount).toBe(1);
     });
 
-    it('should skip revision when getResource returns undefined (revision not found)', async () => {
+    it('should report an error when a listed revision disappears before fetch', async () => {
       const client = createMockClient({
         listApiRevisions: async function* () {
           yield { apiRevision: '2' };
@@ -739,8 +743,10 @@ describe('api-extractor', () => {
         '/output'
       );
 
-      // Revision listed but getResource returned undefined — not added to results
-      expect(result.revisions).toHaveLength(0);
+      expect(result.revisions).toHaveLength(1);
+      expect(result.revisions[0]?.status).toBe('error');
+      expect(result.errorCount).toBe(1);
+
       expect(store.writeResource).not.toHaveBeenCalled();
     });
 
@@ -1186,6 +1192,35 @@ describe('product-extractor', () => {
       );
 
       expect(result.tags).toEqual([]);
+      expect(result.errorCount).toBe(1);
+    });
+
+    it('counts failed product associations and wiki extraction', async () => {
+      const client = createMockClient();
+      // eslint-disable-next-line require-yield
+      client.listResources = async function* (_ctx, type) {
+        if (type === ResourceType.ProductApi || type === ResourceType.ProductGroup) {
+          throw new Error(`${type} list failed`);
+        }
+      };
+      client.getResource = vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
+        if (desc.type === ResourceType.ProductWiki) {
+          throw new Error('product wiki failed');
+        }
+        return undefined;
+      });
+      const store = createMockStore();
+
+      const result = await extractProductResources(
+        client, store, testContext,
+        { type: ResourceType.Product, nameParts: ['starter'] },
+        '/output'
+      );
+
+      expect(result.apis).toEqual([]);
+      expect(result.groups).toEqual([]);
+      expect(result.wiki).toBe(false);
+      expect(result.errorCount).toBe(3);
     });
   });
 });

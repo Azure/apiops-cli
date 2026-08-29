@@ -130,7 +130,7 @@
    - Updated local mode tests to use `{ mode: 'local', tarballRelPath: '...' }`
    - Added 6 new tests for npm mode covering:
      - Valid JSON generation
-     - `@peterhauge/apiops-cli` dependency with `latest` version
+     - `@azure-tools/apiops-cli` dependency with `latest` version
      - No `apiops` dependency (should be undefined)
      - Standard package.json properties (private, name, version)
      - Newline termination

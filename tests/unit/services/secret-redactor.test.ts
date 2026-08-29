@@ -157,5 +157,24 @@ describe('secret-redactor', () => {
       expect(redactedContent).toBe(policyXml);
       expect(findings).toEqual([]);
     });
+
+    it('should not redact policy expressions', () => {
+      const policyXml = `<policies>
+    <inbound>
+      <set-variable name="workloadBearer" value="@(context.Request.Headers.GetValueOrDefault(&quot;x-api-key&quot;, &quot;&quot;))" />
+      <set-header name="Authorization" exists-action="override">
+        <value>@("Bearer " + (string)context.Variables["workloadBearer"])</value>
+      </set-header>
+      <set-header name="Authorization"><value>Bearer @(context.Variables["token"])</value></set-header>
+      <set-header name="api-key"><value>@{ return context.Variables.GetValueOrDefault&lt;string&gt;("key"); }</value></set-header>
+      <set-query-parameter name="sig"><value>@(context.Request.Headers.GetValueOrDefault("x-sig"))</value></set-query-parameter>
+    </inbound>
+  </policies>`;
+
+      const { redactedContent, findings } = redactPolicySecrets(policyXml);
+
+      expect(redactedContent).toBe(policyXml);
+      expect(findings).toEqual([]);
+    });
   });
 });

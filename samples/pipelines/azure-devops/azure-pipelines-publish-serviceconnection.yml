@@ -1,0 +1,292 @@
+# =====================================================================
+# APIM Publish pipeline — authenticates via an Azure DevOps SERVICE
+# CONNECTION (no Managed Identity required).
+#
+# Applies extracted artifacts to a destination APIM. Reads artifacts
+# from the branch the pipeline is QUEUED ON (use the built-in
+# "Branch/tag" dropdown in the Run pipeline dialog; pick one of the
+# apim-extract/* branches produced by the Extract pipeline).
+# Artifacts are expected under the configured `targetRepoFolder`.
+#
+# Use this variant when:
+#   * The self-hosted agent does NOT have a Managed Identity (typical
+#     for on-prem Azure DevOps Server agents running on plain VMs).
+#   * You already manage Azure auth through a Service Connection
+#     (workload-identity federation, service principal + secret, or
+#     service principal + certificate).
+#
+# Differences vs. azure-pipelines-publish-mi.yml:
+#   * `az login` step is replaced by AzureCLI@2 (handles auth itself).
+#   * Service connection name comes from the per-environment variable
+#     group (AZURE_SERVICE_CONNECTION).
+#   * Removes identityType / userAssignedClientId (irrelevant for SC).
+# Everything else (artifact validation, apiops install/upgrade,
+# publish modes, overrides, delete-unmatched, dry-run) is the same.
+# =====================================================================
+
+name: 'apim-publish-sc-$(Date:yyyyMMdd)-$(Rev:r)'
+
+trigger: none          # run on demand
+pr: none
+
+parameters:
+  - name: targetRepoFolder
+    displayName: 'Folder (inside repo) where artifacts live on the selected branch'
+    type: string
+    default: 'apim-artifacts'
+
+  - name: ENVIRONMENT
+    displayName: 'Destination environment (loads variable group apim-<env>)'
+    type: string
+    default: 'dev'
+    values:
+      - 'dev'
+      - 'prod'
+
+  - name: apiopsVersion
+    displayName: 'apiops-cli npm version (installed if missing)'
+    type: string
+    default: 'latest'
+
+  - name: publishMode
+    displayName: 'Publish mode'
+    type: string
+    default: 'publish-all-artifacts-in-repo'
+    values:
+      - 'publish-all-artifacts-in-repo'
+      - 'publish-artifacts-in-last-commit'
+
+  - name: overridesFile
+    displayName: 'Overrides file (relative to repo root, e.g. configuration.prod.yaml). Replaces env-specific values (namedValues, backends.url, apis.serviceUrl, loggers.resourceId, diagnostics.loggerId) at publish time. Use "none" to skip.'
+    type: string
+    default: 'none'
+
+  - name: deleteUnmatched
+    displayName: 'Delete resources in APIM that are not in the source artifacts (--delete-unmatched). Cannot be combined with publish-artifacts-in-last-commit.'
+    type: boolean
+    default: false
+
+  - name: dryRun
+    displayName: 'Dry-run (do not apply changes; prints planned create/update/delete actions)'
+    type: boolean
+    default: false
+
+variables:
+  # Environment-specific settings come from the 'apim-<env>' variable group
+  # (Pipelines > Library). Required variables:
+  #   AGENT_POOL               - self-hosted agent pool name
+  #   APIM_RESOURCE_GROUP      - destination APIM resource group
+  #   APIM_SERVICE_NAME        - destination APIM service name
+  #   AZURE_SERVICE_CONNECTION - ARM service connection used for Azure / APIM auth
+  #     (the pipeline must be authorized to use it)
+  - group: 'apim-${{ parameters.ENVIRONMENT }}'
+
+jobs:
+- job: publish
+  displayName: 'apiops publish via Service Connection [${{ parameters.ENVIRONMENT }}]'
+  pool:
+    name: '$(AGENT_POOL)'
+  timeoutInMinutes: 60
+  steps:
+
+  # Check out the branch selected in the Run pipeline dialog (Build.SourceBranch).
+  - checkout: self
+    clean: true
+    fetchDepth: 1
+
+  - task: PowerShell@2
+    displayName: 'Validate selected branch contains artifacts'
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      workingDirectory: '$(Build.SourcesDirectory)'
+      script: |
+        $ErrorActionPreference = 'Stop'
+
+        # Build.SourceBranch is the full ref (e.g. refs/heads/apim-extract/apim-dev-...)
+        # Build.SourceBranchName is just the leaf segment.
+        $ref      = '$(Build.SourceBranch)'
+        $shortRef = '$(Build.SourceBranchName)'
+        Write-Host "Running against ref:  $ref"
+        Write-Host "Short branch name:    $shortRef"
+        Write-Host "Commit:               $(Build.SourceVersion)"
+
+        $folder = Join-Path '$(Build.SourcesDirectory)' '${{ parameters.targetRepoFolder }}'
+        if (-not (Test-Path $folder)) {
+          throw "Expected artifacts folder '$folder' not found on branch '$ref'. Pick a branch produced by the Extract pipeline."
+        }
+        Write-Host "Artifacts folder: $folder"
+
+  # -------- Sanity check that the SC can see the destination APIM --------
+  - task: AzureCLI@2
+    displayName: 'Verify access to destination APIM (service connection)'
+    inputs:
+      azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
+      scriptType: 'ps'                 # Windows PowerShell 5.1
+      scriptLocation: 'inlineScript'
+      inlineScript: |
+        $ErrorActionPreference = 'Stop'
+        az account show --query '{sub:name, tenant:tenantId, user:user.name}' -o table
+
+        az apim show `
+          --resource-group '$(APIM_RESOURCE_GROUP)' `
+          --name           '$(APIM_SERVICE_NAME)' `
+          --query '{name:name, sku:sku.name, location:location}' -o table
+        if ($LASTEXITCODE -ne 0) { throw "az apim show failed (exit $LASTEXITCODE)" }
+
+        # Surface the subscription ID resolved from the service connection
+        $subId = (az account show --query id -o tsv).Trim()
+        Write-Host "##vso[task.setvariable variable=AZURE_SUBSCRIPTION_ID]$subId"
+
+  # -------- Check / install apiops CLI (separate step for easy version tracking) --------
+  # Auth is not required to resolve/install the CLI, so this runs as a plain
+  # PowerShell step (not via the service connection).
+  - task: PowerShell@2
+    displayName: 'Check apiops-cli version'
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      script: |
+        $ErrorActionPreference = 'Stop'
+        # Delegates Node/apiops version check + install to the shared repo script.
+        # It sets APIOPS_PATH / APIOPS_VERSION for downstream steps and treats an
+        # unreachable npm registry as a warning when apiops is already installed.
+        & "$(Build.SourcesDirectory)/Check-ApiopsCliVersion.ps1" `
+          -ApiopsVersion '${{ parameters.apiopsVersion }}' `
+          -AllowStaleOnRegistryFailure
+
+        # If the online apiops repository was unreachable, finish this step as a
+        # warning (orange) without failing the pipeline; the locally installed
+        # apiops version is used for the run.
+        if ($global:ApiopsRepoReachable -eq $false) {
+          Write-Host "##vso[task.logissue type=warning]apiops online repository was unreachable; using locally installed apiops version $global:ApiopsVersion."
+          Write-Host "##vso[task.complete result=SucceededWithIssues;]apiops online repository unreachable"
+        }
+
+  # -------- Run apiops publish (Service Connection injects creds for CLI) --------
+  - task: AzureCLI@2
+    displayName: 'Run APIM Publish'
+    inputs:
+      azureSubscription: '$(AZURE_SERVICE_CONNECTION)'
+      scriptType: 'ps'
+      scriptLocation: 'inlineScript'
+      addSpnToEnvironment: true
+      workingDirectory: '$(Build.SourcesDirectory)'
+      inlineScript: |
+        $ErrorActionPreference = 'Stop'
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+        # ---- Hand SC credentials to DefaultAzureCredential (used by apiops) ----
+        # AzureCLI@2 with addSpnToEnvironment exposes these PowerShell variables
+        # for the script: $env:servicePrincipalId, $env:servicePrincipalKey,
+        # $env:tenantId, and $env:idToken (for federated SCs).
+        if ($env:servicePrincipalId) {
+          $env:AZURE_CLIENT_ID     = $env:servicePrincipalId
+          $env:AZURE_TENANT_ID     = $env:tenantId
+          if ($env:servicePrincipalKey) {
+            # Service principal + secret SCs
+            $env:AZURE_CLIENT_SECRET = $env:servicePrincipalKey
+            Write-Host 'Service connection type: service principal + secret'
+          } elseif ($env:idToken) {
+            # Workload-identity federation SCs
+            $env:AZURE_FEDERATED_TOKEN = $env:idToken
+            Write-Host 'Service connection type: workload identity federation'
+          } else {
+            Write-Host 'Service connection has no secret / id token exposed; relying on ambient az CLI session.'
+          }
+        } else {
+          Write-Host 'addSpnToEnvironment did not expose SPN vars; relying on ambient az CLI session.'
+        }
+        $env:AZURE_SUBSCRIPTION_ID = '$(AZURE_SUBSCRIPTION_ID)'
+
+        # ---- apiops CLI resolved/installed by the 'Check apiops-cli version' step ----
+        $apiopsPath = '$(APIOPS_PATH)'
+        Write-Host "Using apiops CLI: $apiopsPath (version $(APIOPS_VERSION))"
+
+        $inputFolder = Join-Path '$(Build.SourcesDirectory)' '${{ parameters.targetRepoFolder }}'
+        Write-Host "Publishing from: $inputFolder"
+
+        $publishMode     = '${{ parameters.publishMode }}'
+        $deleteUnmatched = ('${{ parameters.deleteUnmatched }}' -eq 'True')
+
+        # Per apiops docs: --delete-unmatched requires a full repo scan,
+        # so it cannot be combined with incremental (--commit-id) publish.
+        if ($deleteUnmatched -and $publishMode -eq 'publish-artifacts-in-last-commit') {
+          throw "'deleteUnmatched' cannot be combined with publishMode 'publish-artifacts-in-last-commit'. Use 'publish-all-artifacts-in-repo' instead."
+        }
+
+        $cliArgs = @(
+          'publish',
+          '--resource-group',  '$(APIM_RESOURCE_GROUP)',
+          '--service-name',    '$(APIM_SERVICE_NAME)',
+          '--subscription-id', '$(AZURE_SUBSCRIPTION_ID)',
+          '--source',          "$inputFolder"
+        )
+
+        # Incremental publish: limit to resources changed in the triggering commit
+        if ($publishMode -eq 'publish-artifacts-in-last-commit') {
+          $cliArgs += @('--commit-id', '$(Build.SourceVersion)')
+          Write-Host "Incremental publish for commit $(Build.SourceVersion)"
+        } else {
+          Write-Host 'Full publish of all artifacts in repo'
+        }
+
+        # Optional overrides file (relative to repo root)
+        $overrides = '${{ parameters.overridesFile }}'
+        if (-not [string]::IsNullOrWhiteSpace($overrides) -and $overrides -ne 'none' -and $overrides -ne '-') {
+          $overridesPath = Join-Path '$(Build.SourcesDirectory)' $overrides
+          if (-not (Test-Path $overridesPath)) {
+            throw "Overrides file '$overridesPath' not found on the selected branch."
+          }
+          if (-not ($overridesPath -match '\.ya?ml$')) {
+            throw "Overrides file '$overridesPath' does not have a .yaml/.yml extension. Provide a valid YAML (.yaml/.yml) overrides file."
+          }
+          $cliArgs += @('--overrides', $overridesPath)
+          Write-Host "Using overrides file: $overridesPath"
+          Write-Host '----- Overrides file contents -----'
+          Get-Content -LiteralPath $overridesPath | Out-String | Write-Host
+          Write-Host '-----------------------------------'
+        } else {
+          Write-Host 'No overrides file specified; publishing artifact values as-is.'
+        }
+
+        if ($deleteUnmatched) {
+          $cliArgs += '--delete-unmatched'
+          Write-Host '##vso[task.logissue type=warning]--delete-unmatched is ENABLED. Resources present in APIM but absent from the source folder will be DELETED.'
+        }
+
+        if ('${{ parameters.dryRun }}' -eq 'True') {
+          $cliArgs += '--dry-run'
+          Write-Host 'Dry-run mode: no changes will be applied to Azure.'
+        }
+
+        Write-Host "apiops $($cliArgs -join ' ')"
+        & $apiopsPath @cliArgs
+        $exit = $LASTEXITCODE
+        # IMPORTANT: reset $LASTEXITCODE immediately. Otherwise the
+        # PowerShell host exits with apiops's exit code (1) and the
+        # PowerShell@2 / AzureCLI@2 task is marked Failed regardless of
+        # any task.complete logging command we emit below.
+        $global:LASTEXITCODE = 0
+        # apiops-cli exit codes (see docs/reference/exit-codes.md):
+        #   0 = full success
+        #   1 = partial failure (some resources failed, others succeeded)
+        #   2 = fatal (auth / config / network / all resources failed)
+        # Treat partial failure as a WARNING so the pipeline run is flagged
+        # (SucceededWithIssues) but downstream steps still execute. Fatal
+        # errors keep failing the job.
+        switch ($exit) {
+          0 {
+            Write-Host 'apiops publish succeeded (exit 0).'
+            exit 0
+          }
+          1 {
+            Write-Host "##vso[task.logissue type=warning]apiops publish completed with PARTIAL failures (exit 1) - some resources failed to publish. See output above."
+            Write-Host "##vso[task.complete result=SucceededWithIssues;]"
+            # exit 0 so the task itself reports success; the
+            # task.complete directive above downgrades it to SucceededWithIssues.
+            exit 0
+          }
+          2 { throw "apiops publish FATAL error (exit 2) - publish could not proceed." }
+          default { throw "apiops publish failed (exit $exit)." }
+        }

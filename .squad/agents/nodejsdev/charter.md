@@ -41,7 +41,7 @@ These are the concrete conventions I enforce in this project.
 - CLI commands wire Commander options to service functions — thin layer, no business logic in commands
 
 #### Dual-Mode Package Consumption (Decision: 2026-04-29)
-- **Public npm mode** (default): `--cli-package` omitted → generates `package.json` referencing `"@peterhauge/apiops-cli": "latest"` from npm
+- **Public npm mode** (default): `--cli-package` omitted → generates `package.json` referencing `"@azure-tools/apiops-cli": "latest"` from npm
 - **Local tarball mode**: `--cli-package <path>` → copies tarball to `.apiops/` directory, generates `package.json` with `"apiops": "file:.apiops/{tarball}"`
 - Both modes must work — backward compatibility is non-negotiable
 

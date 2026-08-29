@@ -383,25 +383,21 @@ export class ApimClient implements IApimClient {
       body: JSON.stringify(payload),
     });
 
-    // Poll for long-running operations (201/202 responses).
+    // Poll for long-running operations signaled by ARM response headers, including
+    // updates that return 200 while provisioning continues asynchronously.
     // Skip polling for association resources that don't support GET (supportsGet: false in metadata).
-    // Check status BEFORE reading the body so the body stream is not consumed
-    // unnecessarily — and to avoid JSON-parsing failures when the 201/202 body
-    // is XML (e.g. policy endpoints that echo back raw XML on creation).
+    const metadata = RESOURCE_TYPE_METADATA[descriptor.type];
+    const asyncUrl = this.extractAsyncOperationUrl(response, response.status !== 200);
+    if (asyncUrl && metadata.supportsGet) {
+      return await this.pollAsyncOperation(asyncUrl, context, descriptor);
+    }
+
+    // Headerless creates may still provision asynchronously. Check status before
+    // reading the body to avoid consuming XML returned by policy endpoints.
     if (response.status === 201 || response.status === 202) {
-      const metadata = RESOURCE_TYPE_METADATA[descriptor.type];
       if (!metadata.supportsGet) {
-        // Association resources don't support GET - return empty on success
         logger.debug(`Skipping provisioning poll for association resource: ${buildResourceLabel(descriptor)}`);
         return {};
-      }
-
-      // Prefer ARM async operation polling when the service provides an
-      // Azure-AsyncOperation or Location header — these long-running operations
-      // (e.g. large API spec imports) may take minutes to complete.
-      const asyncUrl = this.extractAsyncOperationUrl(response);
-      if (asyncUrl) {
-        return await this.pollAsyncOperation(asyncUrl, context, descriptor);
       }
 
       return await this.pollProvisioningState(context, descriptor);
@@ -788,16 +784,23 @@ export class ApimClient implements IApimClient {
    * Validates the URL points to a known ARM management endpoint to prevent
    * leaking the bearer token to an unexpected host.
    */
-  private extractAsyncOperationUrl(response: Response): string | undefined {
+  private extractAsyncOperationUrl(
+    response: Response,
+    includeLocation = true
+  ): string | undefined {
     const asyncOpUrl = response.headers.get('Azure-AsyncOperation')
       ?? response.headers.get('Operation-Location')
-      ?? response.headers.get('Location');
+      ?? (includeLocation ? response.headers.get('Location') : undefined);
 
     if (!asyncOpUrl) return undefined;
 
     // Validate URL host is a known ARM management endpoint
     try {
       const parsed = new URL(asyncOpUrl);
+      if (parsed.protocol !== 'https:') {
+        logger.warn(`Ignoring non-HTTPS async operation URL: ${asyncOpUrl}`);
+        return undefined;
+      }
       const isArmHost = ApimClient.ARM_HOSTS.some(
         (host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`)
       );

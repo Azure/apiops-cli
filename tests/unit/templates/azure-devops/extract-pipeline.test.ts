@@ -123,7 +123,8 @@ describe('azure-devops/extract-pipeline', () => {
     it('should use npm ci to install dependencies (uses tgz from package.json)', () => {
       const pipeline = generateExtractPipeline(defaultConfig);
       expect(pipeline).toContain('npm ci');
-      expect(pipeline).toContain('npx @peterhauge/apiops-cli extract');
+      expect(pipeline).toContain('npx @azure-tools/apiops-cli extract');
+      expect(pipeline).toContain('--remove-stale');
     });
   });
 });

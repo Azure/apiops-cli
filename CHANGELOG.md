@@ -5,6 +5,31 @@ All notable changes to the APIOps CLI are documented in this file.
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/) with alpha pre-release tags.
 
+## [1.0.0] — 2026-08-27
+
+### Breaking Changes
+
+- **npm package moved to the Microsoft-owned scope** — install `@azure-tools/apiops-cli` instead of `@peterhauge/apiops-cli`; generated repositories, pipelines, documentation, and tarball names now use the new package name ([#239](https://github.com/Azure/apiops-cli/pull/239))
+
+### Features
+
+- **Azure API Center backup and restore** — new `apiops apic extract` and `apiops apic publish` commands round-trip API Center resources and API definition specifications ([#232](https://github.com/Azure/apiops-cli/pull/232))
+- **Filter exclusions** — filter entries can use a leading `!` to exclude exact names or wildcard patterns, including inside API and workspace sub-filters ([#222](https://github.com/Azure/apiops-cli/pull/222))
+- **Stale artifact cleanup** — `apiops extract --remove-stale` safely reconciles managed artifacts after a fully successful extraction, with generated pipelines opting into cleanup ([#246](https://github.com/Azure/apiops-cli/pull/246))
+
+### Bug Fixes
+
+- **Service-level policy filtering** — extraction now honors the `policies` filter for the service policy and documents the supported nested filter syntax ([#221](https://github.com/Azure/apiops-cli/pull/221))
+- **Operation schema links and dynamic authorization policies** — publishing preserves schema-bound OpenAPI request and response representations, while extraction no longer redacts dynamic `Authorization` policy expressions as secrets ([#239](https://github.com/Azure/apiops-cli/pull/239))
+- **HTTP 200 asynchronous updates** — trusted ARM async-operation responses are polled to completion even when the initial APIM response is HTTP 200 ([#243](https://github.com/Azure/apiops-cli/pull/243))
+- **GitHub secret preservation** — identity setup inventories existing repository and environment secrets and requires an explicit reuse, rename, or overwrite decision ([#244](https://github.com/Azure/apiops-cli/pull/244))
+
+### Docs & Testing
+
+- **Azure DevOps pipeline samples** — pipeline examples now live under `samples/pipelines/azure-devops` ([#241](https://github.com/Azure/apiops-cli/pull/241))
+- **Filter documentation alignment** — README and filter guides now cover wildcard exclusions, the singleton policy key, and supported nested API filter syntax ([#242](https://github.com/Azure/apiops-cli/pull/242))
+- **API Center command reference** — README and command documentation now describe `apiops apic` discovery, flags, defaults, examples, authentication, and output behavior ([#247](https://github.com/Azure/apiops-cli/pull/247))
+
 ## [0.4.0-alpha.2] — 2026-07-02
 
 ### Bug Fixes
@@ -140,7 +165,7 @@ This project uses [Semantic Versioning](https://semver.org/) with alpha pre-rele
 ### Features
 
 - **Azure DevOps `init`** — interactive Copilot prompt with managed identity / WIF support ([#31](https://github.com/Azure/apiops-cli/pull/31))
-- **Public npm registry support** — install directly from `@peterhauge/apiops-cli` on npmjs.com ([#28](https://github.com/Azure/apiops-cli/pull/28))
+- **Public npm registry support** — install directly from `@azure-tools/apiops-cli` on npmjs.com ([#28](https://github.com/Azure/apiops-cli/pull/28))
 
 ### Bug Fixes
 
@@ -166,6 +191,7 @@ This project uses [Semantic Versioning](https://semver.org/) with alpha pre-rele
 - **Initial release** — core extract, publish, and init commands for Azure API Management ([#15](https://github.com/Azure/apiops-cli/pull/15))
 - **CodeQL analysis** — automated security scanning workflow ([#19](https://github.com/Azure/apiops-cli/pull/19))
 
+[1.0.0]: https://github.com/Azure/apiops-cli/compare/v0.4.0-alpha.2...v1.0.0
 [0.4.0-alpha.2]: https://github.com/Azure/apiops-cli/compare/v0.4.0-alpha.0...v0.4.0-alpha.2
 [0.4.0-alpha.0]: https://github.com/Azure/apiops-cli/compare/v0.3.0-alpha.0...v0.4.0-alpha.0
 [0.3.0-alpha.0]: https://github.com/Azure/apiops-cli/compare/v0.2.1-alpha.0...v0.3.0-alpha.0

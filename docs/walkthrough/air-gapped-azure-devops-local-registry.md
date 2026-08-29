@@ -94,7 +94,7 @@ az devops invoke \
 
 ### 1.2 Configure an upstream source
 
-**[Configure an upstream source](https://learn.microsoft.com/en-us/azure/devops/artifacts/how-to/set-up-upstream-sources?view=azure-devops)** pointing to `https://registry.npmjs.org`. The upstream is only used during controlled sync windows; once `@peterhauge/apiops-cli` and its dependencies are cached, the feed serves them locally.
+**[Configure an upstream source](https://learn.microsoft.com/en-us/azure/devops/artifacts/how-to/set-up-upstream-sources?view=azure-devops)** pointing to `https://registry.npmjs.org`. The upstream is only used during controlled sync windows; once `@azure-tools/apiops-cli` and its dependencies are cached, the feed serves them locally.
 
 ```bash
 cat > feed-upstream.json <<'JSON'
@@ -121,10 +121,10 @@ az devops invoke \
 ```
 ### 1.3 Populate the feed
 
-**[Populate the feed](https://learn.microsoft.com/en-us/azure/devops/artifacts/npm/npmrc?view=azure-devops)** from a connected workstation by running `npm install @peterhauge/apiops-cli` against the feed registry URL. This pulls the package and its transitive dependencies into the feed cache.
+**[Populate the feed](https://learn.microsoft.com/en-us/azure/devops/artifacts/npm/npmrc?view=azure-devops)** from a connected workstation by running `npm install @azure-tools/apiops-cli` against the feed registry URL. This pulls the package and its transitive dependencies into the feed cache.
 
 ```bash
-npm install @peterhauge/apiops-cli \
+npm install @azure-tools/apiops-cli \
     --registry "$FEED_REGISTRY" \
     --//pkgs.dev.azure.com/${ORG}/${PROJECT}/_packaging/${FEED}/npm/registry/:_authToken="$(az account get-access-token --resource https://app.vssps.visualstudio.com --query accessToken -o tsv)"
 ```
@@ -272,7 +272,7 @@ Sync the feed during a connectivity window to pull the new version, then update 
 
 ```bash
 # Update package.json to the latest CLI version available in the feed
-npm install @peterhauge/apiops-cli --registry "$FEED_REGISTRY" --//pkgs.dev.azure.com/${ORG}/${PROJECT}/_packaging/${FEED}/npm/registry/:_authToken="$(az account get-access-token --resource https://app.vssps.visualstudio.com --query accessToken -o tsv)"
+npm install @azure-tools/apiops-cli --registry "$FEED_REGISTRY" --//pkgs.dev.azure.com/${ORG}/${PROJECT}/_packaging/${FEED}/npm/registry/:_authToken="$(az account get-access-token --resource https://app.vssps.visualstudio.com --query accessToken -o tsv)"
 
 # Rebuild lock file from package.json
 npm install

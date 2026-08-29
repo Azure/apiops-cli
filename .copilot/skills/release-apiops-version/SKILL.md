@@ -1,7 +1,7 @@
 # Skill: Release apiops-cli Version
 
 **Confidence:** high
-**Scope:** Any agent (or human) cutting a new release of `@peterhauge/apiops-cli`
+**Scope:** Any agent (or human) cutting a new release of `@azure-tools/apiops-cli`
 
 ## What
 

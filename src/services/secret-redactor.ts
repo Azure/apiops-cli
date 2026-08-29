@@ -84,12 +84,18 @@ function isApimNamedValueReference(value: string): boolean {
   return NAMED_VALUE_REFERENCE_PATTERN.test(value);
 }
 
+// Policy expressions (@(...) or @{...}) compute values at runtime from context
+// and are not literal secrets, so they must be preserved as-is.
+function isPolicyExpression(value: string): boolean {
+  return value.startsWith('@(') || value.startsWith('@{');
+}
+
 function shouldRedactLiteral(value: string): boolean {
   const trimmed = value.trim();
   if (!trimmed || trimmed === REDACTION_MARKER) {
     return false;
   }
-  return !isApimNamedValueReference(trimmed);
+  return !isApimNamedValueReference(trimmed) && !isPolicyExpression(trimmed);
 }
 
 function redactAuthorizationHeaderValue(

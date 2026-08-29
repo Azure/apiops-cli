@@ -198,6 +198,12 @@ async function extractTier(
           result.extractedDescriptors.push(res.descriptor);
         }
       }
+    } else if (taskResult.status === 'rejected') {
+      const errorMessage = taskResult.reason instanceof Error
+        ? taskResult.reason.message
+        : String(taskResult.reason);
+      logger.error(`Resource type extraction failed: ${errorMessage}`);
+      result.totalErrors++;
     }
   }
 }
@@ -258,6 +264,7 @@ async function extractApiSubResources(
 
       const { apiName, apiResult } = taskResult.value;
       result.apiResults.push(apiResult);
+      result.totalErrors += apiResult.errorCount;
 
       // Count sub-resources
       const subCount =
@@ -362,6 +369,7 @@ async function extractProductSubResources(
 
       const { productName, prodResult } = taskResult.value;
       result.productResults.push(prodResult);
+      result.totalErrors += prodResult.errorCount;
 
       // Count sub-resources (associations + policy + wiki + tags)
       const subCount =
@@ -457,13 +465,14 @@ async function extractGatewayAssociations(
           }
         }
 
+        await store.writeAssociation(outputDir, gw.descriptor, 'apis', apiNames);
         if (apiNames.length > 0) {
-          await store.writeAssociation(outputDir, gw.descriptor, 'apis', apiNames);
           result.totalExtracted++;
           logger.info(`Extracted ${apiNames.length} API associations for gateway "${getNamePart(gw.descriptor.nameParts, 0)}"`);
         }
       } catch (error) {
         logger.warn(`Failed to extract API associations for gateway "${getNamePart(gw.descriptor.nameParts, 0)}": ${(error as Error).message}`);
+        result.totalErrors++;
       }
     }
   }

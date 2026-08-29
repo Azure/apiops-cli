@@ -10,6 +10,7 @@ import { ResourceDescriptor } from '../../../src/models/types.js';
 import { FilterConfig } from '../../../src/models/config.js';
 import {
   shouldIncludeResource,
+  shouldReconcileResource,
   filterResources,
   extractRootApiName,
   isWildcardPattern,
@@ -18,6 +19,36 @@ import {
 } from '../../../src/services/filter-service.js';
 
 describe('filter-service', () => {
+  describe('shouldReconcileResource', () => {
+    const workspaceNamedValue: ResourceDescriptor = {
+      type: ResourceType.NamedValue,
+      nameParts: ['workspace-value'],
+      workspace: 'team-a',
+    };
+
+    it('should preserve resources from workspaces outside the selected scope', () => {
+      const filter: FilterConfig = { workspaces: ['team-b'] };
+
+      expect(shouldReconcileResource(workspaceNamedValue, filter)).toBe(false);
+    });
+
+    it('should use the workspace sub-filter instead of service-level filters', () => {
+      const filter: FilterConfig = {
+        namedValues: [],
+        workspaces: ['team-a'],
+        workspaceSubFilters: {
+          'team-a': { namedValues: ['workspace-value'] },
+        },
+      };
+
+      expect(shouldReconcileResource(workspaceNamedValue, filter)).toBe(true);
+      expect(shouldReconcileResource(
+        { ...workspaceNamedValue, nameParts: ['excluded-value'] },
+        filter
+      )).toBe(false);
+    });
+  });
+
   describe('shouldIncludeResource', () => {
     it('should include all resources when no filter is provided', () => {
       const descriptor: ResourceDescriptor = {

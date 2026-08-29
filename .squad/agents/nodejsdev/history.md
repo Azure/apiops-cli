@@ -122,7 +122,7 @@ program.version(packageJson.version);
 
 ### 2026-04-29: Dual-Mode Init — Public npm vs Local Tarball
 
-**Problem:** After publishing `@peterhauge/apiops-cli` to npm, `apiops init` still required `--cli-package <path>` pointing to a local .tgz tarball, making the workflow cumbersome for users who just want to use the public package.
+**Problem:** After publishing `@azure-tools/apiops-cli` to npm, `apiops init` still required `--cli-package <path>` pointing to a local .tgz tarball, making the workflow cumbersome for users who just want to use the public package.
 
 **Solution:** Made `--cli-package` optional and implemented two modes:
 
@@ -133,7 +133,7 @@ program.version(packageJson.version);
 
 2. **Public npm mode** (when `--cli-package` NOT provided):
    - No tarball copy, no `.apiops/` directory
-   - Generates package.json with `"@peterhauge/apiops-cli": "latest"`
+   - Generates package.json with `"@azure-tools/apiops-cli": "latest"`
    - Use case: Standard consumption after publishing to npm
 
 **Implementation Details:**

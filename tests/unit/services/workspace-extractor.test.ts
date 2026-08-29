@@ -163,6 +163,110 @@ describe('workspace-extractor', () => {
       expect(results[0]?.errorCount).toBeGreaterThan(0);
     });
 
+    it('should count a missing workspace container as an error', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+
+      const results = await extractWorkspaces(
+        client, store, testContext, '/output', { workspaces: ['ws-1'] }
+      );
+
+      expect(results[0]?.errorCount).toBe(1);
+    });
+
+    it('should count workspace API supplemental failures', async () => {
+      const client = createMockClient();
+      client.listResources = async function* (_ctx, type) {
+        if (type === ResourceType.Api) {
+          yield { name: 'ws-api', properties: {} };
+        }
+      };
+      client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor) =>
+        descriptor.type === ResourceType.Workspace ? { name: 'ws-1', properties: {} } : undefined
+      );
+      client.getApiSpecification = vi.fn().mockRejectedValue(new Error('spec export failed'));
+      const store = createMockStore();
+
+      const results = await extractWorkspaces(
+        client, store, testContext, '/output', { workspaces: ['ws-1'] }
+      );
+
+      expect(results[0]?.errorCount).toBe(1);
+    });
+
+    it('should count workspace product supplemental failures', async () => {
+      const client = createMockClient();
+      client.listResources = async function* (_ctx, type) {
+        if (type === ResourceType.Product) {
+          yield { name: 'ws-product', properties: {} };
+        } else if (type === ResourceType.ProductApi || type === ResourceType.ProductGroup) {
+          throw new Error(`${type} list failed`);
+        }
+      };
+      client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor) => {
+        if (descriptor.type === ResourceType.Workspace) {
+          return { name: 'ws-1', properties: {} };
+        }
+        if (descriptor.type === ResourceType.ProductWiki) {
+          throw new Error('wiki failed');
+        }
+        return undefined;
+      });
+      const store = createMockStore();
+
+      const results = await extractWorkspaces(
+        client, store, testContext, '/output', { workspaces: ['ws-1'] }
+      );
+
+      expect(results[0]?.errorCount).toBe(3);
+    });
+
+    it('should count workspace tag-link failures', async () => {
+      const client = createMockClient();
+      client.listResources = async function* (_ctx, type) {
+        if (type === ResourceType.Tag) {
+          yield { name: 'tag-1', properties: {} };
+        } else if (type === ResourceType.Api) {
+          yield { name: 'api-1', properties: {} };
+        } else if (type === ResourceType.ApiTag) {
+          throw new Error('apiLinks failed');
+        }
+      };
+      client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor) =>
+        descriptor.type === ResourceType.Workspace ? { name: 'ws-1', properties: {} } : undefined
+      );
+      const store = createMockStore();
+
+      const results = await extractWorkspaces(
+        client, store, testContext, '/output', { workspaces: ['ws-1'] }
+      );
+
+      expect(results[0]?.errorCount).toBe(1);
+    });
+
+    it('should count workspace product tag-link failures', async () => {
+      const client = createMockClient();
+      client.listResources = async function* (_ctx, type) {
+        if (type === ResourceType.Tag) {
+          yield { name: 'tag-1', properties: {} };
+        } else if (type === ResourceType.Product) {
+          yield { name: 'product-1', properties: {} };
+        } else if (type === ResourceType.ProductTag) {
+          throw new Error('productLinks failed');
+        }
+      };
+      client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor) =>
+        descriptor.type === ResourceType.Workspace ? { name: 'ws-1', properties: {} } : undefined
+      );
+      const store = createMockStore();
+
+      const results = await extractWorkspaces(
+        client, store, testContext, '/output', { workspaces: ['ws-1'] }
+      );
+
+      expect(results[0]?.errorCount).toBe(1);
+    });
+
     it('should extract API sub-resources within workspace', async () => {
       const client = createMockClient();
       // Return APIs when listing in workspace context

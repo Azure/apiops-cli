@@ -583,6 +583,16 @@ async function reconcileOperationsAfterSpecImport(
       }
     }
 
+    // The spec import already bound request/responses representations to the
+    // schemas it created. PATCH replaces those arrays wholesale, so re-sending
+    // them without schemaId/typeName (the source IDs don't exist on the target)
+    // would wipe the binding the importer just created. Drop them and reconcile
+    // only importer-agnostic metadata.
+    if (hasSchemaBoundRepresentations(patchProps)) {
+      delete patchProps.request;
+      delete patchProps.responses;
+    }
+
     // Strip source schema refs; APIM rebinds on import and drops stale IDs.
     stripRepresentationSchemaRefs(patchProps);
 
@@ -606,6 +616,40 @@ async function reconcileOperationsAfterSpecImport(
     );
     await runParallel(tasks, 5);
   }
+}
+
+/**
+ * Check whether any request/responses representation carries a schema binding
+ * (schemaId or typeName). Such operations are fully owned by the spec import
+ * and must not have request/responses re-sent in the reconcile PATCH.
+ */
+function hasSchemaBoundRepresentations(patchProps: Record<string, unknown>): boolean {
+  const hasRef = (items: unknown): boolean =>
+    Array.isArray(items) &&
+    items.some(
+      (item: unknown) =>
+        item !== null &&
+        typeof item === 'object' &&
+        (Object.hasOwn(item, 'schemaId') || Object.hasOwn(item, 'typeName')) &&
+        ((item as Record<string, unknown>).schemaId != null ||
+          (item as Record<string, unknown>).typeName != null)
+    );
+
+  const request = patchProps.request;
+  if (request && typeof request === 'object' && hasRef((request as Record<string, unknown>).representations)) {
+    return true;
+  }
+
+  const responses = patchProps.responses;
+  if (Array.isArray(responses)) {
+    for (const response of responses) {
+      if (response && typeof response === 'object' && hasRef((response as Record<string, unknown>).representations)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 /**

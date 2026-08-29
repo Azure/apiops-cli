@@ -507,7 +507,7 @@ describe('init-service', () => {
       expect(pkgCalls).toHaveLength(1);
       const content = pkgCalls[0][1] as string;
       const pkg = JSON.parse(content);
-      expect(pkg.dependencies['@peterhauge/apiops-cli']).toBe('latest');
+      expect(pkg.dependencies['@azure-tools/apiops-cli']).toBe('latest');
       expect(pkg.dependencies.apiops).toBeUndefined();
     });
 
@@ -659,7 +659,7 @@ describe('init-service', () => {
       const content = pkgCalls[0][1] as string;
       const pkg = JSON.parse(content);
       expect(pkg.dependencies.lodash).toBe('^4.17.21');
-      expect(pkg.dependencies['@peterhauge/apiops-cli']).toBe('latest');
+      expect(pkg.dependencies['@azure-tools/apiops-cli']).toBe('latest');
     });
 
   });

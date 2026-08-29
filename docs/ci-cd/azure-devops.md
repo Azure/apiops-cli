@@ -291,7 +291,7 @@ In your `package.json`, pin to a specific version:
 ```json
 {
   "dependencies": {
-    "@peterhauge/apiops-cli": "1.2.3"
+    "@azure-tools/apiops-cli": "1.2.3"
   }
 }
 ```

@@ -1,0 +1,783 @@
+# =====================================================================
+# APIM Extract pipeline — authenticates with Managed Identity (no SC)
+# Requires: self-hosted agent on Azure VM/VMSS/AKS/Container App or
+#           Azure Arc-enabled server with the MI granted RBAC on APIM.
+# =====================================================================
+
+name: 'apim-extract-$(Date:yyyyMMdd)-$(Rev:r)'
+
+trigger: none          # run on demand
+pr: none
+
+parameters:
+  - name: CONFIGURATION_YAML_PATH
+    displayName: 'Operation'
+    type: string
+    default: 'Extract All APIs'
+    values:
+      - 'Extract All APIs'
+      - 'Extract from filter file'
+
+  - name: ENVIRONMENT
+    displayName: 'Target environment (loads variable group apim-<env>)'
+    type: string
+    default: 'dev'
+    values:
+      - 'dev'
+      - 'prod'
+
+  - name: apiopsVersion
+    displayName: 'apiops-cli npm version (installed if missing)'
+    type: string
+    default: 'latest'
+
+  - name: publishToRepo
+    displayName: 'Commit extracted artifacts to repo branch'
+    type: boolean
+    default: true
+
+  - name: targetRepoFolder
+    displayName: 'Folder (inside repo) where artifacts will be stored'
+    type: string
+    default: 'apim-artifacts'
+
+  - name: branchPrefix
+    displayName: 'Prefix for the new branch created per extraction'
+    type: string
+    default: 'apim-extract'
+
+  - name: gitUserName
+    displayName: 'Git author name for the commit'
+    type: string
+    default: 'APIM Extract Pipeline'
+
+  - name: gitUserEmail
+    displayName: 'Git author email for the commit'
+    type: string
+    default: 'apim-extract@devops.local'
+
+  # -------------------- Filter options --------------------
+  # NOTE: Azure DevOps cannot hide/disable parameters at runtime based on
+  # another parameter's value. `filterFile` is REQUIRED only when
+  # Operation = 'Extract from filter file'; it is IGNORED otherwise.
+  - name: filterFile
+    displayName: 'Filter file path (used only when Operation = Extract from filter file; ignored for Extract All APIs)'
+    type: string
+    default: 'none'
+
+  - name: noTransitive
+    displayName: 'Disable transitive dependency extraction (--no-transitive; only meaningful with a filter file)'
+    type: boolean
+    default: false
+
+variables:
+  # Environment-specific settings come from the 'apim-<env>' variable group
+  # (Pipelines > Library). Required variables:
+  #   AGENT_POOL              - self-hosted agent pool name
+  #   APIM_RESOURCE_GROUP     - APIM resource group
+  #   APIM_SERVICE_NAME       - APIM service name
+  #   AZURE_SUBSCRIPTION_ID   - target subscription id
+  # Optional (managed identity):
+  #   IDENTITY_TYPE           - 'system' (default) or 'user'
+  #   USER_ASSIGNED_CLIENT_ID - client id of the user-assigned MI (IDENTITY_TYPE=user)
+  - group: 'apim-${{ parameters.ENVIRONMENT }}'
+  - name: ARTIFACT_NAME
+    value: 'apim-artifacts'
+  - name: ARTIFACT_PATH
+    value: '$(Build.ArtifactStagingDirectory)/apim-artifacts'
+  # Branch name is computed once and surfaced as an output for downstream pipelines
+  - name: EXTRACT_BRANCH
+    value: '${{ parameters.branchPrefix }}/$(APIM_SERVICE_NAME)-$(Build.BuildNumber)'
+
+jobs:
+- job: extract
+  displayName: 'apiops extract [${{ parameters.ENVIRONMENT }}] (${{ parameters.CONFIGURATION_YAML_PATH }})'
+  pool:
+    name: '$(AGENT_POOL)'
+  timeoutInMinutes: 60
+  # Allow the job to read System.AccessToken so we can push the branch back to the repo
+  variables:
+    - name: System.AccessToken
+      value: $(System.AccessToken)
+  steps:
+
+  # Checkout with credentials persisted so we can push a new branch later.
+  - checkout: self
+    persistCredentials: true
+    clean: true
+    fetchDepth: 0
+
+  # -------- Validate Node.js (24 LTS) on the agent --------
+  - task: PowerShell@2
+    displayName: 'Validate Node.js (24 LTS)'
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      script: |
+        $ErrorActionPreference = 'Stop'
+
+        # ---- Connectivity probe to the Node.js distribution host (informative) ----
+        $nodeDistUrl = 'https://nodejs.org/dist/index.json'
+        Write-Host "Checking connectivity to Node.js distribution '$nodeDistUrl'..."
+        $nodeHostReachable = $false
+        $curlCmd = Get-Command curl.exe -ErrorAction SilentlyContinue
+        if ($curlCmd -and $curlCmd.CommandType -ne 'Alias') {
+          $o = [System.IO.Path]::GetTempFileName()
+          $e = [System.IO.Path]::GetTempFileName()
+          try {
+            $p = Start-Process -FilePath $curlCmd.Source `
+                   -ArgumentList @('-s','-v','-o','NUL','--connect-timeout','15','--max-time','15',$nodeDistUrl) `
+                   -NoNewWindow -PassThru -Wait `
+                   -RedirectStandardOutput $o -RedirectStandardError $e
+            @(Get-Content $e -ErrorAction SilentlyContinue) + @(Get-Content $o -ErrorAction SilentlyContinue) |
+              Where-Object { $_ } | ForEach-Object { Write-Host "    $_" }
+            $nodeHostReachable = ($p.ExitCode -eq 0)
+          } finally { Remove-Item $o, $e -ErrorAction SilentlyContinue }
+        } else {
+          Write-Host 'curl not found; skipping Node.js distribution connectivity probe.'
+        }
+        if ($nodeHostReachable) {
+          Write-Host 'Node.js distribution host: REACHABLE.'
+        } else {
+          Write-Host "##vso[task.logissue type=warning]Node.js distribution host appears UNREACHABLE; relying on the Node.js already installed on the agent."
+        }
+
+        # ---- Validate the Node.js installed on the agent (no download) ----
+        $nodeVerRaw = (& node --version) 2>$null
+        if (-not $nodeVerRaw) {
+          $hostState = if ($nodeHostReachable) { 'reachable' } else { 'unreachable' }
+          throw "Node.js is not installed on this agent. Install Node.js 24 LTS (the Node.js distribution host is $hostState)."
+        }
+        Write-Host "Detected Node.js $nodeVerRaw / npm $(& npm --version)."
+        $nodeVer = [version](($nodeVerRaw.TrimStart('v')) -replace '-.*$','')
+        if ($nodeVer.Major -lt 24) {
+          throw "Node.js $nodeVerRaw is installed but version >= 24 (v24 LTS) is required. Update Node.js on the agent."
+        }
+        Write-Host 'Node.js 24 LTS requirement satisfied.'
+
+  # -------- Login with Managed Identity --------
+  - task: PowerShell@2
+    displayName: 'az login (managed identity)'
+    inputs:
+      targetType: 'inline'
+      pwsh: false   # use Windows PowerShell 5.1 that ships with the OS
+      script: |
+        $ErrorActionPreference = 'Stop'
+
+        # IDENTITY_TYPE / USER_ASSIGNED_CLIENT_ID come from the variable group;
+        # an unexpanded macro means the variable is not defined in the group.
+        $identityType = '$(IDENTITY_TYPE)'
+        if ($identityType -like '$(*') { $identityType = 'system' }
+        $clientId = '$(USER_ASSIGNED_CLIENT_ID)'
+        if ($clientId -eq 'none' -or $clientId -eq '-' -or $clientId -like '$(*') { $clientId = '' }
+
+        if ($identityType -eq 'user') {
+          if ([string]::IsNullOrWhiteSpace($clientId)) {
+            Write-Host "##vso[task.logissue type=error]USER_ASSIGNED_CLIENT_ID is required when IDENTITY_TYPE=user"
+            exit 1
+          }
+          Write-Host 'Logging in with USER-assigned managed identity...'
+          az login --identity --client-id "$clientId" 1>$null
+        } else {
+          if (-not [string]::IsNullOrWhiteSpace($clientId)) {
+            Write-Host 'IDENTITY_TYPE=system: ignoring provided USER_ASSIGNED_CLIENT_ID.'
+          }
+          Write-Host 'Logging in with SYSTEM-assigned managed identity...'
+          az login --identity 1>$null
+        }
+        if ($LASTEXITCODE -ne 0) { throw "az login failed (exit $LASTEXITCODE)" }
+
+        az account set --subscription "$(AZURE_SUBSCRIPTION_ID)"
+        if ($LASTEXITCODE -ne 0) { throw "az account set failed (exit $LASTEXITCODE)" }
+        az account show --query '{sub:name, tenant:tenantId, user:user.name}' -o table
+
+  # -------- Sanity check that the MI can see the APIM --------
+  - task: PowerShell@2
+    displayName: 'Verify access to APIM'
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      script: |
+        $ErrorActionPreference = 'Stop'
+        az apim show `
+          --resource-group '$(APIM_RESOURCE_GROUP)' `
+          --name           '$(APIM_SERVICE_NAME)' `
+          --query '{name:name, sku:sku.name, location:location}' -o table
+        if ($LASTEXITCODE -ne 0) { throw "az apim show failed (exit $LASTEXITCODE)" }
+
+  # -------- Check / install apiops CLI (delegated to shared script) --------
+  - task: PowerShell@2
+    displayName: 'Check apiops-cli version'
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      script: |
+        $ErrorActionPreference = 'Stop'
+        # Delegates Node/apiops version check + install to the shared repo script.
+        # It sets APIOPS_PATH / APIOPS_VERSION for downstream steps and treats an
+        # unreachable npm registry as a warning when apiops is already installed.
+        & "$(Build.SourcesDirectory)/Check-ApiopsCliVersion.ps1" `
+          -ApiopsVersion '${{ parameters.apiopsVersion }}' `
+          -AllowStaleOnRegistryFailure
+
+        # If the online apiops repository was unreachable, finish this step as a
+        # warning (orange) without failing the pipeline; the locally installed
+        # apiops version is used for the run.
+        if ($global:ApiopsRepoReachable -eq $false) {
+          Write-Host "##vso[task.logissue type=warning]apiops online repository was unreachable; using locally installed apiops version $global:ApiopsVersion."
+          Write-Host "##vso[task.complete result=SucceededWithIssues;]apiops online repository unreachable"
+        }
+
+  # -------- Run apiops extract --------
+  - task: PowerShell@2
+    displayName: 'Run APIM Extract (${{ parameters.CONFIGURATION_YAML_PATH }})'
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      script: |
+        $ErrorActionPreference = 'Stop'
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+        New-Item -ItemType Directory -Force -Path "$(ARTIFACT_PATH)" | Out-Null
+
+        # ---- Auth via DefaultAzureCredential (Managed Identity on the agent) ----
+        $clientId = '$(USER_ASSIGNED_CLIENT_ID)'
+        if ($clientId -eq 'none' -or $clientId -eq '-' -or $clientId -like '$(*') { $clientId = '' }
+        if ('$(IDENTITY_TYPE)' -eq 'user' -and -not [string]::IsNullOrWhiteSpace($clientId)) {
+          # Tells ManagedIdentityCredential which user-assigned identity to use
+          $env:AZURE_CLIENT_ID = $clientId
+        }
+        $env:AZURE_SUBSCRIPTION_ID = '$(AZURE_SUBSCRIPTION_ID)'
+
+        # ---- apiops CLI resolved/installed by the 'Check apiops-cli version' step ----
+        $apiopsPath = '$(APIOPS_PATH)'
+        Write-Host "Using apiops CLI: $apiopsPath (version $(APIOPS_VERSION))"
+
+        # ---- Resolve filter based on selected Operation ----
+        $operation     = '${{ parameters.CONFIGURATION_YAML_PATH }}'
+        $filterFileRel = '${{ parameters.filterFile }}'
+        $filterArg     = $null
+
+        if ($operation -eq 'Extract from filter file') {
+          if ([string]::IsNullOrWhiteSpace($filterFileRel) -or $filterFileRel -eq 'none' -or $filterFileRel -eq '-') {
+            throw "Operation '$operation' requires the 'filterFile' parameter to be set (e.g. configuration.extractor.yaml)."
+          }
+          $filterPath = Join-Path '$(Build.SourcesDirectory)' $filterFileRel
+          if (-not (Test-Path $filterPath)) {
+            throw "Filter file '$filterPath' not found on the checked-out branch."
+          }
+          $filterArg = $filterPath
+          Write-Host "Operation:           $operation"
+          Write-Host "Using filter file:   $filterPath"
+          Write-Host '----- Filter file contents -----'
+          Get-Content -LiteralPath $filterPath | Out-String | Write-Host
+          Write-Host '--------------------------------'
+        }
+        else {
+          if (-not [string]::IsNullOrWhiteSpace($filterFileRel) -and $filterFileRel -ne 'none' -and $filterFileRel -ne '-') {
+            Write-Host "Operation '$operation' selected; ignoring filterFile parameter ('$filterFileRel')."
+          }
+          Write-Host "Operation: $operation (extracting ALL resources)"
+        }
+
+        # ---- Build CLI arg list (splatting is safer than backtick line continuations) ----
+        $cliArgs = @(
+          'extract',
+          '--resource-group',  '$(APIM_RESOURCE_GROUP)',
+          '--service-name',    '$(APIM_SERVICE_NAME)',
+          '--subscription-id', '$(AZURE_SUBSCRIPTION_ID)',
+          '--output',          "$(ARTIFACT_PATH)"
+        )
+        if ($filterArg) { $cliArgs += @('--filter', $filterArg) }
+        if ('${{ parameters.noTransitive }}' -eq 'True') {
+          $cliArgs += '--no-transitive'
+          Write-Host 'Transitive dependency extraction DISABLED (--no-transitive).'
+        }
+
+        Write-Host "Running: apiops $($cliArgs -join ' ')"
+        & $apiopsPath @cliArgs
+        if ($LASTEXITCODE -ne 0) { throw "apiops extract failed (exit $LASTEXITCODE)" }
+
+  # ----------------- Spectral API linting (START) -----------------
+  - task: PowerShell@2
+    displayName: 'Install Spectral'
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      script: |
+        $ErrorActionPreference = 'Stop'
+        # Pin a known-good version. Unpinned 'latest' has shipped regressions that crash
+        # with "Cannot read properties of null (reading 'enum')" on some specs. Change the
+        # version here if you need a different build.
+        $spectralPackage = '@stoplight/spectral-cli@6.11.1'
+        npm install -g $spectralPackage
+        if ($LASTEXITCODE -ne 0) { throw "npm install -g $spectralPackage failed (exit $LASTEXITCODE)" }
+
+        # npm's global bin is often NOT on PATH for the agent service account, so
+        # resolve the spectral launcher explicitly and hand it to the next step.
+        $npmPrefix = (& npm prefix -g).Trim()
+        $spectral  = $null
+        foreach ($name in @('spectral.cmd','spectral.exe','spectral')) {
+          $candidate = Join-Path $npmPrefix $name
+          if (Test-Path $candidate) { $spectral = $candidate; break }
+        }
+        if (-not $spectral) {
+          $cmd = Get-Command spectral -ErrorAction SilentlyContinue
+          if ($cmd) { $spectral = $cmd.Source }
+        }
+        if (-not $spectral) { throw "Spectral CLI not found after global install (npm prefix: $npmPrefix)." }
+        Write-Host "Spectral CLI: $spectral"
+        Write-Host "##vso[task.setvariable variable=SPECTRAL_PATH]$spectral"
+
+  - task: PowerShell@2
+    displayName: 'Resolve ruleset rule set (for passed-checks reporting)'
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      script: |
+        $ErrorActionPreference = 'Stop'
+        # Spectral only ever emits VIOLATIONS -- never the rules that passed. To report real
+        # passed checks we need the full ACTIVE rule set (the recommended spectral:oas rules
+        # that 'extends: spectral:oas' enables, plus the custom rules). We read it straight
+        # from the installed Spectral packages + the ruleset file, so the denominator is
+        # accurate. If anything here fails, the report falls back to the rules observed in
+        # this run, so reporting never breaks.
+        $ruleset      = 'https://raw.githubusercontent.com/connectedcircuits/devops-api-linter/main/rules.yaml'
+        $rulesetLocal = '$(Build.ArtifactStagingDirectory)/spectral-ruleset.yaml'
+        $rulesFile    = '$(Build.ArtifactStagingDirectory)/spectral-rules.txt'
+        $scriptFile   = '$(Build.ArtifactStagingDirectory)/extract-rules.cjs'
+        Remove-Item -LiteralPath $rulesFile -ErrorAction SilentlyContinue
+
+        try {
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          Invoke-WebRequest -Uri $ruleset -OutFile $rulesetLocal -UseBasicParsing
+        } catch {
+          Write-Host "##vso[task.logissue type=warning]Could not download ruleset for rule extraction: $($_.Exception.Message)"
+        }
+
+        $gRoot = (& npm root -g).Trim()
+
+        # Node script: union of (recommended OpenAPI rules from @stoplight/spectral-rulesets)
+        # and (custom rules parsed from the ruleset YAML, honouring false/off disables).
+        $js = @(
+          'const fs = require("fs");',
+          'const path = require("path");',
+          'const { createRequire } = require("module");',
+          'try {',
+          '  const gRoot = process.env.SPECTRAL_GLOBAL_MODULES;',
+          '  const req = createRequire(path.join(gRoot, "@stoplight", "spectral-cli", "package.json"));',
+          '  const set = new Set();',
+          '  try {',
+          '    const { oas } = req("@stoplight/spectral-rulesets");',
+          '    for (const [k, v] of Object.entries(oas.rules)) { if (v && v.recommended !== false) set.add(k); }',
+          '  } catch (e) { process.stderr.write("OAS_RULES_ERROR: " + e + "\n"); }',
+          '  try {',
+          '    const yaml = req("@stoplight/yaml");',
+          '    const doc = yaml.parse(fs.readFileSync(process.env.SPECTRAL_RULESET_FILE, "utf8"));',
+          '    if (doc && doc.rules) {',
+          '      for (const [k, v] of Object.entries(doc.rules)) {',
+          '        if (v === false || v === "off" || v === 0) { set.delete(k); continue; }',
+          '        set.add(k);',
+          '      }',
+          '    }',
+          '  } catch (e) { process.stderr.write("CUSTOM_RULES_ERROR: " + e + "\n"); }',
+          '  process.stdout.write(Array.from(set).join("\n"));',
+          '} catch (e) {',
+          '  process.stderr.write("RULE_EXTRACT_ERROR: " + (e && e.stack ? e.stack : String(e)));',
+          '  process.exit(3);',
+          '}'
+        )
+        Set-Content -LiteralPath $scriptFile -Value $js -Encoding utf8
+
+        $env:SPECTRAL_GLOBAL_MODULES = $gRoot
+        $env:SPECTRAL_RULESET_FILE   = $rulesetLocal
+        $out  = & node $scriptFile 2>&1
+        $code = $LASTEXITCODE
+        # stdout = rule names (one per line); stderr diagnostics carry known prefixes.
+        $ruleNames = @($out | Where-Object { $_ -and ($_ -notmatch '^(OAS_RULES_ERROR|CUSTOM_RULES_ERROR|RULE_EXTRACT_ERROR)') })
+        if ($code -eq 0 -and $ruleNames.Count -gt 0) {
+          $ruleNames | Set-Content -LiteralPath $rulesFile -Encoding utf8
+          Write-Host "Resolved active rule set: $($ruleNames.Count) rules."
+        } else {
+          Write-Host "##vso[task.logissue type=warning]Could not resolve full rule set (node exit $code); passed-checks will fall back to the rules observed in this run."
+          Write-Host ($out -join "`n")
+        }
+        exit 0
+
+  - task: PowerShell@2
+    displayName: 'Run Spectral Linting'
+    continueOnError: true
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      script: |
+        $ErrorActionPreference = 'Stop'
+        $spectral = '$(SPECTRAL_PATH)'
+        $json     = '$(Build.ArtifactStagingDirectory)/spectral-result.json'
+        $crashLog = '$(Build.ArtifactStagingDirectory)/spectral-crashes.txt'
+        $specRoot = '$(ARTIFACT_PATH)/apis'
+        $ruleset  = 'https://raw.githubusercontent.com/connectedcircuits/devops-api-linter/main/rules.yaml'
+
+        Remove-Item -LiteralPath $json, $crashLog -ErrorAction SilentlyContinue
+
+        # Lint ONLY the per-API OpenAPI specification file: apis/<api>/specification.*.
+        # Match at ONE level under 'apis' (NOT -Recurse) so nested specification.* files under
+        # operations/, schemas/, etc. are excluded -- we want exactly one spec per API.
+        $specNames = @('specification.json','specification.yaml','specification.yml')
+        $specFiles = @()
+        if (Test-Path -LiteralPath $specRoot) {
+          $specFiles = Get-ChildItem -LiteralPath $specRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            Get-ChildItem -LiteralPath $_.FullName -File -ErrorAction SilentlyContinue | Where-Object { $specNames -contains $_.Name }
+          } | Select-Object -ExpandProperty FullName
+        }
+
+        Write-Host "Spectral CLI:  $spectral"
+        Write-Host "Spec root:     $specRoot"
+        Write-Host "Ruleset:       $ruleset"
+        Write-Host "Spec files:    $($specFiles.Count)"
+
+        # Lint each API spec individually so one malformed spec that crashes Spectral/Nimma
+        # ("Cannot read properties of null (reading 'enum')") is isolated to that file instead
+        # of aborting the whole run; every other spec still gets reported.
+        $all   = New-Object System.Collections.Generic.List[object]
+        $worst = 0
+        foreach ($f in $specFiles) {
+          Write-Host "----- Linting: $f"
+          $per = [System.IO.Path]::GetTempFileName()
+          & $spectral lint --format stylish --format json --output.json $per --fail-severity warn $f -r $ruleset
+          $code = $LASTEXITCODE
+          if ($code -ge 2) {
+            Write-Host "##vso[task.logissue type=warning]Spectral CRASHED on: $f (exit $code)"
+            Add-Content -LiteralPath $crashLog -Value $f
+            if ($code -gt $worst) { $worst = $code }
+          } elseif ($code -eq 1 -and $worst -lt 1) {
+            $worst = 1
+          }
+          if (Test-Path -LiteralPath $per) {
+            $raw = Get-Content -LiteralPath $per -Raw
+            if (-not [string]::IsNullOrWhiteSpace($raw)) {
+              try {
+                $parsed = ConvertFrom-Json -InputObject $raw
+                # PS 5.1 may surface the JSON array as a single nested object; flatten one level
+                # so EACH finding is added individually (not the whole array as one element).
+                foreach ($item in @($parsed)) {
+                  if ($item -is [System.Collections.IEnumerable] -and $item -isnot [string]) {
+                    foreach ($sub in $item) { [void]$all.Add($sub) }
+                  } else {
+                    [void]$all.Add($item)
+                  }
+                }
+              } catch {
+                Write-Host "##vso[task.logissue type=warning]Could not parse Spectral JSON for: $f"
+              }
+            }
+            Remove-Item -LiteralPath $per -ErrorAction SilentlyContinue
+          }
+        }
+
+        # Merge all per-file findings into the single JSON the report builder consumes.
+        if ($all.Count -gt 0) {
+          ($all | ConvertTo-Json -Depth 50) | Set-Content -LiteralPath $json -Encoding utf8
+        } else {
+          '[]' | Set-Content -LiteralPath $json -Encoding utf8
+        }
+
+        $crashed = if (Test-Path -LiteralPath $crashLog) { @(Get-Content -LiteralPath $crashLog).Count } else { 0 }
+        Write-Host "Linted $($specFiles.Count) spec file(s); $($all.Count) finding(s); $crashed crashed."
+        # 0 = all clean, 1 = findings, 2+ = at least one spec crashed Spectral.
+        Write-Host "##vso[task.setvariable variable=SPECTRAL_EXIT]$worst"
+        # Findings/crashes are surfaced via the published test results, not via this task's
+        # exit code, so end cleanly to avoid a misleading red '##[error]'.
+        $global:LASTEXITCODE = 0
+        exit 0
+
+  - task: PowerShell@2
+    displayName: 'Build severity-labelled lint report'
+    condition: always()
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      script: |
+        $ErrorActionPreference = 'Stop'
+        $json     = '$(Build.ArtifactStagingDirectory)/spectral-result.json'
+        $junit    = '$(Build.ArtifactStagingDirectory)/spectral-result.xml'
+        $specRoot = '$(ARTIFACT_PATH)/apis'
+        $crashLog = '$(Build.ArtifactStagingDirectory)/spectral-crashes.txt'
+        # Exit code from the 'Run Spectral Linting' step: 0 clean, 1 findings, 2+ Spectral error.
+        $spectralExit = '$(SPECTRAL_EXIT)'
+
+        # Spec files that crashed Spectral (one absolute path per line) -> flagged as failures.
+        $crashedSet = @{}
+        if (Test-Path -LiteralPath $crashLog) {
+          foreach ($line in (Get-Content -LiteralPath $crashLog)) {
+            $t = $line.Trim()
+            if ($t) { $crashedSet[($t -replace '\\','/').ToLowerInvariant()] = $t }
+          }
+        }
+
+        # Spectral severity codes -> labels used as a prefix in each test name.
+        $sevName = @{ 0 = 'ERROR'; 1 = 'WARN'; 2 = 'INFO'; 3 = 'HINT' }
+
+        $results = @()
+        if (Test-Path -LiteralPath $json) {
+          $raw = Get-Content -LiteralPath $json -Raw
+          if (-not [string]::IsNullOrWhiteSpace($raw)) {
+            $parsed = ConvertFrom-Json -InputObject $raw
+            # Windows PowerShell 5.1 can surface the JSON array as a single nested object;
+            # flatten one level so each element is an individual Spectral result.
+            foreach ($item in @($parsed)) {
+              if ($item -is [System.Collections.IEnumerable] -and $item -isnot [string]) {
+                foreach ($sub in $item) { $results += $sub }
+              } else {
+                $results += $item
+              }
+            }
+          }
+        }
+
+        # Enumerate the SAME per-API specs the lint step used (apis/<api>/specification.*),
+        # one level under 'apis' (NOT -Recurse), so report counts match the lint scope exactly.
+        $specNames = @('specification.json','specification.yaml','specification.yml')
+        $specFiles = @()
+        if (Test-Path -LiteralPath $specRoot) {
+          $specFiles = Get-ChildItem -LiteralPath $specRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            Get-ChildItem -LiteralPath $_.FullName -File -ErrorAction SilentlyContinue | Where-Object { $specNames -contains $_.Name }
+          } | Select-Object -ExpandProperty FullName
+        }
+
+        $doc  = New-Object System.Xml.XmlDocument
+        [void]$doc.AppendChild($doc.CreateXmlDeclaration('1.0','utf-8',$null))
+        $root = $doc.AppendChild($doc.CreateElement('testsuites'))
+
+        function Add-LintSuite {
+          param($Doc, $Root, $SevName, [string]$Source, $Items, $AllCodes)
+          $Items = @($Items)
+          $AllCodes = @($AllCodes)
+          $ts = $Doc.CreateElement('testsuite')
+          $ts.SetAttribute('name', $Source)
+          $ts.SetAttribute('errors','0')
+
+          # Codes that FIRED on this spec become failures; every other rule in the
+          # run-wide rule set is reported as a real PASSED check for this spec.
+          $firedCodes = @{}
+          foreach ($r in $Items) { $c = [string]$r.code; if ($c) { $firedCodes[$c] = $true } }
+          $passedCodes = @($AllCodes | Where-Object { $_ -and -not $firedCodes.ContainsKey($_) })
+
+          $failCount = $Items.Count
+          $passCount = $passedCodes.Count
+          if ($failCount -eq 0 -and $passCount -eq 0) {
+            # Nothing fired anywhere in the run -> a single generic passing check.
+            $ts.SetAttribute('tests','1')
+            $ts.SetAttribute('failures','0')
+            $tc = $Doc.CreateElement('testcase')
+            $tc.SetAttribute('name','No lint issues found')
+            $tc.SetAttribute('classname',$Source)
+            [void]$ts.AppendChild($tc)
+            [void]$Root.AppendChild($ts)
+            return
+          }
+
+          $ts.SetAttribute('tests',[string]($failCount + $passCount))
+          $ts.SetAttribute('failures',[string]$failCount)
+
+          # Derive the API folder name from the spec path so passed checks can be linked
+          # back to a specific API (a passed rule applies to the whole spec, not one path).
+          $apiName = ''
+          if ($Source) {
+            $apiName = (($Source -replace '\\','/') -split '/apis/')[-1].Split('/')[0]
+          }
+
+          # One PASSED testcase per rule that did NOT fire on this spec.
+          foreach ($pc in $passedCodes) {
+            $tc = $Doc.CreateElement('testcase')
+            $passName = "[PASS] $pc"
+            if ($apiName) { $passName += " ($apiName)" }
+            $tc.SetAttribute('name',$passName)
+            $tc.SetAttribute('classname',$Source)
+            [void]$ts.AppendChild($tc)
+          }
+          foreach ($r in $Items) {
+            $sevRaw = $r.severity
+            if ($sevRaw -is [System.Array]) { $sevRaw = $sevRaw[0] }
+            $sev   = if ($null -ne $sevRaw) { [int]$sevRaw } else { 1 }
+            $label = if ($SevName.ContainsKey($sev)) { $SevName[$sev] } else { "SEV$sev" }
+            $pathStr = if ($r.path) { ($r.path -join '/') } else { '' }
+            $line = 0; $col = 0
+            if ($r.range -and $r.range.start) {
+              $line = [int]$r.range.start.line + 1
+              $col  = [int]$r.range.start.character + 1
+            }
+            $code = [string]$r.code
+            $name = "[$label] $code"
+            if ($pathStr) { $name += " ($pathStr)" }
+
+            $tc = $Doc.CreateElement('testcase')
+            $tc.SetAttribute('name',$name)
+            $tc.SetAttribute('classname',$Source)
+
+            # Every finding stays a Failed outcome; severity is conveyed via name + failure type.
+            $fail = $Doc.CreateElement('failure')
+            $fail.SetAttribute('message',[string]$r.message)
+            $fail.SetAttribute('type',$label)
+            $detail = "line $line, col $col, $($r.message) ($code) at path #/$pathStr"
+            [void]$fail.AppendChild($Doc.CreateCDataSection($detail))
+            [void]$tc.AppendChild($fail)
+
+            # Attach the offending spec file to this result (ADO Server 2022.2+/cloud).
+            if ($Source -and (Test-Path -LiteralPath $Source)) {
+              $so = $Doc.CreateElement('system-out')
+              $so.InnerText = "[[ATTACHMENT|$Source]]"
+              [void]$tc.AppendChild($so)
+            }
+            [void]$ts.AppendChild($tc)
+          }
+          [void]$Root.AppendChild($ts)
+        }
+
+        # Index findings by normalized source path so each spec file can be matched
+        # to its findings regardless of slash/case differences.
+        $findingsByNorm = @{}
+        foreach ($r in $results) {
+          $src  = [string]$r.source
+          $norm = ($src -replace '\\','/').ToLowerInvariant()
+          if (-not $findingsByNorm.ContainsKey($norm)) {
+            $findingsByNorm[$norm] = [pscustomobject]@{ Source = $src; Items = @() }
+          }
+          $findingsByNorm[$norm].Items += $r
+        }
+
+        # Denominator for passed-checks = the full ACTIVE rule set resolved from the installed
+        # Spectral packages + ruleset (written by the 'Resolve ruleset rule set' step). Falls
+        # back to the rules observed in this run if resolution was unavailable.
+        $rulesFile  = '$(Build.ArtifactStagingDirectory)/spectral-rules.txt'
+        $firedCodes = @($results | ForEach-Object { [string]$_.code } | Where-Object { $_ } | Select-Object -Unique)
+        $ruleUniverse = @()
+        if (Test-Path -LiteralPath $rulesFile) {
+          $ruleUniverse = @(Get-Content -LiteralPath $rulesFile | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        }
+        # Union so any rule that fired but is missing from the resolved set still appears.
+        $allCodes = @($ruleUniverse + $firedCodes | Where-Object { $_ } | Select-Object -Unique)
+
+        if ($specFiles.Count -eq 0 -and $results.Count -eq 0 -and $crashedSet.Count -eq 0) {
+          Add-LintSuite $doc $root $sevName 'API lint' @() @()
+        } else {
+          $seen = @{}
+          foreach ($file in $specFiles) {
+            $norm = ($file -replace '\\','/').ToLowerInvariant()
+            $seen[$norm] = $true
+            if ($crashedSet.ContainsKey($norm)) {
+              # This spec crashed Spectral -> explicit failure (NOT counted as passed).
+              $ts = $doc.CreateElement('testsuite')
+              $ts.SetAttribute('name',$file)
+              $ts.SetAttribute('tests','1'); $ts.SetAttribute('failures','1'); $ts.SetAttribute('errors','0')
+              $tc = $doc.CreateElement('testcase')
+              $tc.SetAttribute('name','Spectral crashed while linting this spec')
+              $tc.SetAttribute('classname',$file)
+              $fail = $doc.CreateElement('failure')
+              $fail.SetAttribute('message','Spectral threw an error on this specification (unsupported or malformed construct).')
+              $fail.SetAttribute('type','ERROR')
+              [void]$fail.AppendChild($doc.CreateCDataSection("Spectral failed on $file. This spec was NOT linted; fix the spec or exclude it. See the 'Run Spectral Linting' log."))
+              [void]$tc.AppendChild($fail)
+              if (Test-Path -LiteralPath $file) {
+                $so = $doc.CreateElement('system-out'); $so.InnerText = "[[ATTACHMENT|$file]]"; [void]$tc.AppendChild($so)
+              }
+              [void]$ts.AppendChild($tc)
+              [void]$root.AppendChild($ts)
+            } elseif ($findingsByNorm.ContainsKey($norm)) {
+              Add-LintSuite $doc $root $sevName $findingsByNorm[$norm].Source $findingsByNorm[$norm].Items $allCodes
+            } else {
+              Add-LintSuite $doc $root $sevName $file @() $allCodes
+            }
+          }
+          # Findings whose source was not matched to an enumerated spec file.
+          foreach ($norm in $findingsByNorm.Keys) {
+            if (-not $seen.ContainsKey($norm)) {
+              Add-LintSuite $doc $root $sevName $findingsByNorm[$norm].Source $findingsByNorm[$norm].Items $allCodes
+            }
+          }
+        }
+
+        $doc.Save($junit)
+        $filesWithIssues = $findingsByNorm.Count
+        $crashedFiles = $crashedSet.Count
+        $cleanFiles = [Math]::Max(0, $specFiles.Count - $filesWithIssues - $crashedFiles)
+        Write-Host "Wrote JUnit report: $($results.Count) finding(s) across $filesWithIssues file(s); $crashedFiles crashed; $cleanFiles passed -> $junit"
+
+  - task: PublishTestResults@2
+    displayName: 'Publish Spectral lint results'
+    inputs:
+      testResultsFormat: 'JUnit'
+      testResultsFiles: '**/spectral-result.xml'
+      searchFolder: '$(Build.ArtifactStagingDirectory)'
+      testRunTitle: 'API lint results $(Build.SourceBranchName)'
+      failTaskOnFailedTests: false
+  # ----------------- Spectral API linting (END) -----------------
+
+  # -------- Publish extracted artifacts (pipeline artifact, for download/debug) --------
+  - task: PublishPipelineArtifact@1
+    displayName: 'Publish extracted artifacts'
+    inputs:
+      targetPath: '$(ARTIFACT_PATH)'
+      artifact:   '$(ARTIFACT_NAME)'
+      publishLocation: 'pipeline'
+
+  # -------- Commit extracted artifacts to a NEW branch in this repo --------
+  - task: PowerShell@2
+    displayName: 'Push artifacts to new repo branch'
+    condition: and(succeeded(), eq('${{ parameters.publishToRepo }}', true))
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      workingDirectory: '$(Build.SourcesDirectory)'
+      script: |
+        $ErrorActionPreference = 'Stop'
+
+        $branch        = '$(EXTRACT_BRANCH)'
+        $targetFolder  = '${{ parameters.targetRepoFolder }}'
+        $artifactPath  = '$(ARTIFACT_PATH)'
+        $repoFolderAbs = Join-Path '$(Build.SourcesDirectory)' $targetFolder
+
+        Write-Host "Branch:        $branch"
+        Write-Host "Target folder: $repoFolderAbs"
+
+        git config user.email '${{ parameters.gitUserEmail }}'
+        git config user.name  '${{ parameters.gitUserName }}'
+
+        # Create (or reset) the destination folder with the freshly extracted artifacts
+        if (Test-Path $repoFolderAbs) { Remove-Item -Recurse -Force $repoFolderAbs }
+        New-Item -ItemType Directory -Force -Path $repoFolderAbs | Out-Null
+        Copy-Item -Path (Join-Path $artifactPath '*') -Destination $repoFolderAbs -Recurse -Force
+
+        # Create a brand-new branch from the current commit
+        git checkout -b $branch
+
+        git add -- $targetFolder
+        $pending = git status --porcelain
+        if ([string]::IsNullOrWhiteSpace($pending)) {
+          Write-Host 'No changes detected against the base branch; nothing to commit.'
+        } else {
+          git commit -m "APIM extract: $(APIM_SERVICE_NAME) (build $(Build.BuildNumber))"
+          if ($LASTEXITCODE -ne 0) { throw "git commit failed (exit $LASTEXITCODE)" }
+        }
+
+        git push --set-upstream origin $branch
+        if ($LASTEXITCODE -ne 0) { throw "git push failed (exit $LASTEXITCODE)" }
+
+        # Expose the branch name as a pipeline output for the publisher pipeline
+        Write-Host "##vso[task.setvariable variable=extractBranch;isOutput=true]$branch"
+        Write-Host "Pushed branch '$branch' with artifacts under '$targetFolder/'."
+    name: pushBranch
+    env:
+      SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+
+  # -------- Always logout --------
+  - task: PowerShell@2
+    displayName: 'az logout'
+    condition: always()
+    inputs:
+      targetType: 'inline'
+      pwsh: false
+      script: |
+        try { az logout } catch {}
+        try { az cache purge } catch {}
+        exit 0
