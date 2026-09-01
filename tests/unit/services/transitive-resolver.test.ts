@@ -308,6 +308,35 @@ describe('transitive-resolver', () => {
           workspace: undefined,
         });
       });
+
+      it.each([
+        ['/apis/orders', ResourceType.Api, 'orders'],
+        ['/products/store', ResourceType.Product, 'store'],
+      ])(
+        'should inherit workspace scope for relative target %s',
+        (scope, type, name) => {
+          expect(findSubscriptionTargets({
+            properties: { scope },
+          }, 'team-a')).toContainEqual({
+            type,
+            nameParts: [name],
+            workspace: 'team-a',
+          });
+        }
+      );
+
+      it('should use the workspace encoded in a full ARM target', () => {
+        expect(findSubscriptionTargets({
+          properties: {
+            scope:
+              '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a/workspaces/Team%20A/apis/Orders%20API',
+          },
+        }, 'fallback')).toContainEqual({
+          type: ResourceType.Api,
+          nameParts: ['Orders API'],
+          workspace: 'Team A',
+        });
+      });
     });
   });
 });

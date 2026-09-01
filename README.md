@@ -89,7 +89,7 @@ Publish local artifact files to an Azure APIM service.
 | `--no-transitive` | | Publish only filter matches, without referenced dependencies |
 | `--commit-id <sha>` | | Git commit SHA for incremental publish |
 | `--dry-run` | | Preview changes without applying |
-| `--delete-unmatched` | | Delete resources not in artifacts (mutually exclusive with `--filter` and `--commit-id`) |
+| `--delete-unmatched` | | Delete resources absent from artifacts, or removed by an incremental commit (mutually exclusive with `--filter`) |
 
 ```bash
 apiops publish --help

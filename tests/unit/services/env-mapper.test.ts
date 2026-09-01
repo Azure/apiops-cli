@@ -385,25 +385,29 @@ describe('env-mapper', () => {
       expect(result).toEqual({ type: ResourceType.ApiSchema, nameParts: ['dev-petstore', 'json'] });
     });
 
-    it('workspace-scoped descriptor: workspace field is preserved unchanged', () => {
+    it('workspace-scoped descriptor: workspace and resource names are affixed', () => {
       const d: ResourceDescriptor = {
         type: ResourceType.Api,
         nameParts: ['petstore'],
         workspace: 'my-workspace',
       };
       const result = mapDescriptor(d, m);
-      expect(result.workspace).toBe('my-workspace');
+      expect(result.workspace).toBe('dev-my-workspace');
       expect(result.nameParts[0]).toBe('dev-petstore');
     });
 
-    it('workspace-scoped ApiPolicy: parent Api affixed, workspace preserved', () => {
+    it('workspace-scoped ApiPolicy: parent Api and workspace are affixed', () => {
       const d: ResourceDescriptor = {
         type: ResourceType.ApiPolicy,
         nameParts: ['petstore'],
         workspace: 'my-workspace',
       };
       const result = mapDescriptor(d, m);
-      expect(result).toEqual({ type: ResourceType.ApiPolicy, nameParts: ['dev-petstore'], workspace: 'my-workspace' });
+      expect(result).toEqual({
+        type: ResourceType.ApiPolicy,
+        nameParts: ['dev-petstore'],
+        workspace: 'dev-my-workspace',
+      });
     });
 
     it('explicit appliesTo with only Product: Api segments not affixed in ProductApi', () => {

@@ -14,10 +14,13 @@ import type { PublishConfig } from '../models/config.js';
 import * as yaml from 'js-yaml';
 import { ResourceType } from '../models/resource-types.js';
 import {
+  applyApiPathPrefix,
   normalizeMcpToolOperationIds,
+  normalizeApiVersionSetId,
   publishResource,
   type ResourcePublishResult,
 } from './resource-publisher.js';
+import { mapDescriptor } from './env-mapper.js';
 import { runParallel } from '../lib/parallel-runner.js';
 import { applyOverrides } from './override-merger.js';
 import { logger } from '../lib/logger.js';
@@ -32,7 +35,7 @@ import { resolveWorkspaceFilter, shouldIncludeResource } from './filter-service.
 /**
  * API child resource types that should be published after the API itself
  */
-const API_CHILD_TYPES: ResourceType[] = [
+export const API_CHILD_TYPES: ResourceType[] = [
   ResourceType.ApiPolicy,
   ResourceType.ApiTag,
   ResourceType.ApiDiagnostic,
@@ -45,6 +48,20 @@ const API_CHILD_TYPES: ResourceType[] = [
   ResourceType.GraphQLResolver,
   ResourceType.GraphQLResolverPolicy,
 ];
+
+export interface ApiPatchPlan {
+  descriptor: ResourceDescriptor;
+  payload: Record<string, unknown>;
+}
+
+export interface ApiPublicationPlan {
+  importSpecification: boolean;
+  revisions: ResourceDescriptor[];
+  alignActiveRevision: boolean;
+  childPuts: ResourceDescriptor[];
+  operationDescriptionPuts: ResourceDescriptor[];
+  operationPatches: ApiPatchPlan[];
+}
 
 /**
  * Publish an API with all its revisions and child resources.
@@ -59,72 +76,15 @@ export async function publishApi(
   config: PublishConfig,
   allowedDescriptors?: ResourceDescriptor[]
 ): Promise<ResourcePublishResult> {
+  let publicationPlan: ApiPublicationPlan;
+  let rootPublished = false;
   try {
-    const includeSpecification = await shouldImportSpecification(
+    publicationPlan = await planApiPublication(
       store,
       descriptor,
       config,
       allowedDescriptors
     );
-    // Step 1: Publish root API (with spec import if available)
-    const rootResult = await publishRootApi(client, store, context, descriptor, config, {
-      includeSpecification,
-    });
-    if (rootResult.status !== 'success') {
-      return rootResult;
-    }
-
-    if (rootResult.specImported && rootResult.operationIdsWithNullDescription?.length) {
-      await alignImportedOperationDescriptions(
-        client,
-        context,
-        descriptor,
-        rootResult.operationIdsWithNullDescription
-      );
-    }
-
-    // Step 2: Find and publish revisions in numeric order
-    const publishedRevisionCount = await publishApiRevisions(
-      client,
-      store,
-      context,
-      descriptor,
-      config,
-      allowedDescriptors
-    );
-
-    // Step 2b: Align root API only when source marks it as current.
-    // Source of truth is properties.isCurrent in root apiInformation.json.
-    if (publishedRevisionCount > 0 && rootResult.isCurrent === true) {
-      const alignResult = await alignActiveRevisionWithSource(
-        client,
-        store,
-        context,
-        descriptor,
-        config
-      );
-      if (alignResult.status !== 'success') {
-        return alignResult;
-      }
-    }
-
-    // Step 3: Publish child resources in parallel
-    // When a spec was imported, operations and schemas are auto-created by APIM
-    await publishApiChildren(
-      client,
-      store,
-      context,
-      descriptor,
-      config,
-      rootResult.specImported,
-      allowedDescriptors
-    );
-
-    return {
-      descriptor,
-      status: 'success',
-      action: 'put',
-    };
   } catch (error) {
     return {
       descriptor,
@@ -133,43 +93,257 @@ export async function publishApi(
       error: error instanceof Error ? error : new Error(String(error)),
     };
   }
+
+  try {
+    // Step 1: Publish root API (with spec import if available)
+    const rootResult = await publishRootApi(client, store, context, descriptor, config, {
+      includeSpecification: publicationPlan.importSpecification,
+    });
+    if (rootResult.status !== 'success') {
+      return rootResult;
+    }
+    rootPublished = true;
+
+    const relatedResults: ResourcePublishResult[] = [];
+    if (rootResult.specImported && publicationPlan.operationDescriptionPuts.length > 0) {
+      relatedResults.push(...await alignImportedOperationDescriptions(
+        client,
+        context,
+        publicationPlan.operationDescriptionPuts,
+        config
+      ));
+    }
+
+    // Step 2: Find and publish revisions in numeric order
+    const revisionResults = await publishApiRevisions(
+      client,
+      store,
+      context,
+      config,
+      publicationPlan.revisions
+    );
+    relatedResults.push(...revisionResults);
+
+    // Step 2b: Align root API only when source marks it as current.
+    // Source of truth is properties.isCurrent in root apiInformation.json.
+    if (publicationPlan.alignActiveRevision && rootResult.isCurrent === true) {
+      let alignResult: ResourcePublishResult;
+      try {
+        alignResult = await alignActiveRevisionWithSource(
+          client,
+          store,
+          context,
+          descriptor,
+          config
+        );
+      } catch (error) {
+        alignResult = {
+          descriptor,
+          status: 'failed',
+          action: 'put',
+          error: error instanceof ApiPutAttemptError
+            ? error.originalError
+            : error instanceof Error
+              ? error
+              : new Error(String(error)),
+        };
+      }
+      relatedResults.push(alignResult);
+      if (alignResult.status !== 'success') {
+        return {
+          descriptor,
+          status: 'success',
+          action: 'put',
+          relatedResults,
+        };
+      }
+    }
+
+    // Step 3: Publish child resources in parallel
+    // When a spec was imported, operations and schemas are auto-created by APIM
+    relatedResults.push(...await publishApiChildren(
+      client,
+      store,
+      context,
+      config,
+      publicationPlan
+    ));
+
+    return {
+      descriptor,
+      status: 'success',
+      action: 'put',
+      relatedResults,
+    };
+  } catch (error) {
+    return {
+      descriptor,
+      status: 'failed',
+      action: rootPublished || error instanceof ApiPutAttemptError ? 'put' : 'noop',
+      error: error instanceof ApiPutAttemptError
+        ? error.originalError
+        : error instanceof Error
+          ? error
+          : new Error(String(error)),
+    };
+  }
 }
 
-async function shouldImportSpecification(
+export async function planApiPublication(
   store: IArtifactStore,
   apiDescriptor: ResourceDescriptor,
   config: PublishConfig,
   allowedDescriptors?: ResourceDescriptor[]
-): Promise<boolean> {
-  if (!allowedDescriptors) {
-    return true;
-  }
-
+): Promise<ApiPublicationPlan> {
+  const allDescriptors = await store.listResources(config.sourceDir);
   const apiName = getNamePart(apiDescriptor.nameParts, 0);
-  const managedChildren = (await store.listResources(config.sourceDir)).filter(
+  const managedChildren = allDescriptors.filter(
     (descriptor) =>
       SPEC_MANAGED_CHILD_TYPES.has(descriptor.type) &&
-      getNamePart(descriptor.nameParts, 0) === apiName &&
+      getNamePart(descriptor.nameParts, 0).toLowerCase() === apiName.toLowerCase() &&
       descriptor.workspace === apiDescriptor.workspace
   );
   const effectiveFilter = apiDescriptor.workspace
     ? resolveWorkspaceFilter(apiDescriptor.workspace, config.filter)
     : config.filter;
-  if (managedChildren.length === 0) {
-    const subFilter = Object.entries(effectiveFilter?.apiSubFilters ?? {}).find(
-      ([name]) => name.toLowerCase() === apiName.toLowerCase()
-    )?.[1];
-    return subFilter?.operations === undefined && subFilter?.schemas === undefined;
+  const subFilter = Object.entries(effectiveFilter?.apiSubFilters ?? {}).find(
+    ([name]) => name.toLowerCase() === apiName.toLowerCase()
+  )?.[1];
+  const allowed = allowedDescriptors
+    ? new Set(allowedDescriptors.map(getResourceDescriptorKey))
+    : undefined;
+  const rootName = apiName.toLowerCase();
+  const revisions = allDescriptors
+    .filter(
+      (descriptor) =>
+        descriptor.type === ResourceType.Api &&
+        descriptor.workspace === apiDescriptor.workspace &&
+        getNamePart(descriptor.nameParts, 0).toLowerCase().startsWith(`${rootName};rev=`) &&
+        (
+          !allowed ||
+          allowed.has(getResourceDescriptorKey(descriptor)) ||
+          (config.commitId !== undefined && shouldIncludeResource(descriptor, effectiveFilter))
+        )
+    )
+    .sort(
+      (left, right) =>
+        extractRevisionNumber(getNamePart(left.nameParts, 0)) -
+        extractRevisionNumber(getNamePart(right.nameParts, 0))
+    );
+  const apiJson = await store.readResource(config.sourceDir, apiDescriptor);
+  const mergedApiJson = apiJson
+    ? applyOverrides(apiDescriptor, apiJson, config.overrides)
+    : undefined;
+  const specificationAllowed =
+    subFilter?.operations === undefined &&
+    subFilter?.schemas === undefined &&
+    (
+      !allowed ||
+      managedChildren.length === 0 ||
+      (config.filter
+        ? managedChildren.every((descriptor) =>
+            shouldIncludeResource(descriptor, effectiveFilter)
+          )
+        : managedChildren.every((descriptor) =>
+            allowed.has(getResourceDescriptorKey(descriptor))
+          ))
+    );
+
+  let importSpecification = false;
+  let operationDescriptionPuts: ResourceDescriptor[] = [];
+  if (specificationAllowed) {
+    const specification = await store.readContent(config.sourceDir, apiDescriptor, 'specification');
+    if (mergedApiJson && specification) {
+      const properties = mergedApiJson.properties as Record<string, unknown> | undefined;
+      const apiType = properties?.type as string | undefined;
+      const dialect = detectSpecDialect(specification.content, specification.format);
+      importSpecification =
+        getImportFormat(specification.format ?? 'yaml', apiType, dialect) !== undefined;
+      if (importSpecification) {
+        operationDescriptionPuts = getOpenApiOperationIdsWithNullDescription(
+          specification.content,
+          specification.format
+        ).map((operationName) => ({
+          type: ResourceType.ApiOperation,
+          nameParts: [apiName, operationName],
+          workspace: apiDescriptor.workspace,
+        }));
+      }
+    }
   }
 
-  if (!config.filter) {
-    const allowed = new Set(allowedDescriptors.map(getResourceDescriptorKey));
-    return managedChildren.every((descriptor) => allowed.has(getResourceDescriptorKey(descriptor)));
-  }
-
-  return managedChildren.every((descriptor) =>
-    shouldIncludeResource(descriptor, effectiveFilter)
+  let childPuts = allDescriptors.filter(
+    (descriptor) =>
+      API_CHILD_TYPES.includes(descriptor.type) &&
+      getNamePart(descriptor.nameParts, 0).toLowerCase() === apiName.toLowerCase() &&
+      descriptor.workspace === apiDescriptor.workspace &&
+      !(importSpecification && SPEC_MANAGED_CHILD_TYPES.has(descriptor.type))
   );
+  if (allowed) {
+    childPuts = childPuts.filter(
+      (descriptor) =>
+        allowed.has(getResourceDescriptorKey(descriptor)) ||
+        (config.commitId !== undefined && shouldIncludeResource(descriptor, effectiveFilter))
+    );
+  }
+
+  if (importSpecification) {
+    const explicitSchemas = allDescriptors.filter(
+      (descriptor) =>
+        descriptor.type === ResourceType.ApiSchema &&
+        getNamePart(descriptor.nameParts, 0).toLowerCase() === apiName.toLowerCase() &&
+        descriptor.workspace === apiDescriptor.workspace &&
+        !isAutoGeneratedId(getNamePart(descriptor.nameParts, 1))
+    );
+    const filteredExplicitSchemas = config.filter
+      ? explicitSchemas.filter((descriptor) =>
+          shouldIncludeResource(descriptor, effectiveFilter)
+        )
+      : allowed
+        ? explicitSchemas.filter((descriptor) =>
+            allowed.has(getResourceDescriptorKey(descriptor))
+          )
+        : explicitSchemas;
+    childPuts = [...childPuts, ...filteredExplicitSchemas];
+  }
+
+  let operationDescriptors = importSpecification
+    ? managedChildren.filter(
+        (descriptor) =>
+          descriptor.type === ResourceType.ApiOperation &&
+          !isAutoGeneratedId(getNamePart(descriptor.nameParts, 1))
+      )
+    : [];
+  if (config.filter) {
+    operationDescriptors = operationDescriptors.filter((descriptor) =>
+      shouldIncludeResource(descriptor, effectiveFilter)
+    );
+  } else if (allowed) {
+    operationDescriptors = operationDescriptors.filter((descriptor) =>
+      allowed.has(getResourceDescriptorKey(descriptor))
+    );
+  }
+
+  const operationPatches = (
+    await Promise.all(
+      operationDescriptors.map(async (descriptor): Promise<ApiPatchPlan | undefined> => {
+        const payload = await buildOperationPatchPayload(store, descriptor, config);
+        return payload ? { descriptor, payload } : undefined;
+      })
+    )
+  ).filter((plan): plan is ApiPatchPlan => plan !== undefined);
+
+  return {
+    importSpecification,
+    revisions,
+    alignActiveRevision:
+      revisions.length > 0 &&
+      mergedApiJson !== undefined &&
+      getApiIsCurrent(mergedApiJson) === true,
+    childPuts: deduplicateDescriptors(childPuts),
+    operationDescriptionPuts,
+    operationPatches,
+  };
 }
 
 /**
@@ -208,7 +382,6 @@ function getImportFormat(specFormat: string, _apiType?: string, specDialect?: Ap
 interface RootApiResult {
   status: 'success' | 'skipped';
   specImported: boolean;
-  operationIdsWithNullDescription?: string[];
   isCurrent?: boolean;
 }
 
@@ -243,7 +416,7 @@ async function publishRootApi(
   // Root APIs publish through api-publisher rather than publishResource, so
   // they need the same pre-override MCP tool normalization here that revision
   // APIs receive in resource-publisher.
-  json = normalizeMcpToolOperationIds(json, context);
+  json = normalizeMcpToolOperationIds(json, context, config.envMapping);
 
   // Apply overrides
   json = applyOverrides(descriptor, json, config.overrides);
@@ -251,7 +424,6 @@ async function publishRootApi(
 
   // Try to read the specification file for this API
   let specImported = false;
-  let operationIdsWithNullDescription: string[] = [];
   const includeSpecification = options?.includeSpecification ?? true;
   const specResult = includeSpecification
     ? await store.readContent(config.sourceDir, descriptor, 'specification')
@@ -292,27 +464,34 @@ async function publishRootApi(
         },
       };
 
-      if (importFormat === 'openapi' || importFormat === 'openapi+json' || importFormat === 'swagger-json') {
-        operationIdsWithNullDescription = getOpenApiOperationIdsWithNullDescription(
-          specResult.content,
-          specResult.format
-        );
-      }
-
       specImported = true;
       logger.info(`Including ${specResult.format} specification in API import for "${getNamePart(descriptor.nameParts, 0)}"`);
     }
   }
 
+  json = applyApiPathPrefix(json, descriptor, config);
+  json = normalizeApiVersionSetId(
+    json,
+    context,
+    descriptor.workspace,
+    config.envMapping
+  );
+  const deployedDescriptor = config.envMapping
+    ? mapDescriptor(descriptor, config.envMapping)
+    : descriptor;
+
   // PUT the API resource to APIM
-  await client.putResource(context, descriptor, json);
+  try {
+    await client.putResource(context, deployedDescriptor, json);
+  } catch (error) {
+    throw new ApiPutAttemptError(error);
+  }
 
   return {
     descriptor,
     status: 'success',
     action: 'put',
     specImported,
-    operationIdsWithNullDescription,
     isCurrent,
   };
 }
@@ -340,48 +519,16 @@ async function publishApiRevisions(
   client: IApimClient,
   store: IArtifactStore,
   context: ApimServiceContext,
-  apiDescriptor: ResourceDescriptor,
   config: PublishConfig,
-  allowedDescriptors?: ResourceDescriptor[]
-): Promise<number> {
-  // List all resources from store
-  const allDescriptors = await store.listResources(config.sourceDir);
-  const allowed = allowedDescriptors
-    ? new Set(allowedDescriptors.map(getResourceDescriptorKey))
-    : undefined;
-  const effectiveFilter = apiDescriptor.workspace
-    ? resolveWorkspaceFilter(apiDescriptor.workspace, config.filter)
-    : config.filter;
-  const rootName = getNamePart(apiDescriptor.nameParts, 0).toLowerCase();
-
-  // Find revision descriptors for this API
-  const revisionDescriptors = allDescriptors.filter(
-    (d) =>
-      d.type === ResourceType.Api &&
-      d.workspace === apiDescriptor.workspace &&
-      getNamePart(d.nameParts, 0).toLowerCase().startsWith(`${rootName};rev=`) &&
-      (
-        !allowed ||
-        allowed.has(getResourceDescriptorKey(d)) ||
-        // Incremental mode only diffs changed files; fall back to the filter
-        // so an unchanged revision still republishes with its root API.
-        (config.commitId !== undefined && shouldIncludeResource(d, effectiveFilter))
-      )
-  );
-
-  // Sort revisions by revision number
-  const sortedRevisions = revisionDescriptors.sort((a, b) => {
-    const revA = extractRevisionNumber(getNamePart(a.nameParts, 0));
-    const revB = extractRevisionNumber(getNamePart(b.nameParts, 0));
-    return revA - revB;
-  });
-
+  revisionDescriptors: ResourceDescriptor[]
+): Promise<ResourcePublishResult[]> {
   // Publish each revision in order
-  for (const revDescriptor of sortedRevisions) {
-    await publishResource(client, store, context, revDescriptor, config);
+  const results: ResourcePublishResult[] = [];
+  for (const revDescriptor of revisionDescriptors) {
+    results.push(await publishResource(client, store, context, revDescriptor, config));
   }
 
-  return sortedRevisions.length;
+  return results;
 }
 
 /**
@@ -423,73 +570,15 @@ async function publishApiChildren(
   client: IApimClient,
   store: IArtifactStore,
   context: ApimServiceContext,
-  apiDescriptor: ResourceDescriptor,
   config: PublishConfig,
-  specImported: boolean = false,
-  allowedDescriptors?: ResourceDescriptor[]
-): Promise<void> {
-  // List all resources from store
-  const allDescriptors = await store.listResources(config.sourceDir);
-  const effectiveFilter = apiDescriptor.workspace
-    ? resolveWorkspaceFilter(apiDescriptor.workspace, config.filter)
-    : config.filter;
-
-  // Find child descriptors for this API
-  let childDescriptors = allDescriptors.filter(
-    (d) =>
-      API_CHILD_TYPES.includes(d.type) &&
-      getNamePart(d.nameParts, 0).toLowerCase() === getNamePart(apiDescriptor.nameParts, 0).toLowerCase() &&
-      d.workspace === apiDescriptor.workspace &&
-      !(specImported && SPEC_MANAGED_CHILD_TYPES.has(d.type))
-  );
-
-  if (allowedDescriptors) {
-    const allowed = new Set(allowedDescriptors.map(getResourceDescriptorKey));
-    childDescriptors = childDescriptors.filter(
-      (descriptor) =>
-        allowed.has(getResourceDescriptorKey(descriptor)) ||
-        // Incremental mode only diffs changed files; fall back to the filter
-        // so an unchanged child still republishes with its parent API.
-        (config.commitId !== undefined && shouldIncludeResource(descriptor, effectiveFilter))
-    );
-  }
-
-  if (specImported) {
-    // Re-include explicitly named schemas (non-auto-generated IDs).
-    // Auto-generated schemas have 24-char hex names and are recreated by spec import.
-    // Explicitly named schemas (like "src-rest-schema-item") must be published.
-    const explicitSchemas = allDescriptors.filter(
-      (d) =>
-        d.type === ResourceType.ApiSchema &&
-        getNamePart(d.nameParts, 0).toLowerCase() === getNamePart(apiDescriptor.nameParts, 0).toLowerCase() &&
-        d.workspace === apiDescriptor.workspace &&
-        !isAutoGeneratedId(getNamePart(d.nameParts, 1))
-    );
-
-    const filteredExplicitSchemas = config.filter
-      ? explicitSchemas.filter((descriptor) =>
-          shouldIncludeResource(descriptor, effectiveFilter)
-        )
-      : allowedDescriptors
-        ? explicitSchemas.filter((d) =>
-            allowedDescriptors.some(
-              (allowed) => getResourceDescriptorKey(allowed) === getResourceDescriptorKey(d)
-            )
-          )
-        : explicitSchemas;
-    if (filteredExplicitSchemas.length > 0) {
-      logger.debug(
-        `Re-publishing ${filteredExplicitSchemas.length} explicit schema(s) after spec import for "${getNamePart(apiDescriptor.nameParts, 0)}"`
-      );
-      childDescriptors = [...childDescriptors, ...filteredExplicitSchemas];
-    }
-  }
-
+  plan: ApiPublicationPlan
+): Promise<ResourcePublishResult[]> {
+  const results: ResourcePublishResult[] = [];
   // Group resources by publish tier for dependency ordering.
   // Lower tiers are published first (parents before children, operations before policies).
   // Resources in the same tier can be published in parallel.
   const tierMap = new Map<number, ResourceDescriptor[]>();
-  for (const d of childDescriptors) {
+  for (const d of plan.childPuts) {
     const tier = getPublishTier(d.type);
     const existing = tierMap.get(tier) ?? [];
     existing.push(d);
@@ -501,29 +590,35 @@ async function publishApiChildren(
   for (const tier of sortedTiers) {
     const descriptors = tierMap.get(tier) ?? [];
     if (descriptors.length > 0) {
-      const tasks = descriptors.map(
-        (descriptor) => () =>
-          publishResource(client, store, context, descriptor, config)
-      );
-      await runParallel(tasks, 5);
+      const tasks = descriptors.map((descriptor) => async () => {
+        return publishResource(client, store, context, descriptor, config);
+      });
+      const taskResults = await runParallel(tasks, 5);
+      for (const [index, taskResult] of (taskResults ?? []).entries()) {
+        if (taskResult.status === 'fulfilled' && taskResult.value) {
+          results.push(taskResult.value);
+        } else if (taskResult.status === 'rejected') {
+          const childDescriptor = descriptors[index];
+          if (childDescriptor) {
+            results.push({
+              descriptor: childDescriptor,
+              status: 'failed',
+              action: 'put',
+              error: taskResult.reason,
+            });
+          }
+        }
+      }
     }
   }
 
-  // After spec import, reconcile all operations by PATCHing with persisted metadata.
-  // This ensures APIM retains the original operation state (description, schema refs, etc.)
-  // regardless of what the importer defaulted. PATCH is idempotent and only updates
-  // the fields present in the persisted JSON.
-  if (specImported) {
-    await reconcileOperationsAfterSpecImport(
-      client,
-      store,
-      context,
-      apiDescriptor,
-      config,
-      allDescriptors,
-      allowedDescriptors
-    );
-  }
+  results.push(...await reconcileOperationsAfterSpecImport(
+    client,
+    context,
+    plan.operationPatches,
+    config
+  ));
+  return results;
 }
 
 /**
@@ -537,85 +632,87 @@ async function publishApiChildren(
  */
 async function reconcileOperationsAfterSpecImport(
   client: IApimClient,
-  store: IArtifactStore,
   context: ApimServiceContext,
-  apiDescriptor: ResourceDescriptor,
-  config: PublishConfig,
-  allDescriptors: ResourceDescriptor[],
-  allowedDescriptors?: ResourceDescriptor[]
-): Promise<void> {
-  let operationDescriptors = allDescriptors.filter(
-    (d) =>
-      d.type === ResourceType.ApiOperation &&
-      getNamePart(d.nameParts, 0).toLowerCase() === getNamePart(apiDescriptor.nameParts, 0).toLowerCase() &&
-      d.workspace === apiDescriptor.workspace &&
-      !isAutoGeneratedId(getNamePart(d.nameParts, 1))
-  );
-  if (config.filter) {
-    const effectiveFilter = apiDescriptor.workspace
-      ? resolveWorkspaceFilter(apiDescriptor.workspace, config.filter)
-      : config.filter;
-    operationDescriptors = operationDescriptors.filter((descriptor) =>
-      shouldIncludeResource(descriptor, effectiveFilter)
-    );
-  } else if (allowedDescriptors) {
-    const allowed = new Set(allowedDescriptors.map(getResourceDescriptorKey));
-    operationDescriptors = operationDescriptors.filter((d) =>
-      allowed.has(getResourceDescriptorKey(d))
-    );
-  }
-
-  if (operationDescriptors.length === 0) return;
-
-  const tasks = operationDescriptors.map((descriptor) => async () => {
-    const json = await store.readResource(config.sourceDir, descriptor);
-    if (!json) return;
-    const mergedJson = applyOverrides(descriptor, json, config.overrides);
-
-    const props = mergedJson.properties as Record<string, unknown> | undefined;
-    if (!props) return;
-
-    // Build a PATCH body with only allow-listed properties present in the persisted JSON.
-    const patchProps: Record<string, unknown> = {};
-    for (const key of OPERATION_PATCH_ALLOWLIST) {
-      if (Object.hasOwn(props, key)) {
-        patchProps[key] = props[key];
-      }
-    }
-
-    // The spec import already bound request/responses representations to the
-    // schemas it created. PATCH replaces those arrays wholesale, so re-sending
-    // them without schemaId/typeName (the source IDs don't exist on the target)
-    // would wipe the binding the importer just created. Drop them and reconcile
-    // only importer-agnostic metadata.
-    if (hasSchemaBoundRepresentations(patchProps)) {
-      delete patchProps.request;
-      delete patchProps.responses;
-    }
-
-    // Strip source schema refs; APIM rebinds on import and drops stale IDs.
-    stripRepresentationSchemaRefs(patchProps);
-
-    if (Object.keys(patchProps).length === 0) return;
-
-    const patchBody: Record<string, unknown> = { properties: patchProps };
-
+  operationPatches: ApiPatchPlan[],
+  config: PublishConfig
+): Promise<ResourcePublishResult[]> {
+  const tasks = operationPatches.map(({ descriptor, payload }) => async () => {
     try {
-      await client.patchResource(context, descriptor, patchBody);
+      const deployedDescriptor = config.envMapping
+        ? mapDescriptor(descriptor, config.envMapping)
+        : descriptor;
+      await client.patchResource(context, deployedDescriptor, payload);
       logger.debug(`Reconciled operation "${getNamePart(descriptor.nameParts, 1)}" after spec import`);
+      const result: ResourcePublishResult = {
+        descriptor,
+        status: 'success',
+        action: 'patch',
+      };
+      return result;
     } catch (error) {
       logger.warn(
         `Failed to reconcile operation "${getNamePart(descriptor.nameParts, 1)}" after spec import: ${(error as Error).message}`
       );
+      const result: ResourcePublishResult = {
+        descriptor,
+        status: 'failed',
+        action: 'patch',
+        error: error instanceof Error ? error : new Error(String(error)),
+      };
+      return result;
     }
   });
 
   if (tasks.length > 0) {
     logger.debug(
-      `Reconciling ${tasks.length} operation(s) after spec import for "${getNamePart(apiDescriptor.nameParts, 0)}"`
+      `Reconciling ${tasks.length} operation(s) after spec import`
     );
-    await runParallel(tasks, 5);
+    const taskResults = await runParallel(tasks, 5);
+    return (taskResults ?? []).flatMap((taskResult, index) => {
+      if (taskResult.status === 'fulfilled' && taskResult.value) {
+        return [taskResult.value];
+      }
+      const patch = operationPatches[index];
+      return patch
+        ? [{
+            descriptor: patch.descriptor,
+            status: 'failed' as const,
+            action: 'patch' as const,
+            error: taskResult.reason,
+          }]
+        : [];
+    });
   }
+  return [];
+}
+
+async function buildOperationPatchPayload(
+  store: IArtifactStore,
+  descriptor: ResourceDescriptor,
+  config: PublishConfig
+): Promise<Record<string, unknown> | undefined> {
+  const json = await store.readResource(config.sourceDir, descriptor);
+  if (!json) return undefined;
+  const mergedJson = applyOverrides(descriptor, json, config.overrides);
+  const props = mergedJson.properties as Record<string, unknown> | undefined;
+  if (!props) return undefined;
+
+  const patchProps: Record<string, unknown> = {};
+  for (const key of OPERATION_PATCH_ALLOWLIST) {
+    if (Object.hasOwn(props, key)) {
+      patchProps[key] = props[key];
+    }
+  }
+
+  if (hasSchemaBoundRepresentations(patchProps)) {
+    delete patchProps.request;
+    delete patchProps.responses;
+  }
+  stripRepresentationSchemaRefs(patchProps);
+
+  return Object.keys(patchProps).length > 0
+    ? { properties: patchProps }
+    : undefined;
 }
 
 /**
@@ -714,36 +811,89 @@ function getApiIsCurrent(json: Record<string, unknown>): boolean | undefined {
 async function alignImportedOperationDescriptions(
   client: IApimClient,
   context: ApimServiceContext,
-  apiDescriptor: ResourceDescriptor,
-  operationIdsWithNullDescription: string[]
-): Promise<void> {
-  const apiName = getNamePart(apiDescriptor.nameParts, 0);
-
-  for (const operationName of operationIdsWithNullDescription) {
-    const operationDescriptor: ResourceDescriptor = {
-      type: ResourceType.ApiOperation,
-      nameParts: [apiName, operationName],
-      workspace: apiDescriptor.workspace,
-    };
-
-    const operation = await client.getResource(context, operationDescriptor);
+  operationDescriptors: ResourceDescriptor[],
+  config: PublishConfig
+): Promise<ResourcePublishResult[]> {
+  const results: ResourcePublishResult[] = [];
+  for (const operationDescriptor of operationDescriptors) {
+    const deployedDescriptor = config.envMapping
+      ? mapDescriptor(operationDescriptor, config.envMapping)
+      : operationDescriptor;
+    let operation: Record<string, unknown> | undefined;
+    try {
+      operation = await client.getResource(context, deployedDescriptor);
+    } catch (error) {
+      results.push({
+        descriptor: operationDescriptor,
+        status: 'failed',
+        action: 'noop',
+        error: error instanceof Error ? error : new Error(String(error)),
+      });
+      continue;
+    }
     if (!operation) {
+      results.push({
+        descriptor: operationDescriptor,
+        status: 'skipped',
+        action: 'noop',
+      });
       continue;
     }
 
     const props = operation.properties as Record<string, unknown> | undefined;
-    if (!props || props.description === null) {
+    if (!props) {
+      results.push({
+        descriptor: operationDescriptor,
+        status: 'skipped',
+        action: 'noop',
+      });
       continue;
     }
 
-    await client.putResource(context, operationDescriptor, {
-      ...operation,
-      properties: {
-        ...props,
-        description: null,
-      },
-    });
+    try {
+      await client.putResource(context, deployedDescriptor, {
+        ...operation,
+        properties: {
+          ...props,
+          description: null,
+        },
+      });
+      results.push({
+        descriptor: operationDescriptor,
+        status: 'success',
+        action: 'put',
+      });
+    } catch (error) {
+      results.push({
+        descriptor: operationDescriptor,
+        status: 'failed',
+        action: 'put',
+        error: error instanceof Error ? error : new Error(String(error)),
+      });
+    }
   }
+  return results;
+}
+
+class ApiPutAttemptError extends Error {
+  readonly originalError: Error;
+
+  constructor(error: unknown) {
+    const originalError = error instanceof Error ? error : new Error(String(error));
+    super(originalError.message, { cause: originalError });
+    this.name = 'ApiPutAttemptError';
+    this.originalError = originalError;
+  }
+}
+
+function deduplicateDescriptors(descriptors: ResourceDescriptor[]): ResourceDescriptor[] {
+  const seen = new Set<string>();
+  return descriptors.filter((descriptor) => {
+    const key = getResourceDescriptorKey(descriptor);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function getOpenApiOperationIdsWithNullDescription(

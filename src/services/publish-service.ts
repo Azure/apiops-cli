@@ -27,10 +27,16 @@ import {
   extractRootApiName,
   resolveWorkspaceFilter,
   shouldIncludeResource,
+  shouldReconcileResource,
 } from './filter-service.js';
 
 // Import from other agents' files (will be created in parallel)
-import { publishResource, ResourcePublishResult, buildKnownArtifactSets } from './resource-publisher.js';
+import {
+  publishResource,
+  resolveAssociationDeleteDescriptor,
+  ResourcePublishResult,
+  buildKnownArtifactSets,
+} from './resource-publisher.js';
 import { publishApi } from './api-publisher.js';
 import { publishProduct } from './product-publisher.js';
 import { generateDryRunReport, DryRunReport } from './dry-run-reporter.js';
@@ -41,6 +47,7 @@ import { hasNamedValueOverride } from './override-merger.js';
 import { REDACTION_MARKER } from './secret-redactor.js';
 import { scanArtifactReferences } from './transitive-resolver.js';
 import { validateAndBuildEnvMapping } from './env-mapping-validator.js';
+import { mapDescriptor } from './env-mapper.js';
 
 /**
  * The APIM Backend properties.type value that identifies a pool backend.
@@ -51,13 +58,14 @@ const POOL_BACKEND_TYPE = 'pool';
 
 export interface PublishActionResult {
   descriptor: ResourceDescriptor;
-  action: 'put' | 'delete' | 'noop';
+  action: 'put' | 'patch' | 'delete' | 'noop';
   status: 'success' | 'failed' | 'skipped';
   error?: Error;
 }
 
 export interface PublishResult {
   totalPuts: number;
+  totalPatches: number;
   totalDeletes: number;
   totalErrors: number;
   totalSkipped: number;
@@ -141,6 +149,7 @@ export async function runPublish(
 
       return {
         totalPuts: 0,
+        totalPatches: 0,
         totalDeletes: 0,
         totalErrors: actions.length,
         totalSkipped: 0,
@@ -157,15 +166,17 @@ export async function runPublish(
         config.service,
         config,
         targetDescriptors,
-        deletedDescriptors
+        config.deleteUnmatched ? deletedDescriptors : []
       );
+      const totalErrors = dryRunReport.actions.filter((action) => action.error).length;
 
       return {
         totalPuts: dryRunReport.summary.creates,
+        totalPatches: dryRunReport.summary.patches,
         totalDeletes: dryRunReport.summary.deletes,
-        totalErrors: 0,
+        totalErrors,
         totalSkipped: dryRunReport.summary.skips,
-        exitCode: EXIT_SUCCESS,
+        exitCode: totalErrors > 0 ? EXIT_PARTIAL : EXIT_SUCCESS,
         actions: [],
         dryRunReport,
       };
@@ -182,13 +193,14 @@ export async function runPublish(
 
     // Step 4: Execute DELETEs in reverse dependency order (tier 4 → tier 1) if requested
     let deleteResults: PublishActionResult[] = [];
-    if (deletedDescriptors.length > 0) {
+    if (config.deleteUnmatched && deletedDescriptors.length > 0) {
       deleteResults = await executeDeletesForDescriptors(
         client,
         config.service,
-        deletedDescriptors
+        deletedDescriptors,
+        config
       );
-    } else if (config.deleteUnmatched) {
+    } else if (config.deleteUnmatched && !config.commitId) {
       deleteResults = await executeDeletes(
         client,
         store,
@@ -199,7 +211,8 @@ export async function runPublish(
 
     // Step 5: Combine results and determine exit code
     const allResults = [...putResults, ...deleteResults];
-    const totalPuts = putResults.length;
+    const totalPuts = putResults.filter((result) => result.action === 'put').length;
+    const totalPatches = putResults.filter((result) => result.action === 'patch').length;
     const totalDeletes = deleteResults.length;
     const totalErrors = allResults.filter((r) => r.status === 'failed').length;
     const totalSkipped = allResults.filter((r) => r.status === 'skipped').length;
@@ -208,6 +221,7 @@ export async function runPublish(
 
     return {
       totalPuts,
+      totalPatches,
       totalDeletes,
       totalErrors,
       totalSkipped,
@@ -218,6 +232,7 @@ export async function runPublish(
     logger.error('Fatal error during publish:', error);
     return {
       totalPuts: 0,
+      totalPatches: 0,
       totalDeletes: 0,
       totalErrors: 1,
       totalSkipped: 0,
@@ -261,7 +276,8 @@ async function determinePublishTargets(
       store,
       config.sourceDir,
       targetDescriptors,
-      availableDescriptors
+      availableDescriptors,
+      config.filter
     );
   }
 
@@ -272,7 +288,8 @@ async function expandTransitivePublishTargets(
   store: IArtifactStore,
   sourceDir: string,
   initialDescriptors: ResourceDescriptor[],
-  availableDescriptors: ResourceDescriptor[]
+  availableDescriptors: ResourceDescriptor[],
+  filter: FilterConfig
 ): Promise<ResourceDescriptor[]> {
   const availableByKey = new Map(
     availableDescriptors.map((descriptor) => [getResourceDescriptorKey(descriptor), descriptor])
@@ -288,6 +305,12 @@ async function expandTransitivePublishTargets(
     if (descriptor.type !== ResourceType.Api && descriptor.type !== ResourceType.Product) {
       continue;
     }
+    if (
+      descriptor.type === ResourceType.Api &&
+      isApiRevisionName(descriptor.nameParts[0] ?? '')
+    ) {
+      continue;
+    }
     const parentName = descriptor.type === ResourceType.Api
       ? extractRootApiName(descriptor.nameParts[0] ?? '').toLowerCase()
       : (descriptor.nameParts[0] ?? '').toLowerCase();
@@ -297,16 +320,24 @@ async function expandTransitivePublishTargets(
       if (
         (!isSameResourceType && !isOwnedChild) ||
         candidate.workspace !== descriptor.workspace ||
-        candidate.nameParts.length < 1
+        candidate.nameParts.length < 1 ||
+        !shouldReconcileResource(candidate, filter)
       ) {
         continue;
       }
       const candidateName = candidate.type === ResourceType.Api
         ? extractRootApiName(candidate.nameParts[0] ?? '').toLowerCase()
         : (candidate.nameParts[0] ?? '').toLowerCase();
-      if (candidateName === parentName && !scanQueued.has(getResourceDescriptorKey(candidate))) {
-        scanQueue.push(candidate);
-        scanQueued.add(getResourceDescriptorKey(candidate));
+      if (candidateName === parentName) {
+        const candidateKey = getResourceDescriptorKey(candidate);
+        if (!included.has(candidateKey)) {
+          included.add(candidateKey);
+          expanded.push(candidate);
+        }
+        if (!scanQueued.has(candidateKey)) {
+          scanQueue.push(candidate);
+          scanQueued.add(candidateKey);
+        }
       }
     }
   }
@@ -737,28 +768,32 @@ async function publishTier(
           store,
           context,
           descriptor,
-          config
+          config,
+          config.filter ? allTargetDescriptors : undefined
         );
       }
 
-      return convertToActionResult(publishResult);
+      const relatedResults = publishResult.relatedResults?.map(convertToActionResult) ?? [];
+      return publishResult.suppressPrimaryResult
+        ? relatedResults
+        : [convertToActionResult(publishResult), ...relatedResults];
     } catch (error) {
       logger.error(
         `Failed to publish ${buildResourceLabel(descriptor)}:`,
         error
       );
-      return {
+      return [{
         descriptor,
         action: 'put' as const,
         status: 'failed' as const,
         error: error instanceof Error ? error : new Error(String(error)),
-      };
+      }];
     }
   });
 
   const taskResults = await runParallel(tasks, 5);
 
-  return taskResults.map((tr, index) => {
+  return taskResults.flatMap((tr, index) => {
     if (tr.status === 'fulfilled' && tr.value) {
       return tr.value;
     } else {
@@ -767,12 +802,12 @@ async function publishTier(
       if (!descriptor) {
         throw new Error('No descriptor found for failed task');
       }
-      return {
+      return [{
         descriptor,
         action: 'put' as const,
         status: 'failed' as const,
         error: tr.reason || new Error('Unknown error'),
-      };
+      }];
     }
   });
 }
@@ -845,7 +880,13 @@ async function executeDeletes(
 
   logger.debug(`Deleting ${deleteDescriptors.length} unmatched resources`);
 
-  return executeDeletesForDescriptors(client, context, deleteDescriptors);
+  return executeDeletesForDescriptors(
+    client,
+    context,
+    deleteDescriptors,
+    config,
+    true
+  );
 }
 
 /**
@@ -854,7 +895,9 @@ async function executeDeletes(
 async function executeDeletesForDescriptors(
   client: IApimClient,
   context: ApimServiceContext,
-  deleteDescriptors: ResourceDescriptor[]
+  deleteDescriptors: ResourceDescriptor[],
+  config: PublishConfig,
+  descriptorsAreDeployed = false
 ): Promise<PublishActionResult[]> {
   if (deleteDescriptors.length === 0) {
     logger.debug('No resources to delete');
@@ -880,7 +923,13 @@ async function executeDeletesForDescriptors(
 
     logger.debug(`Deleting tier ${tier}: ${descriptors.length} resources`);
 
-    const tierResults = await deleteTier(client, context, descriptors);
+    const tierResults = await deleteTier(
+      client,
+      context,
+      descriptors,
+      config,
+      descriptorsAreDeployed
+    );
 
     results.push(...tierResults);
 
@@ -899,11 +948,28 @@ async function executeDeletesForDescriptors(
 async function deleteTier(
   client: IApimClient,
   context: ApimServiceContext,
-  descriptors: ResourceDescriptor[]
+  descriptors: ResourceDescriptor[],
+  config: PublishConfig,
+  descriptorsAreDeployed: boolean
 ): Promise<PublishActionResult[]> {
   const tasks = descriptors.map((descriptor) => async () => {
     try {
-      const deleted = await client.deleteResource(context, descriptor);
+      const deployedDescriptor = config.envMapping && !descriptorsAreDeployed
+        ? mapDescriptor(descriptor, config.envMapping)
+        : descriptor;
+      const resolvedDescriptor = await resolveAssociationDeleteDescriptor(
+        client,
+        context,
+        deployedDescriptor
+      );
+      if (!resolvedDescriptor) {
+        return {
+          descriptor,
+          action: 'delete' as const,
+          status: 'skipped' as const,
+        };
+      }
+      const deleted = await client.deleteResource(context, resolvedDescriptor);
 
       return {
         descriptor,

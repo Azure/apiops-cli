@@ -139,6 +139,14 @@ export function buildEnvMappingFromOverrides(overrides: OverrideConfig | undefin
  * - When type ∉ appliesTo: namespace scoping does not apply → returned unchanged.
  */
 export function toCanonicalDescriptor(d: ResourceDescriptor, m: EnvMapping): ResourceDescriptor | null {
+  let canonicalWorkspace = d.workspace;
+  if (d.workspace && m.appliesTo.has(ResourceType.Workspace)) {
+    if (!isInEnvNamespace(d.workspace, ResourceType.Workspace, m)) {
+      return null;
+    }
+    canonicalWorkspace =
+      toCanonicalName(d.workspace, ResourceType.Workspace, m) ?? d.workspace;
+  }
   const segTypes = SEGMENT_TYPES.get(d.type);
 
   if (segTypes !== undefined) {
@@ -156,7 +164,7 @@ export function toCanonicalDescriptor(d: ResourceDescriptor, m: EnvMapping): Res
       if (segType === null || segType === undefined) return part; // positional sub-resource key
       return toCanonicalName(part, segType, m) ?? part; // defensive fallback
     });
-    return { ...d, nameParts: newParts };
+    return { ...d, nameParts: newParts, workspace: canonicalWorkspace };
   }
 
   // Top-level type
@@ -164,10 +172,15 @@ export function toCanonicalDescriptor(d: ResourceDescriptor, m: EnvMapping): Res
   if (!isInEnvNamespace(d.nameParts[0], d.type, m)) return null;
   const canonicalFirst = toCanonicalName(d.nameParts[0], d.type, m);
   if (canonicalFirst === undefined) return null; // defensive
-  return { ...d, nameParts: [canonicalFirst, ...d.nameParts.slice(1)] };
+  return {
+    ...d,
+    nameParts: [canonicalFirst, ...d.nameParts.slice(1)],
+    workspace: canonicalWorkspace,
+  };
 }
 
 export function toDeployedName(name: string, type: ResourceType, m: EnvMapping): string {
+  if (type === ResourceType.Group && isBuiltInGroup(name)) return name;
   if (!m.appliesTo.has(type)) return name;
   return `${m.prefix}${name}${m.suffix}`;
 }
@@ -178,6 +191,7 @@ export function toDeployedName(name: string, type: ResourceType, m: EnvMapping):
  * Returns input unchanged when type ∉ appliesTo.
  */
 export function toCanonicalName(deployedName: string, type: ResourceType, m: EnvMapping): string | undefined {
+  if (type === ResourceType.Group && isBuiltInGroup(deployedName)) return deployedName;
   if (!m.appliesTo.has(type)) return deployedName;
   if (!isInEnvNamespace(deployedName, type, m)) return undefined;
 
@@ -192,9 +206,14 @@ export function toCanonicalName(deployedName: string, type: ResourceType, m: Env
  * When type ∉ appliesTo → returns true (namespace scoping doesn't apply to this type).
  */
 export function isInEnvNamespace(deployedName: string, type: ResourceType, m: EnvMapping): boolean {
+  if (type === ResourceType.Group && isBuiltInGroup(deployedName)) return true;
   if (!m.appliesTo.has(type)) return true;
   if (deployedName.length < m.prefix.length + m.suffix.length) return false;
   return deployedName.startsWith(m.prefix) && deployedName.endsWith(m.suffix);
+}
+
+function isBuiltInGroup(name: string): boolean {
+  return ['administrators', 'developers', 'guests'].includes(name.toLowerCase());
 }
 
 /**
@@ -203,9 +222,12 @@ export function isInEnvNamespace(deployedName: string, type: ResourceType, m: En
  * For singleton children (ApiPolicy, ProductPolicy, etc.): nameParts[0] (parent name) is affixed if parent type ∈ appliesTo.
  * For association types (ProductApi, ApiTag, etc.): each segment is affixed if its type ∈ appliesTo.
  * For sub-resource children (ApiOperation, ApiSchema, etc.): only nameParts[0] (parent) is affixed; sub-resource keys are unchanged.
- * The workspace field is NOT affixed (workspace container rename is handled separately).
+ * The workspace field is affixed independently from the resource path segments.
  */
 export function mapDescriptor(d: ResourceDescriptor, m: EnvMapping): ResourceDescriptor {
+  const workspace = d.workspace
+    ? toDeployedName(d.workspace, ResourceType.Workspace, m)
+    : undefined;
   const segTypes = SEGMENT_TYPES.get(d.type);
 
   if (segTypes !== undefined) {
@@ -214,11 +236,15 @@ export function mapDescriptor(d: ResourceDescriptor, m: EnvMapping): ResourceDes
       if (segType === null || segType === undefined) return part;
       return toDeployedName(part, segType, m);
     });
-    return { ...d, nameParts: newParts };
+    return { ...d, nameParts: newParts, workspace };
   }
 
   // Top-level type: affix nameParts[0] if this type ∈ appliesTo
   if (d.nameParts.length === 0) return d;
   const [first, ...rest] = d.nameParts;
-  return { ...d, nameParts: [toDeployedName(first, d.type, m), ...rest] };
+  return {
+    ...d,
+    nameParts: [toDeployedName(first, d.type, m), ...rest],
+    workspace,
+  };
 }

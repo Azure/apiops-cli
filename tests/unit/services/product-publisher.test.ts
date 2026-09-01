@@ -5,15 +5,20 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { publishProduct } from '../../../src/services/product-publisher.js';
+import {
+  planProductAssociationPublications,
+  publishProduct,
+} from '../../../src/services/product-publisher.js';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
 import { LogLevel } from '../../../src/lib/logger.js';
+import { DEFAULT_APPLIES_TO } from '../../../src/services/env-mapper.js';
 
 // Mock resource-publisher so product-publisher tests don't run full resource-publisher logic
 const mockPublishResource = vi.fn();
-vi.mock('../../../src/services/resource-publisher.js', () => ({
+vi.mock('../../../src/services/resource-publisher.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../src/services/resource-publisher.js')>()),
   publishResource: (...args: unknown[]) => mockPublishResource(...args),
 }));
 
@@ -141,6 +146,28 @@ describe('product-publisher', () => {
       expect(store.readAssociation).not.toHaveBeenCalled();
     });
 
+    it('reports a preliminary existence-check failure without a PUT action', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      client.getResource.mockRejectedValue(new Error('Lookup failed'));
+
+      const result = await publishProduct(
+        client,
+        store,
+        testContext,
+        productDescriptor,
+        testConfig
+      );
+
+      expect(result).toMatchObject({
+        descriptor: productDescriptor,
+        status: 'failed',
+        action: 'noop',
+        error: expect.objectContaining({ message: 'Lookup failed' }),
+      });
+      expect(mockPublishResource).not.toHaveBeenCalled();
+    });
+
     it('no apis.json / groups.json / tags.json: no client.putResource calls for associations', async () => {
       const client = createMockClient();
       const store = createMockStore();
@@ -174,6 +201,69 @@ describe('product-publisher', () => {
       expect(client.putResource).toHaveBeenCalledWith(
         testContext,
         expect.objectContaining({ type: ResourceType.ProductApi, nameParts: ['my-product', 'orders'] }),
+        {}
+      );
+    });
+
+    it('publishes environment-mapped product associations to deployed descriptors', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation
+        .mockResolvedValueOnce([{ name: 'petstore' }])
+        .mockResolvedValueOnce([{ name: 'developers' }])
+        .mockResolvedValueOnce([{ name: 'production' }]);
+      const config: PublishConfig = {
+        ...testConfig,
+        envMapping: {
+          prefix: 'dev-',
+          suffix: '',
+          appliesTo: DEFAULT_APPLIES_TO,
+        },
+      };
+
+      await publishProduct(
+        client,
+        store,
+        testContext,
+        productDescriptor,
+        config,
+        [
+          productDescriptor,
+          { type: ResourceType.Api, nameParts: ['petstore'] },
+          { type: ResourceType.Group, nameParts: ['developers'] },
+          { type: ResourceType.Tag, nameParts: ['production'] },
+        ]
+      );
+
+      expect(client.getResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({
+          type: ResourceType.Product,
+          nameParts: ['dev-my-product'],
+        })
+      );
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({
+          type: ResourceType.ProductApi,
+          nameParts: ['dev-my-product', 'dev-petstore'],
+        }),
+        {}
+      );
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({
+          type: ResourceType.ProductGroup,
+          nameParts: ['dev-my-product', 'developers'],
+        }),
+        {}
+      );
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({
+          type: ResourceType.ProductTag,
+          nameParts: ['dev-my-product', 'dev-production'],
+        }),
         {}
       );
     });
@@ -343,7 +433,7 @@ describe('product-publisher', () => {
       );
     });
 
-    it('association PUT failure is non-fatal: overall result is still success', async () => {
+    it('returns a concrete failed result when an association PUT fails', async () => {
       const client = createMockClient();
       const store = createMockStore();
       store.readAssociation
@@ -356,9 +446,20 @@ describe('product-publisher', () => {
       const result = await publishProduct(client, store, testContext, productDescriptor, testConfig);
 
       expect(result.status).toBe('success');
+      expect(result.relatedResults).toEqual([
+        expect.objectContaining({
+          descriptor: expect.objectContaining({
+            type: ResourceType.ProductApi,
+            nameParts: ['my-product', 'petstore'],
+          }),
+          status: 'failed',
+          action: 'put',
+          error: expect.objectContaining({ message: 'Association PUT failed' }),
+        }),
+      ]);
     });
 
-    it('outer error returns failed with error property', async () => {
+    it('preserves the successful Product PUT when post-PUT planning fails', async () => {
       const client = createMockClient();
       const store = createMockStore();
       // Force a top-level throw by making readAssociation throw unexpectedly
@@ -366,10 +467,16 @@ describe('product-publisher', () => {
 
       const result = await publishProduct(client, store, testContext, productDescriptor, testConfig);
 
-      expect(result.status).toBe('failed');
-      expect(result.action).toBe('noop');
-      expect(result.error).toBeInstanceOf(Error);
-      expect(result.error?.message).toBe('Unexpected store error');
+      expect(result.status).toBe('success');
+      expect(result.action).toBe('put');
+      expect(result.relatedResults).toEqual([
+        expect.objectContaining({
+          descriptor: productDescriptor,
+          status: 'failed',
+          action: 'noop',
+          error: expect.objectContaining({ message: 'Unexpected store error' }),
+        }),
+      ]);
     });
 
     it('does not delete auto-generated product subscriptions after product publish', async () => {
@@ -455,6 +562,97 @@ describe('product-publisher', () => {
 
       expect(result.status).toBe('success');
       expect(client.deleteResource).not.toHaveBeenCalled();
+    });
+
+    it('uses the shared plan for workspace and service-scoped association links', async () => {
+      const store = createMockStore();
+      const workspaceProduct: ResourceDescriptor = {
+        type: ResourceType.Product,
+        nameParts: ['store'],
+        workspace: 'team',
+      };
+      store.readAssociation
+        .mockResolvedValueOnce([{ name: 'orders', scope: 'workspace' }])
+        .mockResolvedValueOnce([{ name: 'administrators', scope: 'service' }])
+        .mockResolvedValueOnce([{ name: 'production', scope: 'workspace' }]);
+      const config: PublishConfig = {
+        ...testConfig,
+        envMapping: {
+          prefix: 'dev-',
+          suffix: '',
+          appliesTo: DEFAULT_APPLIES_TO,
+        },
+        filter: {
+          workspaces: ['team'],
+          workspaceSubFilters: {
+            team: {
+              products: ['store'],
+              apis: ['orders'],
+              tags: ['production'],
+            },
+          },
+          groups: ['administrators'],
+        },
+      };
+      const allowed: ResourceDescriptor[] = [
+        workspaceProduct,
+        { type: ResourceType.Api, nameParts: ['orders'], workspace: 'team' },
+        { type: ResourceType.Group, nameParts: ['administrators'] },
+        { type: ResourceType.Tag, nameParts: ['production'], workspace: 'team' },
+      ];
+
+      const plans = await planProductAssociationPublications(
+        store,
+        testContext,
+        workspaceProduct,
+        config,
+        allowed
+      );
+
+      expect(plans).toMatchObject([
+        {
+          eligible: true,
+          descriptor: { type: ResourceType.ProductApi, nameParts: ['store', 'orders'], workspace: 'team' },
+          deployedDescriptor: {
+            type: ResourceType.ProductApi,
+            nameParts: ['dev-store', 'dev-orders'],
+            workspace: 'dev-team',
+          },
+          payload: {
+            properties: {
+              apiId: expect.stringContaining('/workspaces/dev-team/apis/dev-orders'),
+            },
+          },
+        },
+        {
+          eligible: true,
+          descriptor: { type: ResourceType.ProductGroup, nameParts: ['store', 'administrators'], workspace: 'team' },
+          deployedDescriptor: {
+            type: ResourceType.ProductGroup,
+            nameParts: ['dev-store', 'administrators'],
+            workspace: 'dev-team',
+          },
+          payload: {
+            properties: {
+              groupId: expect.stringContaining('/groups/administrators'),
+            },
+          },
+        },
+        {
+          eligible: true,
+          descriptor: { type: ResourceType.ProductTag, nameParts: ['store', 'production'], workspace: 'team' },
+          deployedDescriptor: {
+            type: ResourceType.ProductTag,
+            nameParts: ['dev-store', 'dev-production'],
+            workspace: 'dev-team',
+          },
+          payload: {
+            properties: {
+              productId: expect.stringContaining('/workspaces/dev-team/products/dev-store'),
+            },
+          },
+        },
+      ]);
     });
   });
 });

@@ -306,10 +306,30 @@ describe('parseArtifactPath', () => {
     expect(result!.nameParts).toEqual(['gw1']);
   });
 
-  it('should ignore ProductApi association files because product publisher handles them', () => {
+  it.each(['apis.json', 'groups.json', 'tags.json'])(
+    'should map Product association file %s to its parent Product',
+    (associationFile) => {
+      const filePath = path.join(baseDir, 'products', 'starter', associationFile);
+      const result = parseArtifactPath(baseDir, filePath);
+      expect(result).toEqual({
+        type: ResourceType.Product,
+        nameParts: ['starter'],
+        workspace: undefined,
+      });
+    }
+  );
+
+  it('should map workspace Product association files to their parent Product', () => {
     const filePath = path.join(baseDir, 'products', 'starter', 'apis.json');
-    const result = parseArtifactPath(baseDir, filePath);
-    expect(result).toBeUndefined();
+    const result = parseArtifactPath(
+      baseDir,
+      path.join(baseDir, 'workspaces', 'team', path.relative(baseDir, filePath))
+    );
+    expect(result).toEqual({
+      type: ResourceType.Product,
+      nameParts: ['starter'],
+      workspace: 'team',
+    });
   });
 
   it('should parse workspace-scoped resource', () => {

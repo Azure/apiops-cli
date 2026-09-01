@@ -22,6 +22,8 @@ export interface ResourceDescriptor {
   nameParts: string[];
   /** Workspace name if workspace-scoped */
   workspace?: string;
+  /** Scope of an association target when required to identify an opaque link. */
+  targetScope?: AssociationScope;
 }
 
 export interface ResourcePayload {

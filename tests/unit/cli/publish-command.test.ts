@@ -138,8 +138,8 @@ describe('publish-command', () => {
   });
 
   describe('mutually exclusive publish modes', () => {
-    it('should treat commit-id and delete-unmatched as conflicting', () => {
-      expect(hasMutuallyExclusivePublishOptions(true, 'abc123')).toBe(true);
+    it('should allow explicit delete-unmatched in incremental mode', () => {
+      expect(hasMutuallyExclusivePublishOptions(true, 'abc123')).toBe(false);
     });
 
     it('should allow delete-unmatched in full publish mode', () => {

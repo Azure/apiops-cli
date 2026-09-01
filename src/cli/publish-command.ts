@@ -142,7 +142,7 @@ async function executePublish(
 
   if (hasMutuallyExclusivePublishOptions(options.deleteUnmatched, commitId, Boolean(options.filter))) {
     logger.error(
-      'Option --delete-unmatched cannot be combined with --filter or --commit-id (or COMMIT_ID).'
+      'Option --delete-unmatched cannot be combined with --filter.'
     );
     process.exit(2);
   }
@@ -182,10 +182,10 @@ async function executePublish(
  */
 export function hasMutuallyExclusivePublishOptions(
   deleteUnmatched: boolean,
-  commitId?: string,
+  _commitId?: string,
   hasFilter = false
 ): boolean {
-  return deleteUnmatched && (Boolean(commitId) || hasFilter);
+  return deleteUnmatched && hasFilter;
 }
 
 /**
@@ -198,6 +198,7 @@ function outputJson(result: PublishResult): void {
     exitCode: number;
     summary: {
       totalPuts: number;
+      totalPatches: number;
       totalDeletes: number;
       totalErrors: number;
       totalSkipped: number;
@@ -214,9 +215,11 @@ function outputJson(result: PublishResult): void {
         operation: string;
         type: string;
         name: string;
+        error?: string;
       }>;
       summary: {
         creates: number;
+        patches: number;
         deletes: number;
         skips: number;
       };
@@ -231,6 +234,7 @@ function outputJson(result: PublishResult): void {
     exitCode: result.exitCode,
     summary: {
       totalPuts: result.totalPuts,
+      totalPatches: result.totalPatches,
       totalDeletes: result.totalDeletes,
       totalErrors: result.totalErrors,
       totalSkipped: result.totalSkipped,
@@ -251,6 +255,7 @@ function outputJson(result: PublishResult): void {
         operation: a.operation,
         type: a.type,
         name: a.name,
+        error: a.error,
       })),
       summary: result.dryRunReport.summary,
     };
@@ -273,6 +278,7 @@ function outputText(result: PublishResult, dryRun: boolean): void {
     process.stdout.write(
       `${result.dryRunReport.summary.creates} creates/updates\n`
     );
+    process.stdout.write(`${result.dryRunReport.summary.patches} patches\n`);
     process.stdout.write(`${result.dryRunReport.summary.deletes} deletes\n`);
     process.stdout.write(`${result.dryRunReport.summary.skips} skipped\n`);
 
@@ -288,7 +294,7 @@ function outputText(result: PublishResult, dryRun: boolean): void {
     // Regular publish mode summary
     process.stdout.write('\n--- Summary ---\n');
     process.stdout.write(
-      `${result.totalPuts} creates/updates, ${result.totalDeletes} deletes, ${result.totalSkipped} skipped\n`
+      `${result.totalPuts} creates/updates, ${result.totalPatches} patches, ${result.totalDeletes} deletes, ${result.totalSkipped} skipped\n`
     );
 
     if (result.totalErrors > 0) {

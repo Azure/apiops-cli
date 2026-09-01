@@ -13,6 +13,7 @@ const mockGit = {
   checkIsRepo: vi.fn(),
   revparse: vi.fn(),
   diff: vi.fn(),
+  show: vi.fn(),
 };
 
 // Mock simple-git
@@ -23,6 +24,7 @@ vi.mock('simple-git', () => ({
 describe('git-diff-service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGit.show.mockResolvedValue('[]');
   });
 
   describe('computeGitDiff', () => {
@@ -101,6 +103,99 @@ describe('git-diff-service', () => {
           workspace: undefined,
         },
       ]);
+    });
+
+    it('should map product association changes to the parent Product descriptor', async () => {
+      mockGit.checkIsRepo.mockResolvedValue(true);
+      mockGit.revparse.mockResolvedValue('abc123');
+      mockGit.diff.mockResolvedValue('M\tproducts/starter/apis.json\n');
+
+      const result = await computeGitDiff('/source', 'abc123');
+
+      expect(result.changedDescriptors).toEqual([
+        {
+          type: 'Product',
+          nameParts: ['starter'],
+          workspace: undefined,
+        },
+      ]);
+    });
+
+    it('should reconcile rather than delete a Product when an association file is deleted', async () => {
+      mockGit.checkIsRepo.mockResolvedValue(true);
+      mockGit.revparse.mockResolvedValue('abc123');
+      mockGit.diff.mockResolvedValue('D\tproducts/starter/apis.json\n');
+
+      const result = await computeGitDiff('/source', 'abc123');
+
+      expect(result.deletedDescriptors).toEqual([]);
+      expect(result.changedDescriptors).toEqual([
+        {
+          type: 'Product',
+          nameParts: ['starter'],
+          workspace: undefined,
+        },
+      ]);
+    });
+
+    it('should emit removed Product associations as deleted descriptors', async () => {
+      mockGit.checkIsRepo.mockResolvedValue(true);
+      mockGit.revparse.mockResolvedValue('abc123');
+      mockGit.diff.mockResolvedValue('M\tproducts/starter/apis.json\n');
+      mockGit.show
+        .mockResolvedValueOnce('[{"name":"orders"},{"name":"legacy"}]')
+        .mockResolvedValueOnce('[{"name":"orders"}]');
+
+      const result = await computeGitDiff('/source', 'abc123');
+
+      expect(result.deletedDescriptors).toEqual([
+        {
+          type: 'ProductApi',
+          nameParts: ['starter', 'legacy'],
+          workspace: undefined,
+          targetScope: 'workspace',
+        },
+      ]);
+    });
+
+    it('preserves the removed Product association target scope', async () => {
+      mockGit.checkIsRepo.mockResolvedValue(true);
+      mockGit.revparse.mockResolvedValue('abc123');
+      mockGit.diff.mockResolvedValue('M\tworkspaces/team/products/starter/apis.json\n');
+      mockGit.show
+        .mockResolvedValueOnce('[{"name":"orders","scope":"service"}]')
+        .mockResolvedValueOnce('[{"name":"orders","scope":"workspace"}]');
+
+      const result = await computeGitDiff('/source', 'abc123');
+
+      expect(result.deletedDescriptors).toEqual([{
+        type: 'ProductApi',
+        nameParts: ['starter', 'orders'],
+        workspace: 'team',
+        targetScope: 'service',
+      }]);
+    });
+
+    it('emits removed Gateway API associations as complete descriptors', async () => {
+      mockGit.checkIsRepo.mockResolvedValue(true);
+      mockGit.revparse.mockResolvedValue('abc123');
+      mockGit.diff.mockResolvedValue('M\tgateways/edge/apis.json\n');
+      mockGit.show
+        .mockResolvedValueOnce('[{"name":"orders"},{"name":"legacy"}]')
+        .mockResolvedValueOnce('[{"name":"orders"}]');
+
+      const result = await computeGitDiff('/source', 'abc123');
+
+      expect(result.changedDescriptors).toEqual([{
+        type: 'GatewayApi',
+        nameParts: ['edge'],
+        workspace: undefined,
+      }]);
+      expect(result.deletedDescriptors).toEqual([{
+        type: 'GatewayApi',
+        nameParts: ['edge', 'legacy'],
+        workspace: undefined,
+      }]);
     });
 
     it('should map workspace-scoped api specification changes to Api descriptor', async () => {
@@ -267,6 +362,28 @@ describe('git-diff-service', () => {
 
       expect(result.changedDescriptors).toEqual([]);
       expect(result.deletedDescriptors).toEqual([]);
+    });
+
+    it('should surface malformed managed association artifacts', async () => {
+      mockGit.checkIsRepo.mockResolvedValue(true);
+      mockGit.revparse.mockResolvedValue('abc123');
+      mockGit.diff.mockResolvedValue('M\tproducts/starter/apis.json\n');
+      mockGit.show.mockResolvedValue('not-json');
+
+      await expect(computeGitDiff('/source', 'abc123')).rejects.toThrow(
+        'Unexpected token'
+      );
+    });
+
+    it('should reject malformed entries in managed association artifacts', async () => {
+      mockGit.checkIsRepo.mockResolvedValue(true);
+      mockGit.revparse.mockResolvedValue('abc123');
+      mockGit.diff.mockResolvedValue('M\tproducts/starter/apis.json\n');
+      mockGit.show.mockResolvedValue('[{"name":"orders","scope":"invalid"}]');
+
+      await expect(computeGitDiff('/source', 'abc123')).rejects.toThrow(
+        'products/starter/apis.json entry 0 has an invalid scope'
+      );
     });
   });
 });

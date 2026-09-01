@@ -352,7 +352,15 @@ function extractResourceNameFromId(value: string, segment: string): string | und
 
 function workspaceFromReference(value: string, fallback?: string): string | undefined {
   const match = value.match(/\/workspaces\/([^/]+)/i);
-  return match?.[1] ? decodeArmSegment(match[1]) : (value.startsWith('/') ? undefined : fallback);
+  if (match?.[1]) {
+    return decodeArmSegment(match[1]);
+  }
+
+  const isFullArmId =
+    /\/subscriptions\/[^/]+\/resourceGroups\/[^/]+\/providers\/Microsoft\.ApiManagement\/service\/[^/]+/i.test(
+      value
+    );
+  return isFullArmId ? undefined : fallback;
 }
 
 function decodeArmSegment(value: string): string {

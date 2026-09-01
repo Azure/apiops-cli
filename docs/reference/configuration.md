@@ -63,7 +63,7 @@ Available on all commands (`extract`, `publish`, `init`):
 | `--dry-run` | Preview changes without applying | `false` |
 | `--delete-unmatched` | Delete resources not in artifacts | `false` |
 
-> ⚠️ `--commit-id` and `--delete-unmatched` are **mutually exclusive**. You cannot use both.
+> ⚠️ Incremental deletion is disabled unless `--delete-unmatched` is combined with `--commit-id`. The combination deletes only resources removed by the selected commit.
 
 ### `apiops init` Flags
 

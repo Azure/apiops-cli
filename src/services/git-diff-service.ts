@@ -9,6 +9,7 @@
 import { simpleGit, SimpleGit } from 'simple-git';
 import * as path from 'node:path';
 import { ResourceDescriptor } from '../models/types.js';
+import { ResourceType } from '../models/resource-types.js';
 import { parseArtifactChangePath } from '../lib/resource-path.js';
 import { logger } from '../lib/logger.js';
 
@@ -65,10 +66,36 @@ export async function computeGitDiff(
     const diffTarget = hasParent ? parentCommit : '4b825dc642cb6eb9a060e54bf8d69288fbee4904'; // Git empty tree SHA
     const diffOutput = await git.diff(['--name-status', '--relative', diffTarget, commitId]);
 
-    return parseDiffOutput(diffOutput, sourceDir);
+    const result = parseDiffOutput(diffOutput, sourceDir);
+    try {
+      await addRemovedAssociations(
+        git,
+        diffOutput,
+        sourceDir,
+        diffTarget,
+        commitId,
+        result
+      );
+    } catch (error) {
+      throw new AssociationDiffError(error);
+    }
+    return result;
   } catch (error) {
+    if (error instanceof AssociationDiffError) {
+      throw error.originalError;
+    }
     logger.warn(`Git diff failed: ${error instanceof Error ? error.message : String(error)}`);
     return { changedDescriptors: [], deletedDescriptors: [] };
+  }
+}
+
+class AssociationDiffError extends Error {
+  readonly originalError: Error;
+
+  constructor(error: unknown) {
+    const originalError = error instanceof Error ? error : new Error(String(error));
+    super(originalError.message);
+    this.originalError = originalError;
   }
 }
 
@@ -106,17 +133,26 @@ function parseDiffOutput(diffOutput: string, sourceDir: string): GitDiffResult {
     }
 
     if (status === 'D') {
-      addDescriptorFromDiffPath(parts[1], sourceDir, deletedDescriptors, seenDeleted);
+      if (isManagedAssociationPath(parts[1], sourceDir)) {
+        addDescriptorFromDiffPath(parts[1], sourceDir, changedDescriptors, seenChanged);
+      } else {
+        addDescriptorFromDiffPath(parts[1], sourceDir, deletedDescriptors, seenDeleted);
+      }
     } else if (status === 'M' || status === 'A') {
       addDescriptorFromDiffPath(parts[1], sourceDir, changedDescriptors, seenChanged);
     } else if (status === 'R') {
       // Renames are effectively delete(old) + add(new)
-      addDescriptorFromDiffPath(parts[1], sourceDir, deletedDescriptors, seenDeleted);
+      if (isManagedAssociationPath(parts[1], sourceDir)) {
+        addDescriptorFromDiffPath(parts[1], sourceDir, changedDescriptors, seenChanged);
+      } else {
+        addDescriptorFromDiffPath(parts[1], sourceDir, deletedDescriptors, seenDeleted);
+      }
       addDescriptorFromDiffPath(parts[2], sourceDir, changedDescriptors, seenChanged);
     } else if (status === 'C') {
       // Copies only introduce/modify the new destination path
       addDescriptorFromDiffPath(parts[2], sourceDir, changedDescriptors, seenChanged);
     }
+
   }
 
   logger.debug(
@@ -126,11 +162,158 @@ function parseDiffOutput(diffOutput: string, sourceDir: string): GitDiffResult {
   return { changedDescriptors, deletedDescriptors };
 }
 
+function isManagedAssociationPath(
+  diffPath: string | undefined,
+  sourceDir: string
+): boolean {
+  if (!diffPath || !['apis.json', 'groups.json', 'tags.json'].includes(path.basename(diffPath))) {
+    return false;
+  }
+
+  const descriptor = parseDescriptorFromDiffPath(sourceDir, diffPath);
+  return descriptor?.type === ResourceType.Product ||
+    (path.basename(diffPath) === 'apis.json' && descriptor?.type === ResourceType.GatewayApi);
+}
+
+async function addRemovedAssociations(
+  git: SimpleGit,
+  diffOutput: string,
+  sourceDir: string,
+  baseCommit: string,
+  targetCommit: string,
+  result: GitDiffResult
+): Promise<void> {
+  const seenDeleted = new Set(result.deletedDescriptors.map(descriptorKey));
+  const lines = diffOutput.split('\n').filter((line) => line.trim());
+
+  for (const line of lines) {
+    const parts = line.split('\t');
+    const status = parts[0]?.charAt(0);
+    const oldPath = parts[1];
+    if (
+      !status ||
+      !['M', 'D', 'R'].includes(status) ||
+      !oldPath ||
+      !isManagedAssociationPath(oldPath, sourceDir)
+    ) {
+      continue;
+    }
+
+    const newPath = status === 'R' ? parts[2] : oldPath;
+    const parent = parseDescriptorFromDiffPath(sourceDir, oldPath);
+    if (!parent) {
+      continue;
+    }
+
+    const oldEntries = await readAssociationEntriesAtCommit(git, baseCommit, oldPath);
+    const sameAssociation =
+      status !== 'D' &&
+      newPath !== undefined &&
+      path.basename(newPath) === path.basename(oldPath) &&
+      descriptorKey(parseDescriptorFromDiffPath(sourceDir, newPath) ?? parent) ===
+        descriptorKey(parent);
+    const newEntries = sameAssociation
+      ? await readAssociationEntriesAtCommit(git, targetCommit, newPath)
+      : [];
+    const currentKeys = new Set(newEntries.map(associationEntryKey));
+    const associationType = parent.type === ResourceType.GatewayApi
+      ? ResourceType.GatewayApi
+      : productAssociationType(path.basename(oldPath));
+
+    for (const entry of oldEntries) {
+      if (currentKeys.has(associationEntryKey(entry))) {
+        continue;
+      }
+      const descriptor: ResourceDescriptor = {
+        type: associationType,
+        nameParts: [parent.nameParts[0] ?? '', entry.name],
+        workspace: parent.workspace,
+        ...(parent.type === ResourceType.Product
+          ? { targetScope: entry.scope ?? 'workspace' }
+          : {}),
+      };
+      addUniqueDescriptor(
+        result.deletedDescriptors,
+        seenDeleted,
+        descriptor,
+        descriptorKey(descriptor)
+      );
+    }
+  }
+}
+
+interface StoredAssociationEntry {
+  name: string;
+  scope?: 'service' | 'workspace';
+}
+
+async function readAssociationEntriesAtCommit(
+  git: SimpleGit,
+  commit: string,
+  filePath: string
+): Promise<StoredAssociationEntry[]> {
+  try {
+    const content = await git.show([`${commit}:./${filePath}`]);
+    const parsed: unknown = JSON.parse(content);
+    if (!Array.isArray(parsed)) {
+      throw new Error(`Association artifact ${filePath} is not a JSON array`);
+    }
+    return parsed.map((entry, index): StoredAssociationEntry => {
+      if (typeof entry !== 'object' || entry === null) {
+        throw new Error(`Association artifact ${filePath} entry ${index} is not an object`);
+      }
+      const candidate = entry as Record<string, unknown>;
+      if (typeof candidate.name !== 'string' || candidate.name.length === 0) {
+        throw new Error(`Association artifact ${filePath} entry ${index} has an invalid name`);
+      }
+      if (
+        candidate.scope !== undefined &&
+        candidate.scope !== 'service' &&
+        candidate.scope !== 'workspace'
+      ) {
+        throw new Error(`Association artifact ${filePath} entry ${index} has an invalid scope`);
+      }
+      return {
+        name: candidate.name,
+        ...(candidate.scope ? { scope: candidate.scope } : {}),
+      };
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (message.includes('does not exist') || message.includes('exists on disk')) {
+      return [];
+    }
+    throw error;
+  }
+}
+
+function associationEntryKey(entry: StoredAssociationEntry): string {
+  return `${entry.scope ?? 'workspace'}:${entry.name}`.toLowerCase();
+}
+
+function productAssociationType(fileName: string): ResourceType {
+  switch (fileName) {
+    case 'apis.json':
+      return ResourceType.ProductApi;
+    case 'groups.json':
+      return ResourceType.ProductGroup;
+    case 'tags.json':
+      return ResourceType.ProductTag;
+    default:
+      throw new Error(`Unsupported Product association artifact: ${fileName}`);
+  }
+}
+
 /**
  * Create a unique key for a resource descriptor to enable deduplication.
  */
 function descriptorKey(descriptor: ResourceDescriptor): string {
-  return [descriptor.type, ...descriptor.nameParts, descriptor.workspace ?? ''].join('::');
+  return [
+    descriptor.type,
+    ...descriptor.nameParts,
+    descriptor.workspace ?? '',
+    descriptor.targetScope ?? '',
+  ].join('::');
 }
 
 function addUniqueDescriptor(
