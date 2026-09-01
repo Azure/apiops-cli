@@ -11,6 +11,8 @@ description: 'Configure APIOps environment overrides'
 
 Create one `configuration.{environment}.yaml` file per deployment environment so APIOps publish runs can promote the same artifacts across environments with environment-specific settings.
 
+> **Shared APIM setup:** If all environments publish to a **single shared APIM instance** (dev/qa/prod in one service), each override file should also have its `environment:` block uncommented with a unique `namePrefix` (e.g. `"dev-"`) and `apiPathPrefix` (e.g. `"dev/"`) so resource names and API paths are namespaced per environment. Ask the user whether they use a shared or dedicated APIM instance. For dedicated setups (one APIM per environment), leave the `environment:` block commented out. See `docs/guides/multi-environment-shared-apim.md` for full guidance.
+
 ---
 
 ## How Copilot must work through this prompt

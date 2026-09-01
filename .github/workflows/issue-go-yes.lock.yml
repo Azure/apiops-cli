@@ -1139,7 +1139,7 @@ jobs:
         id: write-daily-aic-cache
         if: always()
         continue-on-error: true
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           github-token: ${{ github.token }}
           script: |
@@ -1549,7 +1549,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Verify assignee and squad labels
-        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         env:
           GO_YES_SENDER: ${{ github.event.sender.login }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}

@@ -5,6 +5,22 @@
  * List current APIM resources, diff against artifact descriptors,
  * generate DELETE actions in reverse dependency order.
  * Requires --delete-unmatched flag per FR-017.
+ *
+ * ## Env-namespace scoping
+ *
+ * When `config.envMapping` is set (multi-env shared-APIM mode), each deployed
+ * resource is tested against the current env's namespace before being considered
+ * for deletion. Resources whose names do NOT carry the env prefix/suffix are
+ * silently skipped — they belong to another environment running on the same APIM.
+ * Deployed names are then converted to canonical form for comparison against the
+ * local artifact set (which always stores canonical names).
+ *
+ * ### Known caveat — "prefix dropped mid-life"
+ * If an env mapping was previously active (resources were published as `dev-foo`)
+ * and the config is later changed to have no prefix (or a different prefix), the
+ * old affixed resources will no longer match the namespace and will be silently
+ * skipped rather than deleted.  The user must manually clean up orphaned resources
+ * in that scenario.
  */
 
 import type { IApimClient } from '../clients/iapim-client.js';
@@ -14,6 +30,8 @@ import type { PublishConfig } from '../models/config.js';
 import { ResourceType } from '../models/resource-types.js';
 import { getTopologicalOrder } from '../lib/dependency-graph.js';
 import { getNameFromNameParts } from '../lib/resource-path.js';
+import { logger } from '../lib/logger.js';
+import { toCanonicalDescriptor } from './env-mapper.js';
 
 /**
  * Built-in groups that should never be deleted
@@ -34,6 +52,12 @@ const SYSTEM_RESOURCES = new Set<string>([
  * List APIM resources not in local artifacts.
  * Returns descriptors to DELETE in reverse dependency order.
  * Used when --delete-unmatched flag is set.
+ *
+ * When `config.envMapping` is present the function operates in namespace-scoped
+ * mode: only resources that belong to the current env's namespace are considered
+ * for deletion.  Resources outside the namespace (other envs on the same APIM)
+ * are skipped.  BUILT_IN_GROUPS and SYSTEM_RESOURCES are always preserved,
+ * checked against the **canonical** (un-affixed) name.
  */
 export async function computeDeleteActions(
   client: IApimClient,
@@ -41,9 +65,11 @@ export async function computeDeleteActions(
   context: ApimServiceContext,
   config: PublishConfig
 ): Promise<ResourceDescriptor[]> {
-  // List all resources from local artifacts
+  // List all resources from local artifacts (always in canonical / un-affixed form)
   const localDescriptors = await store.listResources(config.sourceDir);
   const localSet = createResourceSet(localDescriptors);
+
+  const { envMapping } = config;
 
   const deleteDescriptors: ResourceDescriptor[] = [];
 
@@ -58,22 +84,47 @@ export async function computeDeleteActions(
       const apimResources = client.listResources(context, resourceType);
 
       for await (const resource of apimResources) {
-        const descriptor = parseResourceDescriptor(resource, resourceType);
-        
-        if (!descriptor) {
+        const deployedDescriptor = parseResourceDescriptor(resource, resourceType);
+
+        if (!deployedDescriptor) {
           continue;
         }
 
-        // Skip system resources
-        if (isSystemResource(descriptor)) {
-          continue;
-        }
+        if (envMapping !== undefined) {
+          // ── Namespace-scoped mode ────────────────────────────────────────────
+          // Convert deployed → canonical; null means outside this env's namespace.
+          const canonicalDescriptor = toCanonicalDescriptor(deployedDescriptor, envMapping);
 
-        // Check if resource exists in local artifacts
-        const resourceKey = getResourceKey(descriptor);
-        if (!localSet.has(resourceKey)) {
-          // Resource exists in APIM but not in local artifacts - mark for deletion
-          deleteDescriptors.push(descriptor);
+          if (canonicalDescriptor === null) {
+            // Resource belongs to another environment — do NOT delete.
+            const skipName = deployedDescriptor.nameParts[0] ?? resourceType;
+            logger.debug(
+              `[delete-unmatched] Skipping ${resourceType}/${skipName}: outside env namespace`
+            );
+            continue;
+          }
+
+          // System-resource check uses the canonical (un-affixed) name.
+          if (isSystemResource(canonicalDescriptor)) {
+            continue;
+          }
+
+          // Compare canonical key against the local artifact set.
+          if (!localSet.has(getResourceKey(canonicalDescriptor))) {
+            // Not in local artifacts → mark the **deployed** descriptor for deletion
+            // so client.deleteResource receives the actual APIM resource name.
+            deleteDescriptors.push(deployedDescriptor);
+          }
+        } else {
+          // ── Original behaviour (no env mapping) ─────────────────────────────
+          if (isSystemResource(deployedDescriptor)) {
+            continue;
+          }
+
+          const resourceKey = getResourceKey(deployedDescriptor);
+          if (!localSet.has(resourceKey)) {
+            deleteDescriptors.push(deployedDescriptor);
+          }
         }
       }
     } catch {
@@ -104,12 +155,28 @@ function getResourceKey(descriptor: ResourceDescriptor): string {
 }
 
 /**
- * Parse resource descriptor from APIM resource JSON
+ * Parse resource descriptor from APIM resource JSON.
+ *
+ * Supports an optional `nameParts` string-array property on the resource object
+ * for structured multi-segment descriptors (used by tests and future structured
+ * APIM client responses).  Falls back to extracting from `name` or `id`.
  */
 function parseResourceDescriptor(
   resource: Record<string, unknown>,
   resourceType: ResourceType
 ): ResourceDescriptor | null {
+  // If the resource carries pre-parsed nameParts, use them directly.
+  if (
+    Array.isArray(resource.nameParts) &&
+    resource.nameParts.every((p: unknown) => typeof p === 'string')
+  ) {
+    // Safe after the .every() guard; filter preserves order and produces string[].
+    const nameParts = resource.nameParts.filter((p): p is string => typeof p === 'string');
+    const workspace =
+      typeof resource.workspace === 'string' ? resource.workspace : undefined;
+    return { type: resourceType, nameParts, ...(workspace !== undefined ? { workspace } : {}) };
+  }
+
   // Extract name from resource
   const name = extractResourceName(resource);
   if (!name) {
@@ -121,10 +188,6 @@ function parseResourceDescriptor(
     type: resourceType,
     nameParts: [name],
   };
-
-  // Extract parent/grandparent from resource properties if needed
-  // This depends on the resource structure from APIM
-  // For now, we'll use a simple heuristic based on the resource type
 
   return descriptor;
 }
@@ -148,7 +211,9 @@ function extractResourceName(resource: Record<string, unknown>): string | null {
 }
 
 /**
- * Check if a resource is a system resource that should not be deleted
+ * Check if a resource is a system resource that should not be deleted.
+ * The descriptor's nameParts should be in canonical (un-affixed) form when
+ * called under env-namespace mode.
  */
 function isSystemResource(descriptor: ResourceDescriptor): boolean {
   if (descriptor.nameParts.length === 0) return false;
@@ -180,3 +245,5 @@ function isSystemResource(descriptor: ResourceDescriptor): boolean {
 
   return false;
 }
+
+

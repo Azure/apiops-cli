@@ -281,6 +281,12 @@ function buildOverrideProperties() {
         $ref: '#/definitions/policyOverrideSection',
         description: `Service-level policies overrides. ${tokenNote}`,
       };
+    } else if (field === 'environment') {
+      props.environment = {
+        $ref: '#/definitions/environmentOverride',
+        description:
+          'Per-environment settings for publishing multiple environments (dev/qa/prod) to a shared APIM instance. When set, resource names are prefixed/suffixed at publish time. Omit for standard single-APIM-per-env deployments.',
+      };
     } else {
       props[field] = {
         $ref: '#/definitions/overrideSection',
@@ -646,6 +652,41 @@ const overrideSchema = {
         value: { type: 'string', description: 'Inline policy XML or linked value, depending on format.' },
       },
       additionalProperties: true,
+    },
+
+    environmentOverride: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        namePrefix: {
+          type: 'string',
+          description: 'Prefix applied to resource names for types in appliesTo (e.g. "dev-"). Must contain only characters valid in APIM resource names.',
+          pattern: '^[A-Za-z0-9-]*$',
+        },
+        nameSuffix: {
+          type: 'string',
+          description: 'Suffix applied to resource names for types in appliesTo (e.g. "-dev").',
+          pattern: '^[A-Za-z0-9-]*$',
+        },
+        appliesTo: {
+          type: 'array',
+          description: 'Resource type names to affix. If omitted, a default set is applied (Api, Product, NamedValue, Backend, Logger, PolicyFragment, VersionSet, Tag, Group, Subscription, Workspace).',
+          items: {
+            type: 'string',
+            enum: [
+              'Api', 'Product', 'NamedValue', 'Backend', 'Logger', 'PolicyFragment',
+              'VersionSet', 'Tag', 'Group', 'Subscription', 'Workspace',
+              'Gateway', 'Diagnostic', 'GlobalSchema', 'PolicyRestriction', 'Documentation',
+            ],
+          },
+          uniqueItems: true,
+        },
+        apiPathPrefix: {
+          type: 'string',
+          description: 'String prepended to Api properties.path (e.g. "dev/"). Not applied when the same API has an explicit path override.',
+          pattern: '^[A-Za-z0-9/_-]*$',
+        },
+      },
     },
   },
 };

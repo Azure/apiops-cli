@@ -558,4 +558,112 @@ namedValues:
       );
     });
   });
+
+  describe('loadOverrideConfig — environment field', () => {
+    it('should load environment with namePrefix', async () => {
+      const content = `
+environment:
+  namePrefix: "dev-"
+`;
+      const filePath = path.join(tmpDir, 'override-env-prefix.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadOverrideConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.environment).toEqual({ namePrefix: 'dev-' });
+    });
+
+    it('should load environment with all fields', async () => {
+      const content = `
+environment:
+  namePrefix: "dev-"
+  nameSuffix: "-dev"
+  apiPathPrefix: "dev/"
+  appliesTo:
+    - Api
+    - Product
+`;
+      const filePath = path.join(tmpDir, 'override-env-all.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadOverrideConfig(filePath);
+      expect(config!.environment).toEqual({
+        namePrefix: 'dev-',
+        nameSuffix: '-dev',
+        apiPathPrefix: 'dev/',
+        appliesTo: ['Api', 'Product'],
+      });
+    });
+
+    it('should load override config without environment (back-compat)', async () => {
+      const content = `
+namedValues:
+  - name: nv1
+    properties:
+      value: "overridden"
+`;
+      const filePath = path.join(tmpDir, 'override-no-env.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadOverrideConfig(filePath);
+      expect(config).toBeDefined();
+      expect(config!.environment).toBeUndefined();
+      expect(config!.namedValues).toBeDefined();
+    });
+
+    it('should throw when environment is not an object', async () => {
+      const content = `
+environment: "not-an-object"
+`;
+      const filePath = path.join(tmpDir, 'override-env-invalid.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      await expect(loadOverrideConfig(filePath)).rejects.toThrow(
+        "'environment' must be an object"
+      );
+    });
+
+    it('should throw when environment.namePrefix is not a string', async () => {
+      const content = `
+environment:
+  namePrefix: 123
+`;
+      const filePath = path.join(tmpDir, 'override-env-bad-prefix.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      await expect(loadOverrideConfig(filePath)).rejects.toThrow(
+        "'environment.namePrefix' must be a string"
+      );
+    });
+
+    it('should throw when environment.appliesTo contains non-strings', async () => {
+      const content = `
+environment:
+  appliesTo:
+    - Api
+    - 123
+`;
+      const filePath = path.join(tmpDir, 'override-env-bad-appliesto.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      await expect(loadOverrideConfig(filePath)).rejects.toThrow('must be a string');
+    });
+
+    it('should warn about unknown environment keys', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const content = `
+environment:
+  namePrefix: "dev-"
+  unknownField: "value"
+`;
+      const filePath = path.join(tmpDir, 'override-env-unknown-key.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadOverrideConfig(filePath);
+      expect(config!.environment).toEqual({ namePrefix: 'dev-' });
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Unknown environment override key 'unknownField'")
+      );
+    });
+  });
 });

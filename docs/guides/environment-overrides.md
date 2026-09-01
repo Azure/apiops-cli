@@ -42,6 +42,14 @@ The schema provides:
 - Validation of the override structure (name + properties format)
 - Inline documentation including token substitution syntax
 
+## Multi-environment on a single APIM instance
+
+Override files support an optional top-level `environment:` block that enables publishing multiple environments (dev, qa, prod) to a **single shared APIM instance**. When present, resource names are prefixed and/or suffixed at publish time so dev, qa, and prod resources coexist without colliding. Cross-references in policy XML — `{{namedValue}}` tokens, fragment IDs, backend IDs, subscription scopes — are rewritten automatically to use the affixed names.
+
+Override entries always use **canonical (unprefixed) names** matching the artifact files on disk, regardless of whether an `environment:` block is present. The tool applies the affix at publish time; you never write prefixed names in override files or artifact files.
+
+For full details — including the default and opt-in affixed types, `apiPathPrefix` precedence, `--delete-unmatched` namespace scoping, and a worked three-environment pipeline example — see [Multi-environment on shared APIM](multi-environment-shared-apim.md).
+
 ## Override file format (APIOps Toolkit-compatible)
 
 `apiops-cli` uses the [APIOps Toolkit](https://github.com/Azure/apiops) override layout:

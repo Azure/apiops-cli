@@ -181,6 +181,11 @@ See the [`apiops apic` command reference](docs/commands/apic.md) for flags, work
 | `--client-secret <secret>` | `AZURE_CLIENT_SECRET` env var | Service principal secret |
 | `--tenant-id <id>` | `AZURE_TENANT_ID` env var | Azure AD tenant ID |
 
+## Guides
+
+- [Environment overrides](docs/guides/environment-overrides.md) — per-environment property overrides (backend URLs, secrets, credentials)
+- [Multi-environment publish to a single APIM instance](docs/guides/multi-environment-shared-apim.md) — publish dev/qa/prod to a shared APIM using name prefixes
+
 ## Changelog
 
 See [CHANGELOG.md](./CHANGELOG.md) for release notes and the list of changes in each version. To see what has changed

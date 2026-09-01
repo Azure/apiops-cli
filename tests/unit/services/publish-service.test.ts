@@ -805,6 +805,53 @@ describe('publish-service', () => {
       expect(computeDeleteActions).not.toHaveBeenCalled();
     });
 
+    it('incremental mode: lists FULL artifact set for env-mapping validation and known-artifact sets', async () => {
+      // Regression: prior to this fix, publish-service passed the changed
+      // subset (from computeGitDiff) to both validateAndBuildEnvMapping and
+      // buildKnownArtifactSets. That silently broke policy XML ref rewriting
+      // for any NamedValue / PolicyFragment / Backend whose file did not
+      // change in the current commit, and produced false stale-override
+      // warnings on every unchanged override entry.
+      const client = createMockClient();
+      const fullArtifacts: ResourceDescriptor[] = [
+        { type: ResourceType.NamedValue, nameParts: ['nv-unchanged'] },
+        { type: ResourceType.NamedValue, nameParts: ['nv-changed'] },
+        { type: ResourceType.Api, nameParts: ['api1'] },
+      ];
+      const store = createMockStore(fullArtifacts);
+
+      vi.mocked(computeGitDiff).mockResolvedValue({
+        changedDescriptors: [
+          { type: ResourceType.NamedValue, nameParts: ['nv-changed'] },
+        ],
+        deletedDescriptors: [],
+      });
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        commitId: 'abc123',
+        logLevel: LogLevel.INFO,
+        overrides: {
+          environment: { namePrefix: 'dev-' },
+        },
+      };
+
+      await runPublish(client, store, config);
+
+      // In incremental mode, publish-service must call store.listResources to
+      // build the full artifact set for env-mapping validation and policy-ref
+      // rewriting — not just rely on the git-diff subset.
+      expect(store.listResources).toHaveBeenCalledWith('/source');
+      // envMapping must be populated on config after validation
+      expect(config.envMapping).toBeDefined();
+      // knownArtifactSets must contain the FULL set of named values, not just changed
+      expect(config.knownArtifactSets?.namedValues.has('nv-unchanged')).toBe(true);
+      expect(config.knownArtifactSets?.namedValues.has('nv-changed')).toBe(true);
+    });
+
     it('should pass commit-scoped deleted descriptors to dry-run report', async () => {
       const client = createMockClient();
       const store = createMockStore([]);

@@ -12,6 +12,8 @@ import type { ApimServiceContext, ResourceDescriptor } from '../models/types.js'
 import type { PublishConfig } from '../models/config.js';
 import { getTopologicalOrder } from '../lib/dependency-graph.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
+import { getNamePart } from '../lib/resource-path.js';
+import { ResourceType } from '../models/resource-types.js';
 import { logger } from '../lib/logger.js';
 import { computeDeleteActions } from './delete-unmatched-service.js';
 
@@ -50,7 +52,14 @@ export async function generateDryRunReport(
   const descriptorsByType = groupDescriptorsByType(targetDescriptors);
 
   for (const resourceType of orderedTypes) {
-    const descriptors = descriptorsByType.get(resourceType) || [];
+    let descriptors = descriptorsByType.get(resourceType) || [];
+
+    // GatewayApi is discovered as an aggregate descriptor (nameParts = [gateway])
+    // from gateways/{gw}/apis.json. Expand to one descriptor per associated API
+    // so labels and counts mirror what publish would actually PUT.
+    if (resourceType === ResourceType.GatewayApi) {
+      descriptors = await expandGatewayApiDescriptors(store, config, descriptors);
+    }
 
     for (const descriptor of descriptors) {
       try {
@@ -176,6 +185,39 @@ function groupDescriptorsByType(
     map.set(descriptor.type, existing);
   }
   return map;
+}
+
+/**
+ * Expand aggregate GatewayApi descriptors (nameParts = [gateway]) into one
+ * descriptor per associated API by reading gateways/{gw}/apis.json.
+ * Descriptors that already carry both name parts pass through unchanged.
+ */
+async function expandGatewayApiDescriptors(
+  store: IArtifactStore,
+  config: PublishConfig,
+  descriptors: ResourceDescriptor[]
+): Promise<ResourceDescriptor[]> {
+  const expanded: ResourceDescriptor[] = [];
+  for (const descriptor of descriptors) {
+    if (descriptor.nameParts.length >= 2) {
+      expanded.push(descriptor);
+      continue;
+    }
+    const gatewayName = getNamePart(descriptor.nameParts, 0);
+    const entries = await store.readAssociation(
+      config.sourceDir,
+      { type: ResourceType.Gateway, nameParts: [gatewayName], workspace: descriptor.workspace },
+      'apis'
+    );
+    for (const entry of entries) {
+      expanded.push({
+        type: descriptor.type,
+        nameParts: [gatewayName, entry.name],
+        workspace: descriptor.workspace,
+      });
+    }
+  }
+  return expanded;
 }
 
 /**

@@ -280,6 +280,51 @@ describe('override-merger', () => {
       expect(result.properties).toHaveProperty('resourceId', '/subscriptions/new/...');
     });
 
+    it('should deep-merge logger credentials (Application Insights instrumentationKey)', () => {
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Logger,
+        nameParts: ['appinsights'],
+      };
+
+      const json = {
+        name: 'appinsights',
+        properties: {
+          loggerType: 'applicationInsights',
+          resourceId: '/subscriptions/dev-sub/resourceGroups/dev-rg/providers/microsoft.insights/components/appinsights-dev',
+          credentials: {
+            instrumentationKey: '{{old-named-value}}',
+          },
+          isBuffered: true,
+        },
+      };
+
+      const overrideConfig: OverrideConfig = {
+        loggers: {
+          appinsights: {
+            properties: {
+              resourceId: '/subscriptions/prod-sub/resourceGroups/prod-rg/providers/microsoft.insights/components/appinsights-prod',
+              credentials: {
+                instrumentationKey: '{{application-insights-instrumentation-key}}',
+              },
+            },
+          },
+        },
+      };
+
+      const result = applyOverrides(descriptor, json, overrideConfig);
+      const props = result.properties as Record<string, unknown>;
+      // resourceId should be overridden
+      expect(props.resourceId).toBe(
+        '/subscriptions/prod-sub/resourceGroups/prod-rg/providers/microsoft.insights/components/appinsights-prod'
+      );
+      // credentials.instrumentationKey should be deep-merged
+      const creds = props.credentials as Record<string, unknown>;
+      expect(creds.instrumentationKey).toBe('{{application-insights-instrumentation-key}}');
+      // other properties should be preserved
+      expect(props.loggerType).toBe('applicationInsights');
+      expect(props.isBuffered).toBe(true);
+    });
+
     it('should apply nested API diagnostic overrides', () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.ApiDiagnostic,

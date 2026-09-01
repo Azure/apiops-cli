@@ -7,7 +7,7 @@
 
 import * as fs from 'node:fs/promises';
 import * as yaml from 'js-yaml';
-import { FilterConfig, OverrideConfig, OverrideSection, OverrideEntry, ApiSubFilter, WorkspaceSubFilter } from '../models/config.js';
+import { FilterConfig, OverrideConfig, OverrideSection, OverrideEntry, ApiSubFilter, WorkspaceSubFilter, EnvironmentOverride } from '../models/config.js';
 import { logger } from './logger.js';
 
 
@@ -292,8 +292,12 @@ function normalizeOverrideConfig(parsed: Record<string, unknown>): OverrideConfi
     }
   }
 
+  if (parsed.environment !== undefined) {
+    normalized.environment = parseEnvironmentOverride(parsed.environment);
+  }
+
   // Warn about unknown top-level keys
-  const knownKeys = new Set<string>([...ALL_OVERRIDE_SECTIONS, 'apimServiceName']);
+  const knownKeys = new Set<string>([...ALL_OVERRIDE_SECTIONS, 'apimServiceName', 'environment']);
   for (const key of Object.keys(parsed)) {
     if (!knownKeys.has(key)) {
       logger.warn(`Unknown override config key '${key}'; ignoring.`);
@@ -301,6 +305,53 @@ function normalizeOverrideConfig(parsed: Record<string, unknown>): OverrideConfi
   }
 
   return normalized;
+}
+
+/**
+ * Parse and validate the environment override object.
+ */
+function parseEnvironmentOverride(raw: unknown): EnvironmentOverride {
+  if (!isPlainObject(raw)) {
+    throw new Error(
+      `Invalid override config: 'environment' must be an object, got ${typeof raw}.`
+    );
+  }
+
+  const result: EnvironmentOverride = {};
+
+  if (raw.namePrefix !== undefined) {
+    if (typeof raw.namePrefix !== 'string') {
+      throw new Error(`Invalid override config: 'environment.namePrefix' must be a string.`);
+    }
+    result.namePrefix = raw.namePrefix;
+  }
+
+  if (raw.nameSuffix !== undefined) {
+    if (typeof raw.nameSuffix !== 'string') {
+      throw new Error(`Invalid override config: 'environment.nameSuffix' must be a string.`);
+    }
+    result.nameSuffix = raw.nameSuffix;
+  }
+
+  if (raw.apiPathPrefix !== undefined) {
+    if (typeof raw.apiPathPrefix !== 'string') {
+      throw new Error(`Invalid override config: 'environment.apiPathPrefix' must be a string.`);
+    }
+    result.apiPathPrefix = raw.apiPathPrefix;
+  }
+
+  if (raw.appliesTo !== undefined) {
+    result.appliesTo = assertStringArray(raw.appliesTo, 'environment.appliesTo');
+  }
+
+  const knownEnvKeys = new Set(['namePrefix', 'nameSuffix', 'appliesTo', 'apiPathPrefix']);
+  for (const key of Object.keys(raw)) {
+    if (!knownEnvKeys.has(key)) {
+      logger.warn(`Unknown environment override key '${key}'; ignoring.`);
+    }
+  }
+
+  return result;
 }
 
 /**

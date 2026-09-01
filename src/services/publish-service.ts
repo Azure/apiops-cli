@@ -30,7 +30,7 @@ import {
 } from './filter-service.js';
 
 // Import from other agents' files (will be created in parallel)
-import { publishResource, ResourcePublishResult } from './resource-publisher.js';
+import { publishResource, ResourcePublishResult, buildKnownArtifactSets } from './resource-publisher.js';
 import { publishApi } from './api-publisher.js';
 import { publishProduct } from './product-publisher.js';
 import { generateDryRunReport, DryRunReport } from './dry-run-reporter.js';
@@ -40,6 +40,7 @@ import { scanForRedactionMarkers } from './secret-redaction-guard.js';
 import { hasNamedValueOverride } from './override-merger.js';
 import { REDACTION_MARKER } from './secret-redactor.js';
 import { scanArtifactReferences } from './transitive-resolver.js';
+import { validateAndBuildEnvMapping } from './env-mapping-validator.js';
 
 /**
  * The APIM Backend properties.type value that identifies a pool backend.
@@ -89,11 +90,28 @@ export async function runPublish(
       config
     );
 
+    // Step 1a: For env-mapping validation and policy ref rewriting we need
+    // the FULL artifact set, not just the changed subset returned by
+    // incremental mode. Cross-references (policy tokens, fragment/backend
+    // refs) can point at named values / fragments / backends whose files
+    // didn't change in this commit — those must still be rewritten.
+    // Stale-override warnings likewise need the full set to avoid firing on
+    // every unchanged artifact in incremental runs.
+    const allDescriptors = config.commitId
+      ? await store.listResources(config.sourceDir)
+      : targetDescriptors;
+
+    // Step 1b: Validate env mapping and store it on config for downstream use
+    validateAndBuildEnvMapping(config.overrides, allDescriptors, config);
+
+    // Step 1c: Build known artifact sets for policy ref rewriting
+    config.knownArtifactSets = buildKnownArtifactSets(allDescriptors);
+
     logger.debug(
       `Publishing ${targetDescriptors.length} resources (dry-run: ${config.dryRun})`
     );
 
-    // Step 1b: Redaction pre-flight gate.
+    // Step 1c: Redaction pre-flight gate.
     // Scan every artifact that would be published for leftover redaction markers
     // ('*** REDACTED ***'). A single leftover marker aborts the ENTIRE publish
     // before any PUT is issued — and also fails dry-run — so a service can never

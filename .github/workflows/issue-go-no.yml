@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Verify maintainer-triggered event
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
             const sender = context.payload.sender.login;
@@ -53,7 +53,7 @@ jobs:
             core.info(`Verified ${sender} as a ${permission.role_name || permission.permission} collaborator`);
 
       - name: Add close:wont-fix and close as not planned
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8.0.0
         with:
           script: |
             const issue_number = context.payload.issue.number;

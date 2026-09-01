@@ -4,6 +4,19 @@
 # For full format details and examples, see:
 # https://github.com/Azure/apiops-cli/blob/main/docs/guides/environment-overrides.md
 
+# Uncomment this block only when publishing multiple environments (dev/qa/prod)
+# to a single shared APIM instance. For dedicated-APIM-per-environment setups
+# (the default), leave commented out.
+# See: https://github.com/Azure/apiops-cli/blob/main/docs/guides/multi-environment-shared-apim.md
+#
+# environment:
+#   namePrefix: "{{ENVIRONMENT}}-"    # e.g. "dev-", "qa-", "prod-"
+#   # nameSuffix: ""                  # optional
+#   apiPathPrefix: "{{ENVIRONMENT}}/" # applied to Api properties.path unless per-API override present
+#   # appliesTo:                      # optional; defaults to Api, Product, NamedValue, Backend, Logger,
+#   #   - Api                         #   PolicyFragment, VersionSet, Tag, Group, Subscription, Workspace
+#   #   - Product
+
 # Override named values (e.g., API keys, connection strings)
 # namedValues:
 #   - name: api-key

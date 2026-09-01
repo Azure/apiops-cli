@@ -96,9 +96,9 @@ jobs:
     environment: integration-test # Requires approval for cost protection
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: '24'
           cache: 'npm'
@@ -118,7 +118,7 @@ jobs:
           fi
 
       - name: Azure Login
-        uses: azure/login@v3
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -155,7 +155,7 @@ jobs:
 
       - name: Azure Login - Refresh Before Phase 2
         if: success()
-        uses: azure/login@v3
+        uses: azure/login@7ddb5af1ef8758cf1353cf3b42f940aee27ba21c # v3.0.2
         with:
           # Phase 1 can run for a long time while APIM activates; refresh login
           # before extract/publish so apiops receives a fresh federated session.

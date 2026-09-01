@@ -57,6 +57,10 @@ export class ApimClient implements IApimClient {
   private static readonly ASYNC_POLL_TIMEOUT_MS = 7.5 * 60 * 1000;
   /** Default interval between async operation polls when no Retry-After header. */
   private static readonly ASYNC_POLL_INTERVAL_MS = 5000;
+  /** Max DELETE attempts when APIM reports an optimistic-concurrency conflict. */
+  private static readonly DELETE_CONFLICT_RETRIES = 3;
+  /** Base delay between DELETE conflict retries (multiplied by attempt number). */
+  private static readonly DELETE_CONFLICT_RETRY_DELAY_MS = 2000;
   /** Known ARM management plane host suffixes for URL validation. */
   private static readonly ARM_HOSTS = [
     'management.azure.com',
@@ -451,32 +455,49 @@ export class ApimClient implements IApimClient {
     descriptor: ResourceDescriptor
   ): Promise<boolean> {
     const url = buildArmUri(context, descriptor);
-    
-    try {
-      const response = await this.request(url, { method: 'DELETE' });
-      
-      if (response.status === 404) {
-        return false; // Already deleted
-      }
 
-      // Poll for long-running operations
-      if (response.status === 202) {
-        const asyncUrl = this.extractAsyncOperationUrl(response);
-        if (asyncUrl) {
-          await this.pollAsyncOperation(asyncUrl, context, descriptor, { treatMissingAsSuccess: true });
-        } else {
-          await this.pollProvisioningState(context, descriptor, {
-            treatMissingAsSuccess: true,
-          });
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const response = await this.request(url, { method: 'DELETE' });
+
+        if (response.status === 404) {
+          return false; // Already deleted
         }
-      }
 
-      return true;
-    } catch (error) {
-      if ((error as Error).message.includes('404')) {
-        return false;
+        // Poll for long-running operations
+        if (response.status === 202) {
+          const asyncUrl = this.extractAsyncOperationUrl(response);
+          if (asyncUrl) {
+            await this.pollAsyncOperation(asyncUrl, context, descriptor, { treatMissingAsSuccess: true });
+          } else {
+            await this.pollProvisioningState(context, descriptor, {
+              treatMissingAsSuccess: true,
+            });
+          }
+        }
+
+        return true;
+      } catch (error) {
+        const message = (error as Error).message;
+        if (message.includes('404')) {
+          return false;
+        }
+        // Transient optimistic-concurrency conflict: cascade deletes of related
+        // resources (subscriptions, product/gateway associations) can modify
+        // the resource while its async DELETE is in flight. Retry the DELETE.
+        const isConflict =
+          message.includes('[PreconditionFailed]') ||
+          (error instanceof HttpError && error.status === 412);
+        if (isConflict && attempt < ApimClient.DELETE_CONFLICT_RETRIES) {
+          logger.warn(
+            `Delete conflict for ${buildResourceLabel(descriptor)} ` +
+            `(attempt ${attempt}/${ApimClient.DELETE_CONFLICT_RETRIES}), retrying...`
+          );
+          await this.delay(ApimClient.DELETE_CONFLICT_RETRY_DELAY_MS * attempt);
+          continue;
+        }
+        throw error;
       }
-      throw error;
     }
   }
 

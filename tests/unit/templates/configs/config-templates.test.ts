@@ -144,6 +144,8 @@ describe('configs/override-config', () => {
       expect(config).toContain('#   - name: appinsights-logger');
       expect(config).toContain('#     properties:');
       expect(config).toContain('#       resourceId:');
+      expect(config).toContain('#       credentials:');
+      expect(config).toContain('#         instrumentationKey:');
     });
 
     it('should not have any uncommented configuration by default', () => {
@@ -162,6 +164,32 @@ describe('configs/override-config', () => {
       const config = generateOverrideConfig('staging');
       expect(config).not.toMatch(/\{\{[^}]+\}\}/);
       expect(config).toContain('staging-api-key-value');
+    });
+
+    it('should include commented environment block for shared APIM', () => {
+      const config = generateOverrideConfig('dev');
+      expect(config).toContain('# environment:');
+      expect(config).toContain('#   namePrefix:');
+      expect(config).toContain('#   apiPathPrefix:');
+    });
+
+    it('should substitute ENVIRONMENT token inside commented environment block', () => {
+      const config = generateOverrideConfig('dev');
+      expect(config).toContain('# environment:');
+      expect(config).toContain('"dev-"');
+      expect(config).toContain('"dev/"');
+    });
+
+    it('should reference multi-environment-shared-apim guide in environment block', () => {
+      const config = generateOverrideConfig('dev');
+      expect(config).toContain('multi-environment-shared-apim.md');
+    });
+
+    it('should produce valid YAML even with commented environment block', () => {
+      const config = generateOverrideConfig('dev');
+      // All non-empty, non-comment lines must be absent for a comment-only file
+      const uncommentedLines = config.split('\n').filter((line) => line.trim() && !line.trim().startsWith('#'));
+      expect(uncommentedLines).toHaveLength(0);
     });
   });
 });

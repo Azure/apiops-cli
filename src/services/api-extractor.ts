@@ -18,6 +18,7 @@ import { redactAndWarnPolicySecrets } from './secret-redactor.js';
 import { logger } from '../lib/logger.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
 import { getNamePart } from '../lib/resource-path.js';
+import { normalizeWsdl } from '../lib/wsdl-normalizer.js';
 import { isWorkspaceScope, extractNameFromLink } from '../lib/workspace-link.js';
 
 /**
@@ -313,10 +314,17 @@ async function extractApiSpecification(
       return { extracted: false, errorCount: 0 };
     }
 
+    // APIM's WSDL export can emit wsdl:part references qualified with the wrong
+    // namespace prefix and multiple service ports, which its own importer then
+    // rejects. Normalize so the extracted artifact round-trips through publish.
+    const content = spec.format === 'wsdl'
+      ? normalizeWsdl(spec.content)
+      : spec.content;
+
     await store.writeContent(
       outputDir,
       apiDescriptor,
-      spec.content,
+      content,
       'specification',
       spec.format
     );

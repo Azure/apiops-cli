@@ -20,16 +20,57 @@ import { isWorkspaceScope, buildLinkPayload } from '../lib/workspace-link.js';
 import { logger } from '../lib/logger.js';
 import { REDACTION_MARKER } from './secret-redactor.js';
 import { isLinkAlreadyExistsError } from '../clients/apim-client.js';
-import type { OverrideConfig } from '../models/config.js';
+import type { OverrideConfig, OverrideSection } from '../models/config.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
 import { hasExplicitTypeFilter, resolveWorkspaceFilter, shouldIncludeResource } from './filter-service.js';
 import { findSubscriptionTargets } from './transitive-resolver.js';
+import { mapDescriptor, toDeployedName } from './env-mapper.js';
+import type { EnvMapping } from './env-mapper.js';
+import { rewritePolicyRefs } from './policy-ref-rewriter.js';
+import type { KnownArtifactSets } from '../models/config.js';
+
+export type { KnownArtifactSets } from '../models/config.js';
 
 export interface ResourcePublishResult {
   descriptor: ResourceDescriptor;
   status: 'success' | 'failed' | 'skipped';
   action: 'put' | 'delete' | 'noop';
   error?: Error;
+}
+
+/**
+ * Build the known artifact name sets from a list of descriptors.
+ * Called once per publish run after determinePublishTargets.
+ */
+export function buildKnownArtifactSets(descriptors: ResourceDescriptor[]): KnownArtifactSets {
+  const namedValues = new Set<string>();
+  const fragments = new Set<string>();
+  const backends = new Set<string>();
+  for (const d of descriptors) {
+    if (d.nameParts.length > 0) {
+      const name = d.nameParts[0];
+      if (d.type === ResourceType.NamedValue) namedValues.add(name);
+      else if (d.type === ResourceType.PolicyFragment) fragments.add(name);
+      else if (d.type === ResourceType.Backend) backends.add(name);
+    }
+  }
+  return { namedValues, fragments, backends };
+}
+
+/**
+ * Check if a specific property has an explicit override in the given section.
+ * Uses case-insensitive resource name matching (matching override-merger behavior).
+ */
+function hasExplicitPropertyOverride(
+  resourceName: string,
+  propertyKey: string,
+  section: OverrideSection | undefined,
+): boolean {
+  if (!section) return false;
+  const lowerName = resourceName.toLowerCase();
+  const matchingKey = Object.keys(section).find((k) => k.toLowerCase() === lowerName);
+  if (!matchingKey) return false;
+  return Object.hasOwn(section[matchingKey].properties, propertyKey);
 }
 
 /**
@@ -119,7 +160,7 @@ export async function publishResource(
     // In service scope, ApiTag is a regular PUT with the tag JSON; in workspace
     // scope it becomes a link resource at `tags/{tag}/apiLinks/{api}`.
     if (descriptor.type === ResourceType.ApiTag && (descriptor.workspace || isWorkspaceScope(context))) {
-      return await publishWorkspaceApiTagLink(client, context, descriptor);
+      return await publishWorkspaceApiTagLink(client, context, descriptor, config);
     }
 
     // Handle wiki types
@@ -145,7 +186,7 @@ export async function publishResource(
     // Rewrite MCP tool operationIds against the target service before overrides
     // so explicit override values win unchanged.
     if (descriptor.type === ResourceType.Api) {
-      json = normalizeMcpToolOperationIds(json, context);
+      json = normalizeMcpToolOperationIds(json, context, config.envMapping);
     }
 
     // Apply overrides (deep merge, preserves opaque structure)
@@ -155,7 +196,7 @@ export async function publishResource(
     // APIM resolves {{ref}} by displayName, not resource name. Old extracts
     // stored {{name}}; rewrite to {{displayName}} for APIM compatibility.
     if (descriptor.type === ResourceType.Logger) {
-      json = await rewriteNamedValueReferences(json, store, config.sourceDir, descriptor, config.overrides);
+      json = await rewriteNamedValueReferences(json, store, config.sourceDir, descriptor, config.overrides, config.envMapping);
     }
 
     // API operations: enforce explicit empty strings for text fields when omitted.
@@ -172,6 +213,32 @@ export async function publishResource(
     //      to the secret before attempting the PUT. Surfaces permission errors
     //      early and fails fast instead of polling until timeout.
     if (descriptor.type === ResourceType.NamedValue) {
+      // Affix displayName when envMapping applies and user hasn't set an explicit override.
+      // APIM resolves {{ref}} tokens by displayName, so the deployed displayName must
+      // match the affixed name used elsewhere (descriptor name, policy refs, etc.).
+      if (config.envMapping?.appliesTo.has(ResourceType.NamedValue) === true) {
+        const canonicalName = getNamePart(descriptor.nameParts, 0);
+        const hasDisplayNameOverride = hasExplicitPropertyOverride(
+          canonicalName,
+          'displayName',
+          config.overrides?.namedValues,
+        );
+        if (!hasDisplayNameOverride) {
+          const props = json.properties as Record<string, unknown> | undefined;
+          const currentDisplayName =
+            typeof props?.displayName === 'string' ? props.displayName : canonicalName;
+          const deployedDisplayName = toDeployedName(
+            currentDisplayName,
+            ResourceType.NamedValue,
+            config.envMapping,
+          );
+          json = {
+            ...json,
+            properties: { ...(props ?? {}), displayName: deployedDisplayName },
+          };
+        }
+      }
+
       const props = json.properties as Record<string, unknown> | undefined;
       const kvBlock = props?.keyVault as Record<string, unknown> | undefined;
       if (kvBlock != null) {
@@ -254,7 +321,7 @@ export async function publishResource(
         };
       }
 
-      json = normalizeSubscriptionScope(json, context);
+      json = normalizeSubscriptionScope(json, context, config.envMapping);
     }
 
     // ApiRelease: normalize properties.apiId from source ARM path to target ARM path.
@@ -264,7 +331,7 @@ export async function publishResource(
     // The PUT to the target service must reference the target service path,
     // otherwise APIM rejects the request with a validation error.
     if (descriptor.type === ResourceType.ApiRelease) {
-      json = normalizeApiReleaseApiId(json, context);
+      json = normalizeApiReleaseApiId(json, context, config.envMapping);
     }
 
     // API Revisions (e.g., "my-api;rev=2") need sourceApiId so APIM knows which
@@ -279,7 +346,10 @@ export async function publishResource(
         for (const [key, val] of Object.entries(props ?? {})) {
           if (val !== null) cleanProps[key] = val;
         }
-        cleanProps.sourceApiId = `/subscriptions/${context.subscriptionId}/resourceGroups/${context.resourceGroup}/providers/Microsoft.ApiManagement/service/${context.serviceName}/apis/${baseApiName}`;
+        const deployedBaseApiName = config.envMapping
+          ? toDeployedName(baseApiName, ResourceType.Api, config.envMapping)
+          : baseApiName;
+        cleanProps.sourceApiId = `/subscriptions/${context.subscriptionId}/resourceGroups/${context.resourceGroup}/providers/Microsoft.ApiManagement/service/${context.serviceName}/apis/${deployedBaseApiName}`;
         // Preserve source current-revision intent. APIM can implicitly promote a
         // created revision to current if isCurrent is omitted; default to false
         // unless the extracted artifact explicitly set it.
@@ -290,8 +360,41 @@ export async function publishResource(
       }
     }
 
+    // Apply api path prefix when envMapping provides one and no per-API path override
+    if (descriptor.type === ResourceType.Api && config.envMapping?.apiPathPrefix !== undefined) {
+      const canonicalApiName = getNamePart(descriptor.nameParts, 0).split(';rev=')[0];
+      const hasPathOverride = hasExplicitPropertyOverride(canonicalApiName, 'path', config.overrides?.apis);
+      if (!hasPathOverride) {
+        const props = json.properties as Record<string, unknown> | undefined;
+        if (typeof props?.path === 'string') {
+          const rawPath = props.path;
+          const prefix = config.envMapping.apiPathPrefix;
+          // Avoid double slashes
+          const newPath =
+            prefix.endsWith('/') && rawPath.startsWith('/')
+              ? prefix + rawPath.slice(1)
+              : prefix + rawPath;
+          json = { ...json, properties: { ...props, path: newPath } };
+        }
+      }
+    }
+
+    // For PolicyFragment: rewrite cross-resource refs in properties.value (policy XML)
+    if (descriptor.type === ResourceType.PolicyFragment && config.envMapping && config.knownArtifactSets) {
+      const props = json.properties as Record<string, unknown> | undefined;
+      if (typeof props?.value === 'string') {
+        const rewrittenXml = rewritePolicyRefs(props.value, config.envMapping, config.knownArtifactSets);
+        json = { ...json, properties: { ...props, value: rewrittenXml } };
+      }
+    }
+
+    // Apply env-mapping: affix descriptor name segments before PUT
+    const deployedDescriptor = config.envMapping
+      ? mapDescriptor(descriptor, config.envMapping)
+      : descriptor;
+
     // PUT to APIM
-    await client.putResource(context, descriptor, json);
+    await client.putResource(context, deployedDescriptor, json);
 
     return {
       descriptor,
@@ -337,7 +440,7 @@ async function publishAssociation(
 
     // Create association for each name
     for (const entry of entries) {
-      const assocDescriptor: ResourceDescriptor = {
+      const rawAssocDescriptor: ResourceDescriptor = {
         type: descriptor.type,
         nameParts: [getNamePart(descriptor.nameParts, 0), entry.name],
         workspace: descriptor.workspace,
@@ -353,10 +456,14 @@ async function publishAssociation(
       };
       if (!(await isTargetAllowedByFilter(store, targetDescriptor, config))) {
         logger.warn(
-          `Skipping ${descriptor.type} association "${assocDescriptor.nameParts.join('/')}" because its target is excluded by the filter or was never extracted`
+          `Skipping ${descriptor.type} association "${rawAssocDescriptor.nameParts.join('/')}" because its target is excluded by the filter or was never extracted`
         );
         continue;
       }
+      // Apply env-mapping to affix both the parent and child name segments
+      const assocDescriptor = config.envMapping
+        ? mapDescriptor(rawAssocDescriptor, config.envMapping)
+        : rawAssocDescriptor;
       try {
         // PUT empty body for association (APIM uses PUT to create association)
         await client.putResource(context, assocDescriptor, {});
@@ -459,7 +566,10 @@ async function publishWiki(
       },
     };
 
-    await client.putResource(context, descriptor, payload);
+    const deployedDescriptor = config.envMapping
+      ? mapDescriptor(descriptor, config.envMapping)
+      : descriptor;
+    await client.putResource(context, deployedDescriptor, payload);
 
     return {
       descriptor,
@@ -514,11 +624,24 @@ async function publishPolicy(
     };
 
     // Apply overrides (e.g., format: xml) before PUT — matches Toolkit behavior
-    const mergedPayload = applyOverrides(descriptor, payload, config.overrides);
+    let mergedPayload = applyOverrides(descriptor, payload, config.overrides);
 
-    // Marker check runs AFTER overrides: an override may legitimately replace the
-    // policy value with clean content, so only the merged (about-to-be-published)
-    // value is authoritative for redaction detection.
+    // Rewrite policy XML references from canonical → deployed names
+    if (config.envMapping && config.knownArtifactSets) {
+      const mProps = mergedPayload.properties as Record<string, unknown> | undefined;
+      const mValue = mProps?.value;
+      if (typeof mValue === 'string') {
+        const rewrittenXml = rewritePolicyRefs(mValue, config.envMapping, config.knownArtifactSets);
+        mergedPayload = {
+          ...mergedPayload,
+          properties: { ...(mergedPayload.properties as object), value: rewrittenXml },
+        };
+      }
+    }
+
+    // Marker check runs AFTER overrides and rewriting: an override may legitimately
+    // replace the policy value with clean content, so only the merged
+    // (about-to-be-published) value is authoritative for redaction detection.
     const mergedProps = mergedPayload.properties as Record<string, unknown> | undefined;
     const mergedValue = mergedProps?.value;
     if (typeof mergedValue === 'string' && mergedValue.includes(REDACTION_MARKER)) {
@@ -529,7 +652,11 @@ async function publishPolicy(
       );
     }
 
-    await client.putResource(context, descriptor, mergedPayload);
+    // Apply env-mapping: affix descriptor name segments before PUT
+    const deployedDescriptor = config.envMapping
+      ? mapDescriptor(descriptor, config.envMapping)
+      : descriptor;
+    await client.putResource(context, deployedDescriptor, mergedPayload);
 
     return {
       descriptor,
@@ -562,7 +689,8 @@ async function publishPolicy(
  */
 function normalizeSubscriptionScope(
   json: Record<string, unknown>,
-  context: ApimServiceContext
+  context: ApimServiceContext,
+  envMapping?: EnvMapping
 ): Record<string, unknown> {
   const props = json.properties as Record<string, unknown> | undefined;
   if (!props) return json;
@@ -575,7 +703,23 @@ function normalizeSubscriptionScope(
   const armPathPrefix = context.baseUrl.replace(/^https?:\/\/[^/]+/, '');
 
   if (scope.startsWith(armPathPrefix)) {
-    const relativeScope = scope.slice(armPathPrefix.length) || '/';
+    let relativeScope = scope.slice(armPathPrefix.length) || '/';
+
+    // Affix the trailing resource name when envMapping applies
+    if (envMapping && relativeScope !== '/') {
+      if (relativeScope.startsWith('/apis/')) {
+        const apiName = relativeScope.slice('/apis/'.length);
+        if (apiName) {
+          relativeScope = `/apis/${toDeployedName(apiName, ResourceType.Api, envMapping)}`;
+        }
+      } else if (relativeScope.startsWith('/products/')) {
+        const productName = relativeScope.slice('/products/'.length);
+        if (productName) {
+          relativeScope = `/products/${toDeployedName(productName, ResourceType.Product, envMapping)}`;
+        }
+      }
+    }
+
     return {
       ...json,
       properties: { ...props, scope: relativeScope },
@@ -600,7 +744,8 @@ function normalizeSubscriptionScope(
  */
 function normalizeApiReleaseApiId(
   json: Record<string, unknown>,
-  context: ApimServiceContext
+  context: ApimServiceContext,
+  envMapping?: EnvMapping
 ): Record<string, unknown> {
   const props = json.properties as Record<string, unknown> | undefined;
   if (!props) return json;
@@ -615,7 +760,19 @@ function normalizeApiReleaseApiId(
   // The suffix includes the full API name, e.g. "/apis/my-api;rev=2".
   const apisIndex = apiId.indexOf('/apis/');
   if (apisIndex !== -1) {
-    const apisSuffix = apiId.slice(apisIndex);
+    const rawApisSuffix = apiId.slice(apisIndex); // e.g. "/apis/my-api;rev=2"
+    let apisSuffix = rawApisSuffix;
+
+    if (envMapping) {
+      // Extract api name from "/apis/<name>" possibly with ";rev=N"
+      const afterApis = rawApisSuffix.slice('/apis/'.length);
+      const revSepIdx = afterApis.indexOf(';rev=');
+      const baseApiName = revSepIdx !== -1 ? afterApis.slice(0, revSepIdx) : afterApis;
+      const revSuffix = revSepIdx !== -1 ? afterApis.slice(revSepIdx) : '';
+      const deployedName = toDeployedName(baseApiName, ResourceType.Api, envMapping);
+      apisSuffix = `/apis/${deployedName}${revSuffix}`;
+    }
+
     return {
       ...json,
       properties: { ...props, apiId: targetArmPrefix + apisSuffix },
@@ -634,7 +791,8 @@ function normalizeApiReleaseApiId(
  */
 export function normalizeMcpToolOperationIds(
   json: Record<string, unknown>,
-  context: ApimServiceContext
+  context: ApimServiceContext,
+  envMapping?: EnvMapping
 ): Record<string, unknown> {
   const props = json.properties as Record<string, unknown> | undefined;
   if (!props) return json;
@@ -658,9 +816,26 @@ export function normalizeMcpToolOperationIds(
       return typedTool;
     }
 
+    const rebuiltOpId = `${targetArmPrefix}${operationId.slice(operationsIndex)}`;
+    let finalOpId = rebuiltOpId;
+
+    if (envMapping) {
+      // Affix the api name segment (between /apis/ and /operations/)
+      const apisIdx = rebuiltOpId.indexOf('/apis/');
+      const opsIdx = rebuiltOpId.indexOf('/operations/', apisIdx !== -1 ? apisIdx : 0);
+      if (apisIdx !== -1 && opsIdx !== -1) {
+        const apiName = rebuiltOpId.slice(apisIdx + '/apis/'.length, opsIdx);
+        const deployedApiName = toDeployedName(apiName, ResourceType.Api, envMapping);
+        finalOpId =
+          rebuiltOpId.slice(0, apisIdx + '/apis/'.length) +
+          deployedApiName +
+          rebuiltOpId.slice(opsIdx);
+      }
+    }
+
     return {
       ...typedTool,
-      operationId: `${targetArmPrefix}${operationId.slice(operationsIndex)}`,
+      operationId: finalOpId,
     };
   });
 
@@ -717,18 +892,25 @@ function isAutoGeneratedProductSubscription(
 async function publishWorkspaceApiTagLink(
   client: IApimClient,
   context: ApimServiceContext,
-  descriptor: ResourceDescriptor
+  descriptor: ResourceDescriptor,
+  config: PublishConfig
 ): Promise<ResourcePublishResult> {
   try {
-    const apiName = getNamePart(descriptor.nameParts, 0);
+    const canonicalApiName = getNamePart(descriptor.nameParts, 0);
+    const deployedApiName = config.envMapping
+      ? toDeployedName(canonicalApiName, ResourceType.Api, config.envMapping)
+      : canonicalApiName;
     const meta = RESOURCE_TYPE_METADATA[ResourceType.ApiTag];
     if (!meta.workspaceLinkIdProperty) {
       throw new Error(`Missing workspaceLinkIdProperty in metadata for ${ResourceType.ApiTag}`);
     }
-    const payload = buildLinkPayload(context, meta.workspaceLinkIdProperty, 'apis', apiName, descriptor.workspace);
+    const payload = buildLinkPayload(context, meta.workspaceLinkIdProperty, 'apis', deployedApiName, descriptor.workspace);
+    const deployedDescriptor = config.envMapping
+      ? mapDescriptor(descriptor, config.envMapping)
+      : descriptor;
 
     try {
-      await client.putResource(context, descriptor, payload);
+      await client.putResource(context, deployedDescriptor, payload);
     } catch (error) {
       // 409 means the tag/api link already exists — desired state is in place.
       if (!isLinkAlreadyExistsError(error)) {
@@ -770,6 +952,7 @@ async function rewriteNamedValueReferences(
   sourceDir: string,
   descriptor: ResourceDescriptor,
   overrides?: OverrideConfig,
+  envMapping?: EnvMapping,
 ): Promise<Record<string, unknown>> {
   const props = json.properties as Record<string, unknown> | undefined;
   const credentials = props?.credentials;
@@ -798,7 +981,22 @@ async function rewriteNamedValueReferences(
       // Apply any named value overrides so displayName reflects user config
       nvJson = applyOverrides(nvDescriptor, nvJson, overrides);
       const nvProps = nvJson.properties as Record<string, unknown> | undefined;
-      const displayName = nvProps?.displayName as string | undefined;
+      let displayName = nvProps?.displayName as string | undefined;
+
+      // If envMapping applies to NamedValue and no explicit displayName override,
+      // use the affixed displayName so {{token}} refs resolve on the shared APIM.
+      if (envMapping?.appliesTo.has(ResourceType.NamedValue)) {
+        const hasDisplayNameOverride = hasExplicitPropertyOverride(
+          ref,
+          'displayName',
+          overrides?.namedValues,
+        );
+        if (!hasDisplayNameOverride) {
+          const baseDisplayName = displayName ?? ref;
+          displayName = toDeployedName(baseDisplayName, ResourceType.NamedValue, envMapping);
+        }
+      }
+
       if (displayName && displayName !== ref) {
         rewriteMap.set(ref, displayName);
       }

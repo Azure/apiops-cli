@@ -13,10 +13,13 @@ import { OverrideConfig, OverrideSection, OverrideEntry } from '../models/config
 import { logger } from '../lib/logger.js';
 import { getNameFromNameParts, isSingletonType } from '../lib/resource-path.js';
 
+/** Keys of OverrideConfig that hold OverrideSection values (excludes non-section fields). */
+type OverrideSectionKey = keyof { [K in keyof OverrideConfig as OverrideConfig[K] extends OverrideSection | undefined ? K : never]: unknown };
+
 /**
  * Map resource types to their top-level override config section key.
  */
-const OVERRIDE_SECTION_MAP: Partial<Record<ResourceType, keyof OverrideConfig>> = {
+const OVERRIDE_SECTION_MAP: Partial<Record<ResourceType, OverrideSectionKey>> = {
   [ResourceType.NamedValue]: 'namedValues',
   [ResourceType.Backend]: 'backends',
   [ResourceType.Api]: 'apis',
@@ -38,7 +41,7 @@ const OVERRIDE_SECTION_MAP: Partial<Record<ResourceType, keyof OverrideConfig>> 
  * Used for nested override lookup (e.g., ApiDiagnostic → apis.children.diagnostics).
  * `namePartIndex` indicates which name part identifies the child (default: 1).
  */
-const CHILD_OVERRIDE_MAP: Partial<Record<ResourceType, { parentSection: keyof OverrideConfig; childKey: string; namePartIndex?: number }>> = {
+const CHILD_OVERRIDE_MAP: Partial<Record<ResourceType, { parentSection: OverrideSectionKey; childKey: string; namePartIndex?: number }>> = {
   [ResourceType.ApiDiagnostic]: { parentSection: 'apis', childKey: 'diagnostics' },
   [ResourceType.ApiOperation]: { parentSection: 'apis', childKey: 'operations' },
   [ResourceType.ApiPolicy]: { parentSection: 'apis', childKey: 'policies' },
@@ -51,7 +54,7 @@ const CHILD_OVERRIDE_MAP: Partial<Record<ResourceType, { parentSection: keyof Ov
  * E.g., ApiOperationPolicy → apis.children.operations[op].children.policies[policy]
  */
 const GRANDCHILD_OVERRIDE_MAP: Partial<Record<ResourceType, {
-  parentSection: keyof OverrideConfig;
+  parentSection: OverrideSectionKey;
   childKey: string;
   grandchildKey: string;
 }>> = {
@@ -170,7 +173,7 @@ function applyNestedOverride(
   descriptor: ResourceDescriptor,
   json: Record<string, unknown>,
   overrides: OverrideConfig,
-  mapping: { parentSection: keyof OverrideConfig; childKey: string }
+  mapping: { parentSection: OverrideSectionKey; childKey: string }
 ): Record<string, unknown> {
   const parentSection = overrides[mapping.parentSection];
   if (!parentSection) return { ...json };
@@ -218,7 +221,7 @@ function applyGrandchildOverride(
   descriptor: ResourceDescriptor,
   json: Record<string, unknown>,
   overrides: OverrideConfig,
-  mapping: { parentSection: keyof OverrideConfig; childKey: string; grandchildKey: string }
+  mapping: { parentSection: OverrideSectionKey; childKey: string; grandchildKey: string }
 ): Record<string, unknown> {
   const parentSection = overrides[mapping.parentSection];
   if (!parentSection) return { ...json };

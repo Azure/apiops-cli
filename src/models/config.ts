@@ -7,6 +7,7 @@
 
 import { ApimServiceContext } from './types.js';
 import { LogLevel } from '../lib/logger.js';
+import type { EnvMapping } from '../services/env-mapper.js';
 
 export interface ExtractConfig {
   service: ApimServiceContext;
@@ -72,12 +73,37 @@ export interface FilterConfig {
   workspaceSubFilters?: Record<string, WorkspaceSubFilter>;
 }
 
+/**
+ * Sets of canonical artifact names used to gate policy XML reference rewriting.
+ * Populated once per publish from the full artifact descriptor list.
+ */
+export interface KnownArtifactSets {
+  /** Canonical NamedValue resource names */
+  namedValues: ReadonlySet<string>;
+  /** Canonical PolicyFragment resource names */
+  fragments: ReadonlySet<string>;
+  /** Canonical Backend resource names */
+  backends: ReadonlySet<string>;
+}
+
 export interface PublishConfig {
   service: ApimServiceContext;
   sourceDir: string;
   filter?: FilterConfig;
   includeTransitive?: boolean;
   overrides?: OverrideConfig;
+  /**
+   * Pre-built environment name mapping (prefix/suffix + appliesTo).
+   * Constructed by publish-service from overrides.environment.
+   * When present, delete-unmatched scopes deletions to this env's namespace only.
+   * Absent → original behaviour (no namespace scoping, 100 % back-compat).
+   */
+  envMapping?: EnvMapping;
+  /**
+   * Known canonical artifact name sets for policy XML ref rewriting.
+   * Built by publish-service after determinePublishTargets.
+   */
+  knownArtifactSets?: KnownArtifactSets;
   dryRun: boolean;
   deleteUnmatched: boolean;
   commitId?: string;
@@ -96,6 +122,26 @@ export interface OverrideEntry {
 
 /** A section of overrides: resource name → override entry */
 export type OverrideSection = Record<string, OverrideEntry>;
+
+/**
+ * Per-environment settings for publishing to a shared APIM instance.
+ * When present, resource names are prefixed/suffixed at publish time so
+ * multiple environments (dev/qa/prod) can coexist on one APIM.
+ * Absent = current behaviour (no affix, 100% back-compat).
+ */
+export interface EnvironmentOverride {
+  /** Prefix applied to resource names for types in appliesTo. Optional. */
+  namePrefix?: string;
+  /** Suffix applied to resource names for types in appliesTo. Optional. */
+  nameSuffix?: string;
+  /**
+   * Resource type names that get the affix. If omitted, a default set is used.
+   * Values are the string names of the ResourceType enum (e.g. "Api", "Product").
+   */
+  appliesTo?: string[];
+  /** Prefix prepended to Api properties.path (e.g. "dev/"). Not applied when a per-API path override exists. */
+  apiPathPrefix?: string;
+}
 
 /**
  * Environment-specific override configuration.
@@ -117,6 +163,7 @@ export interface OverrideConfig {
   tags?: OverrideSection;
   policyFragments?: OverrideSection;
   workspaces?: OverrideSection;
+  environment?: EnvironmentOverride;
 }
 
 export interface InitConfig {

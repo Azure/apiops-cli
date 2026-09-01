@@ -136,6 +136,36 @@ describe('dry-run-reporter', () => {
       );
     });
 
+    it('should expand aggregate GatewayApi descriptors into per-API actions', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockResolvedValue([
+        { name: 'api-one' },
+        { name: 'api-two' },
+      ]);
+
+      // Discovery produces GatewayApi with only the gateway name (from apis.json)
+      const descriptors: ResourceDescriptor[] = [
+        { type: ResourceType.GatewayApi, nameParts: ['my-gateway'] },
+      ];
+
+      const report = await generateDryRunReport(store, client, testContext, testConfig, descriptors);
+
+      expect(store.readAssociation).toHaveBeenCalledWith(
+        '/source',
+        expect.objectContaining({ type: ResourceType.Gateway, nameParts: ['my-gateway'] }),
+        'apis'
+      );
+      expect(report.actions).toHaveLength(2);
+      expect(report.actions.map(a => a.name)).toEqual([
+        'my-gateway/api-one',
+        'my-gateway/api-two',
+      ]);
+      expect(loggerInfoSpy).toHaveBeenCalledWith(
+        expect.stringContaining('gateways/my-gateway/apis/api-one')
+      );
+    });
+
     it('should mark as PUT when resource exists (update)', async () => {
       const client = createMockClient(new Map([
         ['Tag:existing-tag', true],
