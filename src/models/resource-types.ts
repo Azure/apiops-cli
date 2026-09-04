@@ -46,6 +46,13 @@ export enum ResourceType {
 }
 
 /**
+ * The built-in "managed" gateway id. It is not returned by `GET /gateways`
+ * (which lists only self-hosted/custom gateways), but its per-API assignments
+ * are queryable/manageable at `gateways/managed/apis`.
+ */
+export const MANAGED_GATEWAY_NAME = 'managed';
+
+/**
  * Pure-data descriptor for a single APIM resource type.
  *
  * Both `armPathSuffix` and `artifactDirectory` use positional placeholders

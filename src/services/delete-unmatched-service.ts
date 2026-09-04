@@ -36,7 +36,7 @@ import {
   isApiRevisionName,
 } from '../lib/resource-path.js';
 import { logger } from '../lib/logger.js';
-import { toCanonicalDescriptor } from './env-mapper.js';
+import { mapDescriptor, toCanonicalDescriptor, toCanonicalName } from './env-mapper.js';
 
 /**
  * Drop ;rev=N API deletes whose base API (same workspace) is also queued for
@@ -123,6 +123,11 @@ export async function computeDeleteActions(
 
   // For each resource type in reverse dependency order
   for (const resourceType of reverseOrder) {
+    // GatewayApi assignments are reconciled by computeGatewayApiDeleteActions
+    // below (they require a parent gateway and cannot be listed generically).
+    if (resourceType === ResourceType.GatewayApi) {
+      continue;
+    }
     try {
       // List all resources of this type in APIM
       const apimResources = client.listResources(context, resourceType);
@@ -177,7 +182,130 @@ export async function computeDeleteActions(
     }
   }
 
+  // Gateway → API assignments cannot be enumerated by the generic loop above
+  // (GatewayApi requires a parent gateway and GET is not supported at the
+  // collection root). Reconcile them explicitly, scoped to the gateways that
+  // the local artifacts actually track (including the built-in "managed"
+  // gateway). This keeps the blast radius limited: gateways with no local
+  // apis.json are never touched.
+  const gatewayApiDeletes = await computeGatewayApiDeleteActions(
+    client,
+    store,
+    context,
+    config,
+    localDescriptors
+  );
+  // Run association removals first (children before parents).
+  deleteDescriptors.unshift(...gatewayApiDeletes);
+
   return deleteDescriptors;
+}
+
+/**
+ * Reconcile per-gateway API assignments (ResourceType.GatewayApi).
+ *
+ * Only gateways that appear as a local GatewayApi artifact are considered, so a
+ * workspace that does not track gateway associations is left completely
+ * untouched. The desired API set for each gateway is read from its
+ * `gateways/{gw}/apis.json` (the artifact store surfaces GatewayApi only as an
+ * aggregate `nameParts = [gateway]` descriptor, with the API names living in the
+ * file content), then any deployed assignment not in that desired set is queued
+ * for deletion (i.e. the API is un-assigned from that gateway).
+ */
+async function computeGatewayApiDeleteActions(
+  client: IApimClient,
+  store: IArtifactStore,
+  context: ApimServiceContext,
+  config: PublishConfig,
+  localDescriptors: ResourceDescriptor[]
+): Promise<ResourceDescriptor[]> {
+  const { envMapping } = config;
+
+  // Distinct gateway names that own a local GatewayApi artifact.
+  const gatewayNames = new Set<string>();
+  for (const descriptor of localDescriptors) {
+    if (descriptor.type === ResourceType.GatewayApi) {
+      const gatewayName = getNamePart(descriptor.nameParts, 0);
+      if (gatewayName) {
+        gatewayNames.add(gatewayName);
+      }
+    }
+  }
+
+  if (gatewayNames.size === 0) {
+    return [];
+  }
+
+  const deletes: ResourceDescriptor[] = [];
+
+  for (const gatewayName of gatewayNames) {
+    const gatewayDescriptor: ResourceDescriptor = {
+      type: ResourceType.Gateway,
+      nameParts: [gatewayName],
+    };
+    const deployedGatewayDescriptor = envMapping !== undefined
+      ? mapDescriptor(gatewayDescriptor, envMapping)
+      : gatewayDescriptor;
+
+    // Desired API set (canonical names) from the gateway's apis.json artifact.
+    let desiredApis: Set<string>;
+    try {
+      const entries = await store.readAssociation(config.sourceDir, gatewayDescriptor, 'apis');
+      desiredApis = new Set(entries.map((entry) => entry.name));
+    } catch (error) {
+      logger.debug(
+        `[delete-unmatched] Skipping gateway "${gatewayName}" API reconciliation (cannot read desired apis): ${(error as Error).message}`
+      );
+      continue;
+    }
+
+    try {
+      for await (const apiJson of client.listResources(
+        context,
+        ResourceType.GatewayApi,
+        deployedGatewayDescriptor
+      )) {
+        const apiName = extractResourceName(apiJson);
+        if (!apiName) {
+          continue;
+        }
+
+        const deployedDescriptor: ResourceDescriptor = {
+          type: ResourceType.GatewayApi,
+          nameParts: [getNamePart(deployedGatewayDescriptor.nameParts, 0), apiName],
+        };
+
+        // Compare the deployed API against the desired set using canonical names
+        // so env-affixed deployments still match the un-affixed artifacts.
+        let canonicalApiName = apiName;
+        if (envMapping !== undefined) {
+          const canonicalDescriptor = toCanonicalDescriptor(deployedDescriptor, envMapping);
+          if (canonicalDescriptor === null) {
+            // Belongs to another environment — do not touch.
+            continue;
+          }
+          const canonicalChildName = toCanonicalName(apiName, ResourceType.Api, envMapping);
+          if (canonicalChildName === undefined) {
+            // The gateway can be shared (for example, "managed"), so the child
+            // API must independently belong to this environment's namespace.
+            continue;
+          }
+          canonicalApiName = canonicalChildName;
+        }
+
+        if (!desiredApis.has(canonicalApiName)) {
+          deletes.push(deployedDescriptor);
+        }
+      }
+    } catch (error) {
+      logger.debug(
+        `[delete-unmatched] Skipping gateway "${gatewayName}" API reconciliation: ${(error as Error).message}`
+      );
+      continue;
+    }
+  }
+
+  return deletes;
 }
 
 /**

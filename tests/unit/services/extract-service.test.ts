@@ -604,6 +604,83 @@ describe('extract-service', () => {
       );
     });
 
+    it('should extract managed gateway API associations', async () => {
+      // Managed gateway is NOT returned by GET /gateways, only its apis are queryable.
+      const client = createMockClient();
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType, parent?: ResourceDescriptor) {
+        if (type === ResourceType.GatewayApi && parent?.nameParts[0] === 'managed') {
+          yield { name: 'managed-api-1' };
+          yield { name: 'managed-api-2' };
+        }
+      };
+
+      const store = createMockStore();
+
+      const config: ExtractConfig = {
+        service: testContext,
+        outputDir: '/output',
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      await runExtraction(client, store, config);
+
+      expect(store.writeAssociation).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ type: ResourceType.Gateway, nameParts: ['managed'] }),
+        'apis',
+        expect.arrayContaining(['managed-api-1', 'managed-api-2'])
+      );
+    });
+
+    it('should write an empty managed gateway association when it has no apis', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+
+      const result = await runExtraction(client, store, {
+        service: testContext,
+        outputDir: '/output',
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(store.writeAssociation).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ nameParts: ['managed'] }),
+        'apis',
+        []
+      );
+      expect(result.totalExtracted).toBe(0);
+    });
+
+    it('should not extract the managed gateway when excluded by the gateway filter', async () => {
+      let managedGatewayListed = false;
+      const client = createMockClient();
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType, parent?: ResourceDescriptor) {
+        if (type === ResourceType.GatewayApi && parent?.nameParts[0] === 'managed') {
+          managedGatewayListed = true;
+          yield { name: 'managed-api' };
+        }
+      };
+      const store = createMockStore();
+
+      await runExtraction(client, store, {
+        service: testContext,
+        outputDir: '/output',
+        filter: { gateways: [] },
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(managedGatewayListed).toBe(false);
+      expect(store.writeAssociation).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ nameParts: ['managed'] }),
+        'apis',
+        expect.anything()
+      );
+    });
+
     it('should handle gateway association extraction error gracefully', async () => {
       const client = createMockClient({
         [ResourceType.Gateway]: [

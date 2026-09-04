@@ -11,7 +11,7 @@ import { IApimClient } from '../clients/iapim-client.js';
 import { IArtifactStore } from '../clients/iartifact-store.js';
 import { ExtractConfig, FilterConfig } from '../models/config.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
-import { ResourceType } from '../models/resource-types.js';
+import { ResourceType, MANAGED_GATEWAY_NAME } from '../models/resource-types.js';
 import {
   TIER_1_RESOURCES,
   TIER_2_RESOURCES,
@@ -445,7 +445,7 @@ async function extractGatewayAssociations(
   store: IArtifactStore,
   context: ApimServiceContext,
   outputDir: string,
-  _filter: FilterConfig | undefined,
+  filter: FilterConfig | undefined,
   result: ExtractionResult
 ): Promise<void> {
   const gatewayResults = result.typeResults.filter((r) => r.type === ResourceType.Gateway);
@@ -475,6 +475,35 @@ async function extractGatewayAssociations(
         result.totalErrors++;
       }
     }
+  }
+
+  // The built-in "managed" gateway is not returned by GET /gateways, so extract
+  // its API assignments explicitly. Recording them lets publish/delete-unmatched
+  // reconcile managed membership (e.g. an API intentionally removed from managed).
+  const managedDescriptor: ResourceDescriptor = {
+    type: ResourceType.Gateway,
+    nameParts: [MANAGED_GATEWAY_NAME],
+  };
+  if (!shouldIncludeResource(managedDescriptor, filter)) {
+    return;
+  }
+
+  try {
+    const apiNames: string[] = [];
+    for await (const apiJson of client.listResources(context, ResourceType.GatewayApi, managedDescriptor)) {
+      const name = apiJson.name as string | undefined;
+      if (name) {
+        apiNames.push(name);
+      }
+    }
+    await store.writeAssociation(outputDir, managedDescriptor, 'apis', apiNames);
+    if (apiNames.length > 0) {
+      result.totalExtracted++;
+      logger.info(`Extracted ${apiNames.length} API associations for gateway "${MANAGED_GATEWAY_NAME}"`);
+    }
+  } catch (error) {
+    logger.warn(`Failed to extract API associations for managed gateway: ${(error as Error).message}`);
+    result.totalErrors++;
   }
 }
 

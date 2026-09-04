@@ -12,6 +12,7 @@ import {
   buildEnvMappingFromOverrides,
   toDeployedName,
   toCanonicalName,
+  toCanonicalDescriptor,
   isInEnvNamespace,
   mapDescriptor,
   type EnvironmentOverride,
@@ -391,6 +392,21 @@ describe('env-mapper', () => {
       const d: ResourceDescriptor = { type: ResourceType.GatewayApi, nameParts: ['my-gw', 'petstore'] };
       const result = mapDescriptor(d, m);
       expect(result).toEqual({ type: ResourceType.GatewayApi, nameParts: ['my-gw', 'dev-petstore'] });
+    });
+
+    it('GatewayApi: preserves the managed gateway when Gateway is explicitly affixed', () => {
+      const mapping = prefixMapping('dev-', [ResourceType.Gateway, ResourceType.Api]);
+      const descriptor: ResourceDescriptor = { type: ResourceType.GatewayApi, nameParts: ['managed', 'petstore'] };
+
+      expect(mapDescriptor(descriptor, mapping)).toEqual({
+        type: ResourceType.GatewayApi,
+        nameParts: ['managed', 'dev-petstore'],
+      });
+      expect(toCanonicalDescriptor({
+        type: ResourceType.GatewayApi,
+        nameParts: ['managed', 'dev-petstore'],
+      }, mapping)).toEqual(descriptor);
+      expect(isInEnvNamespace('managed', ResourceType.Gateway, mapping)).toBe(true);
     });
 
     it('ServicePolicy: no nameParts, returned unchanged', () => {
