@@ -235,13 +235,15 @@ describe('delete-unmatched-service', () => {
         [ResourceType.GatewayApi, [{ name: 'api-keep' }, { name: 'api-stale' }]],
       ]);
 
-      // Local artifacts track the managed gateway with only api-keep assigned.
+      // The store surfaces GatewayApi as an aggregate descriptor (nameParts =
+      // [gateway]); the desired API names live in apis.json (readAssociation).
       const localDescriptors: ResourceDescriptor[] = [
-        { type: ResourceType.GatewayApi, nameParts: ['managed', 'api-keep'] },
+        { type: ResourceType.GatewayApi, nameParts: ['managed'] },
       ];
 
       const client = createMockClient(apimResources);
       const store = createMockStore(localDescriptors);
+      store.readAssociation = vi.fn().mockResolvedValue([{ name: 'api-keep' }]);
 
       const result = await computeDeleteActions(client, store, testContext, testConfig);
 
@@ -251,6 +253,28 @@ describe('delete-unmatched-service', () => {
         type: ResourceType.GatewayApi,
         nameParts: ['managed', 'api-stale'],
       });
+    });
+
+    it('should keep a desired gateway API even when it is also being published', async () => {
+      const apimResources = new Map<ResourceType, Record<string, unknown>[]>([
+        [ResourceType.GatewayApi, [{ name: 'webapitest' }]],
+      ]);
+
+      const localDescriptors: ResourceDescriptor[] = [
+        { type: ResourceType.GatewayApi, nameParts: ['shgw-UAE-01'] },
+      ];
+
+      const client = createMockClient(apimResources);
+      const store = createMockStore(localDescriptors);
+      store.readAssociation = vi.fn().mockResolvedValue([
+        { name: 'customermanagementservice' },
+        { name: 'swagger-petstore' },
+        { name: 'webapitest' },
+      ]);
+
+      const result = await computeDeleteActions(client, store, testContext, testConfig);
+
+      expect(result.filter((d) => d.type === ResourceType.GatewayApi)).toHaveLength(0);
     });
 
     it('should not touch any gateway assignments when artifacts track no gateways', async () => {

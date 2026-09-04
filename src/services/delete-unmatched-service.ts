@@ -190,10 +190,10 @@ export async function computeDeleteActions(
   // apis.json are never touched.
   const gatewayApiDeletes = await computeGatewayApiDeleteActions(
     client,
+    store,
     context,
     config,
-    localDescriptors,
-    localSet
+    localDescriptors
   );
   // Run association removals first (children before parents).
   deleteDescriptors.unshift(...gatewayApiDeletes);
@@ -204,22 +204,24 @@ export async function computeDeleteActions(
 /**
  * Reconcile per-gateway API assignments (ResourceType.GatewayApi).
  *
- * Only gateways that appear as a parent of at least one local GatewayApi
- * artifact are considered, so a workspace that does not track gateway
- * associations is left completely untouched. For each such gateway the deployed
- * assignments are listed and any assignment missing from the local artifacts is
- * queued for deletion (i.e. the API is un-assigned from that gateway).
+ * Only gateways that appear as a local GatewayApi artifact are considered, so a
+ * workspace that does not track gateway associations is left completely
+ * untouched. The desired API set for each gateway is read from its
+ * `gateways/{gw}/apis.json` (the artifact store surfaces GatewayApi only as an
+ * aggregate `nameParts = [gateway]` descriptor, with the API names living in the
+ * file content), then any deployed assignment not in that desired set is queued
+ * for deletion (i.e. the API is un-assigned from that gateway).
  */
 async function computeGatewayApiDeleteActions(
   client: IApimClient,
+  store: IArtifactStore,
   context: ApimServiceContext,
   config: PublishConfig,
-  localDescriptors: ResourceDescriptor[],
-  localSet: Set<string>
+  localDescriptors: ResourceDescriptor[]
 ): Promise<ResourceDescriptor[]> {
   const { envMapping } = config;
 
-  // Distinct gateway names that own at least one local GatewayApi artifact.
+  // Distinct gateway names that own a local GatewayApi artifact.
   const gatewayNames = new Set<string>();
   for (const descriptor of localDescriptors) {
     if (descriptor.type === ResourceType.GatewayApi) {
@@ -242,6 +244,18 @@ async function computeGatewayApiDeleteActions(
       nameParts: [gatewayName],
     };
 
+    // Desired API set (canonical names) from the gateway's apis.json artifact.
+    let desiredApis: Set<string>;
+    try {
+      const entries = await store.readAssociation(config.sourceDir, gatewayDescriptor, 'apis');
+      desiredApis = new Set(entries.map((entry) => entry.name));
+    } catch (error) {
+      logger.debug(
+        `[delete-unmatched] Skipping gateway "${gatewayName}" API reconciliation (cannot read desired apis): ${(error as Error).message}`
+      );
+      continue;
+    }
+
     try {
       for await (const apiJson of client.listResources(
         context,
@@ -258,16 +272,19 @@ async function computeGatewayApiDeleteActions(
           nameParts: [gatewayName, apiName],
         };
 
+        // Compare the deployed API against the desired set using canonical names
+        // so env-affixed deployments still match the un-affixed artifacts.
+        let canonicalApiName = apiName;
         if (envMapping !== undefined) {
           const canonicalDescriptor = toCanonicalDescriptor(deployedDescriptor, envMapping);
           if (canonicalDescriptor === null) {
             // Belongs to another environment — do not touch.
             continue;
           }
-          if (!localSet.has(getResourceKey(canonicalDescriptor))) {
-            deletes.push(deployedDescriptor);
-          }
-        } else if (!localSet.has(getResourceKey(deployedDescriptor))) {
+          canonicalApiName = getNamePart(canonicalDescriptor.nameParts, 1);
+        }
+
+        if (!desiredApis.has(canonicalApiName)) {
           deletes.push(deployedDescriptor);
         }
       }
