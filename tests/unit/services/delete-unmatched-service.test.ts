@@ -5,7 +5,10 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { computeDeleteActions } from '../../../src/services/delete-unmatched-service.js';
+import {
+  computeDeleteActions,
+  filterRevisionDeletesHandledByBaseApi,
+} from '../../../src/services/delete-unmatched-service.js';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
@@ -225,6 +228,40 @@ describe('delete-unmatched-service', () => {
         type: ResourceType.Api,
         nameParts: ['api1'],
       });
+    });
+  });
+
+  describe('filterRevisionDeletesHandledByBaseApi', () => {
+    it('drops ;rev=N deletes when the base API is also queued', () => {
+      const descriptors: ResourceDescriptor[] = [
+        { type: ResourceType.Api, nameParts: ['orders-api'] },
+        { type: ResourceType.Api, nameParts: ['orders-api;rev=2'] },
+        { type: ResourceType.Api, nameParts: ['other-api;rev=2'] },
+        { type: ResourceType.Tag, nameParts: ['a-tag'] },
+      ];
+
+      const result = filterRevisionDeletesHandledByBaseApi(descriptors);
+
+      expect(result.map((d) => d.nameParts[0])).toEqual([
+        'orders-api',
+        'other-api;rev=2',
+        'a-tag',
+      ]);
+    });
+
+    it('keeps revision deletes when the base API is in a different workspace', () => {
+      const descriptors: ResourceDescriptor[] = [
+        { type: ResourceType.Api, nameParts: ['orders-api'], workspace: 'ws1' },
+        { type: ResourceType.Api, nameParts: ['orders-api;rev=2'], workspace: 'ws2' },
+        { type: ResourceType.Api, nameParts: ['orders-api;rev=3'], workspace: 'ws1' },
+      ];
+
+      const result = filterRevisionDeletesHandledByBaseApi(descriptors);
+
+      expect(result.map((d) => `${d.workspace}:${d.nameParts[0]}`)).toEqual([
+        'ws1:orders-api',
+        'ws2:orders-api;rev=2',
+      ]);
     });
   });
 });

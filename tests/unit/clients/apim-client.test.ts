@@ -784,6 +784,79 @@ describe('ApimClient.deleteResource provisioning polling', () => {
   });
 });
 
+describe('ApimClient.deleteResource revision and reference handling', () => {
+  let client: ApimClient;
+  let fetchSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    client = new ApimClient();
+    fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
+    vi.spyOn(client as any, 'delay').mockResolvedValue(undefined);
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  // Bug 1: deleting a revisioned API must use deleteRevisions=true, otherwise
+  // APIM rejects the base (current-revision) delete.
+  it('appends deleteRevisions=true when deleting a base API', async () => {
+    fetchSpy.mockResolvedValueOnce(makeResponse(200, { name: 'orders-api' }));
+
+    const deleted = await client.deleteResource(testContext, {
+      type: ResourceType.Api,
+      nameParts: ['orders-api'],
+    });
+
+    expect(deleted).toBe(true);
+    const [url, options] = fetchSpy.mock.calls[0];
+    expect(options.method).toBe('DELETE');
+    expect(url).toContain('/apis/orders-api?');
+    expect(url).toContain('deleteRevisions=true');
+  });
+
+  it('does not append deleteRevisions=true when deleting a single revision', async () => {
+    fetchSpy.mockResolvedValueOnce(makeResponse(200, { name: 'orders-api;rev=2' }));
+
+    const deleted = await client.deleteResource(testContext, {
+      type: ResourceType.Api,
+      nameParts: ['orders-api;rev=2'],
+    });
+
+    expect(deleted).toBe(true);
+    const [url] = fetchSpy.mock.calls[0];
+    expect(url).not.toContain('deleteRevisions=true');
+  });
+
+  // Bug 2: a policy fragment still referenced by the service policy cannot be
+  // deleted; the prune should skip it (return false) rather than throw.
+  it('skips a policy fragment that is still referenced by another entity', async () => {
+    const body = {
+      error: {
+        code: 'ValidationError',
+        message:
+          "The Policy Fragment 'global-security-headers' is used by the following entities:\r\n/policies/policy\r\n",
+        details: null,
+      },
+    };
+    fetchSpy.mockResolvedValueOnce(makeResponse(400, body));
+
+    const deleted = await client.deleteResource(testContext, {
+      type: ResourceType.PolicyFragment,
+      nameParts: ['global-security-headers'],
+    });
+
+    expect(deleted).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('ApimClient HTTP 429 rate limiting', () => {
   let client: ApimClient;
   let fetchSpy: ReturnType<typeof vi.fn>;
@@ -884,6 +957,72 @@ describe('ApimClient HTTP 429 rate limiting', () => {
 
     expect(result).toEqual({ name: 'my-nv' });
     expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('ApimClient HTTP 409 conflict handling', () => {
+  let client: ApimClient;
+  let fetchSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    client = new ApimClient();
+    fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    /* eslint-disable @typescript-eslint/no-explicit-any */
+    vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
+    vi.spyOn(client as any, 'delay').mockResolvedValue(undefined);
+    /* eslint-enable @typescript-eslint/no-explicit-any */
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('should retry PessimisticConcurrencyConflict responses on PUT operations', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(
+        makeResponse(409, {
+          error: {
+            code: 'PessimisticConcurrencyConflict',
+            message: 'Operation on the API is in progress',
+          },
+        })
+      )
+      .mockResolvedValueOnce(makeResponse(200, { name: 'my-api' }));
+
+    const descriptor = {
+      type: ResourceType.Api,
+      nameParts: ['my-api'],
+    };
+
+    await expect(client.putResource(testContext, descriptor, {}))
+      .resolves.toEqual({ name: 'my-api' });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('should not retry unrelated HTTP 409 responses', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      makeResponse(409, {
+        error: {
+          code: 'AnotherConflict',
+          message: 'A non-transient conflict',
+        },
+      })
+    );
+
+    const descriptor = {
+      type: ResourceType.Api,
+      nameParts: ['my-api'],
+    };
+
+    await expect(client.putResource(testContext, descriptor, {}))
+      .rejects.toMatchObject({
+        status: 409,
+        code: 'AnotherConflict',
+      });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
 

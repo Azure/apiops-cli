@@ -167,9 +167,23 @@ export function toCanonicalDescriptor(d: ResourceDescriptor, m: EnvMapping): Res
   return { ...d, nameParts: [canonicalFirst, ...d.nameParts.slice(1)] };
 }
 
+/**
+ * Split an API name into base and ";rev=N" suffix so env affixes apply to the
+ * base name only (deployed form is "{prefix}{base}{suffix};rev=N"). The ;rev=N
+ * suffix is only meaningful for API revisions, so non-API types are never split.
+ */
+function splitRevisionSuffix(name: string, type: ResourceType): { base: string; revSuffix: string } {
+  if (type !== ResourceType.Api) return { base: name, revSuffix: '' };
+  const idx = name.indexOf(';rev=');
+  return idx === -1
+    ? { base: name, revSuffix: '' }
+    : { base: name.slice(0, idx), revSuffix: name.slice(idx) };
+}
+
 export function toDeployedName(name: string, type: ResourceType, m: EnvMapping): string {
   if (!m.appliesTo.has(type)) return name;
-  return `${m.prefix}${name}${m.suffix}`;
+  const { base, revSuffix } = splitRevisionSuffix(name, type);
+  return `${m.prefix}${base}${m.suffix}${revSuffix}`;
 }
 
 /**
@@ -181,10 +195,11 @@ export function toCanonicalName(deployedName: string, type: ResourceType, m: Env
   if (!m.appliesTo.has(type)) return deployedName;
   if (!isInEnvNamespace(deployedName, type, m)) return undefined;
 
-  let name = deployedName;
+  const { base, revSuffix } = splitRevisionSuffix(deployedName, type);
+  let name = base;
   if (m.prefix) name = name.slice(m.prefix.length);
   if (m.suffix) name = name.slice(0, name.length - m.suffix.length);
-  return name;
+  return name + revSuffix;
 }
 
 /**
@@ -193,8 +208,9 @@ export function toCanonicalName(deployedName: string, type: ResourceType, m: Env
  */
 export function isInEnvNamespace(deployedName: string, type: ResourceType, m: EnvMapping): boolean {
   if (!m.appliesTo.has(type)) return true;
-  if (deployedName.length < m.prefix.length + m.suffix.length) return false;
-  return deployedName.startsWith(m.prefix) && deployedName.endsWith(m.suffix);
+  const { base } = splitRevisionSuffix(deployedName, type);
+  if (base.length < m.prefix.length + m.suffix.length) return false;
+  return base.startsWith(m.prefix) && base.endsWith(m.suffix);
 }
 
 /**

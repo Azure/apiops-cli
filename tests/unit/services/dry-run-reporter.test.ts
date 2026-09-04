@@ -182,6 +182,29 @@ describe('dry-run-reporter', () => {
       expect(report.actions[0].operation).toBe('PUT');
     });
 
+    it('filters ;rev=N incremental deletes covered by a base API delete', async () => {
+      const client = createMockClient();
+      client.getResource.mockResolvedValue({ name: 'x' }); // everything "exists"
+      const store = createMockStore();
+
+      const incrementalDeleted: ResourceDescriptor[] = [
+        { type: ResourceType.Api, nameParts: ['orders-api'] },
+        { type: ResourceType.Api, nameParts: ['orders-api;rev=2'] },
+      ];
+
+      const report = await generateDryRunReport(
+        store,
+        client,
+        testContext,
+        testConfig,
+        [],
+        incrementalDeleted
+      );
+
+      const deletes = report.actions.filter((a) => a.operation === 'DELETE');
+      expect(deletes.map((a) => a.name)).toEqual(['orders-api']);
+    });
+
     it('should include summary with correct counts', async () => {
       const client = createMockClient(new Map([
         ['NamedValue:nv1', false],

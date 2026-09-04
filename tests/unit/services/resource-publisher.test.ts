@@ -5,7 +5,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { publishResource } from '../../../src/services/resource-publisher.js';
+import {
+  publishResource,
+  normalizeApiAuthenticationSettings,
+  prefersLegacyAuthOverride,
+} from '../../../src/services/resource-publisher.js';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
@@ -873,6 +877,50 @@ describe('resource-publisher', () => {
         expect(props).toHaveProperty('path', '/api');
       });
 
+      it('sends an explicit empty apiRevisionDescription when absent and never sends description', async () => {
+        const client = createMockClient();
+        const store = createMockStore();
+        store.readResource.mockResolvedValue({
+          name: 'my-api;rev=2',
+          // description present in the artifact; apiRevisionDescription absent
+          properties: { path: '/api', description: 'copied from current' },
+        });
+
+        const descriptor: ResourceDescriptor = {
+          type: ResourceType.Api,
+          nameParts: ['my-api;rev=2'],
+        };
+
+        await publishResource(client, store, testContext, descriptor, testConfig);
+
+        const props = (client.putResource.mock.calls[0][2] as Record<string, unknown>)
+          .properties as Record<string, unknown>;
+        // Prevents inheriting the current revision's description via sourceApiId copy
+        expect(props.apiRevisionDescription).toBe('');
+        // APIM rejects Description changes for non-current revisions
+        expect(props).not.toHaveProperty('description');
+      });
+
+      it('preserves an explicit apiRevisionDescription from the artifact', async () => {
+        const client = createMockClient();
+        const store = createMockStore();
+        store.readResource.mockResolvedValue({
+          name: 'my-api;rev=2',
+          properties: { path: '/api', apiRevisionDescription: 'v1' },
+        });
+
+        const descriptor: ResourceDescriptor = {
+          type: ResourceType.Api,
+          nameParts: ['my-api;rev=2'],
+        };
+
+        await publishResource(client, store, testContext, descriptor, testConfig);
+
+        const props = (client.putResource.mock.calls[0][2] as Record<string, unknown>)
+          .properties as Record<string, unknown>;
+        expect(props.apiRevisionDescription).toBe('v1');
+      });
+
       it('does not inject sourceApiId for non-revision APIs', async () => {
         const client = createMockClient();
         const store = createMockStore();
@@ -1240,6 +1288,182 @@ describe('resource-publisher', () => {
       const props = putPayload.properties as Record<string, unknown>;
       const creds = props.credentials as Record<string, unknown>;
       expect(creds.instrumentationKey).toBe('raw-instrumentation-key-value');
+    });
+  });
+
+  describe('normalizeApiAuthenticationSettings', () => {
+    it('keeps collections and drops singular fields when collections are non-empty', () => {
+      const json = {
+        properties: {
+          displayName: 'api',
+          authenticationSettings: {
+            oAuth2: { authorizationServerId: 'aad-oauth-2-0', scope: null },
+            openid: null,
+            oAuth2AuthenticationSettings: [
+              { authorizationServerId: 'aad-oauth-2-0', scope: null },
+            ],
+            openidAuthenticationSettings: [],
+            returnProtectedResourceMetadata: false,
+          },
+        },
+      };
+
+      const result = normalizeApiAuthenticationSettings(json);
+      const auth = (result.properties as Record<string, unknown>)
+        .authenticationSettings as Record<string, unknown>;
+
+      expect(auth.oAuth2).toBeUndefined();
+      expect(auth.openid).toBeUndefined();
+      expect(auth.oAuth2AuthenticationSettings).toHaveLength(1);
+      expect(auth.openidAuthenticationSettings).toBeUndefined();
+      expect(auth.returnProtectedResourceMetadata).toBe(false);
+    });
+
+    it('keeps singular fields and drops empty collection keys when collections are empty', () => {
+      const json = {
+        properties: {
+          authenticationSettings: {
+            oAuth2: { authorizationServerId: 'server-1' },
+            oAuth2AuthenticationSettings: [],
+            openidAuthenticationSettings: [],
+          },
+        },
+      };
+
+      const result = normalizeApiAuthenticationSettings(json);
+      const auth = (result.properties as Record<string, unknown>)
+        .authenticationSettings as Record<string, unknown>;
+
+      expect(auth.oAuth2).toEqual({ authorizationServerId: 'server-1' });
+      expect(auth.oAuth2AuthenticationSettings).toBeUndefined();
+      expect(auth.openidAuthenticationSettings).toBeUndefined();
+    });
+
+    it('returns json unchanged when authenticationSettings is absent', () => {
+      const json = { properties: { displayName: 'api' } };
+      expect(normalizeApiAuthenticationSettings(json)).toBe(json);
+    });
+
+    it('prefers non-null legacy fields over collections when preferLegacyFields is set', () => {
+      const json = {
+        properties: {
+          authenticationSettings: {
+            oAuth2: { authorizationServerId: 'override-server' },
+            oAuth2AuthenticationSettings: [
+              { authorizationServerId: 'extracted-server' },
+            ],
+          },
+        },
+      };
+
+      const result = normalizeApiAuthenticationSettings(json, { preferLegacyFields: true });
+      const auth = (result.properties as Record<string, unknown>)
+        .authenticationSettings as Record<string, unknown>;
+
+      expect(auth.oAuth2).toEqual({ authorizationServerId: 'override-server' });
+      expect(auth.oAuth2AuthenticationSettings).toBeUndefined();
+      expect(auth.openidAuthenticationSettings).toBeUndefined();
+    });
+
+    it('falls back to collections when preferLegacyFields is set but legacy fields are null', () => {
+      const json = {
+        properties: {
+          authenticationSettings: {
+            oAuth2: null,
+            openid: null,
+            oAuth2AuthenticationSettings: [
+              { authorizationServerId: 'extracted-server' },
+            ],
+          },
+        },
+      };
+
+      const result = normalizeApiAuthenticationSettings(json, { preferLegacyFields: true });
+      const auth = (result.properties as Record<string, unknown>)
+        .authenticationSettings as Record<string, unknown>;
+
+      expect(auth.oAuth2AuthenticationSettings).toHaveLength(1);
+      expect(auth.oAuth2).toBeUndefined();
+      expect(auth.openid).toBeUndefined();
+    });
+  });
+
+  describe('prefersLegacyAuthOverride', () => {
+    it('is true when the override supplies only legacy fields', () => {
+      const section = {
+        'my-api': {
+          properties: {
+            authenticationSettings: { oAuth2: { authorizationServerId: 'override-server' } },
+          },
+        },
+      };
+      expect(prefersLegacyAuthOverride('my-api', section)).toBe(true);
+    });
+
+    it('is false when the override supplies collections', () => {
+      const section = {
+        'my-api': {
+          properties: {
+            authenticationSettings: {
+              oAuth2AuthenticationSettings: [{ authorizationServerId: 'override-server' }],
+            },
+          },
+        },
+      };
+      expect(prefersLegacyAuthOverride('my-api', section)).toBe(false);
+    });
+
+    it('is false when the override supplies both representations', () => {
+      const section = {
+        'my-api': {
+          properties: {
+            authenticationSettings: {
+              oAuth2: { authorizationServerId: 'legacy' },
+              oAuth2AuthenticationSettings: [{ authorizationServerId: 'a' }, { authorizationServerId: 'b' }],
+            },
+          },
+        },
+      };
+      expect(prefersLegacyAuthOverride('my-api', section)).toBe(false);
+    });
+
+    it('is false for metadata-only authentication overrides', () => {
+      const section = {
+        'my-api': {
+          properties: {
+            authenticationSettings: { returnProtectedResourceMetadata: true },
+          },
+        },
+      };
+      expect(prefersLegacyAuthOverride('my-api', section)).toBe(false);
+    });
+
+    it('is false when there is no authenticationSettings override', () => {
+      expect(prefersLegacyAuthOverride('my-api', undefined)).toBe(false);
+      expect(prefersLegacyAuthOverride('my-api', { 'my-api': { properties: { path: '/x' } } })).toBe(false);
+    });
+
+    it('matches by the exact resource key (revision names are not base-inherited)', () => {
+      // A revision-specific legacy override is honored only under its full key —
+      // this is why the caller looks up the full API name, not the stripped base.
+      const revisionSection = {
+        'my-api;rev=2': {
+          properties: {
+            authenticationSettings: { oAuth2: { authorizationServerId: 'rev-server' } },
+          },
+        },
+      };
+      expect(prefersLegacyAuthOverride('my-api;rev=2', revisionSection)).toBe(true);
+
+      // A base override must NOT leak into a revision publish (keys differ).
+      const baseSection = {
+        'my-api': {
+          properties: {
+            authenticationSettings: { oAuth2: { authorizationServerId: 'base-server' } },
+          },
+        },
+      };
+      expect(prefersLegacyAuthOverride('my-api;rev=2', baseSection)).toBe(false);
     });
   });
 });

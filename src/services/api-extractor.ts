@@ -200,8 +200,10 @@ async function extractApiRevisions(
     for await (const revision of revisions) {
       try {
         const revNumber = (revision.apiRevision ?? revision.revisionNumber) as string | undefined;
-        if (!revNumber || revNumber === '1') {
-          // Skip revision 1 — it's the main API
+        // Skip the current revision — it is represented by the main API folder.
+        // Using isCurrent (not a hard-coded '1') correctly handles APIs whose
+        // current revision is not revision 1.
+        if (!revNumber || revision.isCurrent === true) {
           continue;
         }
 

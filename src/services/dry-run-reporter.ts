@@ -15,7 +15,10 @@ import { buildResourceLabel } from '../lib/resource-uri.js';
 import { getNamePart } from '../lib/resource-path.js';
 import { ResourceType } from '../models/resource-types.js';
 import { logger } from '../lib/logger.js';
-import { computeDeleteActions } from './delete-unmatched-service.js';
+import {
+  computeDeleteActions,
+  filterRevisionDeletesHandledByBaseApi,
+} from './delete-unmatched-service.js';
 
 export interface DryRunAction {
   operation: 'PUT' | 'DELETE' | 'SKIP';
@@ -106,8 +109,10 @@ export async function generateDryRunReport(
 
   // In incremental mode, use precomputed deleted descriptors from git diff.
   // Otherwise, if delete-unmatched is enabled, calculate full unmatched deletes.
+  // Apply the same ;rev=N filtering as the real delete path so the preview
+  // matches what publish would actually delete.
   if (incrementalDeletedDescriptors.length > 0) {
-    for (const descriptor of incrementalDeletedDescriptors) {
+    for (const descriptor of filterRevisionDeletesHandledByBaseApi(incrementalDeletedDescriptors)) {
       try {
         const existing = await client.getResource(context, descriptor);
 
@@ -145,12 +150,14 @@ export async function generateDryRunReport(
       }
     }
   } else if (config.deleteUnmatched) {
-    const deleteActions = await computeDeleteActionsForDryRun(
-      client,
-      store,
-      context,
-      config,
-      targetDescriptors
+    const deleteActions = filterRevisionDeletesHandledByBaseApi(
+      await computeDeleteActionsForDryRun(
+        client,
+        store,
+        context,
+        config,
+        targetDescriptors
+      )
     );
 
     for (const descriptor of deleteActions) {

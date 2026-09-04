@@ -59,16 +59,48 @@ export function buildKnownArtifactSets(descriptors: ResourceDescriptor[]): Known
  * Check if a specific property has an explicit override in the given section.
  * Uses case-insensitive resource name matching (matching override-merger behavior).
  */
-function hasExplicitPropertyOverride(
+export function hasExplicitPropertyOverride(
   resourceName: string,
   propertyKey: string,
   section: OverrideSection | undefined,
 ): boolean {
-  if (!section) return false;
+  return getExplicitPropertyOverride(resourceName, propertyKey, section) !== undefined;
+}
+
+/** Return the explicit override value for a property, if any (case-insensitive name match). */
+function getExplicitPropertyOverride(
+  resourceName: string,
+  propertyKey: string,
+  section: OverrideSection | undefined,
+): unknown {
+  if (!section) return undefined;
   const lowerName = resourceName.toLowerCase();
   const matchingKey = Object.keys(section).find((k) => k.toLowerCase() === lowerName);
-  if (!matchingKey) return false;
-  return Object.hasOwn(section[matchingKey].properties, propertyKey);
+  if (!matchingKey) return undefined;
+  const properties = section[matchingKey]?.properties as Record<string, unknown> | undefined;
+  if (!properties || !Object.hasOwn(properties, propertyKey)) return undefined;
+  return properties[propertyKey];
+}
+
+/**
+ * True when the environment override explicitly supplies the LEGACY auth
+ * representation (oAuth2/openid) without also supplying the collections.
+ * Collection or metadata-only overrides keep the default collection precedence.
+ */
+export function prefersLegacyAuthOverride(
+  resourceName: string,
+  section: OverrideSection | undefined,
+): boolean {
+  const overrideAuth = getExplicitPropertyOverride(resourceName, 'authenticationSettings', section);
+  if (!overrideAuth || typeof overrideAuth !== 'object') return false;
+  const auth = overrideAuth as Record<string, unknown>;
+
+  const suppliesLegacy = auth.oAuth2 != null || auth.openid != null;
+  const suppliesCollections =
+    (Array.isArray(auth.oAuth2AuthenticationSettings) && auth.oAuth2AuthenticationSettings.length > 0) ||
+    (Array.isArray(auth.openidAuthenticationSettings) && auth.openidAuthenticationSettings.length > 0);
+
+  return suppliesLegacy && !suppliesCollections;
 }
 
 /**
@@ -109,6 +141,59 @@ const WIKI_TYPES = new Set<ResourceType>([
   ResourceType.ApiWiki,
   ResourceType.ProductWiki,
 ]);
+
+/**
+ * Normalize API authenticationSettings for PUT.
+ *
+ * APIM's GET returns both the legacy singular fields (oAuth2, openid) and the
+ * newer collections (oAuth2AuthenticationSettings, openidAuthenticationSettings),
+ * but PUT rejects payloads containing both: "Cannot use OAuth2AuthenticationSettings
+ * in combination with OAuth2 nor openid". Keep the collections (a superset of the
+ * singular fields) when they are non-empty; otherwise keep the singular fields and
+ * drop the empty collection keys.
+ *
+ * When `preferLegacyFields` is set (the environment override explicitly provides
+ * authenticationSettings), non-null legacy fields win over extracted collections —
+ * otherwise the override would be silently discarded.
+ */
+export function normalizeApiAuthenticationSettings(
+  json: Record<string, unknown>,
+  options?: { preferLegacyFields?: boolean }
+): Record<string, unknown> {
+  const props = json.properties as Record<string, unknown> | undefined;
+  const auth = props?.authenticationSettings as Record<string, unknown> | undefined;
+  if (!auth) {
+    return json;
+  }
+
+  const {
+    oAuth2,
+    openid,
+    oAuth2AuthenticationSettings,
+    openidAuthenticationSettings,
+    ...rest
+  } = auth;
+
+  const hasLegacyValues = oAuth2 != null || openid != null;
+  const hasCollections =
+    (Array.isArray(oAuth2AuthenticationSettings) && oAuth2AuthenticationSettings.length > 0) ||
+    (Array.isArray(openidAuthenticationSettings) && openidAuthenticationSettings.length > 0);
+
+  const normalizedAuth: Record<string, unknown> = { ...rest };
+  if (hasCollections && !(options?.preferLegacyFields && hasLegacyValues)) {
+    if (Array.isArray(oAuth2AuthenticationSettings) && oAuth2AuthenticationSettings.length > 0) {
+      normalizedAuth.oAuth2AuthenticationSettings = oAuth2AuthenticationSettings;
+    }
+    if (Array.isArray(openidAuthenticationSettings) && openidAuthenticationSettings.length > 0) {
+      normalizedAuth.openidAuthenticationSettings = openidAuthenticationSettings;
+    }
+  } else {
+    if (oAuth2 !== undefined) normalizedAuth.oAuth2 = oAuth2;
+    if (openid !== undefined) normalizedAuth.openid = openid;
+  }
+
+  return { ...json, properties: { ...props, authenticationSettings: normalizedAuth } };
+}
 
 /**
  * Publish a single resource: read from store, apply overrides, PUT to APIM.
@@ -308,6 +393,9 @@ export async function publishResource(
     // validation errors in APIM's revision creation.
     if (descriptor.type === ResourceType.Api) {
       const apiName = getNamePart(descriptor.nameParts, 0);
+      json = normalizeApiAuthenticationSettings(json, {
+        preferLegacyFields: prefersLegacyAuthOverride(apiName, config.overrides?.apis),
+      });
       if (apiName.includes(';rev=')) {
         const baseApiName = apiName.split(';rev=')[0];
         const props = json.properties as Record<string, unknown> | undefined;
@@ -325,6 +413,23 @@ export async function publishResource(
         if (!Object.hasOwn(cleanProps, 'isCurrent')) {
           cleanProps.isCurrent = false;
         }
+        // Revision creation copies apiRevisionDescription from the current
+        // revision via sourceApiId; send an explicit empty string when absent so
+        // the copy cannot inherit it. (properties.description must NOT be sent —
+        // APIM rejects changing Description for non-current revisions.)
+        if (!Object.hasOwn(cleanProps, 'apiRevisionDescription')) {
+          cleanProps.apiRevisionDescription = '';
+        }
+        if (
+          Object.hasOwn(cleanProps, 'description') &&
+          hasExplicitPropertyOverride(apiName, 'description', config.overrides?.apis)
+        ) {
+          logger.warn(
+            `Ignoring 'description' override for revision '${apiName}': ` +
+            `APIM only accepts description changes on the current revision.`
+          );
+        }
+        delete cleanProps.description;
         json = { ...json, properties: cleanProps };
       }
     }

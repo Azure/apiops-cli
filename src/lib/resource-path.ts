@@ -143,6 +143,16 @@ export function getNamePart(nameParts: string[], index: number): string {
   return value;
 }
 
+/** True when an API name carries a revision suffix (e.g. "my-api;rev=2"). */
+export function isApiRevisionName(apiName: string): boolean {
+  return apiName.includes(';rev=');
+}
+
+/** Root API name with any ";rev=N" suffix stripped. */
+export function getApiRootName(apiName: string): string {
+  return apiName.split(';rev=')[0] ?? apiName;
+}
+
 /**
  * Converts a positional template string to a capturing regex.
  * Each `{i}` placeholder becomes a `([^/]+)` capture group; all other
