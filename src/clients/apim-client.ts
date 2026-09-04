@@ -24,7 +24,8 @@ export class HttpError extends Error {
   constructor(
     public readonly status: number,
     message: string,
-    public readonly code?: string  // APIM error code, e.g. "MethodNotAllowedInPricingTier"
+    public readonly code?: string,  // APIM error code, e.g. "MethodNotAllowedInPricingTier"
+    public readonly body?: unknown
   ) {
     super(message);
     this.name = 'HttpError';
@@ -39,6 +40,26 @@ export class HttpError extends Error {
  */
 export function isLinkAlreadyExistsError(error: unknown): boolean {
   return error instanceof HttpError && error.status === 409;
+}
+
+/** Returns true when APIM reports that an association's referenced API/group is absent. */
+export function isAssociationReferenceNotFoundError(error: unknown): boolean {
+  if (
+    !(error instanceof HttpError) ||
+    ![400, 404].includes(error.status) ||
+    !['ValidationError', 'ResourceNotFound'].includes(error.code ?? '')
+  ) {
+    return false;
+  }
+
+  const body = error.body as Record<string, unknown> | undefined;
+  const armError = body?.error as Record<string, unknown> | undefined;
+  const details = Array.isArray(armError?.details) ? armError.details : [];
+  return details.some((detail) => {
+    if (typeof detail !== 'object' || detail === null) return false;
+    const target = (detail as Record<string, unknown>).target;
+    return typeof target === 'string' && ['aid', 'gid'].includes(target.toLowerCase());
+  });
 }
 
 export class ApimClient implements IApimClient {
@@ -187,8 +208,9 @@ export class ApimClient implements IApimClient {
         if (!response.ok) {
           const errorText = await response.text();
           let errorCode: string | undefined;
+          let errorBody: unknown;
           try {
-            const errorBody: unknown = JSON.parse(errorText);
+            errorBody = JSON.parse(errorText);
             if (
               typeof errorBody === 'object' && errorBody !== null &&
               'error' in errorBody &&
@@ -202,7 +224,7 @@ export class ApimClient implements IApimClient {
           } catch {
             // Response body is not JSON — no error code available
           }
-          throw new HttpError(response.status, `HTTP ${response.status}: ${errorText}`, errorCode);
+          throw new HttpError(response.status, `HTTP ${response.status}: ${errorText}`, errorCode, errorBody);
         }
 
         return response;
