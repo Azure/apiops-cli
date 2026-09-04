@@ -354,6 +354,36 @@ describe('resource-publisher', () => {
       );
     });
 
+    it('skips a GatewayApi link when the referenced API is not on the target and keeps going', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockResolvedValue([{ name: 'missing-api' }, { name: 'present-api' }]);
+      client.putResource = vi.fn().mockImplementation(async (_ctx: unknown, d: ResourceDescriptor) => {
+        if (d.nameParts[1] === 'missing-api') {
+          throw new Error(
+            'HTTP 400: {"error":{"code":"ValidationError","details":[{"target":"aid","message":"API not found"}]}}'
+          );
+        }
+        return {};
+      });
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.GatewayApi,
+        nameParts: ['my-gateway'],
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, testConfig);
+
+      // A missing API must not abort the whole association.
+      expect(result.status).toBe('success');
+      // The present API is still linked.
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({ type: ResourceType.GatewayApi, nameParts: ['my-gateway', 'present-api'] }),
+        {}
+      );
+    });
+
     it('should strip properties.value from KeyVault-backed NamedValue PUT payload', async () => {
       const client = createMockClient();
       const store = createMockStore();

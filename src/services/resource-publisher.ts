@@ -527,9 +527,21 @@ async function publishAssociation(
         await client.putResource(context, assocDescriptor, {});
       } catch (error) {
         // 409 means the link already exists — desired state is in place.
-        if (!isLinkAlreadyExistsError(error)) {
-          throw error;
+        if (isLinkAlreadyExistsError(error)) {
+          continue;
         }
+        // The referenced API/group is absent on the target (filtered out or
+        // failed to publish). Skip this single link with a warning instead of
+        // aborting the whole association, so other present entries still link.
+        const message = error instanceof Error ? error.message : String(error);
+        if (message.includes('API not found') || message.includes('Group not found')) {
+          logger.warn(
+            `Skipping ${associationType} association '${entry.name}' on ` +
+            `'${getNamePart(descriptor.nameParts, 0)}': referenced resource not found on target`
+          );
+          continue;
+        }
+        throw error;
       }
     }
 
