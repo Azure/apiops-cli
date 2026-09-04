@@ -36,7 +36,7 @@ import {
   isApiRevisionName,
 } from '../lib/resource-path.js';
 import { logger } from '../lib/logger.js';
-import { toCanonicalDescriptor } from './env-mapper.js';
+import { mapDescriptor, toCanonicalDescriptor, toCanonicalName } from './env-mapper.js';
 
 /**
  * Drop ;rev=N API deletes whose base API (same workspace) is also queued for
@@ -243,6 +243,9 @@ async function computeGatewayApiDeleteActions(
       type: ResourceType.Gateway,
       nameParts: [gatewayName],
     };
+    const deployedGatewayDescriptor = envMapping !== undefined
+      ? mapDescriptor(gatewayDescriptor, envMapping)
+      : gatewayDescriptor;
 
     // Desired API set (canonical names) from the gateway's apis.json artifact.
     let desiredApis: Set<string>;
@@ -260,7 +263,7 @@ async function computeGatewayApiDeleteActions(
       for await (const apiJson of client.listResources(
         context,
         ResourceType.GatewayApi,
-        gatewayDescriptor
+        deployedGatewayDescriptor
       )) {
         const apiName = extractResourceName(apiJson);
         if (!apiName) {
@@ -269,7 +272,7 @@ async function computeGatewayApiDeleteActions(
 
         const deployedDescriptor: ResourceDescriptor = {
           type: ResourceType.GatewayApi,
-          nameParts: [gatewayName, apiName],
+          nameParts: [getNamePart(deployedGatewayDescriptor.nameParts, 0), apiName],
         };
 
         // Compare the deployed API against the desired set using canonical names
@@ -281,7 +284,13 @@ async function computeGatewayApiDeleteActions(
             // Belongs to another environment — do not touch.
             continue;
           }
-          canonicalApiName = getNamePart(canonicalDescriptor.nameParts, 1);
+          const canonicalChildName = toCanonicalName(apiName, ResourceType.Api, envMapping);
+          if (canonicalChildName === undefined) {
+            // The gateway can be shared (for example, "managed"), so the child
+            // API must independently belong to this environment's namespace.
+            continue;
+          }
+          canonicalApiName = canonicalChildName;
         }
 
         if (!desiredApis.has(canonicalApiName)) {

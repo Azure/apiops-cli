@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-import { ResourceType } from '../models/resource-types.js';
+import { MANAGED_GATEWAY_NAME, ResourceType } from '../models/resource-types.js';
 import type { ResourceDescriptor } from '../models/types.js';
 import type { EnvironmentOverride, OverrideConfig } from '../models/config.js';
 
@@ -180,7 +180,12 @@ function splitRevisionSuffix(name: string, type: ResourceType): { base: string; 
     : { base: name.slice(0, idx), revSuffix: name.slice(idx) };
 }
 
+function isManagedGatewayName(name: string, type: ResourceType): boolean {
+  return type === ResourceType.Gateway && name === MANAGED_GATEWAY_NAME;
+}
+
 export function toDeployedName(name: string, type: ResourceType, m: EnvMapping): string {
+  if (isManagedGatewayName(name, type)) return name;
   if (!m.appliesTo.has(type)) return name;
   const { base, revSuffix } = splitRevisionSuffix(name, type);
   return `${m.prefix}${base}${m.suffix}${revSuffix}`;
@@ -192,6 +197,7 @@ export function toDeployedName(name: string, type: ResourceType, m: EnvMapping):
  * Returns input unchanged when type ∉ appliesTo.
  */
 export function toCanonicalName(deployedName: string, type: ResourceType, m: EnvMapping): string | undefined {
+  if (isManagedGatewayName(deployedName, type)) return deployedName;
   if (!m.appliesTo.has(type)) return deployedName;
   if (!isInEnvNamespace(deployedName, type, m)) return undefined;
 
@@ -207,6 +213,7 @@ export function toCanonicalName(deployedName: string, type: ResourceType, m: Env
  * When type ∉ appliesTo → returns true (namespace scoping doesn't apply to this type).
  */
 export function isInEnvNamespace(deployedName: string, type: ResourceType, m: EnvMapping): boolean {
+  if (isManagedGatewayName(deployedName, type)) return true;
   if (!m.appliesTo.has(type)) return true;
   const { base } = splitRevisionSuffix(deployedName, type);
   if (base.length < m.prefix.length + m.suffix.length) return false;

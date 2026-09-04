@@ -16,6 +16,8 @@ import { PublishConfig } from '../../../src/models/config.js';
 import { KeyVaultAccessError } from '../../../src/services/keyvault-checker.js';
 import { LogLevel } from '../../../src/lib/logger.js';
 import { REDACTION_MARKER } from '../../../src/services/secret-redactor.js';
+import { buildEnvMapping } from '../../../src/services/env-mapper.js';
+import { HttpError } from '../../../src/clients/apim-client.js';
 
 // Mock keyvault-checker so resource-publisher tests don't need an Azure environment
 const mockCheckKeyVaultSecretAccess = vi.fn().mockResolvedValue(undefined);
@@ -372,14 +374,48 @@ describe('resource-publisher', () => {
       );
     });
 
+    it('should preserve the managed GatewayApi parent under environment mapping', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockResolvedValue([{ name: 'api-1' }]);
+      const envMapping = buildEnvMapping({
+        namePrefix: 'dev-',
+        appliesTo: [ResourceType.Gateway, ResourceType.Api],
+      });
+
+      const result = await publishResource(
+        client,
+        store,
+        testContext,
+        { type: ResourceType.GatewayApi, nameParts: ['managed'] },
+        { ...testConfig, envMapping }
+      );
+
+      expect(result.status).toBe('success');
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({ type: ResourceType.GatewayApi, nameParts: ['managed', 'dev-api-1'] }),
+        {}
+      );
+    });
+
     it('skips a GatewayApi link when the referenced API is not on the target and keeps going', async () => {
       const client = createMockClient();
       const store = createMockStore();
       store.readAssociation.mockResolvedValue([{ name: 'missing-api' }, { name: 'present-api' }]);
       client.putResource = vi.fn().mockImplementation(async (_ctx: unknown, d: ResourceDescriptor) => {
         if (d.nameParts[1] === 'missing-api') {
-          throw new Error(
-            'HTTP 400: {"error":{"code":"ValidationError","details":[{"target":"aid","message":"API not found"}]}}'
+          const body = {
+            error: {
+              code: 'ValidationError',
+              details: [{ target: 'aid', message: 'The referenced API does not exist' }],
+            },
+          };
+          throw new HttpError(
+            400,
+            `HTTP 400: ${JSON.stringify(body)}`,
+            'ValidationError',
+            body
           );
         }
         return {};
@@ -400,6 +436,35 @@ describe('resource-publisher', () => {
         expect.objectContaining({ type: ResourceType.GatewayApi, nameParts: ['my-gateway', 'present-api'] }),
         {}
       );
+    });
+
+    it('should fail a GatewayApi association for an unrelated validation error', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockResolvedValue([{ name: 'invalid-api' }]);
+      const body = {
+        error: {
+          code: 'ValidationError',
+          details: [{ target: 'gatewayId', message: 'The gateway is invalid' }],
+        },
+      };
+      client.putResource.mockRejectedValue(new HttpError(
+        400,
+        `HTTP 400: ${JSON.stringify(body)}`,
+        'ValidationError',
+        body
+      ));
+
+      const result = await publishResource(
+        client,
+        store,
+        testContext,
+        { type: ResourceType.GatewayApi, nameParts: ['my-gateway'] },
+        testConfig
+      );
+
+      expect(result.status).toBe('failed');
+      expect(result.error).toBeInstanceOf(HttpError);
     });
 
     it('should strip properties.value from KeyVault-backed NamedValue PUT payload', async () => {

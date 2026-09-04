@@ -439,7 +439,7 @@ async function extractGatewayAssociations(
   store: IArtifactStore,
   context: ApimServiceContext,
   outputDir: string,
-  _filter: FilterConfig | undefined,
+  filter: FilterConfig | undefined,
   result: ExtractionResult
 ): Promise<void> {
   const gatewayResults = result.typeResults.filter((r) => r.type === ResourceType.Gateway);
@@ -478,6 +478,10 @@ async function extractGatewayAssociations(
     type: ResourceType.Gateway,
     nameParts: [MANAGED_GATEWAY_NAME],
   };
+  if (!shouldIncludeResource(managedDescriptor, filter)) {
+    return;
+  }
+
   try {
     const apiNames: string[] = [];
     for await (const apiJson of client.listResources(context, ResourceType.GatewayApi, managedDescriptor)) {
@@ -486,11 +490,8 @@ async function extractGatewayAssociations(
         apiNames.push(name);
       }
     }
-    // Only record the managed gateway when it actually has assignments. An empty
-    // apis.json would neither help publish nor delete-unmatched reconciliation
-    // (which scopes to gateways that own at least one local assignment).
+    await store.writeAssociation(outputDir, managedDescriptor, 'apis', apiNames);
     if (apiNames.length > 0) {
-      await store.writeAssociation(outputDir, managedDescriptor, 'apis', apiNames);
       result.totalExtracted++;
       logger.info(`Extracted ${apiNames.length} API associations for gateway "${MANAGED_GATEWAY_NAME}"`);
     }

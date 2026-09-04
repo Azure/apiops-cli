@@ -633,8 +633,7 @@ describe('extract-service', () => {
       );
     });
 
-    it('should not write a managed gateway association when it has no apis', async () => {
-      // Empty managed gateway must not produce an artifact or inflate the count.
+    it('should write an empty managed gateway association when it has no apis', async () => {
       const client = createMockClient();
       const store = createMockStore();
 
@@ -645,13 +644,41 @@ describe('extract-service', () => {
         logLevel: LogLevel.INFO,
       });
 
+      expect(store.writeAssociation).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ nameParts: ['managed'] }),
+        'apis',
+        []
+      );
+      expect(result.totalExtracted).toBe(0);
+    });
+
+    it('should not extract the managed gateway when excluded by the gateway filter', async () => {
+      let managedGatewayListed = false;
+      const client = createMockClient();
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType, parent?: ResourceDescriptor) {
+        if (type === ResourceType.GatewayApi && parent?.nameParts[0] === 'managed') {
+          managedGatewayListed = true;
+          yield { name: 'managed-api' };
+        }
+      };
+      const store = createMockStore();
+
+      await runExtraction(client, store, {
+        service: testContext,
+        outputDir: '/output',
+        filter: { gateways: [] },
+        includeTransitive: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(managedGatewayListed).toBe(false);
       expect(store.writeAssociation).not.toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ nameParts: ['managed'] }),
         'apis',
         expect.anything()
       );
-      expect(result.totalExtracted).toBe(0);
     });
 
     it('should handle gateway association extraction error gracefully', async () => {

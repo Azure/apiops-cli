@@ -13,6 +13,7 @@ import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
 import { LogLevel } from '../../../src/lib/logger.js';
+import { buildEnvMapping } from '../../../src/services/env-mapper.js';
 
 function createMockClient(apimResources: Map<ResourceType, Record<string, unknown>[]> = new Map()) {
   return {
@@ -275,6 +276,63 @@ describe('delete-unmatched-service', () => {
       const result = await computeDeleteActions(client, store, testContext, testConfig);
 
       expect(result.filter((d) => d.type === ResourceType.GatewayApi)).toHaveLength(0);
+    });
+
+    it('should list custom gateway APIs using the deployed parent name', async () => {
+      const localDescriptors: ResourceDescriptor[] = [
+        { type: ResourceType.GatewayApi, nameParts: ['custom-gateway'] },
+      ];
+      const listedParents: Array<ResourceDescriptor | undefined> = [];
+      const client = createMockClient();
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType, parent?: ResourceDescriptor) {
+        if (type === ResourceType.GatewayApi) {
+          listedParents.push(parent);
+          if (parent?.nameParts[0] === 'dev-custom-gateway') {
+            yield { name: 'dev-api-stale' };
+          }
+        }
+      };
+      const store = createMockStore(localDescriptors);
+      store.readAssociation = vi.fn().mockResolvedValue([]);
+      const envMapping = buildEnvMapping({
+        namePrefix: 'dev-',
+        appliesTo: [ResourceType.Gateway, ResourceType.Api],
+      });
+
+      const result = await computeDeleteActions(client, store, testContext, { ...testConfig, envMapping });
+
+      expect(listedParents).toContainEqual({
+        type: ResourceType.Gateway,
+        nameParts: ['dev-custom-gateway'],
+      });
+      expect(result).toContainEqual({
+        type: ResourceType.GatewayApi,
+        nameParts: ['dev-custom-gateway', 'dev-api-stale'],
+      });
+    });
+
+    it('should delete all in-scope managed gateway APIs for an empty desired set without touching other environments', async () => {
+      const apimResources = new Map<ResourceType, Record<string, unknown>[]>([
+        [ResourceType.GatewayApi, [
+          { name: 'dev-api-one' },
+          { name: 'dev-api-two' },
+          { name: 'prod-api' },
+        ]],
+      ]);
+      const localDescriptors: ResourceDescriptor[] = [
+        { type: ResourceType.GatewayApi, nameParts: ['managed'] },
+      ];
+      const client = createMockClient(apimResources);
+      const store = createMockStore(localDescriptors);
+      store.readAssociation = vi.fn().mockResolvedValue([]);
+      const envMapping = buildEnvMapping({ namePrefix: 'dev-' });
+
+      const result = await computeDeleteActions(client, store, testContext, { ...testConfig, envMapping });
+
+      expect(result.filter((descriptor) => descriptor.type === ResourceType.GatewayApi)).toEqual([
+        { type: ResourceType.GatewayApi, nameParts: ['managed', 'dev-api-one'] },
+        { type: ResourceType.GatewayApi, nameParts: ['managed', 'dev-api-two'] },
+      ]);
     });
 
     it('should not touch any gateway assignments when artifacts track no gateways', async () => {
