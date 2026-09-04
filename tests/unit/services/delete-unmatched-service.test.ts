@@ -229,6 +229,43 @@ describe('delete-unmatched-service', () => {
         nameParts: ['api1'],
       });
     });
+
+    it('should un-assign a stale managed gateway API not present in artifacts', async () => {
+      const apimResources = new Map<ResourceType, Record<string, unknown>[]>([
+        [ResourceType.GatewayApi, [{ name: 'api-keep' }, { name: 'api-stale' }]],
+      ]);
+
+      // Local artifacts track the managed gateway with only api-keep assigned.
+      const localDescriptors: ResourceDescriptor[] = [
+        { type: ResourceType.GatewayApi, nameParts: ['managed', 'api-keep'] },
+      ];
+
+      const client = createMockClient(apimResources);
+      const store = createMockStore(localDescriptors);
+
+      const result = await computeDeleteActions(client, store, testContext, testConfig);
+
+      const gatewayApiDeletes = result.filter((d) => d.type === ResourceType.GatewayApi);
+      expect(gatewayApiDeletes).toHaveLength(1);
+      expect(gatewayApiDeletes[0]).toMatchObject({
+        type: ResourceType.GatewayApi,
+        nameParts: ['managed', 'api-stale'],
+      });
+    });
+
+    it('should not touch any gateway assignments when artifacts track no gateways', async () => {
+      const apimResources = new Map<ResourceType, Record<string, unknown>[]>([
+        [ResourceType.GatewayApi, [{ name: 'api-a' }, { name: 'api-b' }]],
+      ]);
+
+      // No local GatewayApi artifacts → reconciliation must be a no-op.
+      const client = createMockClient(apimResources);
+      const store = createMockStore([]);
+
+      const result = await computeDeleteActions(client, store, testContext, testConfig);
+
+      expect(result.filter((d) => d.type === ResourceType.GatewayApi)).toHaveLength(0);
+    });
   });
 
   describe('filterRevisionDeletesHandledByBaseApi', () => {

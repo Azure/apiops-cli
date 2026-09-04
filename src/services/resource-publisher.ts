@@ -11,7 +11,7 @@ import type { IApimClient } from '../clients/iapim-client.js';
 import type { IArtifactStore } from '../clients/iartifact-store.js';
 import type { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import type { PublishConfig } from '../models/config.js';
-import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
+import { ResourceType, RESOURCE_TYPE_METADATA, MANAGED_GATEWAY_NAME } from '../models/resource-types.js';
 import { applyOverrides } from './override-merger.js';
 import { checkKeyVaultSecretAccess } from './keyvault-checker.js';
 import { getNamePart } from '../lib/resource-path.js';
@@ -208,6 +208,13 @@ export async function publishResource(
   config: PublishConfig
 ): Promise<ResourcePublishResult> {
   try {
+    // The built-in "managed" gateway cannot be created/updated as a resource;
+    // only its API assignments are manageable. Skip any managed Gateway resource
+    // PUT (its GatewayApi associations are still published via the branch below).
+    if (descriptor.type === ResourceType.Gateway && getNamePart(descriptor.nameParts, 0) === MANAGED_GATEWAY_NAME) {
+      return { descriptor, status: 'skipped', action: 'noop' };
+    }
+
     // Handle association types (ProductApi, ProductGroup, GatewayApi)
     const associationType = ASSOCIATION_TYPES.get(descriptor.type);
     if (associationType) {

@@ -11,7 +11,7 @@ import { IApimClient } from '../clients/iapim-client.js';
 import { IArtifactStore } from '../clients/iartifact-store.js';
 import { ExtractConfig, FilterConfig } from '../models/config.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
-import { ResourceType } from '../models/resource-types.js';
+import { ResourceType, MANAGED_GATEWAY_NAME } from '../models/resource-types.js';
 import {
   TIER_1_RESOURCES,
   TIER_2_RESOURCES,
@@ -469,6 +469,34 @@ async function extractGatewayAssociations(
         result.totalErrors++;
       }
     }
+  }
+
+  // The built-in "managed" gateway is not returned by GET /gateways, so extract
+  // its API assignments explicitly. Recording them lets publish/delete-unmatched
+  // reconcile managed membership (e.g. an API intentionally removed from managed).
+  const managedDescriptor: ResourceDescriptor = {
+    type: ResourceType.Gateway,
+    nameParts: [MANAGED_GATEWAY_NAME],
+  };
+  try {
+    const apiNames: string[] = [];
+    for await (const apiJson of client.listResources(context, ResourceType.GatewayApi, managedDescriptor)) {
+      const name = apiJson.name as string | undefined;
+      if (name) {
+        apiNames.push(name);
+      }
+    }
+    // Only record the managed gateway when it actually has assignments. An empty
+    // apis.json would neither help publish nor delete-unmatched reconciliation
+    // (which scopes to gateways that own at least one local assignment).
+    if (apiNames.length > 0) {
+      await store.writeAssociation(outputDir, managedDescriptor, 'apis', apiNames);
+      result.totalExtracted++;
+      logger.info(`Extracted ${apiNames.length} API associations for gateway "${MANAGED_GATEWAY_NAME}"`);
+    }
+  } catch (error) {
+    logger.warn(`Failed to extract API associations for managed gateway: ${(error as Error).message}`);
+    result.totalErrors++;
   }
 }
 

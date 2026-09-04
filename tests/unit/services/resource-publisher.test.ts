@@ -98,6 +98,24 @@ describe('resource-publisher', () => {
       expect(client.putResource).not.toHaveBeenCalled();
     });
 
+    it('should skip the built-in managed gateway resource without a PUT', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({ name: 'managed', properties: {} });
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Gateway,
+        nameParts: ['managed'],
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, testConfig);
+
+      expect(result.status).toBe('skipped');
+      expect(result.action).toBe('noop');
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
+
     it('should return success and call putResource on success', async () => {
       const client = createMockClient();
       const store = createMockStore();
