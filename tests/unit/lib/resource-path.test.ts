@@ -9,6 +9,8 @@ import {
   parseTemplatePath,
   getNamePart,
   getNameFromNameParts,
+  getResourceDescriptorKey,
+  sameResourceDescriptor,
   buildArtifactDirectory,
   buildArtifactFilePath,
   buildPolicyFilePath,
@@ -304,10 +306,30 @@ describe('parseArtifactPath', () => {
     expect(result!.nameParts).toEqual(['gw1']);
   });
 
-  it('should ignore ProductApi association files because product publisher handles them', () => {
+  it.each(['apis.json', 'groups.json', 'tags.json'])(
+    'should map Product association file %s to its parent Product',
+    (associationFile) => {
+      const filePath = path.join(baseDir, 'products', 'starter', associationFile);
+      const result = parseArtifactPath(baseDir, filePath);
+      expect(result).toEqual({
+        type: ResourceType.Product,
+        nameParts: ['starter'],
+        workspace: undefined,
+      });
+    }
+  );
+
+  it('should map workspace Product association files to their parent Product', () => {
     const filePath = path.join(baseDir, 'products', 'starter', 'apis.json');
-    const result = parseArtifactPath(baseDir, filePath);
-    expect(result).toBeUndefined();
+    const result = parseArtifactPath(
+      baseDir,
+      path.join(baseDir, 'workspaces', 'team', path.relative(baseDir, filePath))
+    );
+    expect(result).toEqual({
+      type: ResourceType.Product,
+      nameParts: ['starter'],
+      workspace: 'team',
+    });
   });
 
   it('should parse workspace-scoped resource', () => {
@@ -647,6 +669,36 @@ describe('getNamePart', () => {
 
   it('throws RangeError for negative index', () => {
     expect(() => getNamePart(['a'], -1)).toThrow(RangeError);
+  });
+});
+
+describe('resource descriptor identity', () => {
+  const descriptor: ResourceDescriptor = {
+    type: ResourceType.ApiOperation,
+    nameParts: ['Orders', 'Get-Order'],
+    workspace: 'Team-A',
+  };
+
+  it('creates a case-insensitive key containing type, workspace, and name parts', () => {
+    expect(getResourceDescriptorKey(descriptor)).toBe(
+      'apioperation:team-a:orders/get-order'
+    );
+  });
+
+  it('matches equivalent descriptors case-insensitively without crossing scopes', () => {
+    expect(
+      sameResourceDescriptor(descriptor, {
+        type: ResourceType.ApiOperation,
+        nameParts: ['orders', 'get-order'],
+        workspace: 'team-a',
+      })
+    ).toBe(true);
+    expect(
+      sameResourceDescriptor(descriptor, {
+        type: ResourceType.ApiOperation,
+        nameParts: ['orders', 'get-order'],
+      })
+    ).toBe(false);
   });
 });
 

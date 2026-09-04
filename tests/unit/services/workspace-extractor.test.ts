@@ -388,6 +388,55 @@ describe('workspace-extractor', () => {
       ]);
     });
 
+    it('should apply workspace exclusions with shared filter semantics', async () => {
+      const client = createMockClient();
+      client.listResources = async function* (
+        _ctx: ApimServiceContext,
+        type: ResourceType
+      ) {
+        if (type === ResourceType.Workspace) {
+          yield { name: 'team-a', properties: {} };
+          yield { name: 'team-b', properties: {} };
+        }
+      };
+      const store = createMockStore();
+
+      const results = await extractWorkspaces(
+        client,
+        store,
+        testContext,
+        '/output',
+        { workspaces: ['!team-b'] }
+      );
+
+      expect(results.map((result) => result.workspaceName)).toEqual(['team-a']);
+    });
+
+    it('should apply exclusions after wildcard workspace inclusions', async () => {
+      const client = createMockClient();
+      client.listResources = async function* (
+        _ctx: ApimServiceContext,
+        type: ResourceType
+      ) {
+        if (type === ResourceType.Workspace) {
+          yield { name: 'team-a', properties: {} };
+          yield { name: 'team-b', properties: {} };
+          yield { name: 'shared', properties: {} };
+        }
+      };
+      const store = createMockStore();
+
+      const results = await extractWorkspaces(
+        client,
+        store,
+        testContext,
+        '/output',
+        { workspaces: ['team-*', '!team-b'] }
+      );
+
+      expect(results.map((result) => result.workspaceName)).toEqual(['team-a']);
+    });
+
     it('should apply sub-filter with wildcard workspace name patterns', async () => {
       const client = createMockClient();
       let firstCall = true;
@@ -420,6 +469,97 @@ describe('workspace-extractor', () => {
       expect(results[0]?.workspaceName).toBe('team-a');
       // Only nv-1 should be extracted due to sub-filter
       expect(results[0]?.resourceCount).toBe(1);
+    });
+
+    it('should extract workspace policy fragment dependencies transitively', async () => {
+      const client = createMockClient();
+      client.listResources = async function* (
+        _ctx: ApimServiceContext,
+        type: ResourceType
+      ) {
+        if (type === ResourceType.PolicyFragment) {
+          yield {
+            name: 'shared-fragment',
+            properties: {
+              value: '<set-header name="key"><value>{{workspace-secret}}</value></set-header>',
+            },
+          };
+        }
+        if (type === ResourceType.Backend) {
+          yield {
+            name: 'workspace-pool',
+            properties: {
+              type: 'Pool',
+              pool: {
+                services: [{
+                  id: '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a/backends/service-member',
+                }],
+              },
+            },
+          };
+        }
+      };
+      client.getResource.mockImplementation(async (_ctx, descriptor) => {
+        if (descriptor.type === ResourceType.Workspace) {
+          return { name: 'team-a', properties: {} };
+        }
+        if (
+          descriptor.type === ResourceType.NamedValue &&
+          descriptor.nameParts[0] === 'workspace-secret'
+        ) {
+          return { name: 'workspace-secret', properties: { secret: true, value: 'secret' } };
+        }
+        if (
+          descriptor.type === ResourceType.Backend &&
+          descriptor.nameParts[0] === 'service-member'
+        ) {
+          return { name: 'service-member', properties: {} };
+        }
+        return undefined;
+      });
+      const store = createMockStore();
+      const filter: FilterConfig = {
+        workspaces: ['team-a'],
+        workspaceSubFilters: {
+          'team-a': {
+            backends: ['workspace-pool'],
+            namedValues: [],
+            policyFragments: ['shared-fragment'],
+          },
+        },
+      };
+
+      const results = await extractWorkspaces(
+        client,
+        store,
+        testContext,
+        '/output',
+        filter,
+        true
+      );
+
+      expect(results[0]?.resourceCount).toBe(4);
+      expect(client.getResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({
+          type: ResourceType.Backend,
+          nameParts: ['service-member'],
+          workspace: undefined,
+        })
+      );
+      expect(store.writeResource).toHaveBeenCalledWith(
+        '/output',
+        expect.objectContaining({
+          type: ResourceType.NamedValue,
+          nameParts: ['workspace-secret'],
+          workspace: 'team-a',
+        }),
+        expect.objectContaining({
+          properties: expect.objectContaining({
+            value: '*** REDACTED ***',
+          }),
+        })
+      );
     });
   });
 

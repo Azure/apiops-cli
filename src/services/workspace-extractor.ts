@@ -7,15 +7,25 @@
  */
 import { IApimClient } from '../clients/iapim-client.js';
 import { IArtifactStore } from '../clients/iartifact-store.js';
-import { ApimServiceContext } from '../models/types.js';
+import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
-import { FilterConfig, WorkspaceSubFilter } from '../models/config.js';
+import { FilterConfig } from '../models/config.js';
 import { extractResourceType, ExtractedResource } from './resource-extractor.js';
 import { extractApiResources, extractWorkspaceApiTags } from './api-extractor.js';
 import { extractProductResources, extractWorkspaceProductTags } from './product-extractor.js';
 import { logger } from '../lib/logger.js';
 import { getNamePart } from '../lib/resource-path.js';
-import { isWildcardPattern, wildcardMatch } from './filter-service.js';
+import {
+  isWildcardPattern,
+  resolveWorkspaceFilter,
+  shouldIncludeResource,
+} from './filter-service.js';
+import {
+  extractTransitiveDependencies,
+  type TransitiveResourceArtifact,
+} from './transitive-extractor.js';
+
+export { resolveWorkspaceFilter };
 
 /**
  * Types that can exist at the workspace level, derived from RESOURCE_TYPE_METADATA.
@@ -47,7 +57,8 @@ export async function extractWorkspaces(
   store: IArtifactStore,
   context: ApimServiceContext,
   outputDir: string,
-  filter?: FilterConfig
+  filter?: FilterConfig,
+  includeTransitive: boolean = false
 ): Promise<WorkspaceExtractionResult[]> {
   const results: WorkspaceExtractionResult[] = [];
   let workspaceNames: string[];
@@ -60,21 +71,23 @@ export async function extractWorkspaces(
       return results;
     }
 
-    const hasWildcards = filter.workspaces.some(isWildcardPattern);
-    if (hasWildcards) {
-      // Wildcard patterns require discovery so we can match against real names
+    const requiresDiscovery = filter.workspaces.some(
+      (entry) => isWildcardPattern(entry) || entry.startsWith('!')
+    );
+    if (requiresDiscovery) {
+      // Wildcards and exclusions require discovery so shared filter semantics
+      // can be applied against actual workspace names.
       const discovered = await discoverWorkspaceNames(client, context);
       workspaceNames = discovered.filter((name) =>
-        filter.workspaces!.some((pattern) =>
-          isWildcardPattern(pattern)
-            ? wildcardMatch(pattern, name)
-            : pattern.toLowerCase() === name.toLowerCase()
+        shouldIncludeResource(
+          { type: ResourceType.Workspace, nameParts: [name] },
+          { workspaces: filter.workspaces }
         )
       );
 
       // Warn about exact (non-wildcard) entries that didn't match any discovered workspace
       for (const entry of filter.workspaces) {
-        if (!isWildcardPattern(entry)) {
+        if (!entry.startsWith('!') && !isWildcardPattern(entry)) {
           const matched = discovered.some((d) => d.toLowerCase() === entry.toLowerCase());
           if (!matched) {
             logger.warn(`Workspace filter entry "${entry}" did not match any discovered workspace`);
@@ -112,7 +125,8 @@ export async function extractWorkspaces(
 
     const wsResult = await extractWorkspace(
       client, store, context, wsName, outputDir,
-      resolveWorkspaceFilter(wsName, filter)
+      resolveWorkspaceFilter(wsName, filter),
+      includeTransitive
     );
     wsResult.errorCount += workspaceContainerError;
     results.push(wsResult);
@@ -127,7 +141,8 @@ async function extractWorkspace(
   context: ApimServiceContext,
   workspaceName: string,
   outputDir: string,
-  filter?: FilterConfig
+  filter?: FilterConfig,
+  includeTransitive: boolean = false
 ): Promise<WorkspaceExtractionResult> {
   logger.info(`Extracting workspace "${workspaceName}"...`);
 
@@ -145,6 +160,10 @@ async function extractWorkspace(
   let extractedTagNames: string[] = [];
   const extractedApiNames = new Set<string>();
   let extractedProducts: ExtractedResource[] = [];
+  const extractedDescriptors: ResourceDescriptor[] = [];
+  const resources: TransitiveResourceArtifact[] = [];
+  const policies = new Map<string, string>();
+  const apis = new Map<string, Record<string, unknown>>();
 
   for (const type of WORKSPACE_SUPPORTED_TYPES) {
     try {
@@ -154,6 +173,15 @@ async function extractWorkspace(
       );
       resourceCount += result.extracted.filter((r) => r.status === 'success').length;
       errorCount += result.errorCount;
+      for (const extracted of result.extracted) {
+        if (extracted.status === 'success') {
+          extractedDescriptors.push(extracted.descriptor);
+          resources.push({
+            descriptor: extracted.descriptor,
+            json: extracted.json,
+          });
+        }
+      }
 
       // Track extracted tags for later ApiTag/ProductTag extraction
       if (type === ResourceType.Tag) {
@@ -172,6 +200,14 @@ async function extractWorkspace(
               client, store, wsContext, api.descriptor, api.json,
               outputDir, filter, workspaceName
             );
+            const apiName = getNamePart(api.descriptor.nameParts, 0);
+            apis.set(apiName, api.json);
+            for (let index = 0; index < apiResult.policies.length; index++) {
+              const policy = apiResult.policies[index];
+              if (policy !== undefined) {
+                policies.set(`api:${apiName}:policy:${index}`, policy);
+              }
+            }
             resourceCount += apiResult.operations.length +
               apiResult.tags.length +
               apiResult.schemas.length;
@@ -192,6 +228,13 @@ async function extractWorkspace(
               client, store, wsContext, product.descriptor,
               outputDir, filter, workspaceName
             );
+            const productName = getNamePart(product.descriptor.nameParts, 0);
+            for (let index = 0; index < productResult.policies.length; index++) {
+              const policy = productResult.policies[index];
+              if (policy !== undefined) {
+                policies.set(`product:${productName}:policy:${index}`, policy);
+              }
+            }
             resourceCount++;
             errorCount += productResult.errorCount;
           } catch (error) {
@@ -237,6 +280,24 @@ async function extractWorkspace(
     }
   }
 
+  if (includeTransitive && filter) {
+    logger.info(`Resolving transitive dependencies for workspace "${workspaceName}"...`);
+    const transitiveResult = await extractTransitiveDependencies(
+      client,
+      store,
+      wsContext,
+      outputDir,
+      policies,
+      apis,
+      resources,
+      extractedDescriptors,
+      workspaceName,
+      context
+    );
+    resourceCount += transitiveResult.extractedDescriptors.length;
+    errorCount += transitiveResult.errorCount;
+  }
+
   logger.info(`Workspace "${workspaceName}": extracted ${resourceCount} resources, ${errorCount} errors`);
 
   return { workspaceName, resourceCount, errorCount };
@@ -257,53 +318,4 @@ async function discoverWorkspaceNames(
     }
   }
   return names;
-}
-
-/**
- * Resolve the effective FilterConfig for a workspace.
- * If the workspace has a sub-filter in workspaceSubFilters, convert it to a FilterConfig.
- * Otherwise return undefined (no filter = extract everything in the workspace).
- */
-export function resolveWorkspaceFilter(
-  workspaceName: string,
-  filter?: FilterConfig
-): FilterConfig | undefined {
-  if (!filter?.workspaceSubFilters) {
-    return undefined;
-  }
-
-  // Case-insensitive lookup of workspace sub-filter
-  const lowerName = workspaceName.toLowerCase();
-  const matchingKey = Object.keys(filter.workspaceSubFilters).find(
-    (k) => k.toLowerCase() === lowerName
-  );
-
-  if (!matchingKey) {
-    return undefined;
-  }
-
-  const sub = filter.workspaceSubFilters[matchingKey];
-  return workspaceSubFilterToFilterConfig(sub);
-}
-
-/**
- * Convert a WorkspaceSubFilter to a FilterConfig so the standard
- * filter-service matching logic can be applied to workspace-scoped resources.
- */
-function workspaceSubFilterToFilterConfig(sub: WorkspaceSubFilter): FilterConfig {
-  return {
-    apis: sub.apis,
-    apiSubFilters: sub.apiSubFilters,
-    backends: sub.backends,
-    diagnostics: sub.diagnostics,
-    groups: sub.groups,
-    loggers: sub.loggers,
-    namedValues: sub.namedValues,
-    policyFragments: sub.policyFragments,
-    products: sub.products,
-    schemas: sub.schemas,
-    subscriptions: sub.subscriptions,
-    tags: sub.tags,
-    versionSets: sub.versionSets,
-  };
 }

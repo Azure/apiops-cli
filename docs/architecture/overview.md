@@ -161,7 +161,7 @@ flowchart TD
 - **Dry-run mode** — `--dry-run` compares local artifacts against live APIM state and outputs a change report without modifying anything.
 - **Override merging** — Environment-specific override files are merged into artifact JSON before publishing, enabling promotion across environments (dev → staging → prod).
 - **Topological ordering** — Resources are published in dependency order (e.g., named values before APIs that reference them).
-- **Delete-unmatched** — Optionally removes APIM resources not present in the artifact source. Requires explicit opt-in and is mutually exclusive with `--commit-id`.
+- **Delete-unmatched** — Optionally removes APIM resources not present in the artifact source. With `--commit-id`, it deletes only resources removed by the selected commit. All deletion requires explicit opt-in.
 
 ## Design Principles
 

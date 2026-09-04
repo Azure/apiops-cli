@@ -10,12 +10,26 @@ import type { IArtifactStore } from '../clients/iartifact-store.js';
 import type { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import type { PublishConfig } from '../models/config.js';
 import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
-import { publishResource, type ResourcePublishResult } from './resource-publisher.js';
+import {
+  evaluateAssociationEligibility,
+  planAssociationPublications,
+  publishResource,
+  type AssociationPublicationPlan,
+  type ResourcePublishResult,
+} from './resource-publisher.js';
 import { logger } from '../lib/logger.js';
-import { getNamePart } from '../lib/resource-path.js';
+import { getNamePart, getResourceDescriptorKey, sameResourceDescriptor } from '../lib/resource-path.js';
 import { parseArmUri } from '../lib/resource-uri.js';
 import { isWorkspaceScope, buildLinkPayload } from '../lib/workspace-link.js';
 import { isLinkAlreadyExistsError } from '../clients/apim-client.js';
+import { mapDescriptor, toDeployedName } from './env-mapper.js';
+
+export type ProductAssociationPublicationPlan = AssociationPublicationPlan;
+
+export interface ProductPolicyPublicationPlan {
+  descriptor: ResourceDescriptor;
+  eligible: boolean;
+}
 
 /**
  * Publish a Product with all its associations (APIs, Groups, Tags).
@@ -26,57 +40,58 @@ export async function publishProduct(
   store: IArtifactStore,
   context: ApimServiceContext,
   descriptor: ResourceDescriptor,
-  config: PublishConfig
+  config: PublishConfig,
+  allowedDescriptors?: ResourceDescriptor[]
 ): Promise<ResourcePublishResult> {
+  const productName = getNamePart(descriptor.nameParts, 0);
+  const deployedProductDescriptor = config.envMapping
+    ? mapDescriptor(descriptor, config.envMapping)
+    : descriptor;
+  let productExisted: boolean;
   try {
-    const productName = getNamePart(descriptor.nameParts, 0);
-    const productExisted = (await client.getResource(context, descriptor)) !== undefined;
-    
-    // Step 1: Publish the Product itself
-    const productResult = await publishResource(client, store, context, descriptor, config);
-    if (productResult.status !== 'success') {
-      return productResult;
-    }
+    productExisted =
+      (await client.getResource(context, deployedProductDescriptor)) !== undefined;
+  } catch (error) {
+    return {
+      descriptor,
+      status: 'failed',
+      action: 'noop',
+      error: error instanceof Error ? error : new Error(String(error)),
+    };
+  }
 
+  // Step 1: Publish the Product itself
+  const productResult = await publishResource(client, store, context, descriptor, config);
+  if (productResult.status !== 'success') {
+    return productResult;
+  }
+
+  try {
     if (!productExisted) {
-      await cleanupAutoCreatedProductResources(client, context, descriptor);
+      await cleanupAutoCreatedProductResources(client, context, deployedProductDescriptor);
     }
 
-    // Step 2: Publish ProductApi associations
-    await publishProductAssociations(
-      client,
+    // Steps 2-4: Publish ProductApi, ProductGroup, and ProductTag associations.
+    const associationPlans = await planProductAssociationPublications(
       store,
       context,
       descriptor,
       config,
-      'apis',
-      ResourceType.ProductApi
+      allowedDescriptors
     );
-
-    // Step 3: Publish ProductGroup associations
-    await publishProductAssociations(
-      client,
-      store,
-      context,
-      descriptor,
-      config,
-      'groups',
-      ResourceType.ProductGroup
-    );
-
-    // Step 4: Publish ProductTag associations
-    // Tags are stored in the product directory, need to check for tags
-    await publishProductTags(client, store, context, descriptor, config);
+    const relatedResults = await publishProductAssociationPlans(client, context, associationPlans);
 
     // Step 5: Publish ProductPolicy if exists
-    const policyDescriptor: ResourceDescriptor = {
-      type: ResourceType.ProductPolicy,
-      nameParts: [productName],
-      workspace: descriptor.workspace,
-    };
-    const policyContent = await store.readContent(config.sourceDir, policyDescriptor, 'policy');
-    if (policyContent) {
-      await publishResource(client, store, context, policyDescriptor, config);
+    const policyPlan = await planProductPolicyPublication(
+      store,
+      descriptor,
+      config,
+      allowedDescriptors
+    );
+    if (policyPlan?.eligible) {
+      relatedResults.push(
+        await publishResource(client, store, context, policyPlan.descriptor, config)
+      );
       logger.debug(`Published policy for product: ${productName}`);
     }
 
@@ -85,13 +100,17 @@ export async function publishProduct(
       descriptor,
       status: 'success',
       action: 'put',
+      relatedResults,
     };
   } catch (error) {
     return {
-      descriptor,
-      status: 'failed',
-      action: 'noop',
-      error: error instanceof Error ? error : new Error(String(error)),
+      ...productResult,
+      relatedResults: [{
+        descriptor,
+        status: 'failed',
+        action: 'noop',
+        error: error instanceof Error ? error : new Error(String(error)),
+      }],
     };
   }
 }
@@ -157,120 +176,189 @@ function parseProductGroupDescriptor(
  * Publish associations (ProductApi or ProductGroup) for a product.
  * In workspace scope, uses the link endpoint with a link payload body.
  */
-async function publishProductAssociations(
-  client: IApimClient,
+export async function planProductAssociationPublications(
   store: IArtifactStore,
   context: ApimServiceContext,
   productDescriptor: ResourceDescriptor,
   config: PublishConfig,
-  associationType: 'apis' | 'groups',
-  resourceType: ResourceType
-): Promise<void> {
+  allowedDescriptors?: ResourceDescriptor[]
+): Promise<ProductAssociationPublicationPlan[]> {
   const productName = getNamePart(productDescriptor.nameParts, 0);
-  
-  // Read association file
-  const entries = await store.readAssociation(
-    config.sourceDir,
-    productDescriptor,
-    associationType
-  );
-
-  if (entries.length === 0) {
-    logger.debug(`No ${associationType} associations for product: ${productName}`);
-    return;
-  }
-
-  const workspaceScoped = !!productDescriptor.workspace || isWorkspaceScope(context);
-  const meta = RESOURCE_TYPE_METADATA[resourceType];
-  const linkProperty = meta.workspaceLinkIdProperty;
-  // Map association type to the ARM resource type segment for building ARM IDs
-  const resourceTypeSegment = associationType === 'apis' ? 'apis' : 'groups';
-
-  // Create association for each name
-  for (const entry of entries) {
-    const name = entry.name;
-    const assocDescriptor: ResourceDescriptor = {
-      type: resourceType,
-      nameParts: [productName, name],
+  const apiPlans = await planAssociationPublications(
+    store,
+    context,
+    {
+      type: ResourceType.ProductApi,
+      nameParts: [productName],
       workspace: productDescriptor.workspace,
-    };
-    
-    try {
-      // In workspace scope, PUT with link payload; otherwise empty body.
-      // Honor the stored scope so service-level link targets (e.g. the built-in
-      // `administrators` group) are referenced at service scope rather than
-      // being rebuilt as a non-existent workspace resource.
-      let payload: Record<string, unknown> = {};
-      if (workspaceScoped && linkProperty) {
-        payload = buildLinkPayload(context, linkProperty, resourceTypeSegment, name, productDescriptor.workspace, entry.scope);
-      }
-      await client.putResource(context, assocDescriptor, payload);
-      logger.debug(`Created ${resourceType} association: ${productName}/${name}`);
-    } catch (error) {
-      if (isLinkAlreadyExistsError(error)) {
-        logger.debug(`${resourceType} association already exists: ${productName}/${name}`);
-        continue;
-      }
-      logger.warn(`Failed to create ${resourceType} association ${productName}/${name}: ${String(error)}`);
-    }
-  }
-}
-
-/**
- * Publish ProductTag associations for a product.
- * Tags are stored in tags.json similar to apis.json and groups.json.
- * In workspace scope, uses `tags/{tag}/productLinks/{linkId}` endpoint.
- */
-async function publishProductTags(
-  client: IApimClient,
-  store: IArtifactStore,
-  context: ApimServiceContext,
-  productDescriptor: ResourceDescriptor,
-  config: PublishConfig
-): Promise<void> {
-  const productName = getNamePart(productDescriptor.nameParts, 0);
-  
-  // Read tags from tags.json association file
+    },
+    config,
+    'apis',
+    allowedDescriptors
+  );
+  const groupPlans = await planAssociationPublications(
+    store,
+    context,
+    {
+      type: ResourceType.ProductGroup,
+      nameParts: [productName],
+      workspace: productDescriptor.workspace,
+    },
+    config,
+    'groups',
+    allowedDescriptors
+  );
   const tagEntries = await store.readAssociation(
     config.sourceDir,
     productDescriptor,
     'tags'
   );
-  
-  if (tagEntries.length === 0) {
-    logger.debug(`No tag associations for product: ${productName}`);
-    return;
-  }
-
   const workspaceScoped = !!productDescriptor.workspace || isWorkspaceScope(context);
   const linkProperty = RESOURCE_TYPE_METADATA[ResourceType.ProductTag].workspaceLinkIdProperty;
+  const tagPlans: ProductAssociationPublicationPlan[] = [];
 
-  // Create association for each tag
   for (const tagEntry of tagEntries) {
     const tagName = tagEntry.name;
-    const tagDescriptor: ResourceDescriptor = {
+    const descriptor: ResourceDescriptor = {
       type: ResourceType.ProductTag,
       nameParts: [productName, tagName],
       workspace: productDescriptor.workspace,
+      ...(tagEntry.scope ? { targetScope: tagEntry.scope } : {}),
     };
-    
+    const targetDescriptor: ResourceDescriptor = {
+      type: ResourceType.Tag,
+      nameParts: [tagName],
+      workspace: productDescriptor.workspace,
+    };
+    const eligibility = await evaluateAssociationEligibility(
+      store,
+      targetDescriptor,
+      config,
+      allowedDescriptors
+    );
+    const deployedDescriptor = config.envMapping
+      ? mapDescriptor(descriptor, config.envMapping)
+      : descriptor;
+    const deployedProductName = config.envMapping
+      ? toDeployedName(productName, ResourceType.Product, config.envMapping)
+      : productName;
+    const payload = workspaceScoped && linkProperty
+      ? buildLinkPayload(
+          context,
+          linkProperty,
+          'products',
+          deployedProductName,
+          deployedDescriptor.workspace
+        )
+      : {};
+    tagPlans.push({
+      descriptor,
+      deployedDescriptor,
+      target: targetDescriptor,
+      payload,
+      ...eligibility,
+    });
+  }
+
+  const seen = new Set<string>();
+  return [...apiPlans, ...groupPlans, ...tagPlans].filter((plan) => {
+    const key = getResourceDescriptorKey(plan.descriptor);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export async function planProductPolicyPublication(
+  store: IArtifactStore,
+  productDescriptor: ResourceDescriptor,
+  config: PublishConfig,
+  allowedDescriptors?: ResourceDescriptor[]
+): Promise<ProductPolicyPublicationPlan | undefined> {
+  const descriptor: ResourceDescriptor = {
+    type: ResourceType.ProductPolicy,
+    nameParts: [getNamePart(productDescriptor.nameParts, 0)],
+    workspace: productDescriptor.workspace,
+  };
+  const content = await store.readContent(config.sourceDir, descriptor, 'policy');
+  if (!content) {
+    return undefined;
+  }
+  return {
+    descriptor,
+    eligible: isDescriptorAllowed(descriptor, config, allowedDescriptors),
+  };
+}
+
+async function publishProductAssociationPlans(
+  client: IApimClient,
+  context: ApimServiceContext,
+  plans: ProductAssociationPublicationPlan[]
+): Promise<ResourcePublishResult[]> {
+  const results: ResourcePublishResult[] = [];
+  for (const plan of plans) {
+    if (!plan.eligible) {
+      logger.warn(
+        `Skipping ${plan.descriptor.type} association "${plan.descriptor.nameParts.join('/')}": ${plan.reason}`
+      );
+      results.push({
+        descriptor: plan.descriptor,
+        status: 'skipped',
+        action: 'noop',
+      });
+      continue;
+    }
+
     try {
-      // The workspace ProductTag link references the product (productId), which
-      // always lives in the workspace, so the link payload is workspace-scoped.
-      let payload: Record<string, unknown> = {};
-      if (workspaceScoped && linkProperty) {
-        payload = buildLinkPayload(context, linkProperty, 'products', productName, productDescriptor.workspace);
-      }
-      await client.putResource(context, tagDescriptor, payload);
-      logger.debug(`Created ProductTag association: ${productName}/${tagName}`);
+      await client.putResource(context, plan.deployedDescriptor, plan.payload);
+      logger.debug(
+        `Created ${plan.descriptor.type} association: ${plan.descriptor.nameParts.join('/')}`
+      );
+      results.push({
+        descriptor: plan.descriptor,
+        status: 'success',
+        action: 'put',
+      });
     } catch (error) {
       if (isLinkAlreadyExistsError(error)) {
-        logger.debug(`ProductTag association already exists: ${productName}/${tagName}`);
+        logger.debug(
+          `${plan.descriptor.type} association already exists: ${plan.descriptor.nameParts.join('/')}`
+        );
+        results.push({
+          descriptor: plan.descriptor,
+          status: 'success',
+          action: 'put',
+        });
         continue;
       }
-      logger.warn(`Failed to create ProductTag association ${productName}/${tagName}: ${String(error)}`);
+      logger.warn(
+        `Failed to create ${plan.descriptor.type} association ${plan.descriptor.nameParts.join('/')}: ${String(error)}`
+      );
+      results.push({
+        descriptor: plan.descriptor,
+        status: 'failed',
+        action: 'put',
+        error: error instanceof Error ? error : new Error(String(error)),
+      });
     }
   }
-  
-  logger.info(`Published ${tagEntries.length} tags for product: ${productName}`);
+  return results;
+}
+
+function isDescriptorAllowed(
+  descriptor: ResourceDescriptor,
+  config: PublishConfig,
+  allowedDescriptors?: ResourceDescriptor[]
+): boolean {
+  if (!allowedDescriptors) {
+    return true;
+  }
+
+  if (allowedDescriptors.some((allowed) => sameResourceDescriptor(allowed, descriptor))) {
+    return true;
+  }
+
+  // Incremental mode only diffs changed files; an unchanged product policy
+  // can still need republishing when its product does.
+  return config.commitId !== undefined;
 }

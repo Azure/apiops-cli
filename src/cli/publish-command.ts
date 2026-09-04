@@ -3,7 +3,7 @@
 /**
  * Publish command CLI registration
  * Commander subcommand with --resource-group, --service-name, --source,
- * --overrides, --dry-run, --delete-unmatched flags.
+ * --overrides, --filter, --no-transitive, --dry-run, --delete-unmatched flags.
  * Includes --format json: machine-readable JSON output mode.
  */
 
@@ -11,7 +11,7 @@ import { Command } from 'commander';
 import { PublishConfig } from '../models/config.js';
 import { ApimServiceContext } from '../models/types.js';
 import { runPublish, PublishResult } from '../services/publish-service.js';
-import { loadOverrideConfig } from '../lib/config-loader.js';
+import { loadFilterConfig, loadOverrideConfig } from '../lib/config-loader.js';
 import { logger, parseLogLevel } from '../lib/logger.js';
 import { ApimClient } from '../clients/apim-client.js';
 import { ArtifactStore } from '../clients/artifact-store.js';
@@ -25,6 +25,8 @@ interface PublishOptions {
   serviceName: string;
   source: string;
   overrides?: string;
+  filter?: string;
+  transitive: boolean;
   commitId?: string;
   dryRun: boolean;
   deleteUnmatched: boolean;
@@ -40,6 +42,8 @@ export function createPublishCommand(): Command {
     .requiredOption('--service-name <name>', 'APIM service instance name')
     .option('--source <dir>', 'Source directory with artifacts', './apim-artifacts')
     .option('--overrides <path>', 'Override configuration YAML file')
+    .option('--filter <path>', 'Filter configuration YAML file')
+    .option('--no-transitive', 'Disable transitive dependency inclusion')
     .option(
       '--commit-id <sha>',
       'Git commit SHA for incremental publish (overrides COMMIT_ID env var)'
@@ -121,15 +125,24 @@ async function executePublish(
     }
   }
 
+  let filterConfig;
+  if (options.filter) {
+    filterConfig = await loadFilterConfig(options.filter);
+    if (!filterConfig) {
+      logger.error(`Filter file not found: ${options.filter}`);
+      process.exit(2);
+    }
+  }
+
   // Resolve commit ID for incremental publish
   const commitId = options.commitId ?? process.env.COMMIT_ID;
   if (commitId) {
     logger.debug(`Using incremental publish with commit ID: ${commitId}`);
   }
 
-  if (hasMutuallyExclusivePublishOptions(options.deleteUnmatched, commitId)) {
+  if (hasMutuallyExclusivePublishOptions(options.deleteUnmatched, commitId, Boolean(options.filter))) {
     logger.error(
-      'Options --commit-id (or COMMIT_ID) and --delete-unmatched are mutually exclusive.'
+      'Option --delete-unmatched cannot be combined with --filter.'
     );
     process.exit(2);
   }
@@ -138,6 +151,8 @@ async function executePublish(
   const publishConfig: PublishConfig = {
     service: context,
     sourceDir: options.source,
+    filter: filterConfig,
+    includeTransitive: options.transitive,
     overrides: overrideConfig,
     dryRun: options.dryRun,
     deleteUnmatched: options.deleteUnmatched,
@@ -167,9 +182,10 @@ async function executePublish(
  */
 export function hasMutuallyExclusivePublishOptions(
   deleteUnmatched: boolean,
-  commitId?: string
+  _commitId?: string,
+  hasFilter = false
 ): boolean {
-  return deleteUnmatched && Boolean(commitId);
+  return deleteUnmatched && hasFilter;
 }
 
 /**
@@ -182,6 +198,7 @@ function outputJson(result: PublishResult): void {
     exitCode: number;
     summary: {
       totalPuts: number;
+      totalPatches: number;
       totalDeletes: number;
       totalErrors: number;
       totalSkipped: number;
@@ -198,9 +215,11 @@ function outputJson(result: PublishResult): void {
         operation: string;
         type: string;
         name: string;
+        error?: string;
       }>;
       summary: {
         creates: number;
+        patches: number;
         deletes: number;
         skips: number;
       };
@@ -215,6 +234,7 @@ function outputJson(result: PublishResult): void {
     exitCode: result.exitCode,
     summary: {
       totalPuts: result.totalPuts,
+      totalPatches: result.totalPatches,
       totalDeletes: result.totalDeletes,
       totalErrors: result.totalErrors,
       totalSkipped: result.totalSkipped,
@@ -235,6 +255,7 @@ function outputJson(result: PublishResult): void {
         operation: a.operation,
         type: a.type,
         name: a.name,
+        error: a.error,
       })),
       summary: result.dryRunReport.summary,
     };
@@ -257,6 +278,7 @@ function outputText(result: PublishResult, dryRun: boolean): void {
     process.stdout.write(
       `${result.dryRunReport.summary.creates} creates/updates\n`
     );
+    process.stdout.write(`${result.dryRunReport.summary.patches} patches\n`);
     process.stdout.write(`${result.dryRunReport.summary.deletes} deletes\n`);
     process.stdout.write(`${result.dryRunReport.summary.skips} skipped\n`);
 
@@ -272,7 +294,7 @@ function outputText(result: PublishResult, dryRun: boolean): void {
     // Regular publish mode summary
     process.stdout.write('\n--- Summary ---\n');
     process.stdout.write(
-      `${result.totalPuts} creates/updates, ${result.totalDeletes} deletes, ${result.totalSkipped} skipped\n`
+      `${result.totalPuts} creates/updates, ${result.totalPatches} patches, ${result.totalDeletes} deletes, ${result.totalSkipped} skipped\n`
     );
 
     if (result.totalErrors > 0) {

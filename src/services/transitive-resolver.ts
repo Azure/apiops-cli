@@ -8,9 +8,11 @@
  */
 
 import { FilterConfig } from '../models/config.js';
-import { ResourceType } from '../models/resource-types.js';
+import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { ResourceDescriptor } from '../models/types.js';
+import type { IArtifactStore } from '../clients/iartifact-store.js';
 import { logger } from '../lib/logger.js';
+import { getResourceDescriptorKey } from '../lib/resource-path.js';
 
 /**
  * Reference detection patterns for policy XML content.
@@ -26,6 +28,14 @@ export interface TransitiveDependency {
   type: ResourceType;
   name: string;
 }
+
+const POLICY_RESOURCE_TYPES = new Set<ResourceType>([
+  ResourceType.ServicePolicy,
+  ResourceType.ApiPolicy,
+  ResourceType.ApiOperationPolicy,
+  ResourceType.ProductPolicy,
+  ResourceType.GraphQLResolverPolicy,
+]);
 
 /**
  * Scan policy XML content for references to other resources.
@@ -87,10 +97,7 @@ export function scanApiVersionSetReference(
     return undefined;
   }
 
-  // Extract version set name from ARM resource ID
-  // Format: /subscriptions/.../apiVersionSets/{name}
-  const parts = versionSetId.split('/');
-  const name = parts[parts.length - 1];
+  const name = extractResourceNameFromId(versionSetId, 'apiVersionSets');
   if (!name) {
     return undefined;
   }
@@ -196,33 +203,185 @@ function addToFilter(
  */
 export function findTransitiveDependencies(
   policies: Map<string, string>,
-  apis: Map<string, Record<string, unknown>>
+  apis: Map<string, Record<string, unknown>>,
+  workspace?: string,
+  resources: ReadonlyArray<{
+    descriptor: ResourceDescriptor;
+    json: Record<string, unknown>;
+  }> = []
 ): ResourceDescriptor[] {
   const dependencies: ResourceDescriptor[] = [];
-  const seen = new Set<string>();
 
-  // Scan all policies
   for (const [, policyXml] of policies) {
     for (const dep of scanPolicyReferences(policyXml)) {
-      const key = `${dep.type}:${dep.name.toLowerCase()}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        dependencies.push({ type: dep.type, nameParts: [dep.name] });
-      }
+      dependencies.push({ type: dep.type, nameParts: [dep.name], workspace });
     }
   }
 
-  // Scan API version set references
   for (const [, apiJson] of apis) {
     const dep = scanApiVersionSetReference(apiJson);
     if (dep) {
-      const key = `${dep.type}:${dep.name.toLowerCase()}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        dependencies.push({ type: dep.type, nameParts: [dep.name] });
+      dependencies.push({ type: dep.type, nameParts: [dep.name], workspace });
+    }
+  }
+
+  for (const { descriptor, json } of resources) {
+    const properties = json.properties as Record<string, unknown> | undefined;
+
+    if (descriptor.type === ResourceType.Backend) {
+      const pool = isRecord(properties?.pool) ? properties.pool : undefined;
+      const services = pool?.services;
+      if (Array.isArray(services)) {
+        for (const service of services) {
+          if (isRecord(service) && typeof service.id === 'string') {
+            const name = extractResourceNameFromId(service.id, 'backends');
+            if (name) {
+              dependencies.push({
+                type: ResourceType.Backend,
+                nameParts: [name],
+                workspace: workspaceFromReference(service.id, descriptor.workspace),
+              });
+            }
+          }
+        }
+      }
+    }
+
+    if (descriptor.type === ResourceType.PolicyFragment) {
+      for (const value of [properties?.value, properties?.policyContent]) {
+        if (typeof value !== 'string') {
+          continue;
+        }
+        for (const dep of scanPolicyReferences(value)) {
+          dependencies.push({
+            type: dep.type,
+            nameParts: [dep.name],
+            workspace: descriptor.workspace,
+          });
+        }
       }
     }
   }
 
-  return dependencies;
+  return deduplicateDescriptors(dependencies);
+}
+
+/**
+ * Read intrinsic dependencies from one on-disk artifact.
+ *
+ * Association and subscription targets are links to independently selected
+ * composite resources, not transitive dependencies.
+ */
+export async function scanArtifactReferences(
+  store: IArtifactStore,
+  sourceDir: string,
+  descriptor: ResourceDescriptor
+): Promise<ResourceDescriptor[]> {
+  const references: ResourceDescriptor[] = [];
+  const policies = new Map<string, string>();
+  const apis = new Map<string, Record<string, unknown>>();
+
+  if (POLICY_RESOURCE_TYPES.has(descriptor.type)) {
+    const content = await store.readContent(sourceDir, descriptor, 'policy');
+    if (content) {
+      policies.set(descriptor.nameParts.join('/'), content.content);
+    }
+  }
+
+  const infoFile = RESOURCE_TYPE_METADATA[descriptor.type]?.infoFile;
+  const json = POLICY_RESOURCE_TYPES.has(descriptor.type) || !infoFile?.endsWith('.json')
+    ? undefined
+    : await store.readResource(sourceDir, descriptor);
+  if (json) {
+    if (descriptor.type === ResourceType.Api) {
+      apis.set(descriptor.nameParts.join('/'), json);
+    }
+
+  }
+
+  references.push(
+    ...findTransitiveDependencies(
+      policies,
+      apis,
+      descriptor.workspace,
+      json ? [{ descriptor, json }] : []
+    )
+  );
+
+  return deduplicateDescriptors(references);
+}
+
+/**
+ * Find API or Product targets referenced by a subscription payload.
+ *
+ * These targets are used to gate link publication; they must not be fed into
+ * transitive expansion because APIs and Products are composite resources.
+ */
+export function findSubscriptionTargets(
+  json: Record<string, unknown>,
+  workspace?: string
+): ResourceDescriptor[] {
+  const references: ResourceDescriptor[] = [];
+  const properties = json.properties as Record<string, unknown> | undefined;
+  for (const value of [properties?.scope, properties?.apiId]) {
+    if (typeof value !== 'string') {
+      continue;
+    }
+    for (const [segment, type] of [
+      ['apis', ResourceType.Api],
+      ['products', ResourceType.Product],
+    ] as const) {
+      const name = extractResourceNameFromId(value, segment);
+      if (name) {
+        references.push({
+          type,
+          nameParts: [name],
+          workspace: workspaceFromReference(value, workspace),
+        });
+      }
+    }
+  }
+
+  return deduplicateDescriptors(references);
+}
+
+function extractResourceNameFromId(value: string, segment: string): string | undefined {
+  const match = value.match(new RegExp(`(?:^|/)${segment}/([^/]+)(?:/|$)`, 'i'));
+  return match?.[1] ? decodeArmSegment(match[1]) : undefined;
+}
+
+function workspaceFromReference(value: string, fallback?: string): string | undefined {
+  const match = value.match(/\/workspaces\/([^/]+)/i);
+  if (match?.[1]) {
+    return decodeArmSegment(match[1]);
+  }
+
+  const isFullArmId =
+    /\/subscriptions\/[^/]+\/resourceGroups\/[^/]+\/providers\/Microsoft\.ApiManagement\/service\/[^/]+/i.test(
+      value
+    );
+  return isFullArmId ? undefined : fallback;
+}
+
+function decodeArmSegment(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch (error) {
+    logger.warn(`Unable to decode ARM resource ID segment; using the raw value: ${String(error)}`);
+    return value;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function deduplicateDescriptors(descriptors: ResourceDescriptor[]): ResourceDescriptor[] {
+  const seen = new Set<string>();
+  return descriptors.filter((descriptor) => {
+    const key = getResourceDescriptorKey(descriptor);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   publishResource,
+  resolveAssociationDeleteDescriptor,
   normalizeApiAuthenticationSettings,
   prefersLegacyAuthOverride,
 } from '../../../src/services/resource-publisher.js';
@@ -78,6 +79,128 @@ function generatedSubscriptionId(fill: string): string {
 }
 
 describe('resource-publisher', () => {
+  describe('resolveAssociationDeleteDescriptor', () => {
+    it('resolves an opaque workspace API link name from its target ARM ID', async () => {
+      const client = createMockClient();
+      client.listResources = async function* () {
+        yield {
+          name: 'opaque-api-link',
+          properties: {
+            apiId: `${testContext.baseUrl}/workspaces/team/apis/orders`,
+          },
+        };
+      };
+
+      const result = await resolveAssociationDeleteDescriptor(
+        client,
+        testContext,
+        {
+          type: ResourceType.ProductApi,
+          nameParts: ['store', 'orders'],
+          workspace: 'team',
+        }
+      );
+
+      expect(result).toEqual({
+        type: ResourceType.ProductApi,
+        nameParts: ['store', 'opaque-api-link'],
+        workspace: 'team',
+      });
+    });
+
+    it('resolves an opaque workspace ProductTag link with inverted path segments', async () => {
+      const client = createMockClient();
+      client.listResources = async function* () {
+        yield {
+          name: 'opaque-product-link',
+          properties: {
+            productId: `${testContext.baseUrl}/workspaces/team/products/store`,
+          },
+        };
+      };
+
+      const result = await resolveAssociationDeleteDescriptor(
+        client,
+        testContext,
+        {
+          type: ResourceType.ProductTag,
+          nameParts: ['store', 'production'],
+          workspace: 'team',
+        }
+      );
+
+      expect(result).toEqual({
+        type: ResourceType.ProductTag,
+        nameParts: ['opaque-product-link', 'production'],
+        workspace: 'team',
+      });
+    });
+
+    it('resolves an opaque workspace ApiTag link with inverted path segments', async () => {
+      const client = createMockClient();
+      client.listResources = async function* () {
+        yield {
+          name: 'opaque-api-link',
+          properties: {
+            apiId: `${testContext.baseUrl}/workspaces/team/apis/orders`,
+          },
+        };
+      };
+
+      const result = await resolveAssociationDeleteDescriptor(
+        client,
+        testContext,
+        {
+          type: ResourceType.ApiTag,
+          nameParts: ['orders', 'production'],
+          workspace: 'team',
+        }
+      );
+
+      expect(result).toEqual({
+        type: ResourceType.ApiTag,
+        nameParts: ['opaque-api-link', 'production'],
+        workspace: 'team',
+      });
+    });
+
+    it('uses target scope to distinguish otherwise identical workspace links', async () => {
+      const client = createMockClient();
+      client.listResources = async function* () {
+        yield {
+          name: 'workspace-link',
+          properties: {
+            apiId: `${testContext.baseUrl}/workspaces/team/apis/orders`,
+          },
+        };
+        yield {
+          name: 'service-link',
+          properties: {
+            apiId: `${testContext.baseUrl}/apis/orders`,
+          },
+        };
+      };
+
+      const result = await resolveAssociationDeleteDescriptor(
+        client,
+        testContext,
+        {
+          type: ResourceType.ProductApi,
+          nameParts: ['store', 'orders'],
+          workspace: 'team',
+          targetScope: 'service',
+        }
+      );
+
+      expect(result).toEqual({
+        type: ResourceType.ProductApi,
+        nameParts: ['store', 'service-link'],
+        workspace: 'team',
+        targetScope: 'service',
+      });
+    });
+  });
+
   describe('publishResource', () => {
     beforeEach(() => {
       mockCheckKeyVaultSecretAccess.mockClear();
@@ -157,7 +280,7 @@ describe('resource-publisher', () => {
       const result = await publishResource(client, store, testContext, descriptor, testConfig);
 
       expect(result.status).toBe('failed');
-      expect(result.action).toBe('noop');
+      expect(result.action).toBe('put');
       expect(result.error).toBeDefined();
       expect(result.error?.message).toBe('Network error');
     });
@@ -229,6 +352,69 @@ describe('resource-publisher', () => {
       expect(putJson.properties).toHaveProperty('customField', 'custom-value');
       expect(putJson.properties).toHaveProperty('nestedObject');
       expect(((putJson.properties as Record<string, unknown>)).nestedObject).toHaveProperty('prop1', 'val1');
+    });
+
+    it('should map backend pool member IDs to the target service and environment', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({
+        name: 'pool',
+        properties: {
+          type: 'Pool',
+          pool: {
+            services: [
+              {
+                id: '/subscriptions/source/resourceGroups/source/providers/Microsoft.ApiManagement/service/source/backends/member',
+                weight: 1,
+              },
+              {
+                id: '/subscriptions/source/resourceGroups/source/providers/Microsoft.ApiManagement/service/source/workspaces/team/backends/nested-member',
+                priority: 2,
+              },
+            ],
+          },
+        },
+      });
+      const config: PublishConfig = {
+        ...testConfig,
+        envMapping: {
+          prefix: 'dev-',
+          suffix: '',
+          appliesTo: new Set([
+            ResourceType.Backend,
+            ResourceType.Workspace,
+          ]),
+        },
+      };
+
+      await publishResource(
+        client,
+        store,
+        testContext,
+        { type: ResourceType.Backend, nameParts: ['pool'] },
+        config
+      );
+
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        { type: ResourceType.Backend, nameParts: ['dev-pool'], workspace: undefined },
+        expect.objectContaining({
+          properties: expect.objectContaining({
+            pool: expect.objectContaining({
+              services: [
+                {
+                  id: `${testContext.baseUrl.replace(/^https?:\/\/[^/]+/, '')}/backends/dev-member`,
+                  weight: 1,
+                },
+                {
+                  id: `${testContext.baseUrl.replace(/^https?:\/\/[^/]+/, '')}/workspaces/dev-team/backends/dev-nested-member`,
+                  priority: 2,
+                },
+              ],
+            }),
+          }),
+        })
+      );
     });
 
     it('should publish policy content for policy resources without calling readResource', async () => {
@@ -348,6 +534,48 @@ describe('resource-publisher', () => {
       );
     });
 
+    it('should preserve target scope for same-named workspace associations', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockResolvedValue([
+        { name: 'orders', scope: 'service' },
+        { name: 'orders', scope: 'workspace' },
+      ]);
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ProductApi,
+        nameParts: ['store'],
+        workspace: 'team',
+      };
+
+      const result = await publishResource(
+        client,
+        store,
+        testContext,
+        descriptor,
+        testConfig
+      );
+
+      expect(result.relatedResults).toMatchObject([
+        {
+          descriptor: {
+            type: ResourceType.ProductApi,
+            nameParts: ['store', 'orders'],
+            workspace: 'team',
+            targetScope: 'service',
+          },
+        },
+        {
+          descriptor: {
+            type: ResourceType.ProductApi,
+            nameParts: ['store', 'orders'],
+            workspace: 'team',
+            targetScope: 'workspace',
+          },
+        },
+      ]);
+      expect(client.putResource).toHaveBeenCalledTimes(2);
+    });
+
     it('should handle association resources (GatewayApi)', async () => {
       const client = createMockClient();
       const store = createMockStore();
@@ -370,6 +598,79 @@ describe('resource-publisher', () => {
       expect(client.putResource).toHaveBeenCalledWith(
         testContext,
         expect.objectContaining({ type: ResourceType.GatewayApi, nameParts: ['my-gateway', 'api-1'] }),
+        {}
+      );
+    });
+
+    it('should skip GatewayApi entries whose API target is excluded', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockResolvedValue([{ name: 'legacy-api' }]);
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.GatewayApi,
+        nameParts: ['my-gateway'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          gateways: ['my-gateway'],
+          apis: ['!legacy-api', '*'],
+        },
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, config);
+
+      expect(result.status).toBe('success');
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
+    it('should skip ApiTag links whose Tag target is excluded', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ApiTag,
+        nameParts: ['orders', 'internal'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          apis: ['orders'],
+          tags: ['!internal', '*'],
+        },
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, config);
+
+      expect(result.status).toBe('skipped');
+      expect(store.readResource).not.toHaveBeenCalled();
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
+    it('should publish a GatewayApi association when its target passes an explicit filter and was extracted', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockResolvedValue([{ name: 'orders-api' }]);
+      store.readResource.mockResolvedValue({ name: 'orders-api', properties: {} });
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.GatewayApi,
+        nameParts: ['my-gateway'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          gateways: ['my-gateway'],
+          apis: ['orders-api'],
+        },
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, config);
+
+      expect(result.status).toBe('success');
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({ type: ResourceType.GatewayApi, nameParts: ['my-gateway', 'orders-api'] }),
         {}
       );
     });
@@ -399,6 +700,52 @@ describe('resource-publisher', () => {
       );
     });
 
+    it('should skip a GatewayApi association whose target passes the filter but was never extracted', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockResolvedValue([{ name: 'orders-api' }]);
+      // readResource left unmocked (resolves undefined) — simulates a dangling
+      // reference to an API name that matches the filter but has no artifact.
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.GatewayApi,
+        nameParts: ['my-gateway'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          gateways: ['my-gateway'],
+          apis: ['orders-api'],
+        },
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, config);
+
+      expect(result.status).toBe('success');
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
+    it('should skip an ApiTag link whose Tag target passes the filter but was never extracted', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.ApiTag,
+        nameParts: ['orders', 'production'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          apis: ['orders'],
+          tags: ['production'],
+        },
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, config);
+
+      expect(result.status).toBe('skipped');
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
     it('skips a GatewayApi link when the referenced API is not on the target and keeps going', async () => {
       const client = createMockClient();
       const store = createMockStore();
@@ -420,7 +767,6 @@ describe('resource-publisher', () => {
         }
         return {};
       });
-
       const descriptor: ResourceDescriptor = {
         type: ResourceType.GatewayApi,
         nameParts: ['my-gateway'],
@@ -729,6 +1075,71 @@ describe('resource-publisher', () => {
       expect(props.scope).toBe('/products/my-product');
     });
 
+    it('should skip a Subscription whose Product target is excluded', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const armScopePrefix =
+        '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1';
+      store.readResource.mockResolvedValue({
+        name: 'sub-1',
+        properties: {
+          scope: `${armScopePrefix}/products/legacy-product`,
+        },
+      });
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Subscription,
+        nameParts: ['sub-1'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          subscriptions: ['sub-1'],
+          products: ['!legacy-product', '*'],
+        },
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, config);
+
+      expect(result.status).toBe('skipped');
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
+    it('should skip a Subscription whose Product target passes the filter but was never extracted', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const armScopePrefix =
+        '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1';
+      const subscriptionJson = {
+        name: 'sub-1',
+        properties: {
+          scope: `${armScopePrefix}/products/orders-product`,
+        },
+      };
+      // Only the subscription's own artifact exists; the referenced product
+      // ("orders-product") was never extracted, even though it passes the filter.
+      store.readResource.mockImplementation(async (_dir: string, desc: ResourceDescriptor) =>
+        desc.type === ResourceType.Subscription ? subscriptionJson : undefined
+      );
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Subscription,
+        nameParts: ['sub-1'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          subscriptions: ['sub-1'],
+          products: ['orders-product'],
+        },
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, config);
+
+      expect(result.status).toBe('skipped');
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
     it('should leave scope unchanged when it is already a relative APIM path', async () => {
       const client = createMockClient();
       const store = createMockStore();
@@ -753,6 +1164,104 @@ describe('resource-publisher', () => {
       const putJson = putCall[2] as Record<string, unknown>;
       const props = putJson.properties as Record<string, unknown>;
       expect(props.scope).toBe('/apis/my-api');
+    });
+
+    it.each([
+      ['/apis/orders', ResourceType.Api, 'orders', 'apis'],
+      ['/products/store', ResourceType.Product, 'store', 'products'],
+    ] as const)(
+      'should publish workspace Subscription with eligible relative target %s',
+      async (scope, targetType, targetName, filterField) => {
+        const client = createMockClient();
+        const store = createMockStore();
+        const subscriptionJson = {
+          name: 'workspace-sub',
+          properties: { scope, state: 'active' },
+        };
+        store.readResource.mockImplementation(
+          async (_dir: string, descriptor: ResourceDescriptor) => {
+            if (descriptor.type === ResourceType.Subscription) return subscriptionJson;
+            if (
+              descriptor.type === targetType &&
+              descriptor.workspace === 'team' &&
+              descriptor.nameParts[0] === targetName
+            ) {
+              return { properties: {} };
+            }
+            return undefined;
+          }
+        );
+        const descriptor: ResourceDescriptor = {
+          type: ResourceType.Subscription,
+          nameParts: ['workspace-sub'],
+          workspace: 'team',
+        };
+        const workspaceFilter = {
+          subscriptions: ['workspace-sub'],
+          [filterField]: [targetName],
+        };
+        const config: PublishConfig = {
+          ...testConfig,
+          filter: {
+            apis: [],
+            products: [],
+            workspaces: ['team'],
+            workspaceSubFilters: { team: workspaceFilter },
+          },
+        };
+
+        const result = await publishResource(client, store, testContext, descriptor, config);
+
+        expect(result.status).toBe('success');
+        expect(client.putResource).toHaveBeenCalledOnce();
+        const payload = client.putResource.mock.calls[0]?.[2] as Record<string, unknown>;
+        const properties = payload.properties as Record<string, unknown>;
+        expect(properties.scope).toBe(
+          `/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1/workspaces/team${scope}`
+        );
+      }
+    );
+
+    it('should evaluate a full ARM service target against the service filter from a workspace subscription', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const armScopePrefix =
+        '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1';
+      store.readResource.mockImplementation(
+        async (_dir: string, descriptor: ResourceDescriptor) => {
+          if (descriptor.type === ResourceType.Subscription) {
+            return {
+              name: 'workspace-sub',
+              properties: { scope: `${armScopePrefix}/apis/shared` },
+            };
+          }
+          return descriptor.type === ResourceType.Api &&
+            descriptor.workspace === undefined &&
+            descriptor.nameParts[0] === 'shared'
+            ? { properties: {} }
+            : undefined;
+        }
+      );
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Subscription,
+        nameParts: ['workspace-sub'],
+        workspace: 'team',
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          apis: ['shared'],
+          workspaces: ['team'],
+          workspaceSubFilters: {
+            team: { subscriptions: ['workspace-sub'], apis: [] },
+          },
+        },
+      };
+
+      const result = await publishResource(client, store, testContext, descriptor, config);
+
+      expect(result.status).toBe('success');
+      expect(client.putResource).toHaveBeenCalledOnce();
     });
 
     it('should skip subscription with root scope (master subscription)', async () => {

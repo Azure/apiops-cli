@@ -48,6 +48,18 @@ describe('publish-command', () => {
       expect(overridesOpt).toBeDefined();
     });
 
+    it('should have --filter option', () => {
+      const cmd = createPublishCommand();
+      expect(cmd.options.find((o) => o.long === '--filter')).toBeDefined();
+    });
+
+    it('should have a negated --no-transitive flag', () => {
+      const cmd = createPublishCommand();
+      const transitiveOpt = cmd.options.find((o) => o.long === '--no-transitive');
+      expect(transitiveOpt).toBeDefined();
+      expect(transitiveOpt?.negate).toBe(true);
+    });
+
     it('should have --commit-id option', () => {
       const cmd = createPublishCommand();
       const opts = cmd.options;
@@ -126,8 +138,8 @@ describe('publish-command', () => {
   });
 
   describe('mutually exclusive publish modes', () => {
-    it('should treat commit-id and delete-unmatched as conflicting', () => {
-      expect(hasMutuallyExclusivePublishOptions(true, 'abc123')).toBe(true);
+    it('should allow explicit delete-unmatched in incremental mode', () => {
+      expect(hasMutuallyExclusivePublishOptions(true, 'abc123')).toBe(false);
     });
 
     it('should allow delete-unmatched in full publish mode', () => {
@@ -136,6 +148,14 @@ describe('publish-command', () => {
 
     it('should allow commit-id incremental mode without delete-unmatched', () => {
       expect(hasMutuallyExclusivePublishOptions(false, 'abc123')).toBe(false);
+    });
+
+    it('should reject filter with delete-unmatched', () => {
+      expect(hasMutuallyExclusivePublishOptions(true, undefined, true)).toBe(true);
+    });
+
+    it('should allow filter without delete-unmatched', () => {
+      expect(hasMutuallyExclusivePublishOptions(false, undefined, true)).toBe(false);
     });
   });
 });

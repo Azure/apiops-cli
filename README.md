@@ -85,9 +85,11 @@ Publish local artifact files to an Azure APIM service.
 | `--service-name <name>` | *(required)* | APIM service name |
 | `--source <dir>` | `./apim-artifacts` | Source artifacts directory |
 | `--overrides <path>` | | Path to overrides file |
+| `--filter <path>` | | Filter YAML file (same format as `extract`) |
+| `--no-transitive` | | Publish only filter matches, without referenced dependencies |
 | `--commit-id <sha>` | | Git commit SHA for incremental publish |
 | `--dry-run` | | Preview changes without applying |
-| `--delete-unmatched` | | Delete resources not in artifacts (mutually exclusive with `--commit-id`) |
+| `--delete-unmatched` | | Delete resources absent from artifacts, or removed by an incremental commit (mutually exclusive with `--filter`) |
 
 ```bash
 apiops publish --help
@@ -109,7 +111,18 @@ apiops publish \
   --resource-group <rg> \
   --service-name <name> \
   --commit-id <sha>
+
+# Publish a filtered subset; transitive dependencies are included by default
+apiops publish \
+  --resource-group <rg> \
+  --service-name <name> \
+  --source ./apim-artifacts \
+  --filter ./filter.yaml
 ```
+
+The publish filter uses the same YAML file and matching rules as `apiops extract --filter`.
+Referenced named values, backends (including backend pool members), policy fragments, and version
+sets are included automatically. Add `--no-transitive` to publish only the exact filter matches.
 
 ### `apiops init`
 

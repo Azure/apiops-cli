@@ -1,6 +1,6 @@
 # Filtering Resources
 
-By default, `apiops extract` pulls every resource from your APIM instance. For large instances or multi-team setups, you can filter extraction to specific resources using a YAML filter file.
+By default, `apiops extract` pulls every resource from your APIM instance and `apiops publish` publishes every artifact in the source directory. For large instances or multi-team setups, you can use the same YAML filter file to limit either operation to specific resources.
 
 ## Why Filter?
 
@@ -33,6 +33,18 @@ apiops extract \
 ```
 
 `petstore-api`, `orders-api`, and their transitive dependencies are extracted — along with every backend, named value, product, tag, workspace, and every other resource type, because those keys are omitted and therefore default to "include all". To narrow the extract to just these APIs, see [How To: Extract Just One API](#how-to-extract-just-one-api) below.
+
+The same filter can limit publishing to a subset of the extracted artifacts:
+
+```bash
+apiops publish \
+  --resource-group my-rg \
+  --service-name my-apim \
+  --filter configuration.extractor.yaml
+```
+
+Referenced dependencies are included by default; add `--no-transitive` to publish only direct filter
+matches.
 
 ---
 

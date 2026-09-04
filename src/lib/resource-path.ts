@@ -154,6 +154,24 @@ export function getApiRootName(apiName: string): string {
 }
 
 /**
+ * Create a case-insensitive identity key for a resource descriptor.
+ */
+export function getResourceDescriptorKey(descriptor: ResourceDescriptor): string {
+  const scopeSuffix = descriptor.targetScope ? `:${descriptor.targetScope}` : '';
+  return `${descriptor.type}:${descriptor.workspace ?? ''}:${descriptor.nameParts.join('/')}${scopeSuffix}`.toLowerCase();
+}
+
+/**
+ * Compare resource descriptors using APIM's case-insensitive names.
+ */
+export function sameResourceDescriptor(
+  left: ResourceDescriptor,
+  right: ResourceDescriptor
+): boolean {
+  return getResourceDescriptorKey(left) === getResourceDescriptorKey(right);
+}
+
+/**
  * Converts a positional template string to a capturing regex.
  * Each `{i}` placeholder becomes a `([^/]+)` capture group; all other
  * regex-special characters are escaped.  A trailing slash (if present)
@@ -408,6 +426,20 @@ export function parseArtifactPath(
   const workspaceContainer = parseWorkspaceContainerDescriptor(fileName, workspace);
   if (workspaceContainer) {
     return workspaceContainer;
+  }
+
+  if (['apis.json', 'groups.json', 'tags.json'].includes(fileName)) {
+    const productNameParts = parseTemplatePath(
+      RESOURCE_TYPE_METADATA[ResourceType.Product].artifactDirectory,
+      parts.slice(startIndex, -1).join('/')
+    );
+    if (productNameParts !== undefined) {
+      return {
+        type: ResourceType.Product,
+        nameParts: productNameParts,
+        workspace,
+      };
+    }
   }
 
   // Try to match against each resource type's pattern

@@ -89,6 +89,8 @@ export interface KnownArtifactSets {
 export interface PublishConfig {
   service: ApimServiceContext;
   sourceDir: string;
+  filter?: FilterConfig;
+  includeTransitive?: boolean;
   overrides?: OverrideConfig;
   /**
    * Pre-built environment name mapping (prefix/suffix + appliesTo).

@@ -73,6 +73,7 @@ apiops publish \
 ```
 --- Dry-Run Report ---
 3 creates/updates
+0 patches
 1 deletes
 0 skipped
 
@@ -83,11 +84,12 @@ Planned actions:
   DELETE NamedValue/old-key
 ```
 
-Each action shows the operation (`PUT`, `DELETE`, `SKIP`), the resource type, and the resource name.
+Each action shows the operation (`PUT`, `PATCH`, `DELETE`, `SKIP`), the resource type, and the resource name.
 
 | Operation | Meaning |
 |-----------|---------|
 | `PUT` | Resource would be created (new) or updated (existing) |
+| `PATCH` | Resource would be partially updated |
 | `DELETE` | Resource would be removed from APIM |
 | `SKIP` | Resource could not be checked (error reading from APIM) |
 
@@ -104,6 +106,7 @@ Each action shows the operation (`PUT`, `DELETE`, `SKIP`), the resource type, an
     ],
     "summary": {
       "creates": 3,
+      "patches": 0,
       "deletes": 1,
       "skips": 0
     }
@@ -219,11 +222,12 @@ This lets reviewers see _"this PR will create 2 APIs and update 1 backend"_ dire
 | `--dry-run` | Preview full publish |
 | `--dry-run --delete-unmatched` | Preview full publish + unmatched resource deletions |
 | `--dry-run --commit-id <sha>` | Preview incremental publish (changed files only) |
+| `--dry-run --commit-id <sha> --delete-unmatched` | Preview incremental publish including commit-scoped deletions |
 | `--dry-run --overrides config.yaml` | Preview publish with environment overrides applied |
 | `--dry-run --format json` | Machine-readable preview output |
 | `--dry-run --log-level debug` | Preview with verbose diagnostic logging |
 
-> **Note:** `--commit-id` and `--delete-unmatched` remain mutually exclusive, even in dry-run mode.
+> **Note:** Incremental deletion is disabled unless `--delete-unmatched` is explicitly provided.
 
 ---
 

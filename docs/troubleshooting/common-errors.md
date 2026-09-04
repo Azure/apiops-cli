@@ -141,23 +141,15 @@ apiops init --environments dev prod
 
 ## Publish Errors
 
-### "Options --commit-id and --delete-unmatched are mutually exclusive"
+### Removed resources remain after incremental publish
 
-**Cause:** Both `--commit-id` and `--delete-unmatched` were specified. These flags conflict because:
+**Cause:** Incremental publishing is non-destructive by default.
 
-- `--commit-id` publishes only changed resources (partial set)
-- `--delete-unmatched` deletes resources not in the source (requires full set)
-
-Deleting based on a partial set would remove resources that were simply unchanged.
-
-**Solution:** Use one or the other:
+**Solution:** Preview and then enable commit-scoped deletion:
 
 ```bash
-# Incremental publish (changed resources only)
-apiops publish --commit-id abc123 ...
-
-# Full publish with cleanup (all resources, delete extras)
-apiops publish --delete-unmatched ...
+apiops publish --commit-id abc123 --delete-unmatched --dry-run ...
+apiops publish --commit-id abc123 --delete-unmatched ...
 ```
 
 ---

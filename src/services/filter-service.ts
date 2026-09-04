@@ -6,7 +6,7 @@
  * case-insensitive matching, API root-name matching for revisions.
  */
 
-import { FilterConfig, ApiSubFilter } from '../models/config.js';
+import { FilterConfig, ApiSubFilter, WorkspaceSubFilter } from '../models/config.js';
 import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { ResourceDescriptor } from '../models/types.js';
 import { logger } from '../lib/logger.js';
@@ -173,6 +173,40 @@ function getWorkspaceFilter(
 }
 
 /**
+ * Resolve the resource filter configured for a workspace.
+ * Returns undefined when the workspace has no nested filter.
+ */
+export function resolveWorkspaceFilter(
+  workspaceName: string,
+  filter?: FilterConfig
+): FilterConfig | undefined {
+  const lowerName = workspaceName.toLowerCase();
+  const matchingKey = Object.keys(filter?.workspaceSubFilters ?? {}).find(
+    (key) => key.toLowerCase() === lowerName
+  );
+  const subFilter = matchingKey ? filter?.workspaceSubFilters?.[matchingKey] : undefined;
+  return subFilter ? workspaceSubFilterToFilterConfig(subFilter) : undefined;
+}
+
+function workspaceSubFilterToFilterConfig(sub: WorkspaceSubFilter): FilterConfig {
+  return {
+    apis: sub.apis,
+    apiSubFilters: sub.apiSubFilters,
+    backends: sub.backends,
+    diagnostics: sub.diagnostics,
+    groups: sub.groups,
+    loggers: sub.loggers,
+    namedValues: sub.namedValues,
+    policyFragments: sub.policyFragments,
+    products: sub.products,
+    schemas: sub.schemas,
+    subscriptions: sub.subscriptions,
+    tags: sub.tags,
+    versionSets: sub.versionSets,
+  };
+}
+
+/**
  * Get the fixed singleton name for a resource type from its ARM path.
  * E.g., ServicePolicy → "policy"
  */
@@ -237,6 +271,19 @@ function getParentNameForFilter(descriptor: ResourceDescriptor): string | undefi
   return PARENT_FILTER_MAP[descriptor.type] === 'apis'
     ? extractRootApiName(parentName)
     : parentName;
+}
+
+/**
+ * Whether the filter's field for this resource type is a defined array
+ * (user explicitly scoped it down), as opposed to simply absent.
+ */
+export function hasExplicitTypeFilter(type: ResourceType, filter?: FilterConfig): boolean {
+  if (!filter) {
+    return false;
+  }
+
+  const field = FILTER_FIELD_MAP[type];
+  return field !== undefined && filter[field] !== undefined;
 }
 
 /**

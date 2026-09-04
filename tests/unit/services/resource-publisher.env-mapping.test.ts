@@ -215,6 +215,72 @@ describe('resource-publisher env-mapping', () => {
       const [, , payload] = client.putResource.mock.calls[0] as [unknown, unknown, Record<string, unknown>];
       expect((payload.properties as Record<string, unknown>).scope).toBe('/products/dev-starter');
     });
+
+    it.each([
+      ['apis', 'petstore-api', 'dev-petstore-api'],
+      ['products', 'starter', 'dev-starter'],
+    ])('affixes %s target names in full ARM workspace scopes', async (segment, name, deployedName) => {
+      const armPrefix =
+        '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1';
+      store.readResource.mockResolvedValue({
+        name: 'workspace-sub',
+        properties: {
+          scope: `${armPrefix}/workspaces/team/${segment}/${name}`,
+          displayName: 'Workspace Sub',
+        },
+      });
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Subscription,
+        nameParts: ['workspace-sub'],
+        workspace: 'team',
+      };
+      const config = makeConfig({ envMapping: DEV_MAPPING, knownArtifactSets: EMPTY_KNOWN });
+
+      await publishResource(client, store, testContext, descriptor, config);
+
+      const [, , payload] = client.putResource.mock.calls[0] as [
+        unknown,
+        unknown,
+        Record<string, unknown>,
+      ];
+      expect((payload.properties as Record<string, unknown>).scope).toBe(
+        `/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1/workspaces/dev-team/${segment}/${deployedName}`
+      );
+    });
+
+    it('rebuilds a source-service workspace scope for the target service', async () => {
+      const sourcePrefix =
+        '/subscriptions/source-sub/resourceGroups/source-rg/providers/Microsoft.ApiManagement/service/source-apim';
+      store.readResource.mockResolvedValue({
+        name: 'workspace-sub',
+        properties: {
+          scope: `${sourcePrefix}/workspaces/team/apis/petstore-api`,
+          displayName: 'Workspace Sub',
+        },
+      });
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Subscription,
+        nameParts: ['workspace-sub'],
+        workspace: 'team',
+      };
+
+      await publishResource(
+        client,
+        store,
+        testContext,
+        descriptor,
+        makeConfig({ envMapping: DEV_MAPPING, knownArtifactSets: EMPTY_KNOWN })
+      );
+
+      const [, , payload] = client.putResource.mock.calls[0] as [
+        unknown,
+        unknown,
+        Record<string, unknown>,
+      ];
+      expect((payload.properties as Record<string, unknown>).scope).toBe(
+        '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1/workspaces/dev-team/apis/dev-petstore-api'
+      );
+    });
   });
 
   describe('ApiRelease apiId', () => {

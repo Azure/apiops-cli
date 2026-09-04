@@ -11,7 +11,7 @@ import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/type
 import { PublishConfig } from '../../../src/models/config.js';
 import { LogLevel } from '../../../src/lib/logger.js';
 import { applyOverrides } from '../../../src/services/override-merger.js';
-import { EnvMapping } from '../../../src/services/env-mapper.js';
+import { DEFAULT_APPLIES_TO, EnvMapping } from '../../../src/services/env-mapper.js';
 
 // Mock resource-publisher so we can verify call sequence
 const mockPublishResource = vi.fn();
@@ -95,6 +95,381 @@ describe('api-publisher', () => {
   });
 
   describe('publishApi', () => {
+    it('reports planning failures without a PUT action', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.listResources.mockRejectedValue(new Error('Artifact listing failed'));
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+
+      const result = await publishApi(
+        client,
+        store,
+        testContext,
+        apiDescriptor,
+        testConfig
+      );
+
+      expect(result).toMatchObject({
+        descriptor: apiDescriptor,
+        status: 'failed',
+        action: 'noop',
+        error: expect.objectContaining({ message: 'Artifact listing failed' }),
+      });
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
+    it('applies environment mapping to the root API descriptor and path', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({
+        name: 'orders-api',
+        properties: {
+          path: '/orders',
+          apiVersionSetId:
+            '/subscriptions/source/resourceGroups/source/providers/Microsoft.ApiManagement/service/source/apiVersionSets/orders',
+        },
+      });
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        envMapping: {
+          prefix: 'dev-',
+          suffix: '',
+          apiPathPrefix: 'dev/',
+          appliesTo: DEFAULT_APPLIES_TO,
+        },
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, config);
+
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        { type: ResourceType.Api, nameParts: ['dev-orders-api'] },
+        expect.objectContaining({
+          properties: expect.objectContaining({
+            path: 'dev/orders',
+            apiVersionSetId: `${testContext.baseUrl.replace(/^https?:\/\/[^/]+/, '')}/apiVersionSets/dev-orders`,
+          }),
+        })
+      );
+    });
+
+    it('should publish only API children included in the filtered target set', async () => {
+      const client = createMockClient();
+      const operation: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['orders-api', 'get-orders'],
+      };
+      const diagnostic: ResourceDescriptor = {
+        type: ResourceType.ApiDiagnostic,
+        nameParts: ['orders-api', 'application-insights'],
+      };
+      const store = createMockStore([operation, diagnostic]);
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig, [
+        apiDescriptor,
+        operation,
+      ]);
+
+      const publishedTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
+        return sum + (call[0] as unknown[]).length;
+      }, 0);
+      expect(publishedTasks).toBe(1);
+    });
+
+    it('should not import a full specification when filtered children are excluded', async () => {
+      const client = createMockClient();
+      const operation: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['orders-api', 'get-orders'],
+      };
+      const schema: ResourceDescriptor = {
+        type: ResourceType.ApiSchema,
+        nameParts: ['orders-api', 'order-schema'],
+      };
+      const store = createMockStore([operation, schema]);
+      store.readContent.mockResolvedValue({ content: 'openapi: 3.0.0', format: 'yaml' });
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig, [
+        apiDescriptor,
+        operation,
+      ]);
+
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        apiDescriptor,
+        expect.not.objectContaining({
+          properties: expect.objectContaining({ format: expect.anything() }),
+        })
+      );
+    });
+
+    it('should not import a full specification when all present children match an API sub-filter', async () => {
+      const client = createMockClient();
+      const operation: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['orders-api', 'get-orders'],
+      };
+      const store = createMockStore([operation]);
+      store.readContent.mockResolvedValue({ content: 'openapi: 3.0.0', format: 'yaml' });
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          apis: ['orders-api'],
+          apiSubFilters: {
+            'ORDERS-API': {
+              operations: ['get-orders'],
+            },
+          },
+        },
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, config, [
+        apiDescriptor,
+        operation,
+      ]);
+
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        apiDescriptor,
+        expect.not.objectContaining({
+          properties: expect.objectContaining({ format: expect.anything() }),
+        })
+      );
+    });
+
+    it('should not import a full specification when a workspace API constrains schemas', async () => {
+      const client = createMockClient();
+      const schema: ResourceDescriptor = {
+        type: ResourceType.ApiSchema,
+        nameParts: ['orders-api', 'order-schema'],
+        workspace: 'team-a',
+      };
+      const store = createMockStore([schema]);
+      store.readContent.mockResolvedValue({ content: 'openapi: 3.0.0', format: 'yaml' });
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+        workspace: 'team-a',
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: {
+          workspaces: ['team-a'],
+          workspaceSubFilters: {
+            'TEAM-A': {
+              apis: ['orders-api'],
+              apiSubFilters: {
+                'orders-api': {
+                  schemas: ['order-schema'],
+                },
+              },
+            },
+          },
+        },
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, config, [
+        apiDescriptor,
+        schema,
+      ]);
+
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        apiDescriptor,
+        expect.not.objectContaining({
+          properties: expect.objectContaining({ format: expect.anything() }),
+        })
+      );
+    });
+
+    it('should retain specification import when filtered APIs have no child artifacts', async () => {
+      const client = createMockClient();
+      const store = createMockStore([]);
+      store.readContent.mockResolvedValue({ content: 'openapi: 3.0.0', format: 'yaml' });
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig, [apiDescriptor]);
+
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        apiDescriptor,
+        expect.objectContaining({
+          properties: expect.objectContaining({ format: 'openapi' }),
+        })
+      );
+    });
+
+    it('should restore filter-eligible children after an incremental specification import', async () => {
+      const client = createMockClient();
+      const operation: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['orders-api', 'get-orders'],
+      };
+      const schema: ResourceDescriptor = {
+        type: ResourceType.ApiSchema,
+        nameParts: ['orders-api', 'order-schema'],
+      };
+      const operationPolicy: ResourceDescriptor = {
+        type: ResourceType.ApiOperationPolicy,
+        nameParts: ['orders-api', 'get-orders'],
+      };
+      const store = createMockStore([operation, schema, operationPolicy]);
+      store.readResource.mockImplementation(async (_dir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.ApiOperation) {
+          return { name: 'get-orders', properties: { displayName: 'Get orders' } };
+        }
+        if (descriptor.type === ResourceType.Api) {
+          return { name: 'orders-api', properties: {} };
+        }
+        return null;
+      });
+      store.readContent.mockResolvedValue({ content: 'openapi: 3.0.0', format: 'yaml' });
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        commitId: 'abc123',
+        filter: { apis: ['orders-api'] },
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, config, [apiDescriptor]);
+
+      const totalTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
+        return sum + (call[0] as unknown[]).length;
+      }, 0);
+      expect(totalTasks).toBe(3);
+    });
+
+    it('should republish an unchanged, filter-eligible child when its API changes in incremental mode', async () => {
+      const client = createMockClient();
+      const tag: ResourceDescriptor = {
+        type: ResourceType.ApiTag,
+        nameParts: ['orders-api', 'production'],
+      };
+      const store = createMockStore([tag]);
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        commitId: 'abc123',
+        filter: { apis: ['orders-api'] },
+      };
+
+      // Only the API itself is in the incremental diff/expansion set — the
+      // tag association did not change in this commit.
+      await publishApi(client, store, testContext, apiDescriptor, config, [apiDescriptor]);
+
+      const publishedTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
+        return sum + (call[0] as unknown[]).length;
+      }, 0);
+      expect(publishedTasks).toBe(1);
+    });
+
+    it('should not republish a child excluded by an API sub-filter in incremental mode', async () => {
+      const client = createMockClient();
+      const diagnostic: ResourceDescriptor = {
+        type: ResourceType.ApiDiagnostic,
+        nameParts: ['orders-api', 'application-insights'],
+      };
+      const store = createMockStore([diagnostic]);
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        commitId: 'abc123',
+        filter: {
+          apis: ['orders-api'],
+          apiSubFilters: { 'orders-api': { diagnostics: [] } },
+        },
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, config, [apiDescriptor]);
+
+      const publishedTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
+        return sum + (call[0] as unknown[]).length;
+      }, 0);
+      expect(publishedTasks).toBe(0);
+    });
+
+    it('should republish an unchanged API revision when the root API changes in incremental mode', async () => {
+      const client = createMockClient();
+      const revision: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api;rev=2'],
+      };
+      const store = createMockStore([revision]);
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        commitId: 'abc123',
+        filter: { apis: ['orders-api'] },
+      };
+
+      // Only the root API is in the incremental diff/expansion set — the
+      // revision itself did not change in this commit.
+      await publishApi(client, store, testContext, apiDescriptor, config, [apiDescriptor]);
+
+      expect(mockPublishResource).toHaveBeenCalledTimes(1);
+      expect(mockPublishResource.mock.calls[0][3]).toEqual(revision);
+    });
+
+    it('should ignore managed children from other workspaces when deciding specification import', async () => {
+      const client = createMockClient();
+      const otherWorkspaceSchema: ResourceDescriptor = {
+        type: ResourceType.ApiSchema,
+        nameParts: ['orders-api', 'other-schema'],
+        workspace: 'other',
+      };
+      const store = createMockStore([otherWorkspaceSchema]);
+      store.readContent.mockResolvedValue({ content: 'openapi: 3.0.0', format: 'yaml' });
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+        workspace: 'current',
+      };
+
+      await publishApi(client, store, testContext, apiDescriptor, testConfig, [apiDescriptor]);
+
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        apiDescriptor,
+        expect.objectContaining({
+          properties: expect.objectContaining({ format: 'openapi' }),
+        })
+      );
+    });
+
     it('should publish root API first', async () => {
       const client = createMockClient();
       const store = createMockStore([]);
@@ -559,6 +934,18 @@ describe('api-publisher', () => {
       const client = createMockClient();
       const revisions = [{ type: ResourceType.Api, nameParts: ['orders-api;rev=2'] }];
       const store = createMockStore(revisions);
+      mockPublishResource.mockImplementation(
+        async (
+          _client: unknown,
+          _store: unknown,
+          _context: unknown,
+          descriptor: ResourceDescriptor
+        ) => ({
+          descriptor,
+          status: 'success',
+          action: 'put',
+        })
+      );
       store.readResource.mockResolvedValue({
         name: 'orders-api',
         properties: { path: 'orders', isCurrent: true },
@@ -573,10 +960,10 @@ describe('api-publisher', () => {
         nameParts: ['orders-api'],
       };
 
-      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+      const result = await publishApi(client, store, testContext, apiDescriptor, testConfig);
 
       // Spec is only read/injected on the first root publish.
-      expect(store.readContent).toHaveBeenCalledTimes(1);
+      expect(store.readContent).toHaveBeenCalledTimes(2);
       expect(client.putResource).toHaveBeenCalledTimes(2);
 
       const firstPayload = client.putResource.mock.calls[0][2] as Record<string, unknown>;
@@ -588,6 +975,74 @@ describe('api-publisher', () => {
       expect(firstProps).toHaveProperty('value', 'openapi: "3.0.0"');
       expect(secondProps).not.toHaveProperty('format');
       expect(secondProps).not.toHaveProperty('value');
+      expect(result.relatedResults).toMatchObject([
+        {
+          descriptor: { type: ResourceType.Api, nameParts: ['orders-api;rev=2'] },
+          action: 'put',
+          status: 'success',
+        },
+        {
+          descriptor: apiDescriptor,
+          action: 'put',
+          status: 'success',
+        },
+      ]);
+    });
+
+    it('preserves completed actions when active-revision alignment PUT fails', async () => {
+      const client = createMockClient();
+      client.putResource
+        .mockResolvedValueOnce({ name: 'orders-api' })
+        .mockRejectedValueOnce(new Error('Alignment PUT failed'));
+      const revisions = [{ type: ResourceType.Api, nameParts: ['orders-api;rev=2'] }];
+      const store = createMockStore(revisions);
+      mockPublishResource.mockImplementation(
+        async (
+          _client: unknown,
+          _store: unknown,
+          _context: unknown,
+          descriptor: ResourceDescriptor
+        ) => ({
+          descriptor,
+          status: 'success',
+          action: 'put',
+        })
+      );
+      store.readResource.mockResolvedValue({
+        name: 'orders-api',
+        properties: { path: 'orders', isCurrent: true },
+      });
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+      };
+
+      const result = await publishApi(
+        client,
+        store,
+        testContext,
+        apiDescriptor,
+        testConfig
+      );
+
+      expect(result).toMatchObject({
+        descriptor: apiDescriptor,
+        status: 'success',
+        action: 'put',
+        relatedResults: [
+          {
+            descriptor: revisions[0],
+            status: 'success',
+            action: 'put',
+          },
+          {
+            descriptor: apiDescriptor,
+            status: 'failed',
+            action: 'put',
+            error: expect.objectContaining({ message: 'Alignment PUT failed' }),
+          },
+        ],
+      });
     });
 
     it('should not replay root API when source root is not current', async () => {
@@ -670,6 +1125,45 @@ describe('api-publisher', () => {
       // Only orders-api;rev=2 should be published
       expect(mockPublishResource).toHaveBeenCalledTimes(1);
       expect(mockPublishResource.mock.calls[0][3].nameParts[0]).toBe('orders-api;rev=2');
+    });
+
+    it('should publish only allowed revisions from the same workspace', async () => {
+      const client = createMockClient();
+      const allowedRevision: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api;rev=2'],
+        workspace: 'team-a',
+      };
+      const revisions: ResourceDescriptor[] = [
+        allowedRevision,
+        {
+          type: ResourceType.Api,
+          nameParts: ['orders-api;rev=3'],
+          workspace: 'team-a',
+        },
+        {
+          type: ResourceType.Api,
+          nameParts: ['orders-api;rev=4'],
+        },
+      ];
+      const store = createMockStore(revisions);
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+        workspace: 'team-a',
+      };
+
+      await publishApi(
+        client,
+        store,
+        testContext,
+        apiDescriptor,
+        { ...testConfig, filter: { workspaces: ['team-a'] } },
+        [apiDescriptor, allowedRevision]
+      );
+
+      expect(mockPublishResource).toHaveBeenCalledTimes(1);
+      expect(mockPublishResource.mock.calls[0][3]).toEqual(allowedRevision);
     });
 
     it('fails the API publish when a revision publish fails (no silent success)', async () => {
@@ -1301,13 +1795,13 @@ describe('api-publisher', () => {
 
       await publishApi(client, store, testContext, apiDescriptor, testConfig);
 
-      // ApiPolicy + ApiTag via initial publish (2) + get-pets reconcile task (1) = 3 tasks total.
-      // Auto-generated ApiSchema is skipped throughout.
+      // ApiPolicy + ApiTag are published explicitly. The operation has no
+      // reconcileable persisted properties and the generated schema is importer-managed.
       const totalTasks = mockRunParallel.mock.calls.reduce((sum, call) => {
         const tasks = call[0] as unknown[];
         return sum + tasks.length;
       }, 0);
-      expect(totalTasks).toBe(3);
+      expect(totalTasks).toBe(2);
     });
 
     it('should reconcile all operations via PATCH after spec import', async () => {
@@ -1331,13 +1825,22 @@ describe('api-publisher', () => {
           return {
             name: 'create-item',
             properties: {
+              displayName: 'Create item',
               request: {
                 representations: [{ contentType: 'application/json', schemaId: 'my-schema', typeName: 'Item' }],
               },
             },
           };
         }
-        // get-items returns null — no persisted JSON
+        if (
+          descriptor.type === ResourceType.ApiOperation &&
+          (descriptor.nameParts[1] ?? '') === 'get-items'
+        ) {
+          return {
+            name: 'get-items',
+            properties: { displayName: 'Get items' },
+          };
+        }
         return null;
       });
       store.readContent.mockResolvedValue({
@@ -1456,6 +1959,151 @@ describe('api-publisher', () => {
         testContext,
         expect.objectContaining({ type: ResourceType.ApiOperation, nameParts: ['petstore', 'create-item'] }),
         { properties: { displayName: 'Create item' } }
+      );
+    });
+
+    it('should return concrete PUT and PATCH results while omitting importer-managed schemas', async () => {
+      mockRunParallel.mockImplementation(async (tasks: Array<() => Promise<unknown>>) => {
+        const values = [];
+        for (const task of tasks) {
+          values.push({ status: 'fulfilled' as const, value: await task() });
+        }
+        return values;
+      });
+      mockPublishResource.mockImplementation(
+        async (
+          _client: unknown,
+          _store: unknown,
+          _context: unknown,
+          descriptor: ResourceDescriptor
+        ) => ({
+          descriptor,
+          status: 'success',
+          action: 'put',
+        })
+      );
+      const client = createMockClient();
+      const policy: ResourceDescriptor = {
+        type: ResourceType.ApiPolicy,
+        nameParts: ['petstore', 'policy'],
+      };
+      const operation: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['petstore', 'get-items'],
+      };
+      const generatedSchema: ResourceDescriptor = {
+        type: ResourceType.ApiSchema,
+        nameParts: ['petstore', '69f15c3c10a45d29d855583a'],
+      };
+      const store = createMockStore([policy, operation, generatedSchema]);
+      store.readResource.mockImplementation(async (_dir: string, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.Api) {
+          return { name: 'petstore', properties: { path: 'petstore' } };
+        }
+        if (descriptor.type === ResourceType.ApiOperation) {
+          return { name: 'get-items', properties: { displayName: 'Get items' } };
+        }
+        return null;
+      });
+      store.readContent.mockResolvedValue({
+        content: 'openapi: "3.0.0"',
+        format: 'yaml',
+      });
+
+      const result = await publishApi(
+        client,
+        store,
+        testContext,
+        { type: ResourceType.Api, nameParts: ['petstore'] },
+        testConfig
+      );
+
+      expect(result.relatedResults).toMatchObject([
+        { descriptor: policy, action: 'put', status: 'success' },
+        { descriptor: operation, action: 'patch', status: 'success' },
+      ]);
+      expect(result.relatedResults).not.toContainEqual(
+        expect.objectContaining({ descriptor: generatedSchema })
+      );
+    });
+
+    it('should return revision results without marking a successful root PUT as failed', async () => {
+      const revision: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders;rev=2'],
+      };
+      const failedPolicy: ResourceDescriptor = {
+        type: ResourceType.ApiPolicy,
+        nameParts: ['orders', 'policy'],
+      };
+      mockPublishResource.mockImplementation(
+        async (
+          _client: unknown,
+          _store: unknown,
+          _context: unknown,
+          descriptor: ResourceDescriptor
+        ) => ({
+          descriptor,
+          status: descriptor.type === ResourceType.ApiPolicy ? 'failed' : 'success',
+          action: descriptor.type === ResourceType.ApiPolicy ? 'noop' : 'put',
+          error: descriptor.type === ResourceType.ApiPolicy
+            ? new Error('Policy publish failed')
+            : undefined,
+        })
+      );
+      mockRunParallel.mockImplementation(async (tasks: Array<() => Promise<unknown>>) => {
+        const values = [];
+        for (const task of tasks) {
+          values.push({ status: 'fulfilled' as const, value: await task() });
+        }
+        return values;
+      });
+      const store = createMockStore([revision, failedPolicy]);
+      const client = createMockClient();
+
+      const result = await publishApi(
+        client,
+        store,
+        testContext,
+        { type: ResourceType.Api, nameParts: ['orders'] },
+        testConfig
+      );
+
+      expect(result.status).toBe('success');
+      expect(result.relatedResults).toMatchObject([
+        { descriptor: revision, status: 'success', action: 'put' },
+        { descriptor: failedPolicy, status: 'failed', action: 'noop' },
+      ]);
+    });
+
+    it('should attribute null-description alignment failures to the operation', async () => {
+      const client = createMockClient();
+      client.getResource.mockRejectedValue(new Error('Operation read failed'));
+      const store = createMockStore([]);
+      store.readContent.mockResolvedValue({
+        content:
+          'openapi: "3.0.0"\npaths:\n  /items:\n    get:\n      operationId: get-items\n',
+        format: 'yaml',
+      });
+      const api: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders'],
+      };
+
+      const result = await publishApi(client, store, testContext, api, testConfig);
+
+      expect(result.status).toBe('success');
+      expect(result.relatedResults).toContainEqual(
+        expect.objectContaining({
+          descriptor: {
+            type: ResourceType.ApiOperation,
+            nameParts: ['orders', 'get-items'],
+            workspace: undefined,
+          },
+          status: 'failed',
+          action: 'noop',
+          error: expect.objectContaining({ message: 'Operation read failed' }),
+        })
       );
     });
 
@@ -1657,11 +2305,22 @@ describe('api-publisher', () => {
       store.readContent.mockResolvedValue({ content: 'openapi: "3.0.0"', format: 'yaml' });
 
       const apiDescriptor: ResourceDescriptor = { type: ResourceType.Api, nameParts: ['petstore'] };
-      await publishApi(client, store, testContext, apiDescriptor, testConfig);
+      const config: PublishConfig = {
+        ...testConfig,
+        envMapping: {
+          prefix: 'dev-',
+          suffix: '',
+          appliesTo: DEFAULT_APPLIES_TO,
+        },
+      };
+      await publishApi(client, store, testContext, apiDescriptor, config);
 
       expect(client.patchResource).toHaveBeenCalledWith(
         testContext,
-        expect.objectContaining({ type: ResourceType.ApiOperation, nameParts: ['petstore', 'get-pets'] }),
+        expect.objectContaining({
+          type: ResourceType.ApiOperation,
+          nameParts: ['dev-petstore', 'get-pets'],
+        }),
         {
           properties: {
             displayName: 'List Pets',

@@ -4,7 +4,7 @@
  * Unit tests for Transitive dependency resolver
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { FilterConfig } from '../../../src/models/config.js';
 import {
@@ -12,6 +12,8 @@ import {
   scanApiVersionSetReference,
   resolveTransitiveDependencies,
   findTransitiveDependencies,
+  findSubscriptionTargets,
+  scanArtifactReferences,
 } from '../../../src/services/transitive-resolver.js';
 
 describe('transitive-resolver', () => {
@@ -105,6 +107,19 @@ describe('transitive-resolver', () => {
       const apiJson = { name: 'my-api' };
       expect(scanApiVersionSetReference(apiJson)).toBeUndefined();
     });
+
+    it('should preserve malformed encoded names instead of throwing', () => {
+      const apiJson = {
+        properties: {
+          apiVersionSetId: '/subscriptions/sub1/resourceGroups/rg1/providers/Microsoft.ApiManagement/service/svc1/apiVersionSets/version%',
+        },
+      };
+
+      expect(scanApiVersionSetReference(apiJson)).toEqual({
+        type: ResourceType.VersionSet,
+        name: 'version%',
+      });
+    });
   });
 
   describe('resolveTransitiveDependencies', () => {
@@ -193,6 +208,135 @@ describe('transitive-resolver', () => {
 
       const deps = findTransitiveDependencies(policies, apis);
       expect(deps).toHaveLength(0);
+    });
+
+    describe('scanArtifactReferences', () => {
+      it('scans policy references without parsing policy XML as JSON', async () => {
+        const store = {
+          readResource: vi.fn().mockRejectedValue(new SyntaxError('Unexpected token <')),
+          readContent: vi.fn().mockResolvedValue({
+            content: '<value>{{shared-secret}}</value>',
+            format: 'xml',
+          }),
+          readAssociation: vi.fn(),
+        };
+
+        await expect(
+          scanArtifactReferences(store, '/source', {
+            type: ResourceType.ApiPolicy,
+            nameParts: ['orders'],
+            workspace: 'team-a',
+          })
+        ).resolves.toContainEqual({
+          type: ResourceType.NamedValue,
+          nameParts: ['shared-secret'],
+          workspace: 'team-a',
+        });
+        expect(store.readResource).not.toHaveBeenCalled();
+      });
+
+      it('should scan backend pools without treating links as transitive dependencies', async () => {
+        const store = {
+          readResource: vi.fn()
+            .mockResolvedValueOnce({
+              properties: {
+                type: 'Pool',
+                pool: {
+                  services: [{ id: '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a/backends/backend-1' }],
+                },
+              },
+            }),
+          readContent: vi.fn().mockResolvedValue(undefined),
+          readAssociation: vi.fn(),
+        };
+
+        const backendRefs = await scanArtifactReferences(
+          store,
+          '/source',
+          { type: ResourceType.Backend, nameParts: ['pool'] }
+        );
+        expect(backendRefs).toContainEqual({
+          type: ResourceType.Backend,
+          nameParts: ['backend-1'],
+          workspace: undefined,
+        });
+
+        await expect(scanArtifactReferences(
+          store,
+          '/source',
+          { type: ResourceType.Subscription, nameParts: ['sub'] }
+        )).resolves.toEqual([]);
+
+        await expect(scanArtifactReferences(
+          store,
+          '/source',
+          { type: ResourceType.Product, nameParts: ['starter'] }
+        )).resolves.toEqual([]);
+        expect(store.readAssociation).not.toHaveBeenCalled();
+      });
+
+      it('should identify subscription targets separately from transitive dependencies', () => {
+        const targets = findSubscriptionTargets({
+          properties: {
+            scope: '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a/apis/orders',
+            apiId: '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a/products/starter',
+          },
+        });
+
+        expect(targets).toEqual([
+          {
+            type: ResourceType.Api,
+            nameParts: ['orders'],
+            workspace: undefined,
+          },
+          {
+            type: ResourceType.Product,
+            nameParts: ['starter'],
+            workspace: undefined,
+          },
+        ]);
+      });
+
+      it('should preserve service scope for absolute subscription targets', () => {
+        expect(findSubscriptionTargets({
+          properties: {
+            scope: '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a/apis/shared-api',
+          },
+        }, 'team-a')).toContainEqual({
+          type: ResourceType.Api,
+          nameParts: ['shared-api'],
+          workspace: undefined,
+        });
+      });
+
+      it.each([
+        ['/apis/orders', ResourceType.Api, 'orders'],
+        ['/products/store', ResourceType.Product, 'store'],
+      ])(
+        'should inherit workspace scope for relative target %s',
+        (scope, type, name) => {
+          expect(findSubscriptionTargets({
+            properties: { scope },
+          }, 'team-a')).toContainEqual({
+            type,
+            nameParts: [name],
+            workspace: 'team-a',
+          });
+        }
+      );
+
+      it('should use the workspace encoded in a full ARM target', () => {
+        expect(findSubscriptionTargets({
+          properties: {
+            scope:
+              '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a/workspaces/Team%20A/apis/Orders%20API',
+          },
+        }, 'fallback')).toContainEqual({
+          type: ResourceType.Api,
+          nameParts: ['Orders API'],
+          workspace: 'Team A',
+        });
+      });
     });
   });
 });

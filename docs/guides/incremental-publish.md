@@ -140,17 +140,17 @@ Force a full publish (omit `--commit-id`) when:
 - **Configuration drift** — someone changed APIM directly in the portal and you want to overwrite everything from git.
 - **Major refactoring** — renaming many APIs or restructuring directories. A full publish ensures nothing is missed.
 - **Override-only changes** — you updated an override file but no artifact files changed. See [Gotcha: Override-only changes are not published incrementally](environment-overrides.md#gotcha-override-only-changes-are-not-published-incrementally).
-- **You need `--delete-unmatched`** — see below.
+- **You need a full unmatched-resource cleanup** — incremental deletion only covers resources removed by the selected commit.
 
-### `--commit-id` and `--delete-unmatched` are mutually exclusive
+### Incremental deletion requires explicit opt-in
 
-You cannot combine incremental publish with `--delete-unmatched`. The CLI exits with an error if both are specified.
+By default, incremental publish does not delete resources. Add `--delete-unmatched` to delete resources whose artifacts or Product associations were removed by the selected commit:
 
+```bash
+apiops publish --commit-id abc123 --delete-unmatched ...
 ```
-Options --commit-id (or COMMIT_ID) and --delete-unmatched are mutually exclusive.
-```
 
-**Why?** `--delete-unmatched` removes APIM resources that don't exist in the artifact directory — it requires a full view of all artifacts. Incremental publish only sees one commit's diff.
+This does not perform a full unmatched-resource scan. Omit `--commit-id` when you need to remove every APIM resource absent from the complete artifact source.
 
 ---
 
@@ -162,7 +162,7 @@ Options --commit-id (or COMMIT_ID) and --delete-unmatched are mutually exclusive
 | `Commit <sha> not found; skipping incremental diff` | Shallow clone doesn't include the commit | Use `fetch-depth: 2` (or more) in your checkout step to include at least the parent commit. |
 | Nothing published, no errors | Commit diff returned no artifact file changes | Verify the commit actually touches files in the `--source` directory. Use `git diff --name-status HEAD~1 HEAD` locally to check. |
 | Nothing published after override change | Override file changed but no artifact files changed | Override files are not artifact files — they don't trigger resource selection. Run a full publish (omit `--commit-id`) or include an artifact file change in the same commit. See [Gotcha: Override-only changes](environment-overrides.md#gotcha-override-only-changes-are-not-published-incrementally). |
-| `mutually exclusive` error | Both `--commit-id` and `--delete-unmatched` specified | Remove one. Use `--commit-id` for incremental or `--delete-unmatched` for full sync — not both. |
+| Removed resources remain in APIM | Incremental deletion was not enabled | Add `--delete-unmatched` after reviewing a dry-run. |
 
 ### GitHub Actions: fetch depth
 

@@ -44,6 +44,20 @@ apiops publish \
   --commit-id abc123def456
 ```
 
+### Publish a filtered subset
+
+```bash
+apiops publish \
+  --resource-group my-rg \
+  --service-name my-apim \
+  --filter ./configuration.extractor.yaml
+```
+
+The filter uses the same YAML format as `apiops extract --filter`. Referenced named values,
+backends (including backend pool members), policy fragments, and version sets are included by
+default; use `--no-transitive` to publish only exact matches. Product, gateway, and subscription
+links do not pull their API or Product targets into the publish set.
+
 ### Delete resources not in source
 
 ```bash
@@ -73,11 +87,13 @@ apiops publish \
 | `--service-name <name>` | string | — | Yes | APIM service instance name |
 | `--source <dir>` | string | `./apim-artifacts` | No | Source directory containing artifacts |
 | `--overrides <path>` | string | — | No | Override configuration YAML file |
+| `--filter <path>` | string | — | No | Filter YAML file shared with `extract` |
+| `--no-transitive` | boolean | `false` | No | Publish only exact filter matches |
 | `--commit-id <sha>` | string | env: `COMMIT_ID` | No | Git commit SHA for incremental publish |
 | `--dry-run` | boolean | `false` | No | Preview changes without applying |
-| `--delete-unmatched` | boolean | `false` | No | Delete APIM resources not present in source |
+| `--delete-unmatched` | boolean | `false` | No | Delete APIM resources absent from source, or removed by an incremental commit |
 
-> **Note:** `--commit-id` and `--delete-unmatched` are **mutually exclusive**. The CLI will error if both are specified.
+> **Note:** `--filter` and `--commit-id` can be combined. `--delete-unmatched` cannot be combined with `--filter`; with `--commit-id`, it explicitly enables commit-scoped deletions.
 
 ### Global flags
 
@@ -168,7 +184,7 @@ In CI/CD pipelines, this is typically set automatically:
 - run: npx apiops publish --commit-id ${{ github.event.before }}
 ```
 
-> **Tip:** Incremental publish cannot be combined with `--delete-unmatched` because delete-unmatched requires a full comparison between source and APIM.
+> **Tip:** Incremental publish is non-destructive by default. Add `--delete-unmatched` to delete resources removed by the selected commit; omit `--commit-id` for a full unmatched-resource cleanup.
 
 ## Dry run
 
@@ -185,7 +201,7 @@ The output lists each resource and the planned action (create, update, or delete
 
 ## Delete unmatched
 
-When `--delete-unmatched` is set, resources that exist in the APIM instance but are **not** present in the source artifacts are deleted. This enforces the source directory as the single source of truth.
+For a full publish, `--delete-unmatched` deletes APIM resources that are **not** present in the source artifacts. With `--commit-id`, it deletes only resources and Product associations removed by the selected commit.
 
 > **Warning:** Use with caution. Resources created manually in the Azure portal that are not in your artifact directory will be removed.
 
