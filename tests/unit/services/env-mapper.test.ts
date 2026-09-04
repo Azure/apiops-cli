@@ -274,6 +274,36 @@ describe('env-mapper', () => {
       const mb = bothMapping('dev-', '-qa');
       expect(toCanonicalName('d', ResourceType.Api, mb)).toBeUndefined();
     });
+
+    it('affixes the base API name only, keeping the ;rev=N suffix intact', () => {
+      const mb = bothMapping('dev-', '-eu');
+      expect(toDeployedName('orders-api;rev=2', ResourceType.Api, mb)).toBe('dev-orders-api-eu;rev=2');
+      expect(toCanonicalName('dev-orders-api-eu;rev=2', ResourceType.Api, mb)).toBe('orders-api;rev=2');
+    });
+
+    it('revision names round-trip through mapDescriptor with suffix mappings', () => {
+      const ms = suffixMapping('-dev');
+      const revDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api;rev=10'],
+      };
+      const mapped = mapDescriptor(revDescriptor, ms);
+      expect(mapped.nameParts).toEqual(['orders-api-dev;rev=10']);
+      expect(toCanonicalName(mapped.nameParts[0], ResourceType.Api, ms)).toBe('orders-api;rev=10');
+    });
+
+    it('isInEnvNamespace recognizes deployed revision names', () => {
+      const mb = bothMapping('dev-', '-eu');
+      expect(isInEnvNamespace('dev-orders-api-eu;rev=2', ResourceType.Api, mb)).toBe(true);
+      expect(isInEnvNamespace('orders-api;rev=2', ResourceType.Api, mb)).toBe(false);
+    });
+
+    it('does NOT split ;rev= for non-API types (affix applies to the whole name)', () => {
+      const mb = bothMapping('dev-', '-eu');
+      // ;rev= is only meaningful for API revisions; other types treat it literally.
+      expect(toDeployedName('token;rev=2', ResourceType.NamedValue, mb)).toBe('dev-token;rev=2-eu');
+      expect(toCanonicalName('dev-token;rev=2-eu', ResourceType.NamedValue, mb)).toBe('token;rev=2');
+    });
   });
 
   // ─── isInEnvNamespace ────────────────────────────────────────────────────

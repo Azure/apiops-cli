@@ -405,11 +405,12 @@ describe('api-extractor', () => {
       expect(result.revisions).toHaveLength(2);
     });
 
-    it('should skip revision 1 (main API)', async () => {
+    it('should skip the current revision (not a hard-coded revision 1)', async () => {
       const client = createMockClient({
         listApiRevisions: async function* () {
-          yield { apiRevision: '1', apiId: '/apis/my-api' };
-          yield { apiRevision: '2', apiId: '/apis/my-api;rev=2' };
+          // Current revision is 2 (not 1); revision 1 is non-current.
+          yield { apiRevision: '1', apiId: '/apis/my-api;rev=1', isCurrent: false };
+          yield { apiRevision: '2', apiId: '/apis/my-api', isCurrent: true };
         },
         getResource: vi.fn().mockImplementation(async (_ctx: unknown, desc: ResourceDescriptor) => {
           if ((desc.nameParts[0] ?? '').includes(';rev=')) {
@@ -428,9 +429,10 @@ describe('api-extractor', () => {
         '/output'
       );
 
-      // Only revision 2 should be extracted (revision 1 = main API)
+      // The current revision (2) is represented by the main API folder and is
+      // skipped here; the non-current revision (1) is extracted as ;rev=1.
       expect(result.revisions).toHaveLength(1);
-      expect(result.revisions[0]?.descriptor.nameParts[0]).toBe('my-api;rev=2');
+      expect(result.revisions[0]?.descriptor.nameParts[0]).toBe('my-api;rev=1');
     });
 
     it('should extract API operations', async () => {

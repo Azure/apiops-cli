@@ -29,9 +29,53 @@ import type { ApimServiceContext, ResourceDescriptor } from '../models/types.js'
 import type { PublishConfig } from '../models/config.js';
 import { ResourceType } from '../models/resource-types.js';
 import { getTopologicalOrder } from '../lib/dependency-graph.js';
-import { getNameFromNameParts } from '../lib/resource-path.js';
+import {
+  getNameFromNameParts,
+  getNamePart,
+  getApiRootName,
+  isApiRevisionName,
+} from '../lib/resource-path.js';
 import { logger } from '../lib/logger.js';
 import { toCanonicalDescriptor } from './env-mapper.js';
+
+/**
+ * Drop ;rev=N API deletes whose base API (same workspace) is also queued for
+ * deletion. The base API delete uses deleteRevisions=true and removes all
+ * revisions in one call, so individual revision deletes are redundant and can
+ * hit APIM's "Cannot delete the current revision of an API" error.
+ *
+ * Shared by the real delete path and the dry-run reporter so the preview
+ * matches what publish would actually delete.
+ */
+export function filterRevisionDeletesHandledByBaseApi(
+  descriptors: ResourceDescriptor[]
+): ResourceDescriptor[] {
+  const baseApiKeys = new Set<string>();
+  for (const descriptor of descriptors) {
+    if (descriptor.type !== ResourceType.Api) {
+      continue;
+    }
+    const apiName = getNamePart(descriptor.nameParts, 0);
+    if (!isApiRevisionName(apiName)) {
+      baseApiKeys.add(`${descriptor.workspace ?? ''}::${apiName}`);
+    }
+  }
+
+  if (baseApiKeys.size === 0) {
+    return descriptors;
+  }
+
+  return descriptors.filter((descriptor) => {
+    if (descriptor.type !== ResourceType.Api) {
+      return true;
+    }
+    const apiName = getNamePart(descriptor.nameParts, 0);
+    if (!isApiRevisionName(apiName)) {
+      return true;
+    }
+    return !baseApiKeys.has(`${descriptor.workspace ?? ''}::${getApiRootName(apiName)}`);
+  });
+}
 
 /**
  * Built-in groups that should never be deleted

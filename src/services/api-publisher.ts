@@ -15,8 +15,10 @@ import * as yaml from 'js-yaml';
 import { ResourceType } from '../models/resource-types.js';
 import {
   applyApiPathPrefix,
+  normalizeApiAuthenticationSettings,
   normalizeMcpToolOperationIds,
   normalizeApiVersionSetId,
+  prefersLegacyAuthOverride,
   publishResource,
   type ResourcePublishResult,
 } from './resource-publisher.js';
@@ -77,6 +79,7 @@ export async function publishApi(
   allowedDescriptors?: ResourceDescriptor[]
 ): Promise<ResourcePublishResult> {
   let publicationPlan: ApiPublicationPlan;
+  let rootPutDescriptor: ResourceDescriptor;
   let rootPublished = false;
   try {
     publicationPlan = await planApiPublication(
@@ -84,6 +87,20 @@ export async function publishApi(
       descriptor,
       config,
       allowedDescriptors
+    );
+
+    // Deployed (env-mapped) base descriptor — derived once and used for every
+    // direct APIM call so canonical and affixed names can never diverge.
+    const deployedDescriptor = config.envMapping
+      ? mapDescriptor(descriptor, config.envMapping)
+      : descriptor;
+    rootPutDescriptor = await resolveRootApiPutDescriptor(
+      client,
+      store,
+      context,
+      descriptor,
+      deployedDescriptor,
+      config
     );
   } catch (error) {
     return {
@@ -98,6 +115,7 @@ export async function publishApi(
     // Step 1: Publish root API (with spec import if available)
     const rootResult = await publishRootApi(client, store, context, descriptor, config, {
       includeSpecification: publicationPlan.importSpecification,
+      putDescriptor: rootPutDescriptor,
     });
     if (rootResult.status !== 'success') {
       return rootResult;
@@ -213,7 +231,7 @@ export async function planApiPublication(
     ? new Set(allowedDescriptors.map(getResourceDescriptorKey))
     : undefined;
   const rootName = apiName.toLowerCase();
-  const revisions = allDescriptors
+  let revisions = allDescriptors
     .filter(
       (descriptor) =>
         descriptor.type === ResourceType.Api &&
@@ -234,6 +252,14 @@ export async function planApiPublication(
   const mergedApiJson = apiJson
     ? applyOverrides(apiDescriptor, apiJson, config.overrides)
     : undefined;
+  const rootRevision = (apiJson?.properties as Record<string, unknown> | undefined)?.apiRevision;
+  if (typeof rootRevision === 'string' && rootRevision !== '') {
+    const rootRevisionNumber = Number(rootRevision);
+    revisions = revisions.filter(
+      (revision) =>
+        extractRevisionNumber(getNamePart(revision.nameParts, 0)) !== rootRevisionNumber
+    );
+  }
   const specificationAllowed =
     subFilter?.operations === undefined &&
     subFilter?.schemas === undefined &&
@@ -387,6 +413,49 @@ interface RootApiResult {
 
 interface PublishRootApiOptions {
   includeSpecification?: boolean;
+  /** Descriptor to PUT to (defaults to the artifact descriptor). Lets the root
+   * API be created at apis/{name};rev=N while still reading apis/{name} artifacts. */
+  putDescriptor?: ResourceDescriptor;
+}
+
+/**
+ * A plain root PUT creates a brand-new API as revision 1, which collides with
+ * a ;rev=1 revision artifact and silently absorbs it whenever the source's
+ * current revision number is > 1. When the API does not yet exist on the
+ * target, PUT the root at its true revision number (apis/{name};rev=N) instead.
+ * Existing APIs keep the plain root PUT — their current revision cannot be
+ * renumbered.
+ *
+ * Reads artifacts via the canonical descriptor; all APIM lookups and the
+ * returned PUT target use the deployed (env-mapped) descriptor, with ;rev=N
+ * appended after affixing so suffix mappings cannot corrupt it.
+ */
+async function resolveRootApiPutDescriptor(
+  client: IApimClient,
+  store: IArtifactStore,
+  context: ApimServiceContext,
+  descriptor: ResourceDescriptor,
+  deployedDescriptor: ResourceDescriptor,
+  config: PublishConfig
+): Promise<ResourceDescriptor> {
+  const json = await store.readResource(config.sourceDir, descriptor);
+  const rev = (json?.properties as Record<string, unknown> | undefined)?.apiRevision;
+  if (typeof rev !== 'string' || rev === '' || rev === '1') {
+    return deployedDescriptor;
+  }
+
+  const existing = await client.getResource(context, deployedDescriptor);
+  if (existing) {
+    return deployedDescriptor;
+  }
+
+  return {
+    ...deployedDescriptor,
+    nameParts: [
+      `${getNamePart(deployedDescriptor.nameParts, 0)};rev=${rev}`,
+      ...deployedDescriptor.nameParts.slice(1),
+    ],
+  };
 }
 
 /**
@@ -420,6 +489,12 @@ async function publishRootApi(
 
   // Apply overrides
   json = applyOverrides(descriptor, json, config.overrides);
+  json = normalizeApiAuthenticationSettings(json, {
+    preferLegacyFields: prefersLegacyAuthOverride(
+      getNamePart(descriptor.nameParts, 0),
+      config.overrides?.apis
+    ),
+  });
   const isCurrent = getApiIsCurrent(json);
 
   // Try to read the specification file for this API
@@ -482,7 +557,7 @@ async function publishRootApi(
 
   // PUT the API resource to APIM
   try {
-    await client.putResource(context, deployedDescriptor, json);
+    await client.putResource(context, options?.putDescriptor ?? deployedDescriptor, json);
   } catch (error) {
     throw new ApiPutAttemptError(error);
   }
@@ -525,7 +600,13 @@ async function publishApiRevisions(
   // Publish each revision in order
   const results: ResourcePublishResult[] = [];
   for (const revDescriptor of revisionDescriptors) {
-    results.push(await publishResource(client, store, context, revDescriptor, config));
+    const result = await publishResource(client, store, context, revDescriptor, config);
+    if (result.status === 'failed') {
+      throw new Error(
+        `Failed to publish revision ${getNamePart(revDescriptor.nameParts, 0)}: ${result.error?.message ?? 'unknown error'}`
+      );
+    }
+    results.push(result);
   }
 
   return results;

@@ -13,7 +13,15 @@ import { LogLevel } from '../../../src/lib/logger.js';
 // Mock service dependencies
 vi.mock('../../../src/services/git-diff-service.js');
 vi.mock('../../../src/services/dry-run-reporter.js');
-vi.mock('../../../src/services/delete-unmatched-service.js');
+vi.mock('../../../src/services/delete-unmatched-service.js', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/services/delete-unmatched-service.js')>(
+    '../../../src/services/delete-unmatched-service.js'
+  );
+  return {
+    ...actual,
+    computeDeleteActions: vi.fn(),
+  };
+});
 vi.mock('../../../src/services/api-publisher.js');
 vi.mock('../../../src/services/product-publisher.js');
 
@@ -847,6 +855,48 @@ describe('publish-service', () => {
       expect(apiCallOrder).toEqual(['src-rest-openapi', 'src-mcp-from-api']);
     });
 
+    it('should wait for APIs to finish publishing before publishing Products in tier 2', async () => {
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.Product, nameParts: ['petstore-product'] },
+        { type: ResourceType.Api, nameParts: ['swagger-petstore'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      let finishApi!: () => void;
+      const apiFinished = new Promise<void>((resolve) => {
+        finishApi = resolve;
+      });
+
+      vi.mocked(publishApi).mockImplementation(async (_client, _store, _context, descriptor) => {
+        await apiFinished;
+        return {
+          descriptor,
+          status: 'success',
+          action: 'put',
+        };
+      });
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      const publishPromise = runPublish(client, store, config);
+      await vi.waitFor(() => expect(publishApi).toHaveBeenCalledOnce());
+
+      try {
+        expect(publishProduct).not.toHaveBeenCalled();
+      } finally {
+        finishApi();
+        await publishPromise;
+      }
+
+      expect(publishProduct).toHaveBeenCalledOnce();
+    });
+
     it('should not publish revision APIs as standalone resources when root API is in the same batch', async () => {
       const resources: ResourceDescriptor[] = [
         { type: ResourceType.Api, nameParts: ['orders-api;rev=2'] },
@@ -1292,6 +1342,44 @@ describe('publish-service', () => {
         type: ResourceType.Backend,
         nameParts: ['dev-old-backend'],
       });
+      expect(result.totalDeletes).toBe(1);
+    });
+
+    it('deletes a revisioned API via the base API only, not individual revisions', async () => {
+      const resources = [
+        { type: ResourceType.Tag, nameParts: ['tag1'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+
+      // computeDeleteActions returns both the base API and one of its revisions.
+      vi.mocked(computeDeleteActions).mockResolvedValue([
+        { type: ResourceType.Api, nameParts: ['orders-api'] },
+        { type: ResourceType.Api, nameParts: ['orders-api;rev=2'] },
+      ]);
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: true,
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runPublish(client, store, config);
+
+      // Base API delete (which uses deleteRevisions=true) is issued once.
+      expect(client.deleteResource).toHaveBeenCalledWith(
+        testContext,
+        { type: ResourceType.Api, nameParts: ['orders-api'] }
+      );
+      // The individual revision delete is dropped to avoid the
+      // "Cannot delete the current revision of an API" error.
+      expect(client.deleteResource).not.toHaveBeenCalledWith(
+        testContext,
+        { type: ResourceType.Api, nameParts: ['orders-api;rev=2'] }
+      );
       expect(result.totalDeletes).toBe(1);
     });
 
