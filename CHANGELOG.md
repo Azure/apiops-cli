@@ -5,6 +5,16 @@ All notable changes to the APIOps CLI are documented in this file.
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/) with alpha pre-release tags.
 
+## [1.0.2] - 2026-09-11
+
+### Bug Fixes
+
+- **WSDL schema publishing** - skip importer-generated XSD schemas for WSDL imports, while preserving standalone schemas ([#272](https://github.com/Azure/apiops-cli/pull/272))
+- **Gateway dry runs** - prevent crashes when displaying gateway API association descriptors ([#272](https://github.com/Azure/apiops-cli/pull/272))
+- **Subscription owners** - normalize subscription owner IDs to relative `/users` paths when publishing across services ([#279](https://github.com/Azure/apiops-cli/pull/279))
+- **Portal-created schemas** - recognize 13-digit timestamp schema IDs and skip re-publishing only when the imported specification recreates structurally equivalent components ([#280](https://github.com/Azure/apiops-cli/pull/280))
+- **Sovereign-cloud publishing** - respect the selected cloud endpoint during publish pre-flight checks ([#281](https://github.com/Azure/apiops-cli/pull/281))
+
 ## [1.0.1] - 2026-09-04
 
 ### Features
