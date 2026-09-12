@@ -5,6 +5,27 @@ All notable changes to the APIOps CLI are documented in this file.
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/) with alpha pre-release tags.
 
+## [1.0.1] - 2026-09-04
+
+### Features
+
+- **Multi-environment publishing** - publish multiple environment-affixed API revisions to a shared APIM instance, with warnings when generated names exceed APIM limits
+- **Filtered publishing parity** - apply resource filters consistently during publish operations
+- **Gateway API reconciliation** - reconcile managed API assignments for gateways during publishing
+
+### Bug Fixes
+
+- **Revision-aware environment mapping** - preserve revision identity across mapped names, operation reconciliation, authentication overrides, and delete filtering
+- **API round-trip reliability** - preserve SOAP APIs and gateway associations while retrying pessimistic-concurrency conflicts and safely handling concurrent deletes
+- **Publishing order and cleanup** - publish APIs before products, use desired API manifests for unmatched-resource deletion, and skip missing or in-use associations instead of aborting
+- **Publish validation** - reject explicitly empty environment resource scopes before planning deletes, and classify DELETE failures by HTTP status and structured error code
+- **Dependency security** - apply npm audit fixes and update `fast-uri` to 3.1.7
+
+### Docs & Testing
+
+- **Filtered-resource publishing guide** - document publishing behavior and examples for resource filters
+- **Transitive dependency coverage** - add extraction and publishing tests for transitive dependencies
+
 ## [1.0.0] — 2026-08-27
 
 ### Breaking Changes

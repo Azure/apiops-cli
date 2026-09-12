@@ -65,6 +65,12 @@ export function validateAndBuildEnvMapping(
 
   // --- Validate appliesTo entries ----------------------------------------
   if (env.appliesTo !== undefined) {
+    if (env.appliesTo.length === 0) {
+      throw new Error(
+        `[publish] environment.appliesTo must contain at least one resource type when specified.`
+      );
+    }
+
     const validTypes = new Set(Object.values(ResourceType));
     const unknownTypes: string[] = [];
     const nonAffixableFound: string[] = [];
