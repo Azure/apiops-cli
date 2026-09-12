@@ -834,9 +834,59 @@ describe('ApimClient.deleteResource revision and reference handling', () => {
     expect(url).not.toContain('deleteRevisions=true');
   });
 
-  // Bug 2: a policy fragment still referenced by the service policy cannot be
-  // deleted; the prune should skip it (return false) rather than throw.
-  it('skips a policy fragment that is still referenced by another entity', async () => {
+  it('returns false when the initial DELETE reports HTTP 404', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      makeResponse(404, {
+        error: { code: 'ResourceNotFound', message: 'localized-resource-missing' },
+      })
+    );
+
+    const deleted = await client.deleteResource(testContext, {
+      type: ResourceType.PolicyFragment,
+      nameParts: ['missing-fragment'],
+    });
+
+    expect(deleted).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a delete conflict identified by HTTP 412 status', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(
+        makeResponse(412, {
+          error: { code: 'Conflict', message: 'localized-precondition-failure' },
+        })
+      )
+      .mockResolvedValueOnce(makeResponse(200, {}));
+
+    const deleted = await client.deleteResource(testContext, {
+      type: ResourceType.Product,
+      nameParts: ['starter-v2'],
+    });
+
+    expect(deleted).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a delete conflict identified by PreconditionFailed code', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(
+        makeResponse(400, {
+          error: { code: 'PreconditionFailed', message: 'localized-conflict' },
+        })
+      )
+      .mockResolvedValueOnce(makeResponse(200, {}));
+
+    const deleted = await client.deleteResource(testContext, {
+      type: ResourceType.Product,
+      nameParts: ['starter-v2'],
+    });
+
+    expect(deleted).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('propagates a policy fragment ValidationError without a stable discriminator', async () => {
     const body = {
       error: {
         code: 'ValidationError',
@@ -847,12 +897,33 @@ describe('ApimClient.deleteResource revision and reference handling', () => {
     };
     fetchSpy.mockResolvedValueOnce(makeResponse(400, body));
 
-    const deleted = await client.deleteResource(testContext, {
-      type: ResourceType.PolicyFragment,
-      nameParts: ['global-security-headers'],
-    });
+    await expect(
+      client.deleteResource(testContext, {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['global-security-headers'],
+      })
+    ).rejects.toMatchObject({ status: 400, code: 'ValidationError' });
 
-    expect(deleted).toBe(false);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates an unrelated ValidationError without retrying', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      makeResponse(400, {
+        error: {
+          code: 'ValidationError',
+          message: 'The resource name is invalid.',
+        },
+      })
+    );
+
+    await expect(
+      client.deleteResource(testContext, {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['invalid-fragment'],
+      })
+    ).rejects.toMatchObject({ status: 400, code: 'ValidationError' });
+
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

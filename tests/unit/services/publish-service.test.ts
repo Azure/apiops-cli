@@ -1345,6 +1345,29 @@ describe('publish-service', () => {
       expect(result.totalDeletes).toBe(1);
     });
 
+    it('should reject an empty environment appliesTo before computing delete actions', async () => {
+      const client = createMockClient();
+      const store = createMockStore([]);
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: true,
+        overrides: {
+          environment: { namePrefix: 'dev-', appliesTo: [] },
+        },
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runPublish(client, store, config);
+
+      expect(result.exitCode).toBe(2);
+      expect(result.totalDeletes).toBe(0);
+      expect(computeDeleteActions).not.toHaveBeenCalled();
+      expect(client.putResource).not.toHaveBeenCalled();
+      expect(client.deleteResource).not.toHaveBeenCalled();
+    });
+
     it('deletes a revisioned API via the base API only, not individual revisions', async () => {
       const resources = [
         { type: ResourceType.Tag, nameParts: ['tag1'] },
