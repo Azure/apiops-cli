@@ -1,4 +1,6 @@
 ---
+engine: copilot
+model: claude-opus-5
 description: >
   Triage newly opened issues using repo routing policy and team configuration.
   Applies advisory labels and posts a recommendation comment for human review.
@@ -12,7 +14,7 @@ permissions:
   issues: read
   copilot-requests: write  # use GitHub Actions token-based inference (no PAT) — requires org centralized Copilot billing
 
-timeout-minutes: 10
+timeout-minutes: 20
 
 safe-outputs:
   add-labels:
