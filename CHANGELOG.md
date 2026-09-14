@@ -5,6 +5,37 @@ All notable changes to the APIOps CLI are documented in this file.
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/) with alpha pre-release tags.
 
+## [1.0.2] - 2026-09-11
+
+### Bug Fixes
+
+- **WSDL schema publishing** - skip importer-generated XSD schemas for WSDL imports, while preserving standalone schemas ([#272](https://github.com/Azure/apiops-cli/pull/272))
+- **Gateway dry runs** - prevent crashes when displaying gateway API association descriptors ([#272](https://github.com/Azure/apiops-cli/pull/272))
+- **Subscription owners** - normalize subscription owner IDs to relative `/users` paths when publishing across services ([#279](https://github.com/Azure/apiops-cli/pull/279))
+- **Portal-created schemas** - recognize 13-digit timestamp schema IDs and skip re-publishing only when the imported specification recreates structurally equivalent components ([#280](https://github.com/Azure/apiops-cli/pull/280))
+- **Sovereign-cloud publishing** - respect the selected cloud endpoint during publish pre-flight checks ([#281](https://github.com/Azure/apiops-cli/pull/281))
+
+## [1.0.1] - 2026-09-04
+
+### Features
+
+- **Multi-environment publishing** - publish multiple environment-affixed API revisions to a shared APIM instance, with warnings when generated names exceed APIM limits
+- **Filtered publishing parity** - apply resource filters consistently during publish operations
+- **Gateway API reconciliation** - reconcile managed API assignments for gateways during publishing
+
+### Bug Fixes
+
+- **Revision-aware environment mapping** - preserve revision identity across mapped names, operation reconciliation, authentication overrides, and delete filtering
+- **API round-trip reliability** - preserve SOAP APIs and gateway associations while retrying pessimistic-concurrency conflicts and safely handling concurrent deletes
+- **Publishing order and cleanup** - publish APIs before products, use desired API manifests for unmatched-resource deletion, and skip missing or in-use associations instead of aborting
+- **Publish validation** - reject explicitly empty environment resource scopes before planning deletes, and classify DELETE failures by HTTP status and structured error code
+- **Dependency security** - apply npm audit fixes and update `fast-uri` to 3.1.7
+
+### Docs & Testing
+
+- **Filtered-resource publishing guide** - document publishing behavior and examples for resource filters
+- **Transitive dependency coverage** - add extraction and publishing tests for transitive dependencies
+
 ## [1.0.0] — 2026-08-27
 
 ### Breaking Changes

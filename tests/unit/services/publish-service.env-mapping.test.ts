@@ -131,6 +131,18 @@ describe('validateAndBuildEnvMapping', () => {
 
   // ─── Error: non-affixable types ──────────────────────────────────────────
 
+  it('environment with an empty appliesTo → throws', () => {
+    const overrides: OverrideConfig = {
+      environment: { namePrefix: 'dev-', appliesTo: [] },
+    };
+    const config = makeConfig(overrides);
+
+    expect(() => validateAndBuildEnvMapping(overrides, [], config)).toThrow(
+      /environment\.appliesTo must contain at least one resource type/
+    );
+    expect(config.envMapping).toBeUndefined();
+  });
+
   it('appliesTo contains "ServicePolicy" → throws with clear message', () => {
     const overrides: OverrideConfig = {
       environment: {

@@ -520,25 +520,15 @@ export class ApimClient implements IApimClient {
 
         return true;
       } catch (error) {
-        const message = (error as Error).message;
-        if (message.includes('404')) {
-          return false;
-        }
-        // Resource is still referenced by another entity (e.g. a policy fragment
-        // used by the service policy). It cannot be deleted until the reference is
-        // removed; skip it with a warning instead of failing the whole prune.
-        if (message.includes('is used by the following entities')) {
-          logger.warn(
-            `Skipping delete of ${buildResourceLabel(descriptor)}: still referenced by another entity`
-          );
+        if (error instanceof HttpError && error.status === 404) {
           return false;
         }
         // Transient optimistic-concurrency conflict: cascade deletes of related
         // resources (subscriptions, product/gateway associations) can modify
         // the resource while its async DELETE is in flight. Retry the DELETE.
         const isConflict =
-          message.includes('[PreconditionFailed]') ||
-          (error instanceof HttpError && error.status === 412);
+          error instanceof HttpError &&
+          (error.status === 412 || error.code === 'PreconditionFailed');
         if (isConflict && attempt < ApimClient.DELETE_CONFLICT_RETRIES) {
           logger.warn(
             `Delete conflict for ${buildResourceLabel(descriptor)} ` +
