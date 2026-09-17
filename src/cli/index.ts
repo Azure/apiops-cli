@@ -20,6 +20,7 @@ const program = new Command();
 // Configure program metadata
 program
   .name('apiops')
+  .version(packageJson.version, '-v')
   .version(packageJson.version)
   .description('CLI tool for Azure API Management configuration-as-code');
 
