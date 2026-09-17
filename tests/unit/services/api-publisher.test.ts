@@ -1682,6 +1682,62 @@ describe('api-publisher', () => {
       );
     });
 
+    it.each([
+      ['OpenAPI 3', { openapi: '3.0.1' }, 'openapi+json'],
+      ['Swagger 2', { swagger: '2.0' }, 'swagger-json'],
+    ])('preserves nulls and 24-hour timestamps in sanitized %s examples', async (_label, version, format) => {
+      const client = createMockClient();
+      const store = createMockStore([]);
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['observations'],
+      };
+      const example = {
+        firstSeen: '2026-07-11T14:01:26.0000000+00:00',
+        lastSeen: '2026-07-11T14:58:54.0000000+00:00',
+        zone: null,
+      };
+      const response = format === 'swagger-json'
+        ? { description: 'OK', examples: { 'application/json': example } }
+        : { description: 'OK', content: { 'application/json': { example } } };
+      store.readContent.mockResolvedValue({
+        format: 'json',
+        content: JSON.stringify({
+          ...version,
+          info: { title: 'Observations', version: '1.0' },
+          paths: {
+            '/observations/{id}': {
+              get: { operationId: 'get-observation', responses: { '200': response } },
+            },
+          },
+        }),
+      });
+
+      const result = await publishApi(client, store, testContext, apiDescriptor, testConfig);
+
+      expect(result.status).toBe('success');
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        apiDescriptor,
+        expect.objectContaining({
+          properties: expect.objectContaining({ format, value: expect.any(String) }),
+        })
+      );
+      const payload = client.putResource.mock.calls[0]?.[2] as {
+        properties: { value: string };
+      };
+      const publishedSpec = JSON.parse(payload.properties.value) as {
+        paths: Record<string, { get: { parameters: unknown[]; responses: Record<string, unknown> } }>;
+      };
+      const operation = publishedSpec.paths['/observations/{id}']!.get;
+      expect(operation.parameters).toEqual([
+        format === 'swagger-json'
+          ? { name: 'id', in: 'path', required: true, type: 'string' }
+          : { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+      ]);
+      expect(operation.responses['200']).toStrictEqual(response);
+    });
+
     it('should use swagger-json format for Swagger 2.0 JSON specs', async () => {
       const client = createMockClient();
       const store = createMockStore([]);
