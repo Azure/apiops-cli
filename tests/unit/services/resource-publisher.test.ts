@@ -79,6 +79,60 @@ function generatedSubscriptionId(fill: string): string {
 }
 
 describe('resource-publisher', () => {
+  it('preserves nulls and 24-hour timestamps in operation response examples', async () => {
+    const client = createMockClient();
+    const store = createMockStore();
+    const descriptor: ResourceDescriptor = {
+      type: ResourceType.ApiOperation,
+      nameParts: ['observations', 'get-observation'],
+    };
+    const example = {
+      firstSeen: '2026-07-11T14:01:26.0000000+00:00',
+      lastSeen: '2026-07-11T14:58:54.0000000+00:00',
+      zone: null,
+    };
+    const representations = [{
+      contentType: 'application/json',
+      sample: JSON.stringify(example),
+      examples: { default: { value: example } },
+    }];
+    store.readResource.mockResolvedValue({
+      properties: {
+        displayName: 'Get observation',
+        method: 'GET',
+        urlTemplate: '/',
+        responses: [{ statusCode: 200, representations }],
+      },
+    });
+    const expectedSample = '{"firstSeen":"2026-07-11T14:01:26.0000000+00:00","lastSeen":"2026-07-11T14:58:54.0000000+00:00","zone":null}';
+    const expectedExample = {
+      firstSeen: '2026-07-11T14:01:26.0000000+00:00',
+      lastSeen: '2026-07-11T14:58:54.0000000+00:00',
+      zone: null,
+    };
+
+    const result = await publishResource(client, store, testContext, descriptor, testConfig);
+
+    expect(result.status).toBe('success');
+    expect(client.putResource).toHaveBeenCalledWith(
+      testContext,
+      descriptor,
+      expect.objectContaining({
+        properties: expect.objectContaining({
+          responses: [{ statusCode: 200, representations: [{
+            contentType: 'application/json',
+            sample: expectedSample,
+            examples: { default: { value: expectedExample } },
+          }] }],
+        }),
+      })
+    );
+    const payload = client.putResource.mock.calls[0]?.[2];
+    const representation = payload.properties.responses[0].representations[0];
+    expect(representation.sample).toBe(expectedSample);
+    expect(representation.examples.default.value).toStrictEqual(expectedExample);
+  });
+
   describe('resolveAssociationDeleteDescriptor', () => {
     it('resolves an opaque workspace API link name from its target ARM ID', async () => {
       const client = createMockClient();
