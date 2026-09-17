@@ -36,6 +36,113 @@ describe('transitive-resolver', () => {
       expect(nvRefs[1]?.name).toBe('secret-2');
     });
 
+    it('ignores Liquid output expressions while retaining real policy dependencies', () => {
+      const policy = `
+        <policies>
+          <inbound>
+            <set-header name="Auth"><value>{{my-secret}}</value></set-header>
+            <set-body template="liquid">
+              <request>{{context.Request.MatchedParameters["id"]}}</request>
+            </set-body>
+            <set-backend-service backend-id="soap-backend" />
+          </inbound>
+          <outbound>
+            <set-body template="liquid">
+              {"result": "{{body.envelope.body.Test_Result.test}}"}
+            </set-body>
+          </outbound>
+          <on-error>
+            <set-body template="liquid">
+              {"code": "{{body.envelope.body.fault.faultcode}}",
+               "message": "{{body.envelope.body.fault.faultstring}}"}
+            </set-body>
+            <include-fragment fragment-id="error-handler" />
+          </on-error>
+        </policies>
+      `;
+
+      expect(scanPolicyReferences(policy)).toEqual([
+        { type: ResourceType.NamedValue, name: 'my-secret' },
+        { type: ResourceType.Backend, name: 'soap-backend' },
+        { type: ResourceType.PolicyFragment, name: 'error-handler' },
+      ]);
+    });
+
+    it.each([
+      'template="liquid"',
+      "template='liquid'",
+      'parse-date="false"\n template = "liquid" xsi-nil="blank"',
+    ])('ignores Liquid variables and filters with attributes %s', (attributes) => {
+      const policy = `<set-body ${attributes}><![CDATA[
+        {% assign result = body.value %}{{result}} {{ body.value | Escape }}
+      ]]></set-body><value>{{real-value}}</value>`;
+
+      expect(scanPolicyReferences(policy)).toEqual([
+        { type: ResourceType.NamedValue, name: 'real-value' },
+      ]);
+    });
+
+    it('retains named values in non-Liquid bodies and Liquid opening attributes', () => {
+      const policy = `<set-body>{{plain-value}}</set-body>
+        <set-body template="liquid" parse-date="{{parse-date}}">{{body.value}}</set-body>
+        <set-body>@{ return "{{expression-value}}"; }</set-body>`;
+
+      expect(scanPolicyReferences(policy)).toEqual([
+        { type: ResourceType.NamedValue, name: 'plain-value' },
+        { type: ResourceType.NamedValue, name: 'parse-date' },
+        { type: ResourceType.NamedValue, name: 'expression-value' },
+      ]);
+    });
+
+    it.each([
+      '<![CDATA[</set-body>{{body.value}}]]>',
+      '<!-- </set-body> -->{{body.value}}',
+      '<root><set-body>{{body.first}}</set-body><value>{{body.second}}</value></root>',
+      '<set-body /><set-body template="liquid">{{body.first}}</set-body>{{body.second}}',
+    ])('ignores the entire Liquid body despite embedded boundaries: %s', (body) => {
+      const policy = `<value>{{before}}</value>
+        <set-body template="liquid" parse-date="{{parse-date}}">${body}</set-body>
+        <set-body>{{after}}</set-body>`;
+
+      expect(scanPolicyReferences(policy)).toEqual([
+        { type: ResourceType.NamedValue, name: 'before' },
+        { type: ResourceType.NamedValue, name: 'parse-date' },
+        { type: ResourceType.NamedValue, name: 'after' },
+      ]);
+    });
+
+    it.each([
+      '<!-- <set-body template="liquid">{{comment-value}}</set-body> -->',
+      '<![CDATA[<set-body template="liquid">{{comment-value}}</set-body>]]>',
+    ])('does not treat tag-like text as a Liquid element: %s', (body) => {
+      const policy = `${body}<set-body>{{plain-value}}</set-body>
+        <set-body template="liquid">{{body.value}}</set-body>`;
+
+      expect(scanPolicyReferences(policy)).toEqual([
+        { type: ResourceType.NamedValue, name: 'comment-value' },
+        { type: ResourceType.NamedValue, name: 'plain-value' },
+      ]);
+    });
+
+    it('tolerates raw C# expressions and empty Liquid elements without changing backend or fragment scanning', () => {
+      const policy = `<set-body>@{ return 1 < 2 && true ? "{{expression-value}}" : ""; }</set-body>
+        <set-body template="liquid" parse-date="{{parse-date}}" />
+        <value>{{after-empty}}</value>
+        <set-body template="liquid">
+          <set-backend-service backend-id="body-backend" />
+          <include-fragment fragment-id="body-fragment" />
+          {{body.value}}
+        </set-body>`;
+
+      expect(scanPolicyReferences(policy)).toEqual([
+        { type: ResourceType.NamedValue, name: 'expression-value' },
+        { type: ResourceType.NamedValue, name: 'parse-date' },
+        { type: ResourceType.NamedValue, name: 'after-empty' },
+        { type: ResourceType.Backend, name: 'body-backend' },
+        { type: ResourceType.PolicyFragment, name: 'body-fragment' },
+      ]);
+    });
+
     it('should detect backend references', () => {
       const policy = '<policies><inbound><set-backend-service backend-id="my-backend" /></inbound></policies>';
       const refs = scanPolicyReferences(policy);
