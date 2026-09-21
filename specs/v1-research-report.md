@@ -141,8 +141,7 @@ policyFragmentNames:
 │       └── diagnosticInformation.json
 ├── policy fragments/
 │   └── {name}/
-│       ├── policyFragmentInformation.json
-│       └── policy.xml
+│       └── policyFragmentInformation.json
 ├── products/
 │   └── {name}/
 │       ├── productInformation.json
@@ -598,7 +597,7 @@ Users must explicitly list all dependent resources in the filter file, or extrac
 | Backend | `backendInformation.json` | — | — |
 | Logger | `loggerInformation.json` | — | — |
 | Diagnostic | `diagnosticInformation.json` | — | — |
-| Policy Fragment | `policyFragmentInformation.json` | `policy.xml` | — |
+| Policy Fragment | `policyFragmentInformation.json` | — | — |
 | Service Policy | `policy.xml` | — | — |
 | Product | `productInformation.json` | `policy.xml`, `apis.json`, `groups.json` | — |
 | Group | `groupInformation.json` | — | — |

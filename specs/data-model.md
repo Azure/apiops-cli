@@ -20,7 +20,7 @@ Defines all APIM resource types the tool handles.
 | `Logger` | `/loggers/{name}` | `loggers/{name}/` | `loggerInformation.json` |
 | `Group` | `/groups/{name}` | `groups/{name}/` | `groupInformation.json` |
 | `Diagnostic` | `/diagnostics/{name}` | `diagnostics/{name}/` | `diagnosticInformation.json` |
-| `PolicyFragment` | `/policyFragments/{name}` | `policyFragments/{name}/` | `policy.xml` and optional `policyFragmentInformation.json` |
+| `PolicyFragment` | `/policyFragments/{name}` | `policy fragments/{name}/` | `policyFragmentInformation.json` |
 | `ServicePolicy` | `/policies/policy` | (root) | `policy.xml` |
 | `Product` | `/products/{name}` | `products/{name}/` | `productInformation.json` |
 | `ProductPolicy` | `/products/{name}/policies/policy` | `products/{name}/` | `policy.xml` |
