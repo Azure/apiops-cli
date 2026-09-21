@@ -547,6 +547,36 @@ describe('ApimClient.putResource provisioning polling', () => {
   const descriptor = { type: ResourceType.NamedValue, nameParts: ['my-nv'] };
   const succeededResource = { name: 'my-nv', properties: { provisioningState: 'Succeeded' } };
 
+  it('should strip the top-level source ARM id from the PUT body', async () => {
+    fetchSpy.mockResolvedValueOnce(makeResponse(200, succeededResource));
+
+    await client.putResource(testContext, descriptor, {
+      id: '/subscriptions/other-sub/resourceGroups/other-rg/providers/Microsoft.ApiManagement/service/other-svc/namedValues/my-nv',
+      type: 'Microsoft.ApiManagement/service/namedValues',
+      name: 'my-nv',
+      properties: { displayName: 'my-nv', value: 'v' },
+    });
+
+    const sentBody = JSON.parse(fetchSpy.mock.calls[0]?.[1]?.body as string);
+    expect(sentBody).toEqual({
+      type: 'Microsoft.ApiManagement/service/namedValues',
+      name: 'my-nv',
+      properties: { displayName: 'my-nv', value: 'v' },
+    });
+  });
+
+  it('should strip the top-level source ARM id from the PATCH body', async () => {
+    fetchSpy.mockResolvedValueOnce(makeResponse(200, succeededResource));
+
+    await client.patchResource(testContext, descriptor, {
+      id: '/subscriptions/other-sub/resourceGroups/other-rg/providers/Microsoft.ApiManagement/service/other-svc/namedValues/my-nv',
+      properties: { value: 'v' },
+    });
+
+    const sentBody = JSON.parse(fetchSpy.mock.calls[0]?.[1]?.body as string);
+    expect(sentBody).toEqual({ properties: { value: 'v' } });
+  });
+
   it('should poll Azure-AsyncOperation when an update returns 200', async () => {
     const operationUrl = 'https://management.azure.com/operations/update-named-value';
     fetchSpy
