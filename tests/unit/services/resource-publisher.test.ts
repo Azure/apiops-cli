@@ -573,6 +573,50 @@ describe('resource-publisher', () => {
       );
     });
 
+    it('should publish a metadata-only policy fragment when an override supplies the value', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({
+        properties: {
+          description: 'Shared authentication',
+        },
+      });
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        overrides: {
+          policyFragments: {
+            'shared-auth': {
+              properties: {
+                value: '<fragment><set-header name="x" exists-action="override" /></fragment>',
+                format: 'rawxml',
+              },
+            },
+          },
+        },
+      };
+
+      const result = await publishResource(
+        client,
+        store,
+        testContext,
+        descriptor,
+        config
+      );
+
+      expect(result.status).toBe('success');
+      expect(client.putResource).toHaveBeenCalledWith(testContext, descriptor, {
+        properties: {
+          description: 'Shared authentication',
+          value: '<fragment><set-header name="x" exists-action="override" /></fragment>',
+          format: 'rawxml',
+        },
+      });
+    });
+
     it('should skip a metadata-only policy fragment with a warning', async () => {
       const client = createMockClient();
       const store = createMockStore();

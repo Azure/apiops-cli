@@ -508,15 +508,6 @@ export async function publishResource(
 
     json = applyApiPathPrefix(json, descriptor, config);
 
-    // For PolicyFragment: rewrite cross-resource refs in properties.value (policy XML)
-    if (descriptor.type === ResourceType.PolicyFragment && config.envMapping && config.knownArtifactSets) {
-      const props = json.properties as Record<string, unknown> | undefined;
-      if (typeof props?.value === 'string') {
-        const rewrittenXml = rewritePolicyRefs(props.value, config.envMapping, config.knownArtifactSets);
-        json = { ...json, properties: { ...props, value: rewrittenXml } };
-      }
-    }
-
     // Apply env-mapping: affix descriptor name segments before PUT
     const deployedDescriptor = config.envMapping
       ? mapDescriptor(descriptor, config.envMapping)
@@ -998,13 +989,16 @@ async function publishPolicy(
       };
     }
 
+    // Apply overrides (e.g., format: xml) before PUT — matches Toolkit behavior
+    let mergedPayload = applyOverrides(descriptor, payload, config.overrides);
+
     if (
       descriptor.type === ResourceType.PolicyFragment &&
-      !hasPolicyFragmentValue(payload)
+      !hasPolicyFragmentValue(mergedPayload)
     ) {
       logger.warn(
         `Skipping ${buildResourceLabel(descriptor)}: no policy value was found in ` +
-        'policy.xml or policyFragmentInformation.json.'
+        'policy.xml, policyFragmentInformation.json, or overrides.'
       );
       return {
         descriptor,
@@ -1012,9 +1006,6 @@ async function publishPolicy(
         action: 'noop',
       };
     }
-
-    // Apply overrides (e.g., format: xml) before PUT — matches Toolkit behavior
-    let mergedPayload = applyOverrides(descriptor, payload, config.overrides);
 
     // Rewrite policy XML references from canonical → deployed names
     if (config.envMapping && config.knownArtifactSets) {

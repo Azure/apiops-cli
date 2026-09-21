@@ -198,6 +198,49 @@ describe('dry-run-reporter', () => {
       expect(report.summary.skips).toBe(0);
     });
 
+    it('should publish a metadata-only policy fragment when an override supplies the value in dry-run', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({
+        properties: {
+          description: 'Shared authentication',
+        },
+      });
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        overrides: {
+          policyFragments: {
+            'shared-auth': {
+              properties: {
+                value: '<fragment><set-header name="x" exists-action="override" /></fragment>',
+                format: 'rawxml',
+              },
+            },
+          },
+        },
+      };
+
+      const report = await generateDryRunReport(
+        store,
+        client,
+        testContext,
+        config,
+        [descriptor]
+      );
+
+      expect(report.actions).toEqual([
+        expect.objectContaining({
+          operation: 'PUT',
+          descriptor,
+        }),
+      ]);
+      expect(report.summary.skips).toBe(0);
+    });
+
     it('checks the deployed descriptor when environment mapping is active', async () => {
       const client = createMockClient();
       const store = createMockStore();

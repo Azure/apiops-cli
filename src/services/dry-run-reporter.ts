@@ -453,13 +453,16 @@ async function planDryRunPublications(
         config.sourceDir,
         descriptor
       );
-      const hasValue = hasPolicyFragmentValue(artifact);
+      const mergedArtifact = artifact
+        ? applyOverrides(descriptor, artifact, config.overrides)
+        : undefined;
+      const hasValue = hasPolicyFragmentValue(mergedArtifact);
       addPlan({
         descriptor,
         eligible: hasValue,
         reason: hasValue
           ? undefined
-          : 'no policy value was found in policy.xml or policyFragmentInformation.json',
+          : 'no policy value was found in policy.xml, policyFragmentInformation.json, or overrides',
       });
       continue;
     }
