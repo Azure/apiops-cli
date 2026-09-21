@@ -1,6 +1,6 @@
 {
   "name": "@azure-tools/apiops-cli",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "schemaVersion": "1",
   "description": "CLI tool for Azure API Management configuration-as-code",
   "type": "module",
