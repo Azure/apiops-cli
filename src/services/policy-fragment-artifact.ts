@@ -15,6 +15,12 @@ function getProperties(
     : {};
 }
 
+export function hasPolicyFragmentValue(
+  artifact: Record<string, unknown> | undefined
+): boolean {
+  return typeof getProperties(artifact).value === 'string';
+}
+
 /**
  * Read a policy fragment using the Azure APIops artifact contract.
  *

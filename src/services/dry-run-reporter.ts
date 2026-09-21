@@ -32,6 +32,10 @@ import {
 } from './product-publisher.js';
 import { API_CHILD_TYPES, planApiPublication } from './api-publisher.js';
 import { mapDescriptor } from './env-mapper.js';
+import {
+  hasPolicyFragmentValue,
+  readPolicyFragmentArtifact,
+} from './policy-fragment-artifact.js';
 
 export interface DryRunAction {
   operation: 'PUT' | 'PATCH' | 'DELETE' | 'SKIP';
@@ -440,6 +444,23 @@ async function planDryRunPublications(
         json
       );
       addPlan({ descriptor, ...eligibility });
+      continue;
+    }
+
+    if (descriptor.type === ResourceType.PolicyFragment) {
+      const artifact = await readPolicyFragmentArtifact(
+        store,
+        config.sourceDir,
+        descriptor
+      );
+      const hasValue = hasPolicyFragmentValue(artifact);
+      addPlan({
+        descriptor,
+        eligible: hasValue,
+        reason: hasValue
+          ? undefined
+          : 'no policy value was found in policy.xml or policyFragmentInformation.json',
+      });
       continue;
     }
 

@@ -15,7 +15,7 @@ import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
 import { KeyVaultAccessError } from '../../../src/services/keyvault-checker.js';
-import { LogLevel } from '../../../src/lib/logger.js';
+import { logger, LogLevel } from '../../../src/lib/logger.js';
 import { REDACTION_MARKER } from '../../../src/services/secret-redactor.js';
 import { buildEnvMapping } from '../../../src/services/env-mapper.js';
 import { HttpError } from '../../../src/clients/apim-client.js';
@@ -539,6 +539,68 @@ describe('resource-publisher', () => {
         descriptor,
         legacyPayload
       );
+    });
+
+    it('should publish a policy fragment with an explicitly empty value', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const payload = {
+        properties: {
+          description: 'Intentionally empty',
+          value: '',
+          format: 'rawxml',
+        },
+      };
+      store.readResource.mockResolvedValue(payload);
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+
+      const result = await publishResource(
+        client,
+        store,
+        testContext,
+        descriptor,
+        testConfig
+      );
+
+      expect(result.status).toBe('success');
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        descriptor,
+        payload
+      );
+    });
+
+    it('should skip a metadata-only policy fragment with a warning', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({
+        properties: {
+          description: 'Shared authentication',
+        },
+      });
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+
+      const result = await publishResource(
+        client,
+        store,
+        testContext,
+        descriptor,
+        testConfig
+      );
+
+      expect(result).toMatchObject({ status: 'skipped', action: 'noop' });
+      expect(client.putResource).not.toHaveBeenCalled();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('no policy value was found')
+      );
+      warnSpy.mockRestore();
     });
 
     it('should fail policy publish when policy content still contains redaction marker', async () => {

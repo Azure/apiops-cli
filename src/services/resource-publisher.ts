@@ -36,7 +36,10 @@ import { mapDescriptor, toDeployedName } from './env-mapper.js';
 import type { EnvMapping } from './env-mapper.js';
 import { rewritePolicyRefs } from './policy-ref-rewriter.js';
 import type { KnownArtifactSets } from '../models/config.js';
-import { readPolicyFragmentArtifact } from './policy-fragment-artifact.js';
+import {
+  hasPolicyFragmentValue,
+  readPolicyFragmentArtifact,
+} from './policy-fragment-artifact.js';
 
 export type { KnownArtifactSets } from '../models/config.js';
 
@@ -988,6 +991,21 @@ async function publishPolicy(
       : await readPolicyPayload(store, config.sourceDir, descriptor);
 
     if (!payload) {
+      return {
+        descriptor,
+        status: 'skipped',
+        action: 'noop',
+      };
+    }
+
+    if (
+      descriptor.type === ResourceType.PolicyFragment &&
+      !hasPolicyFragmentValue(payload)
+    ) {
+      logger.warn(
+        `Skipping ${buildResourceLabel(descriptor)}: no policy value was found in ` +
+        'policy.xml or policyFragmentInformation.json.'
+      );
       return {
         descriptor,
         status: 'skipped',
