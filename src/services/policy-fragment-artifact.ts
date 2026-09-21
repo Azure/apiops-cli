@@ -6,6 +6,15 @@ import type { ResourceDescriptor } from '../models/types.js';
 import { ResourceType } from '../models/resource-types.js';
 import { redactAndWarnPolicySecrets } from './secret-redactor.js';
 
+export type PolicyFragmentValueSource =
+  | 'policy.xml'
+  | 'policyFragmentInformation.json';
+
+export interface PolicyFragmentArtifactDetails {
+  payload: Record<string, unknown>;
+  valueSource?: PolicyFragmentValueSource;
+}
+
 function getProperties(
   json: Record<string, unknown> | undefined
 ): Record<string, unknown> {
@@ -33,6 +42,15 @@ export async function readPolicyFragmentArtifact(
   baseDir: string,
   descriptor: ResourceDescriptor
 ): Promise<Record<string, unknown> | undefined> {
+  return (await readPolicyFragmentArtifactDetails(store, baseDir, descriptor))
+    ?.payload;
+}
+
+export async function readPolicyFragmentArtifactDetails(
+  store: IArtifactStore,
+  baseDir: string,
+  descriptor: ResourceDescriptor
+): Promise<PolicyFragmentArtifactDetails | undefined> {
   if (descriptor.type !== ResourceType.PolicyFragment) {
     throw new Error(`Expected PolicyFragment descriptor, got ${descriptor.type}`);
   }
@@ -47,16 +65,24 @@ export async function readPolicyFragmentArtifact(
   }
 
   if (!policyContent) {
-    return information;
+    return {
+      payload: information!,
+      valueSource: hasPolicyFragmentValue(information)
+        ? 'policyFragmentInformation.json'
+        : undefined,
+    };
   }
 
   return {
-    ...(information ?? {}),
-    properties: {
-      ...getProperties(information),
-      value: policyContent.content,
-      format: 'rawxml',
+    payload: {
+      ...(information ?? {}),
+      properties: {
+        ...getProperties(information),
+        value: policyContent.content,
+        format: 'rawxml',
+      },
     },
+    valueSource: 'policy.xml',
   };
 }
 
