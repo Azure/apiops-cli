@@ -5,6 +5,14 @@ All notable changes to the APIOps CLI are documented in this file.
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/) with alpha pre-release tags.
 
+## [1.0.3] - 2026-09-20
+
+### Bug Fixes
+
+- **Cross-service publishing** - strip source-service ARM IDs from PUT and PATCH payloads when publishing extracted resources to another APIM service ([#285](https://github.com/Azure/apiops-cli/pull/285))
+- **Diagnostic logger references** - rebuild logger IDs against the target service, including workspace paths and environment-mapped names ([#285](https://github.com/Azure/apiops-cli/pull/285))
+- **WSDL re-import** - remove external XSD import locations when their namespaces are available in inline schemas, allowing re-import without resolving those external URLs ([#285](https://github.com/Azure/apiops-cli/pull/285))
+
 ## [1.0.2] - 2026-09-11
 
 ### Bug Fixes
