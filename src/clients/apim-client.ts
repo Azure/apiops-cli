@@ -62,6 +62,20 @@ export function isAssociationReferenceNotFoundError(error: unknown): boolean {
   });
 }
 
+/**
+ * Drop the top-level ARM `id` from a write payload. Extracted artifacts carry
+ * the SOURCE service's resource id; newer APIM api-versions reject bodies whose
+ * id points at a different service ("Cross-service resource references are not
+ * allowed"), which breaks publishing to any service other than the one extracted from.
+ */
+export function stripSourceArmId(
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  if (!Object.hasOwn(payload, 'id')) return payload;
+  const { id: _omit, ...rest } = payload;
+  return rest;
+}
+
 export class ApimClient implements IApimClient {
   private credential: DefaultAzureCredential;
   private readonly authScope: string;
@@ -415,7 +429,7 @@ export class ApimClient implements IApimClient {
 
     const response = await this.request(url, {
       method: 'PUT',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(stripSourceArmId(payload)),
     });
 
     // Poll for long-running operations signaled by ARM response headers, including
@@ -466,7 +480,7 @@ export class ApimClient implements IApimClient {
 
     const response = await this.request(url, {
       method: 'PATCH',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(stripSourceArmId(payload)),
     });
 
     const responseText = await response.text();

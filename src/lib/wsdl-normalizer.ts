@@ -25,7 +25,9 @@ const NAME = String.raw`[\w.-]+`;
  * publish round trip.
  */
 export function normalizeWsdl(wsdl: string): string {
-  return normalizeWsdlServicePorts(normalizeWsdlPartReferences(wsdl));
+  return normalizeWsdlXsdImportLocations(
+    normalizeWsdlServicePorts(normalizeWsdlPartReferences(wsdl))
+  );
 }
 
 /**
@@ -145,6 +147,49 @@ export function normalizeWsdlServicePorts(wsdl: string): string {
       return '';
     });
   });
+}
+
+/**
+ * APIM's WSDL export preserves `xs:import schemaLocation="..."` URLs from the
+ * original service (often private hosts unreachable from Azure). On re-import
+ * APIM tries to resolve them and fails or times out, even though every
+ * imported namespace is declared by an inline schema in `wsdl:types`. Drop the
+ * schemaLocation attribute from imports whose namespace is available inline.
+ */
+export function normalizeWsdlXsdImportLocations(wsdl: string): string {
+  const inlineNamespaces = new Set<string>();
+  const schemaRe = new RegExp(
+    `<(?:${NAME}:)?schema\\b[^>]*\\btargetNamespace="([^"]*)"`,
+    'g'
+  );
+  for (const m of wsdl.matchAll(schemaRe)) {
+    inlineNamespaces.add(m[1]);
+  }
+  if (inlineNamespaces.size === 0) {
+    return wsdl;
+  }
+
+  let removed = 0;
+  const importRe = new RegExp(`<(?:${NAME}:)?import\\b[^>]*>`, 'g');
+  const rewritten = wsdl.replace(importRe, (tag) => {
+    const location = /\s*\bschemaLocation="[^"]*"/.exec(tag);
+    if (!location) {
+      return tag; // wsdl:import (location=) or already location-free
+    }
+    const ns = /\bnamespace="([^"]*)"/.exec(tag);
+    if (!ns || !inlineNamespaces.has(ns[1])) {
+      return tag; // namespace not provably available inline — keep untouched
+    }
+    removed++;
+    return tag.replace(location[0], '');
+  });
+
+  if (removed > 0) {
+    logger.debug(
+      `WSDL normalizer: removed ${removed} xsd:import schemaLocation attribute(s) resolved by inline schemas`
+    );
+  }
+  return rewritten;
 }
 
 /** Parse `xmlns:prefix="ns"` declarations from a single tag string. */

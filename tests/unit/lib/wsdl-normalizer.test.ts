@@ -9,6 +9,7 @@ import {
   normalizeWsdl,
   normalizeWsdlPartReferences,
   normalizeWsdlServicePorts,
+  normalizeWsdlXsdImportLocations,
 } from '../../../src/lib/wsdl-normalizer.js';
 
 /** Reproduces APIM's broken WSDL export: parts reference tns instead of ns1. */
@@ -156,6 +157,53 @@ describe('normalizeWsdlServicePorts', () => {
     );
 
     expect(normalizeWsdlServicePorts(single)).toBe(single);
+  });
+});
+
+describe('normalizeWsdlXsdImportLocations', () => {
+  const wsdlWithExternalImports = `<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">
+    <wsdl:types>
+        <xs:schema targetNamespace="https://example.org/models/v1" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+            <xs:element name="Thing" type="xs:string" />
+        </xs:schema>
+        <xs:schema targetNamespace="https://example.org/service/v1" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+            <xs:import schemaLocation="http://192.168.0.10:8080/Svc.svc?xsd=xsd1" namespace="https://example.org/models/v1" />
+            <xs:import schemaLocation="http://192.168.0.10:8080/Svc.svc?xsd=xsd9" namespace="https://example.org/external/v1" />
+        </xs:schema>
+    </wsdl:types>
+</wsdl:definitions>`;
+
+  it('drops schemaLocation when the imported namespace is declared inline', () => {
+    const result = normalizeWsdlXsdImportLocations(wsdlWithExternalImports);
+
+    expect(result).not.toContain('xsd=xsd1');
+    expect(result).toContain('<xs:import namespace="https://example.org/models/v1" />');
+  });
+
+  it('keeps schemaLocation when the imported namespace is NOT declared inline', () => {
+    const result = normalizeWsdlXsdImportLocations(wsdlWithExternalImports);
+
+    expect(result).toContain(
+      '<xs:import schemaLocation="http://192.168.0.10:8080/Svc.svc?xsd=xsd9" namespace="https://example.org/external/v1" />'
+    );
+  });
+
+  it('leaves wsdl:import (location=) and location-free imports untouched', () => {
+    const wsdl = `<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/">
+    <wsdl:import location="http://192.168.0.10/other.wsdl" namespace="https://example.org/other" />
+    <wsdl:types>
+        <xs:schema targetNamespace="https://example.org/models/v1" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+            <xs:import namespace="https://example.org/other" />
+        </xs:schema>
+    </wsdl:types>
+</wsdl:definitions>`;
+
+    expect(normalizeWsdlXsdImportLocations(wsdl)).toBe(wsdl);
+  });
+
+  it('returns content without inline schemas unchanged', () => {
+    const openapi = '{"openapi":"3.0.1","info":{"title":"x"}}';
+    expect(normalizeWsdlXsdImportLocations(openapi)).toBe(openapi);
   });
 });
 

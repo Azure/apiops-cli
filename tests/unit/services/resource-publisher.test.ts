@@ -9,6 +9,7 @@ import {
   publishResource,
   resolveAssociationDeleteDescriptor,
   normalizeApiAuthenticationSettings,
+  normalizeDiagnosticLoggerId,
   prefersLegacyAuthOverride,
 } from '../../../src/services/resource-publisher.js';
 import { ResourceType } from '../../../src/models/resource-types.js';
@@ -2009,6 +2010,62 @@ describe('resource-publisher', () => {
       const props = putPayload.properties as Record<string, unknown>;
       const creds = props.credentials as Record<string, unknown>;
       expect(creds.instrumentationKey).toBe('raw-instrumentation-key-value');
+    });
+  });
+
+  describe('normalizeDiagnosticLoggerId', () => {
+    it('rewrites a source-service loggerId to the target service ARM path', () => {
+      const json = {
+        name: 'applicationinsights',
+        properties: {
+          alwaysLog: 'allErrors',
+          loggerId:
+            '/subscriptions/src-sub/resourceGroups/src-rg/providers/Microsoft.ApiManagement/service/src-svc/loggers/my-logger',
+        },
+      };
+
+      const result = normalizeDiagnosticLoggerId(json, testContext);
+
+      expect((result.properties as Record<string, unknown>).loggerId).toBe(
+        '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1/loggers/my-logger'
+      );
+      expect((result.properties as Record<string, unknown>).alwaysLog).toBe('allErrors');
+    });
+
+    it('returns json unchanged when loggerId is absent', () => {
+      const json = { name: 'azuremonitor', properties: { alwaysLog: 'allErrors' } };
+      expect(normalizeDiagnosticLoggerId(json, testContext)).toBe(json);
+    });
+
+    it('applies env-mapping affixes to the logger name', () => {
+      const envMapping = buildEnvMapping({ nameSuffix: '-dev' });
+      const json = {
+        properties: {
+          loggerId:
+            '/subscriptions/src-sub/resourceGroups/src-rg/providers/Microsoft.ApiManagement/service/src-svc/loggers/my-logger',
+        },
+      };
+
+      const result = normalizeDiagnosticLoggerId(json, testContext, undefined, envMapping);
+
+      expect((result.properties as Record<string, unknown>).loggerId).toBe(
+        '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1/loggers/my-logger-dev'
+      );
+    });
+
+    it('includes the workspace segment for workspace-scoped diagnostics', () => {
+      const json = {
+        properties: {
+          loggerId:
+            '/subscriptions/src-sub/resourceGroups/src-rg/providers/Microsoft.ApiManagement/service/src-svc/workspaces/ws-1/loggers/my-logger',
+        },
+      };
+
+      const result = normalizeDiagnosticLoggerId(json, testContext, 'ws-1');
+
+      expect((result.properties as Record<string, unknown>).loggerId).toBe(
+        '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1/workspaces/ws-1/loggers/my-logger'
+      );
     });
   });
 
