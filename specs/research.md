@@ -107,7 +107,9 @@
 ├── backends/{name}/backendInformation.json
 ├── loggers/{name}/loggerInformation.json
 ├── diagnostics/{name}/diagnosticInformation.json
-├── policyFragments/{name}/policyFragmentInformation.json
+├── policyFragments/{name}/
+│   ├── policyFragmentInformation.json  # Optional metadata
+│   └── policy.xml
 ├── gateways/{name}/gatewayInformation.json
 ├── groups/{name}/groupInformation.json
 ├── subscriptions/{name}/subscriptionInformation.json

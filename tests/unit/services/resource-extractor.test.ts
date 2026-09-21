@@ -124,6 +124,46 @@ describe('resource-extractor', () => {
       expect(props.value).toBe('*** REDACTED ***');
     });
 
+    it('should split policy fragment metadata and XML content', async () => {
+      const client = createMockClient([
+        {
+          name: 'shared-auth',
+          properties: {
+            description: 'Shared authentication',
+            value: '<fragment><base /></fragment>',
+            format: 'rawxml',
+          },
+        },
+      ]);
+      const store = createMockStore();
+
+      const result = await extractResourceType(
+        client,
+        store,
+        testContext,
+        ResourceType.PolicyFragment,
+        '/output'
+      );
+
+      expect(result.errorCount).toBe(0);
+      expect(store.writeResource).toHaveBeenCalledWith(
+        '/output',
+        expect.objectContaining({ type: ResourceType.PolicyFragment }),
+        {
+          name: 'shared-auth',
+          properties: {
+            description: 'Shared authentication',
+          },
+        }
+      );
+      expect(store.writeContent).toHaveBeenCalledWith(
+        '/output',
+        expect.objectContaining({ type: ResourceType.PolicyFragment }),
+        '<fragment><base /></fragment>',
+        'policy'
+      );
+    });
+
     it('should handle errors gracefully', async () => {
       const client = {
         ...createMockClient(),

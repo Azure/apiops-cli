@@ -84,6 +84,27 @@ describe('secret-redaction-guard', () => {
       expect(findings[0].location).toBe('policy.xml');
     });
 
+    it('flags an XML-only policy fragment that contains the redaction marker', async () => {
+      const store = createMockStore();
+      store.readContent.mockResolvedValue({
+        content: `<fragment><set-header name="Authorization"><value>${REDACTION_MARKER}</value></set-header></fragment>`,
+      });
+      const fragmentDescriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+
+      const findings = await scanForRedactionMarkers(
+        store,
+        testConfig,
+        [fragmentDescriptor]
+      );
+
+      expect(findings).toHaveLength(1);
+      expect(findings[0].descriptor).toBe(fragmentDescriptor);
+      expect(findings[0].location).toBe('policy.xml');
+    });
+
     it('flags a secret named value that equals the redaction marker', async () => {
       const store = createMockStore();
       store.readResource.mockResolvedValue({

@@ -12,6 +12,7 @@ import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.j
 import { ResourceDescriptor } from '../models/types.js';
 import type { IArtifactStore } from '../clients/iartifact-store.js';
 import { logger } from '../lib/logger.js';
+import { readPolicyFragmentArtifact } from './policy-fragment-artifact.js';
 import { getResourceDescriptorKey } from '../lib/resource-path.js';
 
 /**
@@ -289,9 +290,11 @@ export async function scanArtifactReferences(
   }
 
   const infoFile = RESOURCE_TYPE_METADATA[descriptor.type]?.infoFile;
-  const json = POLICY_RESOURCE_TYPES.has(descriptor.type) || !infoFile?.endsWith('.json')
-    ? undefined
-    : await store.readResource(sourceDir, descriptor);
+  const json = descriptor.type === ResourceType.PolicyFragment
+    ? await readPolicyFragmentArtifact(store, sourceDir, descriptor)
+    : POLICY_RESOURCE_TYPES.has(descriptor.type) || !infoFile?.endsWith('.json')
+      ? undefined
+      : await store.readResource(sourceDir, descriptor);
   if (json) {
     if (descriptor.type === ResourceType.Api) {
       apis.set(descriptor.nameParts.join('/'), json);

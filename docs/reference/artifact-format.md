@@ -67,7 +67,8 @@ apim-artifacts/
 │       └── tagInformation.json
 ├── policyFragments/
 │   └── rate-limit/
-│       └── policyFragmentInformation.json
+│       ├── policyFragmentInformation.json  # Optional metadata
+│       └── policy.xml
 ├── loggers/
 │   └── appinsights/
 │       └── loggerInformation.json
@@ -116,7 +117,7 @@ All 34 APIM resource types and their artifact mappings:
 | Logger | `loggers/{name}` | `loggerInformation.json` |
 | Group | `groups/{name}` | `groupInformation.json` |
 | Diagnostic | `diagnostics/{name}` | `diagnosticInformation.json` |
-| PolicyFragment | `policyFragments/{name}` | `policyFragmentInformation.json` |
+| PolicyFragment | `policyFragments/{name}` | `policy.xml` and optional `policyFragmentInformation.json` |
 | ServicePolicy | _(root directory)_ | `policy.xml` |
 | Product | `products/{name}` | `productInformation.json` |
 | Api | `apis/{name}` | `apiInformation.json` |
@@ -124,6 +125,18 @@ All 34 APIM resource types and their artifact mappings:
 | GlobalSchema | `schemas/{name}` | `schemaInformation.json` |
 | PolicyRestriction | `policyRestrictions/{name}` | `policyRestrictionInformation.json` |
 | Documentation | `documentations/{name}` | `documentationInformation.json` |
+
+Policy fragments follow the Azure APIops split policy layout. The following
+representations are supported:
+
+- `policy.xml` only, for fragments without metadata.
+- `policy.xml` with `policyFragmentInformation.json`, where JSON metadata is
+  merged with the XML content.
+- A legacy `policyFragmentInformation.json` containing `properties.value`.
+
+When both files exist, `policy.xml` supplies `properties.value` and
+`properties.format` (`rawxml`), while other JSON properties such as
+`description` are retained.
 
 ### Product Child Resources
 

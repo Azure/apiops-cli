@@ -76,7 +76,7 @@ XML-based middleware that runs on API requests and responses. Policies handle ra
 A reusable snippet of policy XML that can be included in other policies via `<include-fragment>`. Useful for shared logic like standard rate limiting or CORS headers.
 
 - **Microsoft Docs:** [Policy fragments](https://learn.microsoft.com/en-us/azure/api-management/policy-fragments)
-- **In artifacts:** `policyFragments/{name}/policyFragmentInformation.json`
+- **In artifacts:** `policyFragments/{name}/policy.xml`, with optional metadata in `policyFragmentInformation.json`
 
 ---
 

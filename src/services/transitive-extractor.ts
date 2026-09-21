@@ -10,6 +10,8 @@ import { logger } from '../lib/logger.js';
 import { runParallel } from '../lib/parallel-runner.js';
 import { redactSecrets } from './secret-redactor.js';
 import { findTransitiveDependencies } from './transitive-resolver.js';
+import { ResourceType } from '../models/resource-types.js';
+import { writePolicyFragmentArtifact } from './policy-fragment-artifact.js';
 
 const DEFAULT_CONCURRENCY = 5;
 
@@ -67,8 +69,17 @@ export async function extractTransitiveDependencies(
           serviceContext && dep.workspace !== workspace ? serviceContext : context;
         const json = await client.getResource(dependencyContext, dep);
         if (json) {
-          const safeJson = redactSecrets(dep, json);
-          await store.writeResource(outputDir, dep, safeJson);
+          let safeJson = redactSecrets(dep, json);
+          if (dep.type === ResourceType.PolicyFragment) {
+            safeJson = await writePolicyFragmentArtifact(
+              store,
+              outputDir,
+              dep,
+              safeJson
+            );
+          } else {
+            await store.writeResource(outputDir, dep, safeJson);
+          }
           logger.info(`Extracted transitive dependency ${buildResourceLabel(dep)}`);
           return { dep, json: safeJson };
         }

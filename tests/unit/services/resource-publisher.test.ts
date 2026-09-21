@@ -457,6 +457,90 @@ describe('resource-publisher', () => {
       expect(client.putResource).not.toHaveBeenCalled();
     });
 
+    it('should publish an XML-only policy fragment', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readResource.mockResolvedValue(undefined);
+      store.readContent.mockResolvedValue({
+        content: '<fragment><base /></fragment>',
+      });
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+
+      const result = await publishResource(
+        client,
+        store,
+        testContext,
+        descriptor,
+        testConfig
+      );
+
+      expect(result.status).toBe('success');
+      expect(client.putResource).toHaveBeenCalledWith(testContext, descriptor, {
+        properties: {
+          value: '<fragment><base /></fragment>',
+          format: 'rawxml',
+        },
+      });
+    });
+
+    it('should merge policy fragment metadata with authoritative XML content', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({
+        properties: {
+          description: 'Shared authentication',
+          value: '<fragment>legacy</fragment>',
+          format: 'xml',
+        },
+      });
+      store.readContent.mockResolvedValue({
+        content: '<fragment><base /></fragment>',
+      });
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+
+      await publishResource(client, store, testContext, descriptor, testConfig);
+
+      expect(client.putResource).toHaveBeenCalledWith(testContext, descriptor, {
+        properties: {
+          description: 'Shared authentication',
+          value: '<fragment><base /></fragment>',
+          format: 'rawxml',
+        },
+      });
+    });
+
+    it('should publish a legacy JSON-only policy fragment', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const legacyPayload = {
+        properties: {
+          description: 'Shared authentication',
+          value: '<fragment><base /></fragment>',
+          format: 'rawxml',
+        },
+      };
+      store.readResource.mockResolvedValue(legacyPayload);
+      store.readContent.mockResolvedValue(undefined);
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+
+      await publishResource(client, store, testContext, descriptor, testConfig);
+
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        descriptor,
+        legacyPayload
+      );
+    });
+
     it('should fail policy publish when policy content still contains redaction marker', async () => {
       const client = createMockClient();
       const store = createMockStore();

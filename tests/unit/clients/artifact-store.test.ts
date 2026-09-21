@@ -310,6 +310,21 @@ describe('ArtifactStore', () => {
         .map((d) => d.nameParts[0]);
       expect(products).toContain('prod1');
     });
+
+    it('should list an XML-only policy fragment', async () => {
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+      await store.writeContent(
+        tmpDir,
+        descriptor,
+        '<fragment><base /></fragment>',
+        'policy'
+      );
+
+      await expect(store.listResources(tmpDir)).resolves.toContainEqual(descriptor);
+    });
   });
 
   describe('commitStagedExtraction', () => {

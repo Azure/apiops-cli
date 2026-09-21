@@ -36,6 +36,7 @@ import { mapDescriptor, toDeployedName } from './env-mapper.js';
 import type { EnvMapping } from './env-mapper.js';
 import { rewritePolicyRefs } from './policy-ref-rewriter.js';
 import type { KnownArtifactSets } from '../models/config.js';
+import { readPolicyFragmentArtifact } from './policy-fragment-artifact.js';
 
 export type { KnownArtifactSets } from '../models/config.js';
 
@@ -131,6 +132,7 @@ export function prefersLegacyAuthOverride(
  * Policy resource types that have external XML content
  */
 export const POLICY_TYPES = new Set<ResourceType>([
+  ResourceType.PolicyFragment,
   ResourceType.ServicePolicy,
   ResourceType.ProductPolicy,
   ResourceType.ApiPolicy,
@@ -969,9 +971,8 @@ async function publishWiki(
 }
 
 /**
- * Publish policy resource (ServicePolicy, ApiPolicy, ProductPolicy, ApiOperationPolicy,
- * GraphQLResolverPolicy). The artifact on disk is a raw policy.xml file; there is no
- * separate JSON info file for these types. Reads the XML and PUTs it with format=rawxml.
+ * Publish a policy resource. Policy fragments may combine optional JSON
+ * metadata with policy.xml; other policy types are represented by policy.xml.
  */
 async function publishPolicy(
   client: IApimClient,
@@ -982,29 +983,17 @@ async function publishPolicy(
 ): Promise<ResourcePublishResult> {
   let attemptedPut = false;
   try {
-    const policyContent = await store.readContent(
-      config.sourceDir,
-      descriptor,
-      'policy'
-    );
+    const payload = descriptor.type === ResourceType.PolicyFragment
+      ? await readPolicyFragmentArtifact(store, config.sourceDir, descriptor)
+      : await readPolicyPayload(store, config.sourceDir, descriptor);
 
-    if (!policyContent) {
+    if (!payload) {
       return {
         descriptor,
         status: 'skipped',
         action: 'noop',
       };
     }
-
-    // Fail-safe guard: extracted policies don't currently carry separate metadata
-    // indicating prior redaction, so marker detection is a deliberate content
-    // check to block publishing placeholder secrets.
-    const payload: Record<string, unknown> = {
-      properties: {
-        value: policyContent.content,
-        format: 'rawxml',
-      },
-    };
 
     // Apply overrides (e.g., format: xml) before PUT — matches Toolkit behavior
     let mergedPayload = applyOverrides(descriptor, payload, config.overrides);
@@ -1055,6 +1044,24 @@ async function publishPolicy(
       error: error instanceof Error ? error : new Error(String(error)),
     };
   }
+}
+
+async function readPolicyPayload(
+  store: IArtifactStore,
+  sourceDir: string,
+  descriptor: ResourceDescriptor
+): Promise<Record<string, unknown> | undefined> {
+  const policyContent = await store.readContent(sourceDir, descriptor, 'policy');
+  if (!policyContent) {
+    return undefined;
+  }
+
+  return {
+    properties: {
+      value: policyContent.content,
+      format: 'rawxml',
+    },
+  };
 }
 
 /**

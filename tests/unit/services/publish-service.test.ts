@@ -1278,6 +1278,39 @@ describe('publish-service', () => {
       expect(config.knownArtifactSets?.namedValues.has('nv-changed')).toBe(true);
     });
 
+    it('should update a policy fragment when one artifact representation remains', async () => {
+      const client = createMockClient();
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+      const store = createMockStore([descriptor]);
+
+      vi.mocked(computeGitDiff).mockResolvedValue({
+        changedDescriptors: [],
+        deletedDescriptors: [descriptor],
+      });
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        commitId: 'abc123',
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runPublish(client, store, config);
+
+      expect(client.deleteResource).not.toHaveBeenCalled();
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        descriptor,
+        expect.any(Object)
+      );
+      expect(result.totalDeletes).toBe(0);
+    });
+
     it('should pass commit-scoped deleted descriptors to dry-run report', async () => {
       const client = createMockClient();
       const store = createMockStore([]);
