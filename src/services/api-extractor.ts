@@ -12,7 +12,8 @@ import { IArtifactStore } from '../clients/iartifact-store.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { FilterConfig } from '../models/config.js';
-import { shouldIncludeResource } from './filter-service.js';
+import * as yaml from 'js-yaml';
+import { extractRootApiName, shouldIncludeResource } from './filter-service.js';
 import { extractResourceType, ExtractedResource } from './resource-extractor.js';
 import { redactAndWarnPolicySecrets } from './secret-redactor.js';
 import { logger } from '../lib/logger.js';
@@ -97,7 +98,7 @@ export async function extractApiResources(
   // Extract API specification (uses already-extracted schemas to detect
   // synthetic GraphQL without a second list call).
   const specificationResult = await extractApiSpecification(
-    client, store, context, apiDescriptor, apiJson, outputDir, result.schemas
+    client, store, context, apiDescriptor, apiJson, outputDir, result.schemas, filter
   );
   result.specification = specificationResult.extracted;
   result.errorCount += specificationResult.errorCount;
@@ -274,7 +275,8 @@ async function extractApiSpecification(
   apiDescriptor: ResourceDescriptor,
   apiJson: Record<string, unknown>,
   outputDir: string,
-  extractedSchemas: ExtractedResource[]
+  extractedSchemas: ExtractedResource[],
+  filter?: FilterConfig
 ): Promise<{ extracted: boolean; errorCount: number }> {
   const properties = apiJson.properties as Record<string, unknown> | undefined;
   const apiType = properties?.type as string | undefined;
@@ -319,9 +321,12 @@ async function extractApiSpecification(
     // APIM's WSDL export can emit wsdl:part references qualified with the wrong
     // namespace prefix and multiple service ports, which its own importer then
     // rejects. Normalize so the extracted artifact round-trips through publish.
-    const content = spec.format === 'wsdl'
+    let content = spec.format === 'wsdl'
       ? normalizeWsdl(spec.content)
       : spec.content;
+    if (spec.format === 'yaml' || spec.format === 'json') {
+      content = filterOpenApiOperations(content, spec.format, apiDescriptor, filter);
+    }
 
     await store.writeContent(
       outputDir,
@@ -338,6 +343,65 @@ async function extractApiSpecification(
     logger.warn(`Failed to extract specification ${buildResourceLabel(apiDescriptor)}: ${errorMessage}`);
     return { extracted: false, errorCount: 1 };
   }
+}
+
+/**
+ * Apply the same operation filter to the specification as to operation artifacts.
+ * Keep shared definitions and path metadata, but remove paths without selected methods.
+ */
+function filterOpenApiOperations(
+  content: string,
+  format: 'yaml' | 'json',
+  apiDescriptor: ResourceDescriptor,
+  filter?: FilterConfig
+): string {
+  const apiName = getNamePart(apiDescriptor.nameParts, 0);
+  const rootName = extractRootApiName(apiName).toLowerCase();
+  const subFilterKey = Object.keys(filter?.apiSubFilters ?? {}).find(
+    key => key.toLowerCase() === rootName
+  );
+  if (!subFilterKey || filter?.apiSubFilters?.[subFilterKey].operations === undefined) {
+    return content;
+  }
+
+  const spec = (format === 'json' ? JSON.parse(content) : yaml.load(content)) as Record<string, unknown>;
+  const methods = new Set(['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']);
+  let modified = false;
+
+  for (const field of ['paths', 'x-ms-paths']) {
+    const paths = spec[field];
+    if (!paths || typeof paths !== 'object' || Array.isArray(paths)) continue;
+
+    for (const [path, value] of Object.entries(paths)) {
+      if (!path.startsWith('/') || !value || typeof value !== 'object' || Array.isArray(value)) continue;
+      const pathItem = value as Record<string, unknown>;
+      let hasSelectedOperation = false;
+
+      for (const method of Object.keys(pathItem)) {
+        if (!methods.has(method)) continue;
+        const operation = pathItem[method] as Record<string, unknown> | null;
+        const operationId = operation?.operationId;
+        if (typeof operationId === 'string' && shouldIncludeResource({
+          ...apiDescriptor,
+          type: ResourceType.ApiOperation,
+          nameParts: [apiName, operationId],
+        }, filter)) {
+          hasSelectedOperation = true;
+        } else {
+          delete pathItem[method];
+          modified = true;
+        }
+      }
+
+      if (!hasSelectedOperation) {
+        delete (paths as Record<string, unknown>)[path];
+        modified = true;
+      }
+    }
+  }
+
+  if (!modified) return content;
+  return format === 'json' ? JSON.stringify(spec, null, 2) : yaml.dump(spec, { lineWidth: -1 });
 }
 
 /**
