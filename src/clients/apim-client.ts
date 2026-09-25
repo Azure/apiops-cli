@@ -11,12 +11,12 @@ import { IApimClient, ApiSpecDialect } from './iapim-client.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import { RESOURCE_TYPE_METADATA, ResourceType } from '../models/resource-types.js';
 import { buildArmUri, buildResourceLabel } from '../lib/resource-uri.js';
-import { deriveListPaths } from '../lib/resource-path.js';
+import { deriveListPaths, getResourceDescriptorKey } from '../lib/resource-path.js';
 import { logger } from '../lib/logger.js';
 import { isWorkspaceScope } from '../lib/workspace-link.js';
 import { USER_AGENT } from '../lib/user-agent.js';
 import { formatDuration } from '../lib/format-duration.js';
-import { recordRetry } from '../lib/retry-tracker.js';
+import { recordRetry, withRetryResource } from '../lib/retry-tracker.js';
 
 /**
  * Structured HTTP error that carries the response status code.
@@ -433,6 +433,14 @@ export class ApimClient implements IApimClient {
     context: ApimServiceContext,
     descriptor: ResourceDescriptor
   ): Promise<Record<string, unknown> | undefined> {
+    return withRetryResource(getResourceDescriptorKey(descriptor), () =>
+      this.getResourceInternal(context, descriptor));
+  }
+
+  private async getResourceInternal(
+    context: ApimServiceContext,
+    descriptor: ResourceDescriptor
+  ): Promise<Record<string, unknown> | undefined> {
     // Some association resources (ProductGroup, ProductApi, GatewayApi) only
     // support PUT/DELETE. Short-circuit before making a network call.
     const metadata = RESOURCE_TYPE_METADATA[descriptor.type];
@@ -481,6 +489,15 @@ export class ApimClient implements IApimClient {
   }
 
   async putResource(
+    context: ApimServiceContext,
+    descriptor: ResourceDescriptor,
+    payload: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    return withRetryResource(getResourceDescriptorKey(descriptor), () =>
+      this.putResourceInternal(context, descriptor, payload));
+  }
+
+  private async putResourceInternal(
     context: ApimServiceContext,
     descriptor: ResourceDescriptor,
     payload: Record<string, unknown>
@@ -536,6 +553,15 @@ export class ApimClient implements IApimClient {
     descriptor: ResourceDescriptor,
     payload: Record<string, unknown>
   ): Promise<Record<string, unknown>> {
+    return withRetryResource(getResourceDescriptorKey(descriptor), () =>
+      this.patchResourceInternal(context, descriptor, payload));
+  }
+
+  private async patchResourceInternal(
+    context: ApimServiceContext,
+    descriptor: ResourceDescriptor,
+    payload: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
     const url = buildArmUri(context, descriptor);
 
     const response = await this.request(url, {
@@ -556,6 +582,14 @@ export class ApimClient implements IApimClient {
   }
 
   async deleteResource(
+    context: ApimServiceContext,
+    descriptor: ResourceDescriptor
+  ): Promise<boolean> {
+    return withRetryResource(getResourceDescriptorKey(descriptor), () =>
+      this.deleteResourceInternal(context, descriptor));
+  }
+
+  private async deleteResourceInternal(
     context: ApimServiceContext,
     descriptor: ResourceDescriptor
   ): Promise<boolean> {

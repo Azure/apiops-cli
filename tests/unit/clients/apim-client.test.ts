@@ -12,6 +12,7 @@ import { ApimServiceContext } from '../../../src/models/types.js';
 import { buildArmBaseUrl } from '../../../src/lib/cloud-config.js';
 import { logger } from '../../../src/lib/logger.js';
 import { trackRetries } from '../../../src/lib/retry-tracker.js';
+import { getResourceDescriptorKey } from '../../../src/lib/resource-path.js';
 
 const testContext: ApimServiceContext = {
   subscriptionId: 'sub-1',
@@ -1751,7 +1752,8 @@ describe('ApimClient retry logging', () => {
 
     const { retries } = await trackRetries(() => client.getResource(testContext, descriptor));
 
-    expect(retries).toBe(1);
+    expect(retries.total).toBe(1);
+    expect(retries.byResource.get(getResourceDescriptorKey(descriptor))).toBe(1);
     expect(warnSpy).not.toHaveBeenCalled();
     expect(debugSpy).toHaveBeenCalledWith(
       'Server error 503 on GET namedValues/nv-1 (attempt 1/4), retrying in 1.2s'

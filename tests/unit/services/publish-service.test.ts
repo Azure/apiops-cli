@@ -9,7 +9,8 @@ import { ResourceType } from '../../../src/models/resource-types.js';
 import { ResourceDescriptor, ApimServiceContext } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
 import { LogLevel } from '../../../src/lib/logger.js';
-import { recordRetry } from '../../../src/lib/retry-tracker.js';
+import { recordRetry, withRetryResource } from '../../../src/lib/retry-tracker.js';
+import { getResourceDescriptorKey } from '../../../src/lib/resource-path.js';
 
 // Mock service dependencies
 vi.mock('../../../src/services/git-diff-service.js');
@@ -2184,6 +2185,51 @@ describe('publish-service', () => {
         expect(result.retriedResources).toBe(1);
         expect(result.actions.find((a) => a.descriptor.nameParts[0] === 'nv1')?.retries).toBe(2);
         expect(result.elapsedMs).toBeGreaterThanOrEqual(0);
+      } finally {
+        stdout.restore();
+      }
+    });
+
+    it('attributes retries to the related resource that incurred them', async () => {
+      const apiDescriptor = { type: ResourceType.Api, nameParts: ['api1'] };
+      const operationDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['api1', 'get-items'],
+      };
+      vi.mocked(publishApi).mockImplementation(async () => {
+        await withRetryResource(getResourceDescriptorKey(operationDescriptor), async () => {
+          recordRetry();
+          recordRetry();
+        });
+        return {
+          descriptor: apiDescriptor,
+          status: 'success',
+          action: 'put',
+          relatedResults: [{
+            descriptor: operationDescriptor,
+            status: 'success',
+            action: 'put',
+          }],
+        };
+      });
+      const stdout = captureStdout();
+
+      try {
+        const result = await runPublish(
+          createMockClient(),
+          createMockStore([apiDescriptor]),
+          baseConfig
+        );
+        const output = stdout.lines();
+
+        expect(output).toContain('PUT api/api1\n');
+        expect(output).toContain('PUT apioperation/api1/get-items (2 retries)\n');
+        expect(result.actions.find((a) => a.descriptor.type === ResourceType.Api)?.retries)
+          .toBeUndefined();
+        expect(result.actions.find((a) => a.descriptor.type === ResourceType.ApiOperation)?.retries)
+          .toBe(2);
+        expect(result.totalRetries).toBe(2);
+        expect(result.retriedResources).toBe(1);
       } finally {
         stdout.restore();
       }
