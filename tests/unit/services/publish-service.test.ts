@@ -124,6 +124,32 @@ describe('publish-service', () => {
       expect(result.exitCode).toBe(0);
     });
 
+    it('should not write text output to stdout in json format mode', async () => {
+      const resources = [
+        { type: ResourceType.NamedValue, nameParts: ['nv1'] },
+        { type: ResourceType.Api, nameParts: ['api1'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      const writeSpy = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+
+      try {
+        await runPublish(client, store, {
+          service: testContext,
+          sourceDir: '/source',
+          dryRun: false,
+          deleteUnmatched: false,
+          logLevel: LogLevel.INFO,
+          outputFormat: 'json',
+        });
+      } finally {
+        writeSpy.mockRestore();
+      }
+
+      expect(writeSpy).not.toHaveBeenCalled();
+    });
+
     it('should return exit code 0 when all succeed', async () => {
       const resources = [
         { type: ResourceType.Tag, nameParts: ['tag1'] },

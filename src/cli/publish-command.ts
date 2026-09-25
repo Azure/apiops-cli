@@ -159,6 +159,7 @@ async function executePublish(
     deleteUnmatched: options.deleteUnmatched,
     commitId,
     logLevel: parseLogLevel(globalOpts.logLevel ?? 'info'),
+    outputFormat: globalOpts.format === 'json' ? 'json' : 'text',
   };
 
   // Create client and store

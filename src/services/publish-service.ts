@@ -494,7 +494,7 @@ async function executePuts(
       const { namedValues, otherTier1 } = splitNamedValues(nonWorkspaceTier1, config.overrides);
       const tierCount = workspaces.length + namedValues.length + otherTier1.length;
       if (tierCount === 0) continue;
-      writeTierHeader(tier, tierCount);
+      writeTierHeader(config, tier, tierCount);
 
       if (workspaces.length > 0) {
         logger.debug(`Publishing ${workspaces.length} workspace container(s) first (wave 0 of tier 1)`);
@@ -545,7 +545,7 @@ async function executePuts(
     } else if (tier === 2) {
       const tier2Descriptors = filterApiRevisionsHandledByRootApis(descriptors);
       if (tier2Descriptors.length === 0) continue;
-      writeTierHeader(tier, tier2Descriptors.length);
+      writeTierHeader(config, tier, tier2Descriptors.length);
       const apiDescriptors = tier2Descriptors.filter((d) => d.type === ResourceType.Api);
       const nonApiDescriptors = tier2Descriptors.filter((d) => d.type !== ResourceType.Api);
 
@@ -589,21 +589,36 @@ async function executePuts(
       }
 
       if (tierDescriptors.length === 0) continue;
-      writeTierHeader(tier, tierDescriptors.length);
+      writeTierHeader(config, tier, tierDescriptors.length);
       await publishAndOutput(client, store, context, config, tierDescriptors, targetDescriptors, results);
     }
 
-    writeTierFooter(tier, Date.now() - tierStartedAt);
+    writeTierFooter(config, tier, Date.now() - tierStartedAt);
   }
 
   return results;
 }
 
 /**
+ * True when human-readable text may be written to stdout.
+ * In `--format json` mode stdout must carry only the JSON document, so all
+ * service-level text output is suppressed.
+ */
+function isTextOutput(config: PublishConfig): boolean {
+  return config.outputFormat !== 'json';
+}
+
+/**
  * Write a tier header line to stdout, e.g.
  * `── Tier 1: Independent resources (16) ──`.
  */
-function writeTierHeader(tier: number, count: number, prefix = 'Tier'): void {
+function writeTierHeader(
+  config: PublishConfig,
+  tier: number,
+  count: number,
+  prefix = 'Tier'
+): void {
+  if (!isTextOutput(config)) return;
   const label = TIER_LABELS[tier] ?? 'Resources';
   process.stdout.write(`\n── ${prefix} ${tier}: ${label} (${count}) ──\n`);
 }
@@ -611,7 +626,13 @@ function writeTierHeader(tier: number, count: number, prefix = 'Tier'): void {
 /**
  * Write the per-tier completion line with elapsed time to stdout.
  */
-function writeTierFooter(tier: number, elapsedMs: number, prefix = 'Tier'): void {
+function writeTierFooter(
+  config: PublishConfig,
+  tier: number,
+  elapsedMs: number,
+  prefix = 'Tier'
+): void {
+  if (!isTextOutput(config)) return;
   process.stdout.write(`${prefix} ${tier} completed in ${formatDuration(elapsedMs)}\n`);
 }
 
@@ -690,7 +711,7 @@ async function publishAndOutput(
   const tierResults = await publishTier(client, store, context, config, descriptors, targetDescriptors);
   results.push(...tierResults);
   for (const result of tierResults) {
-    outputActionStatus(result);
+    outputActionStatus(config, result);
   }
 }
 
@@ -986,7 +1007,7 @@ async function executeDeletesForDescriptors(
 
     logger.debug(`Deleting tier ${tier}: ${descriptors.length} resources`);
     const tierStartedAt = Date.now();
-    writeTierHeader(tier, descriptors.length, 'Delete tier');
+    writeTierHeader(config, tier, descriptors.length, 'Delete tier');
 
     const tierResults = await deleteTier(
       client,
@@ -1000,9 +1021,9 @@ async function executeDeletesForDescriptors(
 
     // Output per-resource status lines
     for (const result of tierResults) {
-      outputActionStatus(result);
+      outputActionStatus(config, result);
     }
-    writeTierFooter(tier, Date.now() - tierStartedAt, 'Delete tier');
+    writeTierFooter(config, tier, Date.now() - tierStartedAt, 'Delete tier');
   }
 
   return results;
@@ -1110,16 +1131,16 @@ function attachRetries(results: PublishActionResult[], retries: number): Publish
 /**
  * Output per-resource status line to stdout.
  */
-function outputActionStatus(result: PublishActionResult): void {
+function outputActionStatus(config: PublishConfig, result: PublishActionResult): void {
   const verb = result.action.toUpperCase();
   const path = buildResourcePath(result.descriptor);
   const retries = result.retries ?? 0;
   const retrySuffix = retries > 0 ? ` (${retries} ${retries === 1 ? 'retry' : 'retries'})` : '';
 
   if (result.status === 'success') {
-    process.stdout.write(`${verb} ${path}${retrySuffix}\n`);
+    if (isTextOutput(config)) process.stdout.write(`${verb} ${path}${retrySuffix}\n`);
   } else if (result.status === 'skipped') {
-    process.stdout.write(`SKIP ${path}${retrySuffix}\n`);
+    if (isTextOutput(config)) process.stdout.write(`SKIP ${path}${retrySuffix}\n`);
   } else if (result.status === 'failed') {
     process.stderr.write(`ERROR ${verb} ${path}${retrySuffix}: ${result.error?.message}\n`);
   }
