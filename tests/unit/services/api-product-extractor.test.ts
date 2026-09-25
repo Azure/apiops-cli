@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import * as yaml from 'js-yaml';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
 import { FilterConfig } from '../../../src/models/config.js';
@@ -78,6 +79,301 @@ describe('api-extractor', () => {
 
       expect(result.specification).toBe(true);
       expect(store.writeContent).toHaveBeenCalled();
+    });
+
+    describe.each([
+      { format: 'yaml', version: { openapi: '3.0.1' } },
+      { format: 'json', version: { openapi: '3.0.1' } },
+      { format: 'yaml', version: { swagger: '2.0' } },
+      { format: 'json', version: { swagger: '2.0' } },
+    ])('operation filtering in $format specifications ($version)', ({ format, version }) => {
+      const createOperation = {
+        operationId: 'create-resources',
+        responses: { '200': { description: 'Created' } },
+        'x-custom-operation': { preserved: true },
+      };
+      const testOperation = {
+        operationId: 'test',
+        responses: { '200': { description: 'OK' } },
+      };
+      const pathMetadata = {
+        parameters: [{
+          name: 'id', in: 'query', required: false,
+          ...('swagger' in version ? { type: 'string' } : { schema: { type: 'string' } }),
+        }],
+        'x-custom-path': { preserved: true },
+      };
+      const schemas = { Resource: { type: 'object', properties: { id: { type: 'string' } } } };
+      const specification = {
+        ...version,
+        info: { title: 'Test API', version: '1.0' },
+        ...('swagger' in version ? { definitions: schemas } : { components: { schemas } }),
+        paths: {
+          '/resources': { ...pathMetadata, post: createOperation, get: testOperation },
+          '/test': { ...pathMetadata, get: testOperation },
+        },
+        'x-custom-document': { preserved: true },
+      };
+      const content = format === 'json'
+        ? JSON.stringify(specification, null, 2)
+        : yaml.dump(specification);
+      const apiDescriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['api1'],
+      };
+
+      it.each([
+        ['exact name', ['create-resources']],
+        ['case-insensitive name', ['CREATE-RESOURCES']],
+        ['wildcard', ['create-*']],
+        ['exclusion', ['*', '!test']],
+        ['pure exclusion', ['!test']],
+      ])('filters specification methods and operation artifacts by %s', async (_label, operations) => {
+        const client = createMockClient({
+          getApiSpecification: vi.fn().mockResolvedValue({ content, format }),
+        });
+        client._resources[ResourceType.ApiOperation] = [
+          { name: 'create-resources', properties: { method: 'POST', urlTemplate: '/resources' } },
+          { name: 'test', properties: { method: 'GET', urlTemplate: '/test' } },
+        ];
+        const store = createMockStore();
+        const filter: FilterConfig = {
+          apis: ['api1'],
+          apiSubFilters: { api1: { operations } },
+        };
+
+        const result = await extractApiResources(
+          client, store, testContext, apiDescriptor,
+          { name: 'api1', properties: {} }, '/output', filter
+        );
+
+        expect(result.specification).toBe(true);
+        expect(result.errorCount).toBe(0);
+        expect(result.operations.map(op => op.descriptor.nameParts[1])).toEqual(['create-resources']);
+        const written = store.writeContent.mock.calls.find(call => call[3] === 'specification');
+        expect(written?.[4]).toBe(format);
+        const parsed = format === 'json' ? JSON.parse(written![2]) : yaml.load(written![2]);
+        expect(parsed).toEqual({
+          ...specification,
+          paths: { '/resources': { ...pathMetadata, post: createOperation } },
+        });
+      });
+
+      it.each([
+        ['empty list', []],
+        ['unmatched name', ['missing-operation']],
+      ])('removes all paths for an %s', async (_label, operations) => {
+        const client = createMockClient({
+          getApiSpecification: vi.fn().mockResolvedValue({ content, format }),
+        });
+        const store = createMockStore();
+
+        const result = await extractApiResources(
+          client, store, testContext, apiDescriptor,
+          { name: 'api1', properties: {} }, '/output',
+          { apis: ['api1'], apiSubFilters: { api1: { operations } } }
+        );
+
+        expect(result.specification).toBe(true);
+        const written = store.writeContent.mock.calls.find(call => call[3] === 'specification');
+        expect(yaml.load(written![2])).toEqual({ ...specification, paths: {} });
+      });
+
+      it.each([
+        undefined,
+        { apis: ['api1'] },
+        { apiSubFilters: { api1: { diagnostics: [] } } },
+        { apiSubFilters: { otherApi: { operations: [] } } },
+        { apiSubFilters: { api1: { operations: ['*'] } } },
+      ])('preserves the original content when operations are not filtered (%j)', async (filter) => {
+        const client = createMockClient({
+          getApiSpecification: vi.fn().mockResolvedValue({ content, format }),
+        });
+        const store = createMockStore();
+
+        await extractApiResources(
+          client, store, testContext, apiDescriptor,
+          { name: 'api1', properties: {} }, '/output', filter
+        );
+
+        expect(store.writeContent).toHaveBeenCalledWith(
+          '/output', apiDescriptor, content, 'specification', format
+        );
+      });
+
+      it('applies case-insensitive API root filters to workspace revisions', async () => {
+        const client = createMockClient({
+          getApiSpecification: vi.fn().mockResolvedValue({ content, format }),
+        });
+        const store = createMockStore();
+        const descriptor: ResourceDescriptor = {
+          ...apiDescriptor, nameParts: ['api1;rev=2'], workspace: 'team',
+        };
+
+        await extractApiResources(
+          client, store, testContext, descriptor,
+          { name: 'api1;rev=2', properties: {} }, '/output',
+          { apis: ['API1'], apiSubFilters: { API1: { operations: ['create-resources'] } } },
+          'team'
+        );
+
+        const written = store.writeContent.mock.calls.find(call => call[3] === 'specification');
+        expect(written?.[1]).toEqual(descriptor);
+        expect(yaml.load(written![2])).toEqual({
+          ...specification,
+          paths: { '/resources': { ...pathMetadata, post: createOperation } },
+        });
+      });
+
+      it('filters all HTTP methods and extended paths without removing shared metadata', async () => {
+        const paths = {
+          '/resources': {
+            ...pathMetadata,
+            post: createOperation,
+            get: testOperation,
+            put: testOperation,
+            delete: testOperation,
+            options: testOperation,
+            head: testOperation,
+            patch: testOperation,
+            trace: testOperation,
+          },
+          '/unidentified': { get: { responses: { '200': { description: 'No operation ID' } } } },
+          'x-custom-paths': { preserved: true },
+        };
+        const extendedPaths = {
+          '/resources?type=new': { post: createOperation },
+          '/test?type=internal': { get: testOperation },
+        };
+        const spec = { ...specification, paths, 'x-ms-paths': extendedPaths };
+        const client = createMockClient({
+          getApiSpecification: vi.fn().mockResolvedValue({
+            content: format === 'json' ? JSON.stringify(spec) : yaml.dump(spec), format,
+          }),
+        });
+        const store = createMockStore();
+
+        await extractApiResources(
+          client, store, testContext, apiDescriptor,
+          { name: 'api1', properties: {} }, '/output',
+          { apiSubFilters: { api1: { operations: ['create-resources'] } } }
+        );
+
+        const written = store.writeContent.mock.calls.find(call => call[3] === 'specification');
+        expect(yaml.load(written![2])).toEqual({
+          ...specification,
+          paths: {
+            '/resources': { ...pathMetadata, post: createOperation },
+            'x-custom-paths': { preserved: true },
+          },
+          'x-ms-paths': { '/resources?type=new': { post: createOperation } },
+        });
+      });
+
+      it('preserves numeric literals and date-like strings unrelated to the removed operation', async () => {
+        const baseContent = format === 'json'
+          ? JSON.stringify(specification, null, 2)
+          : yaml.dump(specification);
+        // Embed raw literals directly rather than round-tripping them through a JS
+        // object, since the JS engine itself would already round these numeric
+        // values when parsing them in this test file.
+        const content = format === 'json'
+          ? baseContent.replace(
+            /^\{/,
+            '{\n  "x-large-id": 9223372036854775807,\n'
+            + '  "x-large-decimal": 9223372036854775807.0,\n'
+            + '  "x-large-exponent": 1e400,\n'
+            + '  "x-release-date": "2023-01-01",'
+          )
+          : `x-large-id: 9223372036854775807\nx-release-date: 2023-01-01\n${baseContent}`;
+        const client = createMockClient({
+          getApiSpecification: vi.fn().mockResolvedValue({ content, format }),
+        });
+        const store = createMockStore();
+
+        await extractApiResources(
+          client, store, testContext, apiDescriptor,
+          { name: 'api1', properties: {} }, '/output',
+          { apiSubFilters: { api1: { operations: ['create-resources'] } } }
+        );
+
+        const written = store.writeContent.mock.calls.find(call => call[3] === 'specification');
+        expect(written![2]).toContain(
+          format === 'json' ? '"x-large-id": 9223372036854775807' : 'x-large-id: 9223372036854775807'
+        );
+        expect(written![2]).toContain(
+          format === 'json' ? '"x-release-date": "2023-01-01"' : 'x-release-date: 2023-01-01'
+        );
+        if (format === 'json') {
+          expect(written![2]).toContain('"x-large-decimal": 9223372036854775807.0');
+          expect(written![2]).toContain('"x-large-exponent": 1e400');
+        }
+      });
+
+      it.skipIf(format !== 'yaml')('round-trips negative and out-of-range YAML integers via BigInt, decimalizing non-decimal styles', async () => {
+        const content = [
+          'x-negative-big-int: -9223372036854775808',
+          'x-hex: 0x1A',
+          yaml.dump(specification),
+        ].join('\n');
+        const client = createMockClient({
+          getApiSpecification: vi.fn().mockResolvedValue({ content, format }),
+        });
+        const store = createMockStore();
+
+        await extractApiResources(
+          client, store, testContext, apiDescriptor,
+          { name: 'api1', properties: {} }, '/output',
+          { apiSubFilters: { api1: { operations: ['create-resources'] } } }
+        );
+
+        const written = store.writeContent.mock.calls.find(call => call[3] === 'specification');
+        // Full precision preserved for the out-of-range negative integer...
+        expect(written![2]).toContain('x-negative-big-int: -9223372036854775808');
+        // ...while a value in a non-decimal style is re-emitted in decimal, a
+        // documented limitation of reserializing the whole document.
+        expect(written![2]).toContain('x-hex: 26');
+      });
+
+      it('reports malformed filtered specifications without writing unfiltered content', async () => {
+        const client = createMockClient({
+          getApiSpecification: vi.fn().mockResolvedValue({ content: '{ invalid', format }),
+        });
+        const store = createMockStore();
+
+        const result = await extractApiResources(
+          client, store, testContext, apiDescriptor,
+          { name: 'api1', properties: {} }, '/output',
+          { apiSubFilters: { api1: { operations: ['create-resources'] } } }
+        );
+
+        expect(result.specification).toBe(false);
+        expect(result.errorCount).toBe(1);
+        expect(store.writeContent).not.toHaveBeenCalled();
+      });
+    });
+
+    it.each([
+      { format: 'graphql', content: 'type Query { hello: String }' },
+      { format: 'wsdl', content: '<definitions xmlns="http://schemas.xmlsoap.org/wsdl/" />' },
+      { format: 'wadl', content: '<application xmlns="http://wadl.dev.java.net/2009/02" />' },
+    ])('does not apply operation filters to $format specifications', async (spec) => {
+      const client = createMockClient({
+        getApiSpecification: vi.fn().mockResolvedValue(spec),
+      });
+      const store = createMockStore();
+      const apiDescriptor: ResourceDescriptor = { type: ResourceType.Api, nameParts: ['api1'] };
+
+      const result = await extractApiResources(
+        client, store, testContext, apiDescriptor,
+        { name: 'api1', properties: {} }, '/output',
+        { apiSubFilters: { api1: { operations: [] } } }
+      );
+
+      expect(result.specification).toBe(true);
+      expect(store.writeContent).toHaveBeenCalledWith(
+        '/output', apiDescriptor, spec.content, 'specification', spec.format
+      );
     });
 
     it('should handle missing specification gracefully', async () => {
