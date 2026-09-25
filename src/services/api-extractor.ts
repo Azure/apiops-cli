@@ -348,6 +348,10 @@ async function extractApiSpecification(
 /**
  * Apply the same operation filter to the specification as to operation artifacts.
  * Keep shared definitions and path metadata, but remove paths without selected methods.
+ *
+ * Parses and reserializes losslessly: scalars unrelated to the operations being
+ * removed (e.g. int64 examples, date-like strings) are preserved byte-for-byte
+ * rather than being rounded or retyped by the default JSON/YAML parsers.
  */
 function filterOpenApiOperations(
   content: string,
@@ -364,7 +368,7 @@ function filterOpenApiOperations(
     return content;
   }
 
-  const spec = (format === 'json' ? JSON.parse(content) : yaml.load(content)) as Record<string, unknown>;
+  const spec = parseOpenApiDocument(content, format);
   const methods = new Set(['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']);
   let modified = false;
 
@@ -401,7 +405,143 @@ function filterOpenApiOperations(
   }
 
   if (!modified) return content;
-  return format === 'json' ? JSON.stringify(spec, null, 2) : yaml.dump(spec, { lineWidth: -1 });
+  return stringifyOpenApiDocument(spec, format);
+}
+
+/**
+ * Parse a JSON/YAML OpenAPI document without losing precision on unrelated
+ * scalars. `JSON.parse`/`js-yaml` normally round very large integers (e.g.
+ * int64 examples) to the nearest representable double and, for YAML, coerce
+ * bare date-like scalars to `Date` objects. Both are avoided here so that
+ * only the operations targeted by the filter are actually changed.
+ */
+function parseOpenApiDocument(content: string, format: 'yaml' | 'json'): Record<string, unknown> {
+  if (format === 'json') {
+    // `JSON.parse`'s reviver `context` argument and `JSON.rawJSON` (which
+    // preserves a numeric literal's exact source text through re-serialization)
+    // are ES2024 additions not yet reflected in the configured TS lib target.
+    const reviver = (_key: string, value: unknown, context: { source?: string }): unknown => {
+      const source = context?.source;
+      if (typeof value === 'number' && source !== undefined && !Number.isSafeInteger(value) && /^-?\d+$/.test(source)) {
+        return (JSON as unknown as { rawJSON(text: string): unknown }).rawJSON(source);
+      }
+      return value;
+    };
+    return (JSON.parse as unknown as (
+      text: string,
+      reviver: (key: string, value: unknown, context: { source?: string }) => unknown
+    ) => unknown)(content, reviver) as Record<string, unknown>;
+  }
+  return yaml.load(content, { schema: PRECISE_YAML_SCHEMA }) as Record<string, unknown>;
+}
+
+/**
+ * Reserialize a document previously parsed by {@link parseOpenApiDocument},
+ * emitting the preserved raw/precise scalars back in their original form.
+ */
+function stringifyOpenApiDocument(spec: Record<string, unknown>, format: 'yaml' | 'json'): string {
+  return format === 'json'
+    ? JSON.stringify(spec, null, 2)
+    : yaml.dump(spec, { lineWidth: -1, schema: PRECISE_YAML_SCHEMA });
+}
+
+/**
+ * YAML `int` type that preserves full precision for integers outside the safe
+ * integer range (e.g. int64 examples) by representing them as `BigInt`
+ * instead of a lossy JS `number`. Built on the standard Core schema, which
+ * (unlike the Default schema) does not auto-convert bare date-like scalars to
+ * `Date` objects.
+ */
+const PRECISE_YAML_SCHEMA = yaml.CORE_SCHEMA.extend({
+  implicit: [
+    new yaml.Type('tag:yaml.org,2002:int', {
+      kind: 'scalar',
+      resolve: resolveYamlInteger,
+      construct: (data: string) => parsePreciseYamlInteger(data),
+      predicate: (data: object) => isPreciseYamlInteger(data),
+      represent: {
+        binary: (data: object) => (asPreciseYamlNumber(data) >= 0
+          ? '0b' + asPreciseYamlNumber(data).toString(2)
+          : '-0b' + asPreciseYamlNumber(data).toString(2).slice(1)),
+        octal: (data: object) => (asPreciseYamlNumber(data) >= 0
+          ? '0o' + asPreciseYamlNumber(data).toString(8)
+          : '-0o' + asPreciseYamlNumber(data).toString(8).slice(1)),
+        decimal: (data: object) => asPreciseYamlNumber(data).toString(10),
+        hexadecimal: (data: object) => (asPreciseYamlNumber(data) >= 0
+          ? '0x' + asPreciseYamlNumber(data).toString(16).toUpperCase()
+          : '-0x' + asPreciseYamlNumber(data).toString(16).toUpperCase().slice(1)),
+      },
+      defaultStyle: 'decimal',
+      styleAliases: {
+        binary: [2, 'bin'],
+        octal: [8, 'oct'],
+        decimal: [10, 'dec'],
+        hexadecimal: [16, 'hex'],
+      },
+    }),
+  ],
+});
+
+function asPreciseYamlNumber(data: object): number | bigint {
+  return data as unknown as number | bigint;
+}
+
+/** Ported from js-yaml's built-in int type resolver (not exported publicly). */
+function resolveYamlInteger(data: string | null): boolean {
+  if (data === null || data.length === 0) return false;
+
+  let index = 0;
+  const max = data.length;
+  let ch = data[index];
+
+  if (ch === '-' || ch === '+') {
+    ch = data[++index];
+  }
+
+  if (ch === '0') {
+    if (index + 1 === max) return true;
+    ch = data[++index];
+
+    if (ch === 'b') return /^[01]+$/.test(data.slice(index + 1));
+    if (ch === 'x') return /^[0-9a-fA-F]+$/.test(data.slice(index + 1));
+    if (ch === 'o') return /^[0-7]+$/.test(data.slice(index + 1));
+  }
+
+  return /^[0-9]+$/.test(data.slice(index));
+}
+
+/**
+ * Parses a resolved YAML integer scalar, promoting to `BigInt` only when the
+ * value would otherwise lose precision as a JS `number`.
+ */
+function parsePreciseYamlInteger(data: string): number | bigint {
+  let value = data;
+  let sign = 1;
+  const ch0 = value[0];
+  if (ch0 === '-' || ch0 === '+') {
+    if (ch0 === '-') sign = -1;
+    value = value.slice(1);
+  }
+  if (value === '0') return 0;
+
+  let magnitude: number;
+  if (value[0] === '0' && value[1] === 'b') magnitude = parseInt(value.slice(2), 2);
+  else if (value[0] === '0' && value[1] === 'x') magnitude = parseInt(value.slice(2), 16);
+  else if (value[0] === '0' && value[1] === 'o') magnitude = parseInt(value.slice(2), 8);
+  else magnitude = parseInt(value, 10);
+
+  const result = sign * magnitude;
+  if (Number.isSafeInteger(result)) return result;
+
+  const preciseMagnitude = BigInt(value);
+  return sign === -1 ? -preciseMagnitude : preciseMagnitude;
+}
+
+function isPreciseYamlInteger(data: unknown): boolean {
+  if (typeof data === 'bigint') return true;
+  return Object.prototype.toString.call(data) === '[object Number]' &&
+    (data as number) % 1 === 0 &&
+    !Object.is(data, -0);
 }
 
 /**

@@ -270,6 +270,36 @@ describe('api-extractor', () => {
         });
       });
 
+      it('preserves large integers and date-like strings unrelated to the removed operation', async () => {
+        const baseContent = format === 'json'
+          ? JSON.stringify(specification, null, 2)
+          : yaml.dump(specification);
+        // Embed raw literals directly rather than round-tripping them through a JS
+        // object, since the JS engine itself would already round the int64 value
+        // when parsing a numeric literal in this test file.
+        const content = format === 'json'
+          ? baseContent.replace(/^\{/, '{\n  "x-large-id": 9223372036854775807,\n  "x-release-date": "2023-01-01",')
+          : `x-large-id: 9223372036854775807\nx-release-date: 2023-01-01\n${baseContent}`;
+        const client = createMockClient({
+          getApiSpecification: vi.fn().mockResolvedValue({ content, format }),
+        });
+        const store = createMockStore();
+
+        await extractApiResources(
+          client, store, testContext, apiDescriptor,
+          { name: 'api1', properties: {} }, '/output',
+          { apiSubFilters: { api1: { operations: ['create-resources'] } } }
+        );
+
+        const written = store.writeContent.mock.calls.find(call => call[3] === 'specification');
+        expect(written![2]).toContain(
+          format === 'json' ? '"x-large-id": 9223372036854775807' : 'x-large-id: 9223372036854775807'
+        );
+        expect(written![2]).toContain(
+          format === 'json' ? '"x-release-date": "2023-01-01"' : 'x-release-date: 2023-01-01'
+        );
+      });
+
       it('reports malformed filtered specifications without writing unfiltered content', async () => {
         const client = createMockClient({
           getApiSpecification: vi.fn().mockResolvedValue({ content: '{ invalid', format }),
