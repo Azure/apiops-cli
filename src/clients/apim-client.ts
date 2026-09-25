@@ -219,14 +219,16 @@ export class ApimClient implements IApimClient {
         // Handle rate limiting (429)
         if (response.status === 429) {
           const retryAfter = response.headers.get('Retry-After');
-          const delaySeconds = retryAfter ? parseInt(retryAfter, 10) : Math.pow(2, attempt);
-          this.logRetry(
-            `Rate limited (429) on ${target} (attempt ${attempt + 1}/${maxAttempts}), ` +
-            `retrying in ${formatDuration(delaySeconds * 1000)}`
-          );
-          await this.delay(delaySeconds * 1000);
-          attempt++;
-          continue;
+          if (attempt < ApimClient.MAX_RETRIES) {
+            const delaySeconds = retryAfter ? parseInt(retryAfter, 10) : Math.pow(2, attempt);
+            this.logRetry(
+              `Rate limited (429) on ${target} (attempt ${attempt + 1}/${maxAttempts}), ` +
+              `retrying in ${formatDuration(delaySeconds * 1000)}`
+            );
+            await this.delay(delaySeconds * 1000);
+            attempt++;
+            continue;
+          }
         }
 
         // Handle transient errors (5xx)
