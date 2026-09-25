@@ -439,7 +439,7 @@ function parseOpenApiDocument(content: string, format: 'yaml' | 'json'): Record<
   if (format === 'json') {
     const reviver = (_key: string, value: unknown, context: { source?: string }): unknown => {
       const source = context?.source;
-      if (typeof value === 'number' && source !== undefined && !Number.isSafeInteger(value) && /^-?\d+$/.test(source)) {
+      if (typeof value === 'number' && source !== undefined) {
         return JSON.rawJSON(source);
       }
       return value;
