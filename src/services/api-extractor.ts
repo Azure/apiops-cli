@@ -462,18 +462,18 @@ const PRECISE_YAML_SCHEMA = yaml.CORE_SCHEMA.extend({
       kind: 'scalar',
       resolve: resolveYamlInteger,
       construct: (data: string) => parsePreciseYamlInteger(data),
-      predicate: (data: object) => isPreciseYamlInteger(data),
+      predicate: (data: unknown) => isPreciseYamlInteger(data),
       represent: {
-        binary: (data: object) => (asPreciseYamlNumber(data) >= 0
-          ? '0b' + asPreciseYamlNumber(data).toString(2)
-          : '-0b' + asPreciseYamlNumber(data).toString(2).slice(1)),
-        octal: (data: object) => (asPreciseYamlNumber(data) >= 0
-          ? '0o' + asPreciseYamlNumber(data).toString(8)
-          : '-0o' + asPreciseYamlNumber(data).toString(8).slice(1)),
-        decimal: (data: object) => asPreciseYamlNumber(data).toString(10),
-        hexadecimal: (data: object) => (asPreciseYamlNumber(data) >= 0
-          ? '0x' + asPreciseYamlNumber(data).toString(16).toUpperCase()
-          : '-0x' + asPreciseYamlNumber(data).toString(16).toUpperCase().slice(1)),
+        binary: (data: unknown) => (castPreciseYamlValue(data) >= 0
+          ? '0b' + castPreciseYamlValue(data).toString(2)
+          : '-0b' + castPreciseYamlValue(data).toString(2).slice(1)),
+        octal: (data: unknown) => (castPreciseYamlValue(data) >= 0
+          ? '0o' + castPreciseYamlValue(data).toString(8)
+          : '-0o' + castPreciseYamlValue(data).toString(8).slice(1)),
+        decimal: (data: unknown) => castPreciseYamlValue(data).toString(10),
+        hexadecimal: (data: unknown) => (castPreciseYamlValue(data) >= 0
+          ? '0x' + castPreciseYamlValue(data).toString(16).toUpperCase()
+          : '-0x' + castPreciseYamlValue(data).toString(16).toUpperCase().slice(1)),
       },
       defaultStyle: 'decimal',
       styleAliases: {
@@ -486,8 +486,8 @@ const PRECISE_YAML_SCHEMA = yaml.CORE_SCHEMA.extend({
   ],
 });
 
-function asPreciseYamlNumber(data: object): number | bigint {
-  return data as unknown as number | bigint;
+function castPreciseYamlValue(data: unknown): number | bigint {
+  return data as number | bigint;
 }
 
 /** Ported from js-yaml's built-in int type resolver (not exported publicly). */
