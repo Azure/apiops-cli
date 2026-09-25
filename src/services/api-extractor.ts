@@ -349,9 +349,13 @@ async function extractApiSpecification(
  * Apply the same operation filter to the specification as to operation artifacts.
  * Keep shared definitions and path metadata, but remove paths without selected methods.
  *
- * Parses and reserializes losslessly: scalars unrelated to the operations being
- * removed (e.g. int64 examples, date-like strings) are preserved byte-for-byte
- * rather than being rounded or retyped by the default JSON/YAML parsers.
+ * Parses and reserializes the document, taking care to avoid the precision/type
+ * loss that `JSON.parse`/js-yaml's defaults would otherwise introduce for scalars
+ * unrelated to the operations being removed (e.g. int64 examples round to the
+ * nearest double, bare YAML date-like strings are coerced to `Date`). This is not
+ * a full byte-for-byte preserving editor: YAML comments are not retained, and
+ * integers originally written in hex/octal/binary notation are re-emitted in
+ * decimal form, since the reserialization still rebuilds the whole document.
  */
 function filterOpenApiOperations(
   content: string,
