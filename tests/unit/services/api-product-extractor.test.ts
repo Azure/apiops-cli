@@ -300,6 +300,31 @@ describe('api-extractor', () => {
         );
       });
 
+      it.skipIf(format !== 'yaml')('round-trips negative and out-of-range YAML integers via BigInt, decimalizing non-decimal styles', async () => {
+        const content = [
+          'x-negative-big-int: -9223372036854775808',
+          'x-hex: 0x1A',
+          yaml.dump(specification),
+        ].join('\n');
+        const client = createMockClient({
+          getApiSpecification: vi.fn().mockResolvedValue({ content, format }),
+        });
+        const store = createMockStore();
+
+        await extractApiResources(
+          client, store, testContext, apiDescriptor,
+          { name: 'api1', properties: {} }, '/output',
+          { apiSubFilters: { api1: { operations: ['create-resources'] } } }
+        );
+
+        const written = store.writeContent.mock.calls.find(call => call[3] === 'specification');
+        // Full precision preserved for the out-of-range negative integer...
+        expect(written![2]).toContain('x-negative-big-int: -9223372036854775808');
+        // ...while a value in a non-decimal style is re-emitted in decimal, a
+        // documented limitation of reserializing the whole document.
+        expect(written![2]).toContain('x-hex: 26');
+      });
+
       it('reports malformed filtered specifications without writing unfiltered content', async () => {
         const client = createMockClient({
           getApiSpecification: vi.fn().mockResolvedValue({ content: '{ invalid', format }),

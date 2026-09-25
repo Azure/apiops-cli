@@ -23,6 +23,22 @@ import { normalizeWsdl } from '../lib/wsdl-normalizer.js';
 import { isWorkspaceScope, extractNameFromLink } from '../lib/workspace-link.js';
 
 /**
+ * `JSON.parse`'s reviver `context` argument and `JSON.rawJSON` are ES2024
+ * runtime additions (supported by the project's Node.js target) not yet
+ * reflected in the configured TS `lib`. Augment the global `JSON` interface
+ * rather than casting through `unknown` at each call site.
+ */
+declare global {
+  interface JSON {
+    parse(
+      text: string,
+      reviver: (this: unknown, key: string, value: unknown, context: { source?: string }) => unknown
+    ): unknown;
+    rawJSON(text: string): unknown;
+  }
+}
+
+/**
  * Result of API-specific extraction for a single API.
  */
 export interface ApiExtractionResult {
@@ -421,20 +437,14 @@ function filterOpenApiOperations(
  */
 function parseOpenApiDocument(content: string, format: 'yaml' | 'json'): Record<string, unknown> {
   if (format === 'json') {
-    // `JSON.parse`'s reviver `context` argument and `JSON.rawJSON` (which
-    // preserves a numeric literal's exact source text through re-serialization)
-    // are ES2024 additions not yet reflected in the configured TS lib target.
     const reviver = (_key: string, value: unknown, context: { source?: string }): unknown => {
       const source = context?.source;
       if (typeof value === 'number' && source !== undefined && !Number.isSafeInteger(value) && /^-?\d+$/.test(source)) {
-        return (JSON as unknown as { rawJSON(text: string): unknown }).rawJSON(source);
+        return JSON.rawJSON(source);
       }
       return value;
     };
-    return (JSON.parse as unknown as (
-      text: string,
-      reviver: (key: string, value: unknown, context: { source?: string }) => unknown
-    ) => unknown)(content, reviver) as Record<string, unknown>;
+    return JSON.parse(content, reviver) as Record<string, unknown>;
   }
   return yaml.load(content, { schema: PRECISE_YAML_SCHEMA }) as Record<string, unknown>;
 }
@@ -463,25 +473,12 @@ const PRECISE_YAML_SCHEMA = yaml.CORE_SCHEMA.extend({
       resolve: resolveYamlInteger,
       construct: (data: string) => parsePreciseYamlInteger(data),
       predicate: (data: unknown) => isPreciseYamlInteger(data),
-      represent: {
-        binary: (data: unknown) => (castPreciseYamlValue(data) >= 0
-          ? '0b' + castPreciseYamlValue(data).toString(2)
-          : '-0b' + castPreciseYamlValue(data).toString(2).slice(1)),
-        octal: (data: unknown) => (castPreciseYamlValue(data) >= 0
-          ? '0o' + castPreciseYamlValue(data).toString(8)
-          : '-0o' + castPreciseYamlValue(data).toString(8).slice(1)),
-        decimal: (data: unknown) => castPreciseYamlValue(data).toString(10),
-        hexadecimal: (data: unknown) => (castPreciseYamlValue(data) >= 0
-          ? '0x' + castPreciseYamlValue(data).toString(16).toUpperCase()
-          : '-0x' + castPreciseYamlValue(data).toString(16).toUpperCase().slice(1)),
-      },
-      defaultStyle: 'decimal',
-      styleAliases: {
-        binary: [2, 'bin'],
-        octal: [8, 'oct'],
-        decimal: [10, 'dec'],
-        hexadecimal: [16, 'hex'],
-      },
+      // Always represented in decimal: the original literal style (e.g. hex,
+      // octal, binary) isn't retained on the plain number/BigInt values produced
+      // by `construct`, so a multi-style representer couldn't be selected from
+      // them. Non-decimal integers unrelated to the filtered operations are
+      // therefore re-emitted in decimal form; see the module-level docstring.
+      represent: (data: unknown) => castPreciseYamlValue(data).toString(10),
     }),
   ],
 });
