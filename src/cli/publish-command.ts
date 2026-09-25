@@ -204,6 +204,7 @@ function outputJson(result: PublishResult): void {
       totalErrors: number;
       totalSkipped: number;
       totalRetries: number;
+      retriedResources: number;
       elapsedMs?: number;
     };
     actions: Array<{
@@ -243,6 +244,7 @@ function outputJson(result: PublishResult): void {
       totalErrors: result.totalErrors,
       totalSkipped: result.totalSkipped,
       totalRetries: result.totalRetries ?? 0,
+      retriedResources: result.retriedResources ?? 0,
       elapsedMs: result.elapsedMs,
     },
     actions: result.actions.map((action) => ({

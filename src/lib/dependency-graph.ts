@@ -110,6 +110,16 @@ export const TIER_4_RESOURCES: ResourceType[] = [
 ];
 
 /**
+ * Human-readable labels for each dependency tier, used to group CLI output.
+ */
+export const TIER_LABELS: Readonly<Record<number, string>> = {
+  1: 'Independent resources',
+  2: 'Resources with dependencies',
+  3: 'Child resources',
+  4: 'Nested child resources',
+};
+
+/**
  * Returns all resource types in topological order (dependencies first).
  * This is the order in which resources should be extracted and published.
  */

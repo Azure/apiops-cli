@@ -21,7 +21,7 @@ import { ArtifactStore } from '../clients/artifact-store.js';
 import { IArtifactStore } from '../clients/iartifact-store.js';
 import { getCloudConfig, buildArmBaseUrl } from '../lib/cloud-config.js';
 import { EXIT_FATAL, EXIT_SUCCESS } from '../lib/exit-codes.js';
-import { getResourceTier } from '../lib/dependency-graph.js';
+import { getResourceTier, TIER_LABELS } from '../lib/dependency-graph.js';
 import { formatDuration } from '../lib/format-duration.js';
 import { ResourceType } from '../models/resource-types.js';
 
@@ -223,21 +223,12 @@ function outputJson(result: ExtractionResult, elapsedMs: number): void {
   process.stdout.write(JSON.stringify(output, null, 2) + '\n');
 }
 
-/**
- * Human-readable labels for each dependency tier, used to group output.
- */
-const TIER_LABELS: Record<number, string> = {
-  1: 'Independent resources',
-  2: 'Resources with dependencies',
-  3: 'Child resources',
-  4: 'Nested child resources',
-};
 
 function tierOf(type: ResourceType): number {
   try {
     return getResourceTier(type);
   } catch {
-    return 0;
+    return Number.MAX_SAFE_INTEGER;
   }
 }
 
