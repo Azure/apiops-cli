@@ -33,15 +33,18 @@ async function getPackageVersion(): Promise<string> {
 }
 
 describe('CLI entry point', () => {
-  it('should display version with --version', async () => {
-    const [result, expectedVersion] = await Promise.all([runCli(['--version']), getPackageVersion()]);
+  it.each(['--version', '-V', '-v'])('should display version with %s', async (flag) => {
+    const [result, expectedVersion] = await Promise.all([runCli([flag]), getPackageVersion()]);
     expect(result.stdout.trim()).toBe(expectedVersion);
+    expect(result.stderr).toBe('');
     expect(result.exitCode).toBe(0);
   }, 15_000);
 
   it('should display help with --help', async () => {
     const result = await runCli(['--help']);
     expect(result.stdout).toContain('apiops');
+    expect(result.stdout).toContain('-V, --version');
+    expect(result.stdout).toMatch(/-v\s+output the version number/);
     expect(result.stdout).toContain('--log-level');
     expect(result.stdout).toContain('--format');
     expect(result.stdout).toContain('--subscription-id');

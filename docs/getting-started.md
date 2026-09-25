@@ -27,6 +27,8 @@ Verify the installation:
 apiops --version
 ```
 
+The short flags `-v` and `-V` also print the installed CLI version.
+
 ---
 
 ## 1. Extract APIM Configuration
