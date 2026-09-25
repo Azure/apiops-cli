@@ -35,6 +35,12 @@ describe('copilot/identity-setup-prompt', () => {
       expect(prompt).toContain('GITHUB_REPO');
     });
 
+    it('should instruct Copilot to ask for one value per question', () => {
+      const prompt = generateIdentitySetupPrompt({ environments: ['dev'] });
+      expect(prompt).toContain('Ask for one value per question');
+      expect(prompt).toContain('Never combine two or more variables into a single question');
+    });
+
     it('should include Azure AD app creation commands', () => {
       const prompt = generateIdentitySetupPrompt({ environments: ['dev'] });
       expect(prompt).toContain('az ad app create');
@@ -245,6 +251,15 @@ describe('copilot/identity-setup-prompt', () => {
       expect(prompt).toContain('APIM_SUBSCRIPTION_<ENV_UPPER>');
       expect(prompt).toContain('APIM_RG_<ENV_UPPER>');
       expect(prompt).toContain('APIM_NAME_<ENV_UPPER>');
+    });
+
+    it('should instruct Copilot to ask for one value per question in ADO prompt', () => {
+      const prompt = generateIdentitySetupPrompt({
+        environments: ['dev', 'prod'],
+        ciProvider: 'azure-devops',
+      });
+      expect(prompt).toContain('Ask for one value per question');
+      expect(prompt).toContain('Never combine two or more variables into a single question');
     });
 
     it('should offer Option B resource ID shorthand per environment in ADO prompt', () => {

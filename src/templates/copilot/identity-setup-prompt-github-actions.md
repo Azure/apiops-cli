@@ -85,6 +85,12 @@ Once confirmed, proceed to Step 1.
 Copilot, please ask the user for the following values before proceeding. Store
 each answer for use in later steps.
 
+**Ask for one value per question:**
+- Ask for each variable in its own separate question. Never combine two or more variables into a single question, and never ask the user to fill in a `NAME=` template.
+- In each question, state what the value is for (for example, "Resource group of the **prod** APIM instance") and show the example value.
+- Accept the plain value as the answer (for example, `rg-apim-prod`, not `APIM_RG_PROD=rg-apim-prod`).
+- If you can detect a likely value (for example, from `az account show` or `gh repo view`), offer it as the suggested answer to that single question so the user can accept or change it.
+
 | Variable | Description | Example |
 |----------|-------------|---------|
 {{ENV_SUBSCRIPTION_TABLE_ROWS}}
