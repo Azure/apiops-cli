@@ -270,15 +270,21 @@ describe('api-extractor', () => {
         });
       });
 
-      it('preserves large integers and date-like strings unrelated to the removed operation', async () => {
+      it('preserves numeric literals and date-like strings unrelated to the removed operation', async () => {
         const baseContent = format === 'json'
           ? JSON.stringify(specification, null, 2)
           : yaml.dump(specification);
         // Embed raw literals directly rather than round-tripping them through a JS
-        // object, since the JS engine itself would already round the int64 value
-        // when parsing a numeric literal in this test file.
+        // object, since the JS engine itself would already round these numeric
+        // values when parsing them in this test file.
         const content = format === 'json'
-          ? baseContent.replace(/^\{/, '{\n  "x-large-id": 9223372036854775807,\n  "x-release-date": "2023-01-01",')
+          ? baseContent.replace(
+            /^\{/,
+            '{\n  "x-large-id": 9223372036854775807,\n'
+            + '  "x-large-decimal": 9223372036854775807.0,\n'
+            + '  "x-large-exponent": 1e400,\n'
+            + '  "x-release-date": "2023-01-01",'
+          )
           : `x-large-id: 9223372036854775807\nx-release-date: 2023-01-01\n${baseContent}`;
         const client = createMockClient({
           getApiSpecification: vi.fn().mockResolvedValue({ content, format }),
@@ -298,6 +304,10 @@ describe('api-extractor', () => {
         expect(written![2]).toContain(
           format === 'json' ? '"x-release-date": "2023-01-01"' : 'x-release-date: 2023-01-01'
         );
+        if (format === 'json') {
+          expect(written![2]).toContain('"x-large-decimal": 9223372036854775807.0');
+          expect(written![2]).toContain('"x-large-exponent": 1e400');
+        }
       });
 
       it.skipIf(format !== 'yaml')('round-trips negative and out-of-range YAML integers via BigInt, decimalizing non-decimal styles', async () => {
