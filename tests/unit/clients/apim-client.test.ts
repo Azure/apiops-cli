@@ -6,10 +6,12 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ApimClient, HttpError } from '../../../src/clients/apim-client.js';
+import { ApimClient, HttpError, describeRequestTarget } from '../../../src/clients/apim-client.js';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext } from '../../../src/models/types.js';
 import { buildArmBaseUrl } from '../../../src/lib/cloud-config.js';
+import { logger } from '../../../src/lib/logger.js';
+import { trackRetries } from '../../../src/lib/retry-tracker.js';
 
 const testContext: ApimServiceContext = {
   subscriptionId: 'sub-1',
@@ -1668,5 +1670,91 @@ describe('User-Agent header', () => {
     expect(blobHeaders.get('User-Agent')).toMatch(/^apiops-cli\/\d+\.\d+\.\d+/);
     // Authorization must NOT be set on the unauthenticated call
     expect(blobHeaders.get('Authorization')).toBeNull();
+  });
+});
+
+describe('describeRequestTarget', () => {
+  it('reduces ARM URLs to the path below the APIM service', () => {
+    expect(
+      describeRequestTarget(`${testContext.baseUrl}/namedValues/nv%201?api-version=2024-05-01`)
+    ).toBe('namedValues/nv 1');
+  });
+
+  it('describes the service itself when no sub-path is present', () => {
+    expect(describeRequestTarget(`${testContext.baseUrl}?api-version=2024-05-01`)).toBe('service');
+  });
+
+  it('keeps host and path for non-ARM URLs and drops the query string', () => {
+    expect(describeRequestTarget('https://blob.example.net/container/spec.json?sig=secret')).toBe(
+      'blob.example.net/container/spec.json'
+    );
+  });
+});
+
+describe('ApimClient retry logging', () => {
+  let client: ApimClient;
+  let fetchSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    client = new ApimClient();
+    fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    vi.spyOn(client as any, 'delay').mockResolvedValue(undefined);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    vi.spyOn(client as any, 'exponentialBackoffWithJitter').mockReturnValue(1175.1730686888397);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  const descriptor = { type: ResourceType.NamedValue, nameParts: ['nv-1'] };
+
+  function queueServerErrorThenSuccess(): void {
+    fetchSpy
+      .mockResolvedValueOnce(new Response('error', { status: 503, headers: { 'Content-Type': 'text/plain' } }))
+      .mockResolvedValueOnce(makeResponse(200, { name: 'nv-1' }));
+  }
+
+  it('warns with resource context, attempt number, and a rounded delay', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    queueServerErrorThenSuccess();
+
+    await client.getResource(testContext, descriptor);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Server error 503 on GET namedValues/nv-1 (attempt 1/4), retrying in 1.2s'
+    );
+  });
+
+  it('includes resource context and attempt number for rate limiting', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    fetchSpy
+      .mockResolvedValueOnce(new Response('', { status: 429, headers: { 'Retry-After': '3' } }))
+      .mockResolvedValueOnce(makeResponse(200, { name: 'nv-1' }));
+
+    await client.getResource(testContext, descriptor);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Rate limited (429) on GET namedValues/nv-1 (attempt 1/4), retrying in 3.0s'
+    );
+  });
+
+  it('demotes retry messages to debug and counts them inside a tracking scope', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+    queueServerErrorThenSuccess();
+
+    const { retries } = await trackRetries(() => client.getResource(testContext, descriptor));
+
+    expect(retries).toBe(1);
+    expect(warnSpy).not.toHaveBeenCalled();
+    expect(debugSpy).toHaveBeenCalledWith(
+      'Server error 503 on GET namedValues/nv-1 (attempt 1/4), retrying in 1.2s'
+    );
   });
 });

@@ -15,6 +15,8 @@ import { deriveListPaths } from '../lib/resource-path.js';
 import { logger } from '../lib/logger.js';
 import { isWorkspaceScope } from '../lib/workspace-link.js';
 import { USER_AGENT } from '../lib/user-agent.js';
+import { formatDuration } from '../lib/format-duration.js';
+import { recordRetry } from '../lib/retry-tracker.js';
 
 /**
  * Structured HTTP error that carries the response status code.
@@ -74,6 +76,38 @@ export function stripSourceArmId(
   if (!Object.hasOwn(payload, 'id')) return payload;
   const { id: _omit, ...rest } = payload;
   return rest;
+}
+
+/**
+ * Build a short, human-readable description of a request URL for log output.
+ * ARM URLs are reduced to the path below the APIM service (e.g.
+ * `apis/echo/operations/get`); other URLs keep host and path only.
+ * Query strings are always dropped.
+ */
+export function describeRequestTarget(url: string): string {
+  let pathname: string;
+  let host = '';
+  try {
+    const parsed = new URL(url);
+    pathname = parsed.pathname;
+    host = parsed.host;
+  } catch {
+    pathname = url.split('?')[0] ?? url;
+  }
+
+  const match = /\/providers\/Microsoft\.ApiManagement\/service\/[^/]+\/?(.*)$/i.exec(pathname);
+  if (match) {
+    return safeDecode(match[1] || 'service');
+  }
+  return safeDecode(`${host}${pathname}`);
+}
+
+function safeDecode(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 export class ApimClient implements IApimClient {
@@ -173,17 +207,23 @@ export class ApimClient implements IApimClient {
     let attempt = 0;
     // For SAS blob URLs the query string contains the sig token — strip it before logging.
     const logUrl = skipAuth ? url.split('?')[0] : url;
+    const method = options.method ?? 'GET';
+    const target = `${method} ${describeRequestTarget(logUrl)}`;
+    const maxAttempts = ApimClient.MAX_RETRIES + 1;
 
     while (attempt <= ApimClient.MAX_RETRIES) {
       try {
-        logger.debug(`HTTP ${options.method ?? 'GET'} ${logUrl}`);
+        logger.debug(`HTTP ${method} ${logUrl}`);
         const response = await fetch(url, { ...options, headers });
 
         // Handle rate limiting (429)
         if (response.status === 429) {
           const retryAfter = response.headers.get('Retry-After');
           const delaySeconds = retryAfter ? parseInt(retryAfter, 10) : Math.pow(2, attempt);
-          logger.warn(`Rate limited (429), retrying after ${delaySeconds}s`);
+          this.logRetry(
+            `Rate limited (429) on ${target} (attempt ${attempt + 1}/${maxAttempts}), ` +
+            `retrying in ${formatDuration(delaySeconds * 1000)}`
+          );
           await this.delay(delaySeconds * 1000);
           attempt++;
           continue;
@@ -199,7 +239,10 @@ export class ApimClient implements IApimClient {
           }
           if (attempt < ApimClient.MAX_RETRIES) {
             const delayMs = this.exponentialBackoffWithJitter(attempt);
-            logger.warn(`Server error ${response.status}, retrying after ${delayMs}ms`);
+            this.logRetry(
+              `Server error ${response.status} on ${target} (attempt ${attempt + 1}/${maxAttempts}), ` +
+              `retrying in ${formatDuration(delayMs)}`
+            );
             await this.delay(delayMs);
             attempt++;
             continue;
@@ -261,13 +304,30 @@ export class ApimClient implements IApimClient {
           throw error;
         }
         const delayMs = this.exponentialBackoffWithJitter(attempt);
-        logger.warn(`Request failed: ${(error as Error).message}, retrying after ${delayMs}ms`);
+        this.logRetry(
+          `Request failed on ${target} (attempt ${attempt + 1}/${maxAttempts}): ` +
+          `${(error as Error).message}, retrying in ${formatDuration(delayMs)}`
+        );
         await this.delay(delayMs);
         attempt++;
       }
     }
 
     throw new Error('Max retries exceeded');
+  }
+
+  /**
+   * Log an intermediate retry. When the retry is attributed to an active
+   * tracking scope (e.g. a publish operation that reports its retry count on
+   * the final status line), the message is demoted to debug to keep normal
+   * output free of interleaved retry noise.
+   */
+  private logRetry(message: string): void {
+    if (recordRetry()) {
+      logger.debug(message);
+    } else {
+      logger.warn(message);
+    }
   }
 
   private exponentialBackoffWithJitter(attempt: number): number {
@@ -544,11 +604,12 @@ export class ApimClient implements IApimClient {
           error instanceof HttpError &&
           (error.status === 412 || error.code === 'PreconditionFailed');
         if (isConflict && attempt < ApimClient.DELETE_CONFLICT_RETRIES) {
-          logger.warn(
+          const delayMs = ApimClient.DELETE_CONFLICT_RETRY_DELAY_MS * attempt;
+          this.logRetry(
             `Delete conflict for ${buildResourceLabel(descriptor)} ` +
-            `(attempt ${attempt}/${ApimClient.DELETE_CONFLICT_RETRIES}), retrying...`
+            `(attempt ${attempt}/${ApimClient.DELETE_CONFLICT_RETRIES}), retrying in ${formatDuration(delayMs)}`
           );
-          await this.delay(ApimClient.DELETE_CONFLICT_RETRY_DELAY_MS * attempt);
+          await this.delay(delayMs);
           continue;
         }
         throw error;
