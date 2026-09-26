@@ -24,6 +24,7 @@ import { EXIT_FATAL, EXIT_SUCCESS } from '../lib/exit-codes.js';
 import { getResourceTier, TIER_LABELS } from '../lib/dependency-graph.js';
 import { formatDuration } from '../lib/format-duration.js';
 import { ResourceType } from '../models/resource-types.js';
+import { getNamePart } from '../lib/resource-path.js';
 
 /**
  * Interface for extract command options (from CLI flags).
@@ -262,16 +263,33 @@ export function outputText(result: ExtractionResult, elapsedMs: number): void {
   }
 
   // API details — list every extracted API, even those without sub-resources
-  if (result.apiResults.length > 0) {
+  // or whose sub-resource extraction failed
+  const apiDetails = new Map(result.apiResults.map((ar) => [ar.apiName, ar]));
+  const apiNames = new Set<string>();
+  for (const tr of result.typeResults) {
+    if (tr.type !== ResourceType.Api) continue;
+    for (const r of tr.extracted) {
+      if (r.status === 'success') apiNames.add(getNamePart(r.descriptor.nameParts, 0));
+    }
+  }
+  for (const name of apiDetails.keys()) apiNames.add(name);
+
+  if (apiNames.size > 0) {
     process.stdout.write('APIs:\n');
   }
-  for (const ar of result.apiResults) {
-    const details: string[] = [];
-    if (ar.specification) details.push('spec');
-    if (ar.operations.length > 0) details.push(`${ar.operations.length} ops`);
-    if (ar.revisions.length > 0) details.push(`${ar.revisions.length} revisions`);
-    const summary = details.length > 0 ? details.join(', ') : 'definition only';
-    process.stdout.write(`  API "${ar.apiName}": ${summary}\n`);
+  for (const name of apiNames) {
+    const ar = apiDetails.get(name);
+    let summary: string;
+    if (!ar) {
+      summary = 'sub-resource extraction failed';
+    } else {
+      const details: string[] = [];
+      if (ar.specification) details.push('spec');
+      if (ar.operations.length > 0) details.push(`${ar.operations.length} ops`);
+      if (ar.revisions.length > 0) details.push(`${ar.revisions.length} revisions`);
+      summary = details.length > 0 ? details.join(', ') : 'definition only';
+    }
+    process.stdout.write(`  API "${name}": ${summary}\n`);
   }
 
   // Workspace details

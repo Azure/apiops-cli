@@ -245,6 +245,29 @@ describe('extract-command', () => {
       expect(output).toContain('  API "src-graphql-synthetic": definition only\n');
     });
 
+    it('lists extracted APIs whose sub-resource extraction failed', () => {
+      const output = render(
+        {
+          ...baseResult,
+          typeResults: [
+            {
+              type: ResourceType.Api,
+              extracted: [
+                { descriptor: { type: ResourceType.Api, nameParts: ['echo'] }, json: {}, status: 'success' },
+                { descriptor: { type: ResourceType.Api, nameParts: ['broken'] }, json: {}, status: 'success' },
+              ],
+              totalCount: 2,
+              errorCount: 0,
+            },
+          ],
+          apiResults: [apiResult('echo', { specification: true })],
+        },
+        0
+      );
+
+      expect(output).toContain('APIs:\n  API "echo": spec\n  API "broken": sub-resource extraction failed\n');
+    });
+
     it('includes elapsed time on the Total line', () => {
       const output = render({ ...baseResult, totalExtracted: 96 }, 12_345);
 
