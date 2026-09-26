@@ -9,6 +9,8 @@ import { ResourceType } from '../../../src/models/resource-types.js';
 import { ResourceDescriptor, ApimServiceContext } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
 import { LogLevel } from '../../../src/lib/logger.js';
+import { recordRetry, withRetryResource } from '../../../src/lib/retry-tracker.js';
+import { getResourceDescriptorKey } from '../../../src/lib/resource-path.js';
 
 // Mock service dependencies
 vi.mock('../../../src/services/git-diff-service.js');
@@ -121,6 +123,32 @@ describe('publish-service', () => {
 
       expect(result.totalPuts).toBe(3);
       expect(result.exitCode).toBe(0);
+    });
+
+    it('should not write text output to stdout in json format mode', async () => {
+      const resources = [
+        { type: ResourceType.NamedValue, nameParts: ['nv1'] },
+        { type: ResourceType.Api, nameParts: ['api1'] },
+      ];
+
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      const writeSpy = vi.spyOn(process.stdout, 'write').mockReturnValue(true);
+
+      try {
+        await runPublish(client, store, {
+          service: testContext,
+          sourceDir: '/source',
+          dryRun: false,
+          deleteUnmatched: false,
+          logLevel: LogLevel.INFO,
+          outputFormat: 'json',
+        });
+      } finally {
+        writeSpy.mockRestore();
+      }
+
+      expect(writeSpy).not.toHaveBeenCalled();
     });
 
     it('should return exit code 0 when all succeed', async () => {
@@ -2088,6 +2116,123 @@ describe('publish-service', () => {
       });
       expect(putNames).toContain('regular-nv');
       expect(putNames).toContain(autoGenId);
+    });
+  });
+
+  describe('publish output readability', () => {
+    const baseConfig: PublishConfig = {
+      service: testContext,
+      sourceDir: '/source',
+      dryRun: false,
+      deleteUnmatched: false,
+      logLevel: LogLevel.INFO,
+    };
+
+    function captureStdout(): { lines: () => string; restore: () => void } {
+      const spy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      return {
+        lines: () => spy.mock.calls.map((call) => String(call[0])).join(''),
+        restore: () => spy.mockRestore(),
+      };
+    }
+
+    it('writes tier headers with counts and per-tier timing', async () => {
+      const resources = [
+        { type: ResourceType.NamedValue, nameParts: ['nv1'] },
+        { type: ResourceType.Tag, nameParts: ['tag1'] },
+        { type: ResourceType.Api, nameParts: ['api1'] },
+      ];
+      const stdout = captureStdout();
+
+      try {
+        await runPublish(createMockClient(), createMockStore(resources), baseConfig);
+        const output = stdout.lines();
+
+        expect(output).toContain('── Tier 1: Independent resources (2) ──');
+        expect(output).toContain('── Tier 2: Resources with dependencies (1) ──');
+        expect(output).not.toContain('── Tier 3');
+        expect(output).toMatch(/Tier 1 completed in \d+\.\ds/);
+        expect(output).toMatch(/Tier 2 completed in \d+\.\ds/);
+        expect(output.indexOf('Tier 1:')).toBeLessThan(output.indexOf('PUT namedvalue/nv1'));
+        expect(output.indexOf('PUT namedvalue/nv1')).toBeLessThan(output.indexOf('Tier 2:'));
+      } finally {
+        stdout.restore();
+      }
+    });
+
+    it('reports retries per resource and in the result totals', async () => {
+      const resources = [
+        { type: ResourceType.NamedValue, nameParts: ['nv1'] },
+        { type: ResourceType.Tag, nameParts: ['tag1'] },
+      ];
+      const client = createMockClient();
+      client.putResource.mockImplementation(async (_ctx: ApimServiceContext, descriptor: ResourceDescriptor) => {
+        if (descriptor.nameParts[0] === 'nv1') {
+          recordRetry();
+          recordRetry();
+        }
+        return undefined;
+      });
+      const stdout = captureStdout();
+
+      try {
+        const result = await runPublish(client, createMockStore(resources), baseConfig);
+        const output = stdout.lines();
+
+        expect(output).toContain('PUT namedvalue/nv1 (2 retries)\n');
+        expect(output).toContain('PUT tag/tag1\n');
+        expect(result.totalRetries).toBe(2);
+        expect(result.retriedResources).toBe(1);
+        expect(result.actions.find((a) => a.descriptor.nameParts[0] === 'nv1')?.retries).toBe(2);
+        expect(result.elapsedMs).toBeGreaterThanOrEqual(0);
+      } finally {
+        stdout.restore();
+      }
+    });
+
+    it('attributes retries to the related resource that incurred them', async () => {
+      const apiDescriptor = { type: ResourceType.Api, nameParts: ['api1'] };
+      const operationDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['api1', 'get-items'],
+      };
+      vi.mocked(publishApi).mockImplementation(async () => {
+        await withRetryResource(getResourceDescriptorKey(operationDescriptor), async () => {
+          recordRetry();
+          recordRetry();
+        });
+        return {
+          descriptor: apiDescriptor,
+          status: 'success',
+          action: 'put',
+          relatedResults: [{
+            descriptor: operationDescriptor,
+            status: 'success',
+            action: 'put',
+          }],
+        };
+      });
+      const stdout = captureStdout();
+
+      try {
+        const result = await runPublish(
+          createMockClient(),
+          createMockStore([apiDescriptor]),
+          baseConfig
+        );
+        const output = stdout.lines();
+
+        expect(output).toContain('PUT api/api1\n');
+        expect(output).toContain('PUT apioperation/api1/get-items (2 retries)\n');
+        expect(result.actions.find((a) => a.descriptor.type === ResourceType.Api)?.retries)
+          .toBeUndefined();
+        expect(result.actions.find((a) => a.descriptor.type === ResourceType.ApiOperation)?.retries)
+          .toBe(2);
+        expect(result.totalRetries).toBe(2);
+        expect(result.retriedResources).toBe(1);
+      } finally {
+        stdout.restore();
+      }
     });
   });
 });

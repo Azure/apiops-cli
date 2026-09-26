@@ -21,6 +21,10 @@ import { ArtifactStore } from '../clients/artifact-store.js';
 import { IArtifactStore } from '../clients/iartifact-store.js';
 import { getCloudConfig, buildArmBaseUrl } from '../lib/cloud-config.js';
 import { EXIT_FATAL, EXIT_SUCCESS } from '../lib/exit-codes.js';
+import { getResourceTier, TIER_LABELS } from '../lib/dependency-graph.js';
+import { formatDuration } from '../lib/format-duration.js';
+import { ResourceType } from '../models/resource-types.js';
+import { getNamePart } from '../lib/resource-path.js';
 
 /**
  * Interface for extract command options (from CLI flags).
@@ -135,6 +139,7 @@ export async function executeExtract(
   await fs.mkdir(outputParent, { recursive: true });
   const stagingDir = await fs.mkdtemp(stagingPrefix);
 
+  const startedAt = Date.now();
   let result: ExtractionResult;
   try {
     const extractConfig: ExtractConfig = {
@@ -159,11 +164,13 @@ export async function executeExtract(
     await fs.rm(stagingDir, { recursive: true, force: true });
   }
 
+  const elapsedMs = Date.now() - startedAt;
+
   // Output results
   if (globalOpts.format === 'json') {
-    outputJson(result);
+    outputJson(result, elapsedMs);
   } else {
-    outputText(result);
+    outputText(result, elapsedMs);
   }
 
   dependencies.exit(result.exitCode);
@@ -180,13 +187,14 @@ export function shouldRemoveStaleArtifacts(
  * JSON output mode for extract.
  * Machine-readable JSON to stdout with resource counts and file paths.
  */
-function outputJson(result: ExtractionResult): void {
+function outputJson(result: ExtractionResult, elapsedMs: number): void {
   const output = {
     status: result.exitCode === 0 ? 'success' : result.exitCode === 1 ? 'partial' : 'error',
     exitCode: result.exitCode,
     summary: {
       totalExtracted: result.totalExtracted,
       totalErrors: result.totalErrors,
+      elapsedMs,
       typeBreakdown: result.typeResults.map((tr) => ({
         type: tr.type,
         extracted: tr.extracted.filter((r) => r.status === 'success').length,
@@ -216,30 +224,72 @@ function outputJson(result: ExtractionResult): void {
   process.stdout.write(JSON.stringify(output, null, 2) + '\n');
 }
 
+
+function tierOf(type: ResourceType): number {
+  try {
+    return getResourceTier(type);
+  } catch {
+    return Number.MAX_SAFE_INTEGER;
+  }
+}
+
 /**
  * Text output mode (default) — per-resource status lines.
  */
-function outputText(result: ExtractionResult): void {
-  // Per-type summary
+export function outputText(result: ExtractionResult, elapsedMs: number): void {
+  // Per-type summary, grouped by dependency tier
+  const linesByTier = new Map<number, string[]>();
   for (const tr of result.typeResults) {
+    const lines: string[] = [];
     const successCount = tr.extracted.filter((r) => r.status === 'success').length;
     if (successCount > 0) {
-      process.stdout.write(`Extracted ${successCount} ${tr.type}(s)\n`);
+      lines.push(`  Extracted ${successCount} ${tr.type}(s)`);
     }
     if (tr.errorCount > 0) {
-      process.stdout.write(`Failed ${tr.errorCount} ${tr.type}(s)\n`);
+      lines.push(`  Failed ${tr.errorCount} ${tr.type}(s)`);
     }
+    if (lines.length === 0) continue;
+
+    const tier = tierOf(tr.type);
+    const tierLines = linesByTier.get(tier) ?? [];
+    tierLines.push(...lines);
+    linesByTier.set(tier, tierLines);
   }
 
-  // API details
-  for (const ar of result.apiResults) {
-    const details: string[] = [];
-    if (ar.specification) details.push('spec');
-    if (ar.operations.length > 0) details.push(`${ar.operations.length} ops`);
-    if (ar.revisions.length > 0) details.push(`${ar.revisions.length} revisions`);
-    if (details.length > 0) {
-      process.stdout.write(`  API "${ar.apiName}": ${details.join(', ')}\n`);
+  for (const tier of [...linesByTier.keys()].sort((a, b) => a - b)) {
+    const label = TIER_LABELS[tier];
+    process.stdout.write(label ? `Tier ${tier}: ${label}\n` : 'Other resources\n');
+    process.stdout.write(`${linesByTier.get(tier)!.join('\n')}\n\n`);
+  }
+
+  // API details — list every extracted API, even those without sub-resources
+  // or whose sub-resource extraction failed
+  const apiDetails = new Map(result.apiResults.map((ar) => [ar.apiName, ar]));
+  const apiNames = new Set<string>();
+  for (const tr of result.typeResults) {
+    if (tr.type !== ResourceType.Api) continue;
+    for (const r of tr.extracted) {
+      if (r.status === 'success') apiNames.add(getNamePart(r.descriptor.nameParts, 0));
     }
+  }
+  for (const name of apiDetails.keys()) apiNames.add(name);
+
+  if (apiNames.size > 0) {
+    process.stdout.write('APIs:\n');
+  }
+  for (const name of apiNames) {
+    const ar = apiDetails.get(name);
+    let summary: string;
+    if (!ar) {
+      summary = 'sub-resource extraction failed';
+    } else {
+      const details: string[] = [];
+      if (ar.specification) details.push('spec');
+      if (ar.operations.length > 0) details.push(`${ar.operations.length} ops`);
+      if (ar.revisions.length > 0) details.push(`${ar.revisions.length} revisions`);
+      summary = details.length > 0 ? details.join(', ') : 'definition only';
+    }
+    process.stdout.write(`  API "${name}": ${summary}\n`);
   }
 
   // Workspace details
@@ -249,6 +299,7 @@ function outputText(result: ExtractionResult): void {
 
   // Summary
   process.stdout.write(
-    `\nTotal: ${result.totalExtracted} resources extracted, ${result.totalErrors} errors\n`
+    `\nTotal: ${result.totalExtracted} resources extracted, ${result.totalErrors} errors ` +
+    `in ${formatDuration(elapsedMs)}\n`
   );
 }

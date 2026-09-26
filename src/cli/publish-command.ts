@@ -16,6 +16,7 @@ import { logger, parseLogLevel } from '../lib/logger.js';
 import { ApimClient } from '../clients/apim-client.js';
 import { ArtifactStore } from '../clients/artifact-store.js';
 import { getCloudConfig, buildArmBaseUrl } from '../lib/cloud-config.js';
+import { formatDuration } from '../lib/format-duration.js';
 
 /**
  * Interface for publish command options (from CLI flags).
@@ -158,6 +159,7 @@ async function executePublish(
     deleteUnmatched: options.deleteUnmatched,
     commitId,
     logLevel: parseLogLevel(globalOpts.logLevel ?? 'info'),
+    outputFormat: globalOpts.format === 'json' ? 'json' : 'text',
   };
 
   // Create client and store
@@ -202,6 +204,9 @@ function outputJson(result: PublishResult): void {
       totalDeletes: number;
       totalErrors: number;
       totalSkipped: number;
+      totalRetries: number;
+      retriedResources: number;
+      elapsedMs?: number;
     };
     actions: Array<{
       action: string;
@@ -209,6 +214,7 @@ function outputJson(result: PublishResult): void {
       nameParts: string[];
       status: string;
       error?: string;
+      retries?: number;
     }>;
     dryRun?: {
       actions: Array<{
@@ -238,6 +244,9 @@ function outputJson(result: PublishResult): void {
       totalDeletes: result.totalDeletes,
       totalErrors: result.totalErrors,
       totalSkipped: result.totalSkipped,
+      totalRetries: result.totalRetries ?? 0,
+      retriedResources: result.retriedResources ?? 0,
+      elapsedMs: result.elapsedMs,
     },
     actions: result.actions.map((action) => ({
       action: action.action,
@@ -245,6 +254,7 @@ function outputJson(result: PublishResult): void {
       nameParts: action.descriptor.nameParts,
       status: action.status,
       error: action.error?.message,
+      retries: action.retries,
     })),
   };
 
@@ -268,7 +278,7 @@ function outputJson(result: PublishResult): void {
 /**
  * Text output mode (default) — per-resource status lines and summary.
  */
-function outputText(result: PublishResult, dryRun: boolean): void {
+export function outputText(result: PublishResult, dryRun: boolean): void {
   // Per-resource status lines are already output by publish-service
   // Just output the summary here
 
@@ -300,5 +310,18 @@ function outputText(result: PublishResult, dryRun: boolean): void {
     if (result.totalErrors > 0) {
       process.stdout.write(`${result.totalErrors} errors\n`);
     }
+
+    const totalRetries = result.totalRetries ?? 0;
+    if (totalRetries > 0) {
+      const retriedResources = result.retriedResources ?? 0;
+      process.stdout.write(
+        `${totalRetries} ${totalRetries === 1 ? 'retry' : 'retries'} across ` +
+        `${retriedResources} ${retriedResources === 1 ? 'resource' : 'resources'}\n`
+      );
+    }
+  }
+
+  if (result.elapsedMs !== undefined) {
+    process.stdout.write(`Completed in ${formatDuration(result.elapsedMs)}\n`);
   }
 }

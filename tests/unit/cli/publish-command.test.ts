@@ -4,11 +4,13 @@
  * Unit tests for Publish command CLI registration
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   createPublishCommand,
   hasMutuallyExclusivePublishOptions,
+  outputText,
 } from '../../../src/cli/publish-command.js';
+import { PublishResult } from '../../../src/services/publish-service.js';
 
 describe('publish-command', () => {
   describe('createPublishCommand', () => {
@@ -156,6 +158,54 @@ describe('publish-command', () => {
 
     it('should allow filter without delete-unmatched', () => {
       expect(hasMutuallyExclusivePublishOptions(false, undefined, true)).toBe(false);
+    });
+  });
+
+  describe('outputText', () => {
+    const baseResult: PublishResult = {
+      totalPuts: 41,
+      totalPatches: 0,
+      totalDeletes: 0,
+      totalErrors: 0,
+      totalSkipped: 1,
+      exitCode: 0,
+      actions: [],
+    };
+
+    function render(result: PublishResult, dryRun = false): string {
+      const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      try {
+        outputText(result, dryRun);
+        return stdout.mock.calls.map((call) => String(call[0])).join('');
+      } finally {
+        stdout.mockRestore();
+      }
+    }
+
+    it('includes retry counts and elapsed time in the summary', () => {
+      const output = render({
+        ...baseResult,
+        elapsedMs: 12_345,
+        totalRetries: 6,
+        retriedResources: 2,
+      });
+
+      expect(output).toContain('41 creates/updates, 0 patches, 0 deletes, 1 skipped\n');
+      expect(output).toContain('6 retries across 2 resources\n');
+      expect(output).toContain('Completed in 12.3s\n');
+    });
+
+    it('omits the retry line when no retries occurred', () => {
+      const output = render({ ...baseResult, elapsedMs: 500, totalRetries: 0, retriedResources: 0 });
+
+      expect(output).not.toContain('retr');
+      expect(output).toContain('Completed in 0.5s\n');
+    });
+
+    it('uses singular wording for a single retry', () => {
+      const output = render({ ...baseResult, totalRetries: 1, retriedResources: 1 });
+
+      expect(output).toContain('1 retry across 1 resource\n');
     });
   });
 });
