@@ -5,6 +5,19 @@ All notable changes to the APIOps CLI are documented in this file.
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/) with alpha pre-release tags.
 
+## [1.0.4] - 2026-09-25
+
+### Bug Fixes
+
+- **Operation-filtered specifications** - apply the `operations` API sub-filter to extracted OpenAPI/Swagger specifications, removing excluded operations and empty paths while preserving shared definitions and scalar precision ([#296](https://github.com/Azure/apiops-cli/pull/296))
+- **Version flag** - `apiops -v` now prints the CLI version, alongside `-V` and `--version` ([#298](https://github.com/Azure/apiops-cli/pull/298))
+- **Identity setup prompts** - generated Copilot identity setup prompts ask for one value per question instead of combined `NAME=` templates ([#300](https://github.com/Azure/apiops-cli/pull/300))
+
+### Docs & Testing
+
+- **Identity setup guidance** - README describes the generated Copilot prompt file and manual setup guide for workflow identity setup ([#299](https://github.com/Azure/apiops-cli/pull/299))
+- **Filtering guide** - document how operation filters apply to extracted specifications and their known limitations ([#296](https://github.com/Azure/apiops-cli/pull/296))
+
 ## [1.0.3] - 2026-09-20
 
 ### Bug Fixes
