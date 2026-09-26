@@ -175,6 +175,7 @@ describe('extract-command', () => {
         mcpServer: false,
         resolvers: [],
         resolverPolicies: [],
+        policies: [],
         ...overrides,
       };
     }
