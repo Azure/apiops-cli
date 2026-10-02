@@ -120,7 +120,54 @@ async function cleanupAutoCreatedProductResources(
   context: ApimServiceContext,
   productDescriptor: ResourceDescriptor
 ): Promise<void> {
+  await cleanupProductSubscriptions(client, context, productDescriptor);
   await cleanupProductGroups(client, context, productDescriptor);
+}
+
+// APIM auto-creates a subscription for a new product; remove it so only extracted subscriptions remain.
+async function cleanupProductSubscriptions(
+  client: IApimClient,
+  context: ApimServiceContext,
+  productDescriptor: ResourceDescriptor
+): Promise<void> {
+  const productName = getNamePart(productDescriptor.nameParts, 0);
+  const listContext: ApimServiceContext =
+    productDescriptor.workspace && !isWorkspaceScope(context)
+      ? {
+          ...context,
+          baseUrl: `${context.baseUrl}/workspaces/${encodeURIComponent(productDescriptor.workspace)}`,
+        }
+      : context;
+  const productScopeSuffix = `/products/${productName}`.toLowerCase();
+  let deleted = 0;
+
+  for await (const subscription of client.listResources(listContext, ResourceType.Subscription)) {
+    const name = subscription.name;
+    const scope = (subscription.properties as Record<string, unknown> | undefined)?.scope;
+    if (
+      typeof name !== 'string' ||
+      typeof scope !== 'string' ||
+      !scope.toLowerCase().endsWith(productScopeSuffix)
+    ) {
+      continue;
+    }
+
+    try {
+      const removed = await client.deleteResource(listContext, {
+        type: ResourceType.Subscription,
+        nameParts: [name],
+      });
+      if (removed) {
+        deleted++;
+      }
+    } catch (error) {
+      logger.warn(`Failed to delete auto-created subscription ${name}: ${String(error)}`);
+    }
+  }
+
+  if (deleted > 0) {
+    logger.info(`Deleted ${deleted} auto-created subscription(s) for product: ${productName}`);
+  }
 }
 
 async function cleanupProductGroups(
