@@ -138,7 +138,7 @@ async function cleanupProductSubscriptions(
           baseUrl: `${context.baseUrl}/workspaces/${encodeURIComponent(productDescriptor.workspace)}`,
         }
       : context;
-  const productScopeSuffix = `/products/${productName}`.toLowerCase();
+  const productNameLower = productName.toLowerCase();
   let deleted = 0;
 
   for await (const subscription of client.listResources(listContext, ResourceType.Subscription)) {
@@ -147,7 +147,7 @@ async function cleanupProductSubscriptions(
     if (
       typeof name !== 'string' ||
       typeof scope !== 'string' ||
-      !scope.toLowerCase().endsWith(productScopeSuffix)
+      getScopedProductName(scope)?.toLowerCase() !== productNameLower
     ) {
       continue;
     }
@@ -167,6 +167,16 @@ async function cleanupProductSubscriptions(
 
   if (deleted > 0) {
     logger.info(`Deleted ${deleted} auto-created subscription(s) for product: ${productName}`);
+  }
+}
+
+function getScopedProductName(scope: string): string | undefined {
+  const segment = scope.match(/\/products\/([^/]+)\/?$/i)?.[1];
+  if (!segment) return undefined;
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
   }
 }
 

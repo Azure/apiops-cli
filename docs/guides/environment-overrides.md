@@ -310,6 +310,7 @@ subscriptions:
 > **Note:** The built-in `master` subscription is automatically skipped during publish.
 > When publish creates a new product, the subscriptions APIM automatically creates for it are deleted,
 > so only the extracted product subscriptions (including ones with 24-character hex IDs) are published.
+> Deletion is best-effort: a failed delete is logged as a warning and does not fail the publish.
 > You can override their keys like any other subscription.
 
 ### Products
