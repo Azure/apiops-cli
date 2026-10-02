@@ -62,13 +62,54 @@ const GRANDCHILD_OVERRIDE_MAP: Partial<Record<ResourceType, {
 };
 
 /**
+ * Override sections that may be nested under a workspace entry
+ * (e.g., `workspaces[ws].apis`). Mirrors the workspace child sections
+ * accepted by the config loader.
+ */
+const WORKSPACE_CHILD_SECTIONS: readonly OverrideSectionKey[] = [
+  'apis', 'backends', 'diagnostics', 'groups', 'loggers',
+  'namedValues', 'policyFragments', 'products', 'subscriptions', 'tags', 'versionSets',
+];
+
+/**
+ * Resolve the override scope for a resource.
+ * Service-scoped resources (and the workspace container itself) use the top-level
+ * config. Workspace-scoped resources use the child sections nested under the
+ * matching `workspaces` entry (Toolkit parent-chain behavior).
+ */
+function resolveOverrideScope(
+  overrides: OverrideConfig,
+  workspace: string | undefined,
+  type?: ResourceType
+): OverrideConfig | undefined {
+  if (!workspace || type === ResourceType.Workspace) {
+    return overrides;
+  }
+
+  if (!overrides.workspaces) return undefined;
+  const workspaceEntry = findEntryByName(overrides.workspaces, workspace);
+  const children = workspaceEntry?.children;
+  if (!children) return undefined;
+
+  const scoped: OverrideConfig = {};
+  for (const key of WORKSPACE_CHILD_SECTIONS) {
+    const section = children[key];
+    if (section) scoped[key] = section;
+  }
+  return scoped;
+}
+
+/**
  * Check whether a named value has an explicit override entry.
  * Uses case-insensitive matching to align with override-merger behavior.
+ * When `workspace` is set, looks in that workspace's nested `namedValues` section.
  */
-export function hasNamedValueOverride(name: string, overrides?: OverrideConfig): boolean {
-  if (!overrides?.namedValues) return false;
+export function hasNamedValueOverride(name: string, overrides?: OverrideConfig, workspace?: string): boolean {
+  if (!overrides) return false;
+  const namedValues = resolveOverrideScope(overrides, workspace)?.namedValues;
+  if (!namedValues) return false;
   const lowerName = name.toLowerCase();
-  return Object.keys(overrides.namedValues).some(
+  return Object.keys(namedValues).some(
     (key) => key.toLowerCase() === lowerName
   );
 }
@@ -77,13 +118,20 @@ export function hasNamedValueOverride(name: string, overrides?: OverrideConfig):
  * Apply environment overrides from OverrideConfig to a resource JSON payload.
  * Deep-merges matching override properties using case-insensitive key matching.
  * Supports both direct overrides and nested sub-resource overrides.
+ * Workspace-scoped resources (descriptor.workspace set) are resolved against the
+ * child sections nested under the matching `workspaces` entry.
  * Returns a new object (does not mutate input).
  */
 export function applyOverrides(
   descriptor: ResourceDescriptor,
   json: Record<string, unknown>,
-  overrides: OverrideConfig | undefined
+  allOverrides: OverrideConfig | undefined
 ): Record<string, unknown> {
+  if (!allOverrides) {
+    return { ...json };
+  }
+
+  const overrides = resolveOverrideScope(allOverrides, descriptor.workspace, descriptor.type);
   if (!overrides) {
     return { ...json };
   }

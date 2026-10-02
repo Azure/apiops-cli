@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { applyOverrides } from '../../../src/services/override-merger.js';
+import { applyOverrides, hasNamedValueOverride } from '../../../src/services/override-merger.js';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ResourceDescriptor } from '../../../src/models/types.js';
 import { OverrideConfig } from '../../../src/models/config.js';
@@ -653,6 +653,142 @@ describe('override-merger', () => {
       // apiRevision and isCurrent should NOT be overridden
       expect(result.properties).toHaveProperty('apiRevision', '1');
       expect(result.properties).toHaveProperty('isCurrent', true);
+    });
+  });
+  describe('workspace-scoped overrides', () => {
+    const overrideConfig: OverrideConfig = {
+      apis: {
+        'my-api': { properties: { serviceUrl: 'https://service-level.example.com' } },
+      },
+      workspaces: {
+        'my-workspace': {
+          properties: { description: 'Production workspace' },
+          children: {
+            apis: {
+              'my-api': {
+                properties: { serviceUrl: 'https://prod.example.com' },
+                children: {
+                  diagnostics: { applicationinsights: { properties: { verbosity: 'error' } } },
+                  policies: { policy: { properties: { format: 'xml' } } },
+                  operations: {
+                    'get-op': {
+                      properties: { displayName: 'Prod Op' },
+                      children: { policies: { policy: { properties: { format: 'xml' } } } },
+                    },
+                  },
+                },
+              },
+            },
+            backends: {
+              'my-backend': { properties: { url: 'https://prod-backend.example.com' } },
+            },
+            namedValues: {
+              'My-NV': { properties: { value: 'prod-value' } },
+            },
+            products: {
+              'my-product': {
+                properties: { state: 'published' },
+                children: { policies: { policy: { properties: { format: 'xml' } } } },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    it('should apply override to the workspace container itself', () => {
+      const result = applyOverrides(
+        { type: ResourceType.Workspace, nameParts: ['my-workspace'] },
+        { properties: { description: 'Dev workspace' } },
+        overrideConfig
+      );
+      expect(result.properties).toHaveProperty('description', 'Production workspace');
+    });
+
+    it('should apply nested override to a workspace API (case-insensitive workspace name)', () => {
+      const result = applyOverrides(
+        { type: ResourceType.Api, nameParts: ['my-api'], workspace: 'MY-WORKSPACE' },
+        { properties: { serviceUrl: 'https://dev.example.com', path: 'my' } },
+        overrideConfig
+      );
+      expect(result.properties).toEqual({ serviceUrl: 'https://prod.example.com', path: 'my' });
+    });
+
+    it('should apply nested override to a workspace backend and named value', () => {
+      const backend = applyOverrides(
+        { type: ResourceType.Backend, nameParts: ['my-backend'], workspace: 'my-workspace' },
+        { properties: { url: 'https://dev-backend.example.com' } },
+        overrideConfig
+      );
+      expect(backend.properties).toHaveProperty('url', 'https://prod-backend.example.com');
+
+      const nv = applyOverrides(
+        { type: ResourceType.NamedValue, nameParts: ['my-nv'], workspace: 'my-workspace' },
+        { properties: { value: 'dev-value' } },
+        overrideConfig
+      );
+      expect(nv.properties).toHaveProperty('value', 'prod-value');
+    });
+
+    it('should apply overrides to workspace API sub-resources', () => {
+      const diag = applyOverrides(
+        { type: ResourceType.ApiDiagnostic, nameParts: ['my-api', 'applicationinsights'], workspace: 'my-workspace' },
+        { properties: { verbosity: 'information' } },
+        overrideConfig
+      );
+      expect(diag.properties).toHaveProperty('verbosity', 'error');
+
+      const apiPolicy = applyOverrides(
+        { type: ResourceType.ApiPolicy, nameParts: ['my-api'], workspace: 'my-workspace' },
+        { properties: { format: 'rawxml', value: '<policies/>' } },
+        overrideConfig
+      );
+      expect(apiPolicy.properties).toEqual({ format: 'xml', value: '<policies/>' });
+
+      const op = applyOverrides(
+        { type: ResourceType.ApiOperation, nameParts: ['my-api', 'get-op'], workspace: 'my-workspace' },
+        { properties: { displayName: 'Dev Op' } },
+        overrideConfig
+      );
+      expect(op.properties).toHaveProperty('displayName', 'Prod Op');
+
+      const opPolicy = applyOverrides(
+        { type: ResourceType.ApiOperationPolicy, nameParts: ['my-api', 'get-op'], workspace: 'my-workspace' },
+        { properties: { format: 'rawxml' } },
+        overrideConfig
+      );
+      expect(opPolicy.properties).toHaveProperty('format', 'xml');
+
+      const productPolicy = applyOverrides(
+        { type: ResourceType.ProductPolicy, nameParts: ['my-product'], workspace: 'my-workspace' },
+        { properties: { format: 'rawxml' } },
+        overrideConfig
+      );
+      expect(productPolicy.properties).toHaveProperty('format', 'xml');
+    });
+
+    it('should not apply service-level overrides to workspace-scoped resources', () => {
+      const result = applyOverrides(
+        { type: ResourceType.Api, nameParts: ['my-api'], workspace: 'other-workspace' },
+        { properties: { serviceUrl: 'https://dev.example.com' } },
+        overrideConfig
+      );
+      expect(result.properties).toHaveProperty('serviceUrl', 'https://dev.example.com');
+    });
+
+    it('should not apply workspace overrides to service-level resources', () => {
+      const result = applyOverrides(
+        { type: ResourceType.Backend, nameParts: ['my-backend'] },
+        { properties: { url: 'https://dev-backend.example.com' } },
+        overrideConfig
+      );
+      expect(result.properties).toHaveProperty('url', 'https://dev-backend.example.com');
+    });
+
+    it('should detect named value overrides within a workspace scope', () => {
+      expect(hasNamedValueOverride('my-nv', overrideConfig, 'my-workspace')).toBe(true);
+      expect(hasNamedValueOverride('my-nv', overrideConfig)).toBe(false);
+      expect(hasNamedValueOverride('my-nv', overrideConfig, 'other-workspace')).toBe(false);
     });
   });
 });
