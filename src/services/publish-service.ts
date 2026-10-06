@@ -265,6 +265,30 @@ async function determinePublishTargets(
     const diffResult = await computeGitDiff(config.sourceDir, config.commitId);
     targetDescriptors = diffResult.changedDescriptors;
     deletedDescriptors = diffResult.deletedDescriptors;
+    const currentDescriptors = await store.listResources(config.sourceDir);
+    const currentPolicyFragments = new Set(
+      currentDescriptors
+        .filter((descriptor) => descriptor.type === ResourceType.PolicyFragment)
+        .map(getResourceDescriptorKey)
+    );
+    const targetKeys = new Set(targetDescriptors.map(getResourceDescriptorKey));
+    const actualDeletedDescriptors: ResourceDescriptor[] = [];
+
+    for (const descriptor of deletedDescriptors) {
+      const key = getResourceDescriptorKey(descriptor);
+      if (
+        descriptor.type === ResourceType.PolicyFragment &&
+        currentPolicyFragments.has(key)
+      ) {
+        if (!targetKeys.has(key)) {
+          targetDescriptors.push(descriptor);
+          targetKeys.add(key);
+        }
+      } else {
+        actualDeletedDescriptors.push(descriptor);
+      }
+    }
+    deletedDescriptors = actualDeletedDescriptors;
   } else {
     // Full mode: publish all artifacts
     logger.debug('Using full publish mode (all artifacts)');

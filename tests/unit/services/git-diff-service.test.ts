@@ -7,6 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { computeGitDiff } from '../../../src/services/git-diff-service.js';
 import { simpleGit } from 'simple-git';
+import { ResourceType } from '../../../src/models/resource-types.js';
 
 // Create mock git instance
 const mockGit = {
@@ -212,6 +213,43 @@ describe('git-diff-service', () => {
         {
           type: 'Api',
           nameParts: ['links'],
+          workspace: 'dev',
+        },
+      ]);
+    });
+
+    it('should map policy fragment XML changes to PolicyFragment descriptor', async () => {
+      mockGit.checkIsRepo.mockResolvedValue(true);
+      mockGit.revparse.mockResolvedValue('abc123');
+      mockGit.diff.mockResolvedValue(
+        'M\tpolicyFragments/shared-auth/policy.xml\n'
+      );
+
+      const result = await computeGitDiff('/source', 'abc123');
+
+      expect(result.deletedDescriptors).toEqual([]);
+      expect(result.changedDescriptors).toEqual([
+        {
+          type: ResourceType.PolicyFragment,
+          nameParts: ['shared-auth'],
+          workspace: undefined,
+        },
+      ]);
+    });
+
+    it('should map workspace policy fragment XML changes', async () => {
+      mockGit.checkIsRepo.mockResolvedValue(true);
+      mockGit.revparse.mockResolvedValue('abc123');
+      mockGit.diff.mockResolvedValue(
+        'M\tworkspaces/dev/policyFragments/shared-auth/policy.xml\n'
+      );
+
+      const result = await computeGitDiff('/source', 'abc123');
+
+      expect(result.changedDescriptors).toEqual([
+        {
+          type: ResourceType.PolicyFragment,
+          nameParts: ['shared-auth'],
           workspace: 'dev',
         },
       ]);

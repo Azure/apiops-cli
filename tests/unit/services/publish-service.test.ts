@@ -237,6 +237,11 @@ describe('publish-service', () => {
               ].join(''),
               format: 'xml',
             }
+          : descriptor.type === ResourceType.PolicyFragment
+            ? {
+                content: '<fragment><set-header name="x" exists-action="override" /></fragment>',
+                format: 'rawxml',
+              }
           : undefined
       );
 
@@ -1276,6 +1281,80 @@ describe('publish-service', () => {
       // knownArtifactSets must contain the FULL set of named values, not just changed
       expect(config.knownArtifactSets?.namedValues.has('nv-unchanged')).toBe(true);
       expect(config.knownArtifactSets?.namedValues.has('nv-changed')).toBe(true);
+    });
+
+    it('should update a policy fragment when remaining JSON contains a policy value', async () => {
+      const client = createMockClient();
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+      const store = createMockStore([descriptor]);
+      store.readResource.mockResolvedValue({
+        properties: {
+          value: '<fragment><set-header name="x" exists-action="override" /></fragment>',
+          format: 'rawxml',
+        },
+      });
+
+      vi.mocked(computeGitDiff).mockResolvedValue({
+        changedDescriptors: [],
+        deletedDescriptors: [descriptor],
+      });
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        commitId: 'abc123',
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runPublish(client, store, config);
+
+      expect(client.deleteResource).not.toHaveBeenCalled();
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        descriptor,
+        expect.any(Object)
+      );
+      expect(result.totalDeletes).toBe(0);
+    });
+
+    it('should skip a policy fragment when policy.xml is deleted and metadata has no value', async () => {
+      const client = createMockClient();
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+      const store = createMockStore([descriptor]);
+      store.readResource.mockResolvedValue({
+        properties: {
+          description: 'Shared authentication',
+        },
+      });
+
+      vi.mocked(computeGitDiff).mockResolvedValue({
+        changedDescriptors: [],
+        deletedDescriptors: [descriptor],
+      });
+
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        commitId: 'abc123',
+        logLevel: LogLevel.INFO,
+      };
+
+      const result = await runPublish(client, store, config);
+
+      expect(client.putResource).not.toHaveBeenCalled();
+      expect(client.deleteResource).not.toHaveBeenCalled();
+      expect(result.totalSkipped).toBe(1);
+      expect(result.totalDeletes).toBe(0);
     });
 
     it('should pass commit-scoped deleted descriptors to dry-run report', async () => {

@@ -15,6 +15,7 @@ import { shouldIncludeResource } from './filter-service.js';
 import { FilterConfig } from '../models/config.js';
 import { logger } from '../lib/logger.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
+import { writePolicyFragmentArtifact } from './policy-fragment-artifact.js';
 
 /**
  * Check if a resource type's LIST endpoint returns shallow data that omits
@@ -121,10 +122,21 @@ export async function extractResourceType(
         }
 
         // Apply secret redaction
-        const safeJson = redactSecrets(descriptor, json);
+        let safeJson = redactSecrets(descriptor, json);
 
-        // Write to artifact store (preserves opaque JSON per FR-009)
-        await store.writeResource(outputDir, descriptor, safeJson);
+        // Policy fragments follow the Toolkit split layout: metadata remains
+        // JSON while the policy value is stored as sibling policy.xml.
+        if (descriptor.type === ResourceType.PolicyFragment) {
+          safeJson = await writePolicyFragmentArtifact(
+            store,
+            outputDir,
+            descriptor,
+            safeJson
+          );
+        } else {
+          // Write to artifact store (preserves opaque JSON per FR-009)
+          await store.writeResource(outputDir, descriptor, safeJson);
+        }
 
         result.extracted.push({
           descriptor,
@@ -181,10 +193,18 @@ export async function extractSingleResource(
     }
 
     // Apply secret redaction
-    const safeJson = redactSecrets(descriptor, json);
+    let safeJson = redactSecrets(descriptor, json);
 
-    // Write to artifact store
-    await store.writeResource(outputDir, descriptor, safeJson);
+    if (descriptor.type === ResourceType.PolicyFragment) {
+      safeJson = await writePolicyFragmentArtifact(
+        store,
+        outputDir,
+        descriptor,
+        safeJson
+      );
+    } else {
+      await store.writeResource(outputDir, descriptor, safeJson);
+    }
 
     logger.info(`Extracted ${buildResourceLabel(descriptor)}`);
 

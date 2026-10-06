@@ -380,6 +380,40 @@ describe('parseArtifactPath', () => {
     expect(result!.type).toBe(ResourceType.ServicePolicy);
     expect(result!.nameParts).toEqual([]);
   });
+
+  it('should parse policy fragment policy.xml', () => {
+    const filePath = path.join(
+      baseDir,
+      'policyFragments',
+      'shared-auth',
+      'policy.xml'
+    );
+    const result = parseArtifactPath(baseDir, filePath);
+
+    expect(result).toEqual({
+      type: ResourceType.PolicyFragment,
+      nameParts: ['shared-auth'],
+      workspace: undefined,
+    });
+  });
+
+  it('should parse workspace policy fragment policy.xml', () => {
+    const filePath = path.join(
+      baseDir,
+      'workspaces',
+      'dev',
+      'policyFragments',
+      'shared-auth',
+      'policy.xml'
+    );
+    const result = parseArtifactPath(baseDir, filePath);
+
+    expect(result).toEqual({
+      type: ResourceType.PolicyFragment,
+      nameParts: ['shared-auth'],
+      workspace: 'dev',
+    });
+  });
 });
 
 describe('parseArtifactChangePath', () => {

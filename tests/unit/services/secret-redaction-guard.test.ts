@@ -84,6 +84,88 @@ describe('secret-redaction-guard', () => {
       expect(findings[0].location).toBe('policy.xml');
     });
 
+    it('flags an XML-only policy fragment that contains the redaction marker', async () => {
+      const store = createMockStore();
+      store.readContent.mockResolvedValue({
+        content: `<fragment><set-header name="Authorization"><value>${REDACTION_MARKER}</value></set-header></fragment>`,
+      });
+      const fragmentDescriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+
+      const findings = await scanForRedactionMarkers(
+        store,
+        testConfig,
+        [fragmentDescriptor]
+      );
+
+      expect(findings).toHaveLength(1);
+      expect(findings[0].descriptor).toBe(fragmentDescriptor);
+      expect(findings[0].location).toBe('policy.xml');
+    });
+
+    it('reports policyFragmentInformation.json for a JSON-only fragment marker', async () => {
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({
+        properties: {
+          value: `<fragment>${REDACTION_MARKER}</fragment>`,
+          format: 'rawxml',
+        },
+      });
+      const fragmentDescriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+
+      const findings = await scanForRedactionMarkers(
+        store,
+        testConfig,
+        [fragmentDescriptor]
+      );
+
+      expect(findings).toHaveLength(1);
+      expect(findings[0].location).toBe(
+        'policyFragmentInformation.json (properties.value)'
+      );
+    });
+
+    it('reports the override when it supplies the fragment marker', async () => {
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({
+        properties: {
+          description: 'Shared authentication',
+        },
+      });
+      const fragmentDescriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+      const configWithOverride: PublishConfig = {
+        ...testConfig,
+        overrides: {
+          policyFragments: {
+            'shared-auth': {
+              properties: {
+                value: `<fragment>${REDACTION_MARKER}</fragment>`,
+              },
+            },
+          },
+        },
+      };
+
+      const findings = await scanForRedactionMarkers(
+        store,
+        configWithOverride,
+        [fragmentDescriptor]
+      );
+
+      expect(findings).toHaveLength(1);
+      expect(findings[0].location).toBe(
+        'overrides.policyFragments.shared-auth.properties.value'
+      );
+    });
+
     it('flags a secret named value that equals the redaction marker', async () => {
       const store = createMockStore();
       store.readResource.mockResolvedValue({
