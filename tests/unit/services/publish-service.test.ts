@@ -2089,5 +2089,82 @@ describe('publish-service', () => {
       expect(putNames).toContain('regular-nv');
       expect(putNames).toContain(autoGenId);
     });
+
+    it('should publish workspace auto-generated named values when a workspace override exists', async () => {
+      const autoGenId = 'aabbccddeeff112233445566';
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.NamedValue,
+        nameParts: [autoGenId],
+        workspace: 'team-a',
+      };
+      const client = createMockClient();
+      const store = createMockStore([descriptor]);
+      vi.mocked(store.readResource).mockResolvedValue({
+        name: autoGenId,
+        properties: { value: 'source-key', secret: true },
+      });
+
+      await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+        overrides: {
+          workspaces: {
+            'team-a': {
+              properties: {},
+              children: {
+                namedValues: {
+                  [autoGenId]: {
+                    properties: { value: 'workspace-key' },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      expect(client.putResource).toHaveBeenCalledWith(
+        testContext,
+        descriptor,
+        expect.objectContaining({
+          properties: expect.objectContaining({ value: 'workspace-key' }),
+        })
+      );
+    });
+
+    it('should not publish a workspace auto-generated named value for a service-level-only override', async () => {
+      const autoGenId = 'aabbccddeeff112233445566';
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.NamedValue,
+        nameParts: [autoGenId],
+        workspace: 'team-a',
+      };
+      const client = createMockClient();
+      const store = createMockStore([descriptor]);
+      vi.mocked(store.readResource).mockResolvedValue({
+        name: autoGenId,
+        properties: { value: 'source-key', secret: true },
+      });
+
+      await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+        overrides: {
+          namedValues: {
+            [autoGenId]: {
+              properties: { value: 'service-key' },
+            },
+          },
+        },
+      });
+
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
   });
 });

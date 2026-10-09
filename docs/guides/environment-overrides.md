@@ -583,4 +583,3 @@ apiops publish --overrides configuration.prod.yaml --dry-run \
 - [Authentication Guide](authentication.md)
 - [Scenarios and Workflows](scenarios-and-workflows.md)
 - [GitHub Actions Integration](../ci-cd/github-actions.md)
-

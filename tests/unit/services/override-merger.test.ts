@@ -696,6 +696,38 @@ describe('override-merger', () => {
       },
     };
 
+    it('should use the override from the matching workspace when multiple workspaces define the same resource name', () => {
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['my-api'],
+        workspace: 'ws2',
+      };
+      const json = { name: 'my-api', properties: { serviceUrl: 'https://dev.example.com' } };
+      const overrides: OverrideConfig = {
+        workspaces: {
+          ws1: {
+            properties: {},
+            children: {
+              apis: {
+                'my-api': { properties: { serviceUrl: 'https://ws1.example.com' } },
+              },
+            },
+          },
+          ws2: {
+            properties: {},
+            children: {
+              apis: {
+                'my-api': { properties: { serviceUrl: 'https://ws2.example.com' } },
+              },
+            },
+          },
+        },
+      };
+
+      const result = applyOverrides(descriptor, json, overrides);
+      expect(result.properties).toHaveProperty('serviceUrl', 'https://ws2.example.com');
+    });
+
     it('should apply override to the workspace container itself', () => {
       const result = applyOverrides(
         { type: ResourceType.Workspace, nameParts: ['my-workspace'] },

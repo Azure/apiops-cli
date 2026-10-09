@@ -14,7 +14,7 @@ import { logger } from '../lib/logger.js';
 import { getNameFromNameParts, isSingletonType } from '../lib/resource-path.js';
 
 /** Keys of OverrideConfig that hold OverrideSection values (excludes non-section fields). */
-type OverrideSectionKey = keyof { [K in keyof OverrideConfig as OverrideConfig[K] extends OverrideSection | undefined ? K : never]: unknown };
+export type OverrideSectionKey = keyof { [K in keyof OverrideConfig as OverrideConfig[K] extends OverrideSection | undefined ? K : never]: unknown };
 
 /**
  * Map resource types to their top-level override config section key.
@@ -62,51 +62,16 @@ const GRANDCHILD_OVERRIDE_MAP: Partial<Record<ResourceType, {
 };
 
 /**
- * Override sections that may be nested under a workspace entry
- * (e.g., `workspaces[ws].apis`). Mirrors the workspace child sections
- * accepted by the config loader.
- */
-const WORKSPACE_CHILD_SECTIONS: readonly OverrideSectionKey[] = [
-  'apis', 'backends', 'diagnostics', 'groups', 'loggers',
-  'namedValues', 'policyFragments', 'products', 'subscriptions', 'tags', 'versionSets',
-];
-
-/**
- * Resolve the override scope for a resource.
- * Service-scoped resources (and the workspace container itself) use the top-level
- * config. Workspace-scoped resources use the child sections nested under the
- * matching `workspaces` entry (Toolkit parent-chain behavior).
- */
-function resolveOverrideScope(
-  overrides: OverrideConfig,
-  workspace: string | undefined,
-  type?: ResourceType
-): OverrideConfig | undefined {
-  if (!workspace || type === ResourceType.Workspace) {
-    return overrides;
-  }
-
-  if (!overrides.workspaces) return undefined;
-  const workspaceEntry = findEntryByName(overrides.workspaces, workspace);
-  const children = workspaceEntry?.children;
-  if (!children) return undefined;
-
-  const scoped: OverrideConfig = {};
-  for (const key of WORKSPACE_CHILD_SECTIONS) {
-    const section = children[key];
-    if (section) scoped[key] = section;
-  }
-  return scoped;
-}
-
-/**
  * Check whether a named value has an explicit override entry.
  * Uses case-insensitive matching to align with override-merger behavior.
- * When `workspace` is set, looks in that workspace's nested `namedValues` section.
  */
-export function hasNamedValueOverride(name: string, overrides?: OverrideConfig, workspace?: string): boolean {
+export function hasNamedValueOverride(
+  name: string,
+  overrides?: OverrideConfig,
+  workspace?: string
+): boolean {
   if (!overrides) return false;
-  const namedValues = resolveOverrideScope(overrides, workspace)?.namedValues;
+  const namedValues = resolveOverrideSection(overrides, 'namedValues', workspace);
   if (!namedValues) return false;
   const lowerName = name.toLowerCase();
   return Object.keys(namedValues).some(
@@ -125,13 +90,8 @@ export function hasNamedValueOverride(name: string, overrides?: OverrideConfig, 
 export function applyOverrides(
   descriptor: ResourceDescriptor,
   json: Record<string, unknown>,
-  allOverrides: OverrideConfig | undefined
+  overrides: OverrideConfig | undefined
 ): Record<string, unknown> {
-  if (!allOverrides) {
-    return { ...json };
-  }
-
-  const overrides = resolveOverrideScope(allOverrides, descriptor.workspace, descriptor.type);
   if (!overrides) {
     return { ...json };
   }
@@ -139,7 +99,7 @@ export function applyOverrides(
   // Try direct override lookup first
   const directSection = OVERRIDE_SECTION_MAP[descriptor.type];
   if (directSection) {
-    const section = overrides[directSection];
+    const section = resolveOverrideSection(overrides, directSection, descriptor.workspace);
     if (!section) return { ...json };
     return applyFromSection(descriptor, json, section);
   }
@@ -147,16 +107,44 @@ export function applyOverrides(
   // Try nested child override lookup
   const childMapping = CHILD_OVERRIDE_MAP[descriptor.type];
   if (childMapping) {
-    return applyNestedOverride(descriptor, json, overrides, childMapping);
+    const parentSection = resolveOverrideSection(overrides, childMapping.parentSection, descriptor.workspace);
+    if (!parentSection) return { ...json };
+    return applyNestedOverride(descriptor, json, parentSection, childMapping);
   }
 
   // Try grandchild (3-level) override lookup
   const grandchildMapping = GRANDCHILD_OVERRIDE_MAP[descriptor.type];
   if (grandchildMapping) {
-    return applyGrandchildOverride(descriptor, json, overrides, grandchildMapping);
+    const parentSection = resolveOverrideSection(overrides, grandchildMapping.parentSection, descriptor.workspace);
+    if (!parentSection) return { ...json };
+    return applyGrandchildOverride(descriptor, json, parentSection, grandchildMapping);
   }
 
   return { ...json };
+}
+
+/**
+ * Resolve the override section to search for a given section key, honoring workspace scoping.
+ * Workspace-scoped resources are strictly isolated: they only read from
+ * `overrides.workspaces[workspace].children[sectionKey]`, never the top-level section.
+ */
+export function resolveOverrideSection(
+  overrides: OverrideConfig | undefined,
+  sectionKey: OverrideSectionKey,
+  workspace: string | undefined
+): OverrideSection | undefined {
+  if (!overrides) return undefined;
+  if (!workspace) {
+    return overrides[sectionKey];
+  }
+
+  const workspacesSection = overrides.workspaces;
+  if (!workspacesSection) return undefined;
+
+  const workspaceEntry = findEntryByName(workspacesSection, workspace);
+  if (!workspaceEntry?.children) return undefined;
+
+  return workspaceEntry.children[sectionKey];
 }
 
 /**
@@ -220,12 +208,9 @@ function applyFromSection(
 function applyNestedOverride(
   descriptor: ResourceDescriptor,
   json: Record<string, unknown>,
-  overrides: OverrideConfig,
+  parentSection: OverrideSection,
   mapping: { parentSection: OverrideSectionKey; childKey: string }
 ): Record<string, unknown> {
-  const parentSection = overrides[mapping.parentSection];
-  if (!parentSection) return { ...json };
-
   const parentName = descriptor.nameParts[0];
   if (!parentName) return { ...json };
 
@@ -268,12 +253,9 @@ function applyNestedOverride(
 function applyGrandchildOverride(
   descriptor: ResourceDescriptor,
   json: Record<string, unknown>,
-  overrides: OverrideConfig,
+  parentSection: OverrideSection,
   mapping: { parentSection: OverrideSectionKey; childKey: string; grandchildKey: string }
 ): Record<string, unknown> {
-  const parentSection = overrides[mapping.parentSection];
-  if (!parentSection) return { ...json };
-
   const parentName = descriptor.nameParts[0];
   if (!parentName) return { ...json };
 

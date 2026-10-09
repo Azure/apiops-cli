@@ -24,7 +24,7 @@ import {
 } from './resource-publisher.js';
 import { mapDescriptor } from './env-mapper.js';
 import { runParallel } from '../lib/parallel-runner.js';
-import { applyOverrides } from './override-merger.js';
+import { applyOverrides, resolveOverrideSection } from './override-merger.js';
 import { logger } from '../lib/logger.js';
 import {
   getNamePart,
@@ -555,7 +555,7 @@ async function publishRootApi(
   json = normalizeApiAuthenticationSettings(json, {
     preferLegacyFields: prefersLegacyAuthOverride(
       getNamePart(descriptor.nameParts, 0),
-      config.overrides?.apis
+      resolveOverrideSection(config.overrides, 'apis', descriptor.workspace)
     ),
   });
   const isCurrent = getApiIsCurrent(json);

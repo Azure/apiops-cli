@@ -16,7 +16,7 @@ import type {
 } from '../models/types.js';
 import type { PublishConfig } from '../models/config.js';
 import { ResourceType, RESOURCE_TYPE_METADATA, MANAGED_GATEWAY_NAME } from '../models/resource-types.js';
-import { applyOverrides } from './override-merger.js';
+import { applyOverrides, resolveOverrideSection } from './override-merger.js';
 import { checkKeyVaultSecretAccess } from './keyvault-checker.js';
 import {
   getNamePart,
@@ -338,7 +338,7 @@ export async function publishResource(
         const hasDisplayNameOverride = hasExplicitPropertyOverride(
           canonicalName,
           'displayName',
-          config.overrides?.namedValues,
+          resolveOverrideSection(config.overrides, 'namedValues', descriptor.workspace),
         );
         if (!hasDisplayNameOverride) {
           const props = json.properties as Record<string, unknown> | undefined;
@@ -469,8 +469,9 @@ export async function publishResource(
     // validation errors in APIM's revision creation.
     if (descriptor.type === ResourceType.Api) {
       const apiName = getNamePart(descriptor.nameParts, 0);
+      const apiOverrides = resolveOverrideSection(config.overrides, 'apis', descriptor.workspace);
       json = normalizeApiAuthenticationSettings(json, {
-        preferLegacyFields: prefersLegacyAuthOverride(apiName, config.overrides?.apis),
+        preferLegacyFields: prefersLegacyAuthOverride(apiName, apiOverrides),
       });
       if (apiName.includes(';rev=')) {
         const baseApiName = apiName.split(';rev=')[0];
@@ -498,7 +499,7 @@ export async function publishResource(
         }
         if (
           Object.hasOwn(cleanProps, 'description') &&
-          hasExplicitPropertyOverride(apiName, 'description', config.overrides?.apis)
+          hasExplicitPropertyOverride(apiName, 'description', apiOverrides)
         ) {
           logger.warn(
             `Ignoring 'description' override for revision '${apiName}': ` +
@@ -1209,7 +1210,11 @@ export function applyApiPathPrefix(
   }
 
   const canonicalApiName = getNamePart(descriptor.nameParts, 0).split(';rev=')[0];
-  if (hasExplicitPropertyOverride(canonicalApiName, 'path', config.overrides?.apis)) {
+  if (hasExplicitPropertyOverride(
+    canonicalApiName,
+    'path',
+    resolveOverrideSection(config.overrides, 'apis', descriptor.workspace),
+  )) {
     return json;
   }
 
@@ -1631,7 +1636,7 @@ async function rewriteNamedValueReferences(
         const hasDisplayNameOverride = hasExplicitPropertyOverride(
           ref,
           'displayName',
-          overrides?.namedValues,
+          resolveOverrideSection(overrides, 'namedValues', descriptor.workspace),
         );
         if (!hasDisplayNameOverride) {
           const baseDisplayName = displayName ?? ref;
