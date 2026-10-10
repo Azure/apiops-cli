@@ -5,6 +5,21 @@ All notable changes to the APIOps CLI are documented in this file.
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/) with alpha pre-release tags.
 
+## [1.0.5] - 2026-10-09
+
+### Features
+
+- **Extract and publish output** - group text output by dependency tier, report elapsed time and resource-level retries, and include retry statistics in publish JSON output ([#301](https://github.com/Azure/apiops-cli/pull/301))
+
+### Bug Fixes
+
+- **Workspace-scoped overrides** - resolve resource, named-value, and API authentication overrides within the matching workspace, including environment-prefixed publishing ([#309](https://github.com/Azure/apiops-cli/pull/309), [#311](https://github.com/Azure/apiops-cli/pull/311))
+- **Product subscriptions** - publish extracted 24-hex-character subscription names and clean up subscriptions automatically created with a new product before restoring extracted subscriptions ([#310](https://github.com/Azure/apiops-cli/pull/310))
+- **API tag descriptions** - strip source-service `tagId` references from published API tag description payloads ([#313](https://github.com/Azure/apiops-cli/pull/313))
+- **WebSocket publishing** - skip the APIM-managed `onHandshake` operation during publish and dry-run planning ([#318](https://github.com/Azure/apiops-cli/pull/318))
+- **Named-value dependencies** - resolve policy `{{displayName}}` references to named-value resource names during transitive extraction and avoid duplicate extraction ([#319](https://github.com/Azure/apiops-cli/pull/319))
+- **Retry and error reporting** - attribute retries to the resource that retried, stop retrying HTTP 429 after the final attempt, keep publish JSON mode free of text progress output, and list APIs whose sub-resource extraction failed ([#301](https://github.com/Azure/apiops-cli/pull/301))
+
 ## [1.0.4] - 2026-09-25
 
 ### Bug Fixes
