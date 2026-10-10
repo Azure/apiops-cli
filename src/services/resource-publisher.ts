@@ -320,6 +320,22 @@ export async function publishResource(
     // APIM may synthesize description from displayName when description is absent,
     // causing extract/publish round-trip drift.
     if (descriptor.type === ResourceType.ApiOperation) {
+      // WebSocket APIs own a single system-managed `onHandshake` operation with an
+      // empty urlTemplate. APIM rejects any user PUT/PATCH that carries the empty
+      // urlTemplate ('urlTemplate' should not be empty) and refuses user-defined
+      // operations ("Operation entity cannot be defined by user for web socket api
+      // type"), so the operation is never published — only its policy is (#317).
+      const eligibility = await evaluateResourceEligibility(store, descriptor, config);
+      if (!eligibility.eligible) {
+        logger.info(
+          `Skipping operation "${descriptor.nameParts.join('/')}": ${eligibility.reason}`
+        );
+        return {
+          descriptor,
+          status: 'skipped',
+          action: 'noop',
+        };
+      }
       json = normalizeApiOperationTextFields(json);
     }
 
@@ -890,6 +906,15 @@ export async function evaluateResourceEligibility(
       workspace: descriptor.workspace,
     };
     return evaluateAssociationEligibility(store, target, config);
+  }
+
+  if (descriptor.type === ResourceType.ApiOperation) {
+    return (await isWebSocketApiOperation(store, descriptor, config))
+      ? {
+          eligible: false,
+          reason: 'WebSocket API operations are managed by APIM and cannot be published',
+        }
+      : { eligible: true };
   }
 
   if (descriptor.type !== ResourceType.Subscription || !json) {
@@ -1509,6 +1534,32 @@ export function normalizeMcpToolOperationIds(
       mcpTools: normalizedTools,
     },
   };
+}
+
+/**
+ * True when the operation's parent API artifact (with overrides applied)
+ * declares `properties.type === 'websocket'`.
+ */
+async function isWebSocketApiOperation(
+  store: IArtifactStore,
+  descriptor: ResourceDescriptor,
+  config: PublishConfig
+): Promise<boolean> {
+  const apiDescriptor: ResourceDescriptor = {
+    type: ResourceType.Api,
+    nameParts: [getNamePart(descriptor.nameParts, 0)],
+    workspace: descriptor.workspace,
+  };
+  // readResource returns undefined for a missing file; any other error (e.g.
+  // malformed JSON) must surface as a publish failure rather than fall through
+  // to a PUT that APIM would reject.
+  const apiJson = await store.readResource(config.sourceDir, apiDescriptor);
+  if (!apiJson) {
+    return false;
+  }
+  const merged = applyOverrides(apiDescriptor, apiJson, config.overrides);
+  const apiType = (merged.properties as Record<string, unknown> | undefined)?.type;
+  return typeof apiType === 'string' && apiType.toLowerCase() === 'websocket';
 }
 
 function normalizeApiOperationTextFields(

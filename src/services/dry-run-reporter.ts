@@ -376,6 +376,9 @@ async function planDryRunPublications(
           } else {
             addPlan({ descriptor: child, ...eligibility, operation: 'PUT' });
           }
+        } else if (child.type === ResourceType.ApiOperation) {
+          const eligibility = await evaluateResourceEligibility(store, child, config);
+          addPlan({ descriptor: child, ...eligibility, operation: 'PUT' });
         } else {
           addPlan({ descriptor: child, eligible: true, operation: 'PUT' });
         }
@@ -439,6 +442,12 @@ async function planDryRunPublications(
         config,
         json
       );
+      addPlan({ descriptor, ...eligibility });
+      continue;
+    }
+
+    if (descriptor.type === ResourceType.ApiOperation) {
+      const eligibility = await evaluateResourceEligibility(store, descriptor, config);
       addPlan({ descriptor, ...eligibility });
       continue;
     }

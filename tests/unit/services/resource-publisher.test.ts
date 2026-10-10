@@ -1642,6 +1642,104 @@ describe('resource-publisher', () => {
       });
     });
 
+    describe('WebSocket API operations (#317)', () => {
+      const apiJson = {
+        name: 'notification-socket',
+        properties: { displayName: 'Notification socket', type: 'websocket', protocols: ['wss'] },
+      };
+      const onHandshakeJson = {
+        name: 'onHandshake',
+        properties: {
+          displayName: 'onHandshake',
+          method: 'GET',
+          urlTemplate: '',
+          templateParameters: [],
+          description: 'WebSocket opening handshake',
+          responses: [],
+        },
+      };
+
+      it('skips the system-managed onHandshake operation instead of PUTting an empty urlTemplate', async () => {
+        const client = createMockClient();
+        const store = createMockStore();
+        store.readResource.mockImplementation(async (_dir: string, d: ResourceDescriptor) =>
+          d.type === ResourceType.Api ? apiJson : onHandshakeJson
+        );
+
+        const descriptor: ResourceDescriptor = {
+          type: ResourceType.ApiOperation,
+          nameParts: ['notification-socket', 'onHandshake'],
+        };
+
+        const result = await publishResource(client, store, testContext, descriptor, testConfig);
+
+        expect(result).toMatchObject({ descriptor, status: 'skipped', action: 'noop' });
+        expect(client.putResource).not.toHaveBeenCalled();
+        expect(store.readResource).toHaveBeenCalledWith(
+          testConfig.sourceDir,
+          expect.objectContaining({ type: ResourceType.Api, nameParts: ['notification-socket'] })
+        );
+      });
+
+      it('still publishes operations whose parent API is not a WebSocket API', async () => {
+        const client = createMockClient();
+        const store = createMockStore();
+        store.readResource.mockImplementation(async (_dir: string, d: ResourceDescriptor) =>
+          d.type === ResourceType.Api
+            ? { name: 'orders-api', properties: { type: 'http' } }
+            : { name: 'get-orders', properties: { method: 'GET', urlTemplate: '/orders' } }
+        );
+
+        const descriptor: ResourceDescriptor = {
+          type: ResourceType.ApiOperation,
+          nameParts: ['orders-api', 'get-orders'],
+        };
+
+        const result = await publishResource(client, store, testContext, descriptor, testConfig);
+
+        expect(result.status).toBe('success');
+        expect(client.putResource).toHaveBeenCalledTimes(1);
+      });
+
+      it('still publishes the operation when the parent API artifact is missing', async () => {
+        const client = createMockClient();
+        const store = createMockStore();
+        store.readResource.mockImplementation(async (_dir: string, d: ResourceDescriptor) =>
+          d.type === ResourceType.Api ? undefined : onHandshakeJson
+        );
+
+        const descriptor: ResourceDescriptor = {
+          type: ResourceType.ApiOperation,
+          nameParts: ['notification-socket', 'onHandshake'],
+        };
+
+        const result = await publishResource(client, store, testContext, descriptor, testConfig);
+
+        expect(result.status).toBe('success');
+        expect(client.putResource).toHaveBeenCalledTimes(1);
+      });
+
+      it('reports a parent API artifact read error as a failure instead of PUTting the operation', async () => {
+        const client = createMockClient();
+        const store = createMockStore();
+        const readError = new Error('Unexpected token in apiInformation.json');
+        store.readResource.mockImplementation(async (_dir: string, d: ResourceDescriptor) => {
+          if (d.type === ResourceType.Api) throw readError;
+          return onHandshakeJson;
+        });
+
+        const descriptor: ResourceDescriptor = {
+          type: ResourceType.ApiOperation,
+          nameParts: ['notification-socket', 'onHandshake'],
+        };
+
+        const result = await publishResource(client, store, testContext, descriptor, testConfig);
+
+        expect(result).toMatchObject({ status: 'failed', action: 'noop', error: readError });
+        expect(client.putResource).not.toHaveBeenCalled();
+      });
+    });
+
     describe('API revision handling', () => {
       it('injects sourceApiId for revision APIs', async () => {
         const client = createMockClient();

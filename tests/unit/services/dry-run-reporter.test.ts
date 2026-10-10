@@ -942,5 +942,69 @@ describe('dry-run-reporter', () => {
       ]);
       expect(report.summary).toEqual({ creates: 3, patches: 0, deletes: 0, skips: 0 });
     });
+
+    describe('WebSocket API operations (#317)', () => {
+      const api: ResourceDescriptor = { type: ResourceType.Api, nameParts: ['ws-api'] };
+      const operation: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['ws-api', 'onHandshake'],
+      };
+      const operationPolicy: ResourceDescriptor = {
+        type: ResourceType.ApiOperationPolicy,
+        nameParts: ['ws-api', 'onHandshake'],
+      };
+
+      function setupStore(store: ReturnType<typeof createMockStore>) {
+        store.listResources.mockResolvedValue([api, operation, operationPolicy]);
+        store.readResource.mockImplementation(
+          async (_dir: string, descriptor: ResourceDescriptor) =>
+            descriptor.type === ResourceType.Api
+              ? { properties: { type: 'websocket' } }
+              : { properties: { urlTemplate: '' } }
+        );
+        store.readContent.mockResolvedValue(undefined);
+      }
+
+      it('reports SKIP for the operation when planned as an API child (full publish)', async () => {
+        const client = createMockClient();
+        const store = createMockStore();
+        setupStore(store);
+
+        const report = await generateDryRunReport(
+          store, client, testContext, testConfig, [api, operation, operationPolicy]
+        );
+
+        expect(report.actions).toContainEqual(expect.objectContaining({
+          operation: 'SKIP',
+          type: ResourceType.ApiOperation,
+          name: 'ws-api/onHandshake',
+          reason: expect.stringContaining('WebSocket'),
+        }));
+        expect(report.actions).toContainEqual(expect.objectContaining({
+          operation: 'PUT',
+          type: ResourceType.ApiOperationPolicy,
+        }));
+        expect(report.summary).toEqual({ creates: 2, patches: 0, deletes: 0, skips: 1 });
+      });
+
+      it('reports SKIP for the operation when planned directly (incremental publish)', async () => {
+        const client = createMockClient();
+        const store = createMockStore();
+        setupStore(store);
+
+        const report = await generateDryRunReport(
+          store, client, testContext, testConfig, [operation]
+        );
+
+        expect(report.actions).toEqual([
+          expect.objectContaining({
+            operation: 'SKIP',
+            type: ResourceType.ApiOperation,
+            name: 'ws-api/onHandshake',
+          }),
+        ]);
+        expect(report.summary).toEqual({ creates: 0, patches: 0, deletes: 0, skips: 1 });
+      });
+    });
   });
 });
