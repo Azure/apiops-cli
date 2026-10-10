@@ -416,6 +416,8 @@ workspaces:
 
 The supported workspace child sections are: `apis`, `backends`, `diagnostics`, `groups`, `loggers`, `namedValues`, `policyFragments`, `products`, `subscriptions`, `tags`, and `versionSets`.
 
+Workspace-scoped resources are resolved only against the sections nested under their workspace entry (including nested API sub-resources such as `diagnostics`, `operations`, `policies`, and `releases`). Top-level sections such as `apis` or `backends` apply only to service-level resources, never to resources inside a workspace.
+
 ## Override rules
 
 ### Names must be consistent
@@ -581,4 +583,3 @@ apiops publish --overrides configuration.prod.yaml --dry-run \
 - [Authentication Guide](authentication.md)
 - [Scenarios and Workflows](scenarios-and-workflows.md)
 - [GitHub Actions Integration](../ci-cd/github-actions.md)
-

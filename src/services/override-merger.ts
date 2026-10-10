@@ -83,6 +83,8 @@ export function hasNamedValueOverride(
  * Apply environment overrides from OverrideConfig to a resource JSON payload.
  * Deep-merges matching override properties using case-insensitive key matching.
  * Supports both direct overrides and nested sub-resource overrides.
+ * Workspace-scoped resources (descriptor.workspace set) are resolved against the
+ * child sections nested under the matching `workspaces` entry.
  * Returns a new object (does not mutate input).
  */
 export function applyOverrides(
