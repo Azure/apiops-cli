@@ -451,6 +451,13 @@ export async function publishResource(
       json = normalizeDiagnosticLoggerId(json, context, descriptor.workspace, config.envMapping);
     }
 
+    // Tag descriptions carry a read-only properties.tagId pointing at the
+    // SOURCE service; the tag is identified by the URL path, so drop it or
+    // APIM rejects the PUT with "Cross-service resource references are not allowed".
+    if (descriptor.type === ResourceType.ApiTagDescription) {
+      json = stripTagDescriptionTagId(json);
+    }
+
     if (descriptor.type === ResourceType.Api) {
       json = normalizeApiVersionSetId(
         json,
@@ -1326,6 +1333,23 @@ export function normalizeDiagnosticLoggerId(
     ...json,
     properties: { ...props, loggerId: targetLoggerId },
   };
+}
+
+/**
+ * Drop the read-only `properties.tagId` from an ApiTagDescription payload.
+ * Extracted artifacts carry the SOURCE service's full tag ARM path; newer APIM
+ * api-versions validate it on PUT and reject cross-service references. The tag
+ * is already identified by the tagDescriptionId in the request URL.
+ */
+export function stripTagDescriptionTagId(
+  json: Record<string, unknown>
+): Record<string, unknown> {
+  const props = json.properties as Record<string, unknown> | undefined;
+  if (!props || !Object.hasOwn(props, 'tagId')) {
+    return json;
+  }
+  const { tagId: _omit, ...rest } = props;
+  return { ...json, properties: rest };
 }
 
 export function normalizeApiVersionSetId(
