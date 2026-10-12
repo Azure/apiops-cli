@@ -744,6 +744,61 @@ describe('extract-service', () => {
       expect(result.exitCode).toBe(0);
     });
 
+    it.each([ResourceType.ServicePolicy, ResourceType.PolicyFragment])(
+      'extracts %s with Liquid without false lookups or policy changes',
+      async (policyType) => {
+        const policy = `<policies><inbound>
+          <set-header name="Auth"><value>{{real-value}}</value></set-header>
+          <set-body template="liquid">{{context.Request.MatchedParameters["id"]}}</set-body>
+        </inbound><outbound>
+          <set-body template="liquid">{{body.envelope.body.Test_Result.test}}</set-body>
+        </outbound></policies>`;
+        const policyResource = { name: 'liquid-policy', properties: { value: policy } };
+        const client = createMockClient(
+          policyType === ResourceType.PolicyFragment
+            ? { [ResourceType.PolicyFragment]: [policyResource] }
+            : {}
+        );
+        client.getResource.mockImplementation(async (_context, descriptor: ResourceDescriptor) => {
+          if (policyType === ResourceType.ServicePolicy && descriptor.type === policyType) {
+            return policyResource;
+          }
+          if (descriptor.type === ResourceType.NamedValue && descriptor.nameParts[0] === 'real-value') {
+            return { name: 'real-value', properties: { value: 'configured-value' } };
+          }
+          return undefined;
+        });
+        const store = createMockStore();
+
+        const result = await runExtraction(client, store, {
+          service: testContext,
+          outputDir: '/output',
+          includeTransitive: true,
+          filter: { apis: [], namedValues: [] },
+          logLevel: LogLevel.INFO,
+        });
+
+        expect(result.exitCode).toBe(0);
+        expect(result.totalErrors).toBe(0);
+        const namedValueRequests = client.getResource.mock.calls
+          .map(([, descriptor]) => descriptor as ResourceDescriptor)
+          .filter((descriptor) => descriptor.type === ResourceType.NamedValue);
+        expect(namedValueRequests).toEqual([
+          expect.objectContaining({ nameParts: ['real-value'] }),
+        ]);
+        if (policyType === ResourceType.ServicePolicy) {
+          expect(store.writeContent).toHaveBeenCalledWith(
+            '/output', expect.objectContaining({ type: policyType }), policy, 'policy'
+          );
+          expect(result.collectedPolicies.get('service-policy')).toBe(policy);
+        } else {
+          expect(store.writeResource).toHaveBeenCalledWith(
+            '/output', expect.objectContaining({ type: policyType }), policyResource
+          );
+        }
+      }
+    );
+
     it('should extract backend pool members and policy fragment dependencies transitively', async () => {
       const backendId =
         '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a/backends/member';

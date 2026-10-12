@@ -18,6 +18,8 @@ import { getResourceDescriptorKey } from '../lib/resource-path.js';
  * Reference detection patterns for policy XML content.
  */
 const NAMED_VALUE_PATTERN = /\{\{([^}]+)\}\}/g;
+const POLICY_BOUNDARY_PATTERN = /<!--[\s\S]*?(?:-->|$)|<!\[CDATA\[[\s\S]*?(?:\]\]>|$)|<\/set-body\s*>|<set-body(?:\s+[\w:.-]+\s*=\s*(?:"[^"]*"|'[^']*'))*\s*\/?>/g;
+const ATTRIBUTE_PATTERN = /\s+([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
 const BACKEND_PATTERN = /<set-backend-service\s+backend-id="([^"]+)"/g;
 const FRAGMENT_PATTERN = /<include-fragment\s+fragment-id="([^"]+)"/g;
 
@@ -41,15 +43,44 @@ const POLICY_RESOURCE_TYPES = new Set<ResourceType>([
  * Scan policy XML content for references to other resources.
  *
  * Detects:
- * - Named values: {{namedValueName}} syntax
+ * - Named values: {{namedValueName}} syntax outside Liquid template bodies
  * - Backends: <set-backend-service backend-id="backendName">
  * - Policy fragments: <include-fragment fragment-id="fragmentName">
  */
 export function scanPolicyReferences(policyXml: string): TransitiveDependency[] {
   const dependencies: TransitiveDependency[] = [];
+  const namedValueParts: string[] = [];
+  let retainedStart = 0;
+  let liquidDepth = 0;
+
+  for (const boundary of policyXml.matchAll(POLICY_BOUNDARY_PATTERN)) {
+    const tag = boundary[0];
+    if (tag.startsWith('<!') || tag.endsWith('/>')) {
+      continue;
+    }
+    if (tag.startsWith('</')) {
+      if (liquidDepth > 0 && --liquidDepth === 0) {
+        retainedStart = boundary.index;
+      }
+    } else if (liquidDepth > 0) {
+      liquidDepth++;
+    } else {
+      for (const attribute of tag.matchAll(ATTRIBUTE_PATTERN)) {
+        if (attribute[1] === 'template' && (attribute[2] ?? attribute[3]) === 'liquid') {
+          const openingEnd = boundary.index + tag.length;
+          namedValueParts.push(policyXml.slice(retainedStart, openingEnd));
+          retainedStart = openingEnd;
+          liquidDepth = 1;
+          break;
+        }
+      }
+    }
+  }
+  namedValueParts.push(policyXml.slice(retainedStart));
+  const namedValueXml = namedValueParts.join('');
 
   // Named value references
-  for (const match of policyXml.matchAll(NAMED_VALUE_PATTERN)) {
+  for (const match of namedValueXml.matchAll(NAMED_VALUE_PATTERN)) {
     if (match[1]) {
       dependencies.push({
         type: ResourceType.NamedValue,
