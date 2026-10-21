@@ -108,6 +108,13 @@ export interface PublishConfig {
   deleteUnmatched: boolean;
   commitId?: string;
   logLevel: LogLevel;
+  /**
+   * Output mode selected on the command line. When 'json', service-level
+   * human-readable text (tier headers/footers, per-resource status lines) is
+   * suppressed so stdout carries only the JSON document.
+   * Defaults to 'text' when omitted.
+   */
+  outputFormat?: 'text' | 'json';
 }
 
 /**

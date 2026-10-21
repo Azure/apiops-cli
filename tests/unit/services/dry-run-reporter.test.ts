@@ -1047,5 +1047,106 @@ describe('dry-run-reporter', () => {
       ]);
       expect(report.summary).toEqual({ creates: 3, patches: 0, deletes: 0, skips: 0 });
     });
+
+    describe('WebSocket API operations (#317)', () => {
+      const api: ResourceDescriptor = { type: ResourceType.Api, nameParts: ['ws-api'] };
+      const operation: ResourceDescriptor = {
+        type: ResourceType.ApiOperation,
+        nameParts: ['ws-api', 'onHandshake'],
+      };
+      const operationPolicy: ResourceDescriptor = {
+        type: ResourceType.ApiOperationPolicy,
+        nameParts: ['ws-api', 'onHandshake'],
+      };
+
+      function setupStore(store: ReturnType<typeof createMockStore>) {
+        store.listResources.mockResolvedValue([api, operation, operationPolicy]);
+        store.readResource.mockImplementation(
+          async (_dir: string, descriptor: ResourceDescriptor) =>
+            descriptor.type === ResourceType.Api
+              ? { properties: { type: 'websocket' } }
+              : { properties: { urlTemplate: '' } }
+        );
+        store.readContent.mockResolvedValue(undefined);
+      }
+
+      it('reports SKIP for the operation when planned as an API child (full publish)', async () => {
+        const client = createMockClient();
+        const store = createMockStore();
+        setupStore(store);
+
+        const report = await generateDryRunReport(
+          store, client, testContext, testConfig, [api, operation, operationPolicy]
+        );
+
+        expect(report.actions).toContainEqual(expect.objectContaining({
+          operation: 'SKIP',
+          type: ResourceType.ApiOperation,
+          name: 'ws-api/onHandshake',
+          reason: expect.stringContaining('WebSocket'),
+        }));
+        expect(report.actions).toContainEqual(expect.objectContaining({
+          operation: 'PUT',
+          type: ResourceType.ApiOperationPolicy,
+        }));
+        expect(report.summary).toEqual({ creates: 2, patches: 0, deletes: 0, skips: 1 });
+      });
+
+      it('reports SKIP for the operation when planned directly (incremental publish)', async () => {
+        const client = createMockClient();
+        const store = createMockStore();
+        setupStore(store);
+
+        const report = await generateDryRunReport(
+          store, client, testContext, testConfig, [operation]
+        );
+
+        expect(report.actions).toEqual([
+          expect.objectContaining({
+            operation: 'SKIP',
+            type: ResourceType.ApiOperation,
+            name: 'ws-api/onHandshake',
+          }),
+        ]);
+        expect(report.summary).toEqual({ creates: 0, patches: 0, deletes: 0, skips: 1 });
+      });
+
+      it('reports SKIP for spec-import operation PUT and PATCH plans', async () => {
+        const client = createMockClient();
+        const store = createMockStore();
+        store.listResources.mockResolvedValue([api, operation]);
+        store.readResource.mockImplementation(
+          async (_dir: string, descriptor: ResourceDescriptor) =>
+            descriptor.type === ResourceType.Api
+              ? { properties: { type: 'websocket' } }
+              : { properties: { description: 'Imported operation description' } }
+        );
+        store.readContent.mockImplementation(
+          async (_dir: string, descriptor: ResourceDescriptor, kind: string) =>
+            descriptor.type === ResourceType.Api && kind === 'specification'
+              ? {
+                  content:
+                    'openapi: "3.0.0"\npaths:\n  /connect:\n    get:\n      operationId: onHandshake\n      description: null\n',
+                  format: 'yaml',
+                }
+              : undefined
+        );
+
+        const report = await generateDryRunReport(
+          store, client, testContext, testConfig, [api, operation]
+        );
+
+        expect(report.actions.filter((action) => action.operation === 'SKIP')).toHaveLength(2);
+        expect(report.actions).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            operation: 'SKIP',
+            type: ResourceType.ApiOperation,
+            name: 'ws-api/onHandshake',
+            reason: expect.stringContaining('WebSocket'),
+          }),
+        ]));
+        expect(report.summary).toEqual({ creates: 1, patches: 0, deletes: 0, skips: 2 });
+      });
+    });
   });
 });

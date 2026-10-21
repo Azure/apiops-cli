@@ -22,7 +22,10 @@ npm install -g @azure-tools/apiops-cli
 
 ### Generated GitHub Actions workflows (`apiops init`)
 
-Workflows scaffolded by `apiops init` authenticate via **OIDC (workload identity federation)** — no client secret is stored or needed. Run `apiops init` and use the generated `identity-setup.prompt.md` to create an Azure AD application with federated credentials for your GitHub repository.
+Workflows scaffolded by `apiops init` authenticate via **OIDC (workload identity federation)** — no client secret is stored or needed. You do need an Azure AD (Microsoft Entra ID) application with federated credentials for your GitHub repository. `apiops init` generates two ways to set it up:
+
+- **Guided setup with GitHub Copilot:** `apiops init` creates `.github/prompts/apiops-setup-workflow-identity.prompt.md`, a [prompt file](docs/guides/prompt-files.md) for [GitHub Copilot in VS Code](https://code.visualstudio.com/docs/copilot/overview). Open the repository in VS Code, open Copilot Chat (<kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>I</kbd>), select **Agent** mode, type `/apiops-setup-workflow-identity`, and press Enter. Copilot then walks you through creating the app registration, federated credentials, and repository secrets step by step.
+- **Manual setup:** follow the instructions in the generated `APIOPS-WORKFLOW-IDENTITY-SETUP.md`.
 
 Required repository secrets: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`
 

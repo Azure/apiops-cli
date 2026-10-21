@@ -380,15 +380,28 @@ async function planDryRunPublications(
           } else {
             addPlan({ descriptor: child, ...eligibility, operation: 'PUT' });
           }
+        } else if (child.type === ResourceType.ApiOperation) {
+          const eligibility = await evaluateResourceEligibility(store, child, config);
+          addPlan({ descriptor: child, ...eligibility, operation: 'PUT' });
         } else {
           addPlan({ descriptor: child, eligible: true, operation: 'PUT' });
         }
       }
       for (const operation of apiPlan.operationDescriptionPuts) {
-        addPlan({ descriptor: operation, eligible: true, operation: 'PUT' });
+        const eligibility = await evaluateResourceEligibility(store, operation, config);
+        addPlan({ descriptor: operation, ...eligibility, operation: 'PUT' });
       }
       for (const patch of apiPlan.operationPatches) {
-        addPlan({ descriptor: patch.descriptor, eligible: true, operation: 'PATCH' });
+        const eligibility = await evaluateResourceEligibility(
+          store,
+          patch.descriptor,
+          config
+        );
+        addPlan({
+          descriptor: patch.descriptor,
+          ...eligibility,
+          operation: 'PATCH',
+        });
       }
       continue;
     }
@@ -464,6 +477,12 @@ async function planDryRunPublications(
           ? undefined
           : 'no policy value was found in policy.xml, policyFragmentInformation.json, or overrides',
       });
+      continue;
+    }
+
+    if (descriptor.type === ResourceType.ApiOperation) {
+      const eligibility = await evaluateResourceEligibility(store, descriptor, config);
+      addPlan({ descriptor, ...eligibility });
       continue;
     }
 

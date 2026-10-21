@@ -21,6 +21,7 @@ const program = new Command();
 program
   .name('apiops')
   .version(packageJson.version)
+  .version(packageJson.version, '-v')
   .description('CLI tool for Azure API Management configuration-as-code');
 
 // Show global options in subcommand help (e.g. apiops extract --help)

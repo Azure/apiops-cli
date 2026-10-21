@@ -25,10 +25,16 @@ vi.mock('../../../src/services/resource-publisher.js', async () => {
   };
 });
 
-// Mock override-merger
-vi.mock('../../../src/services/override-merger.js', () => ({
-  applyOverrides: vi.fn((descriptor, json) => json),
-}));
+// Mock override-merger while retaining its workspace section resolver.
+vi.mock('../../../src/services/override-merger.js', async () => {
+  const actual = await vi.importActual<typeof import('../../../src/services/override-merger.js')>(
+    '../../../src/services/override-merger.js'
+  );
+  return {
+    ...actual,
+    applyOverrides: vi.fn((_descriptor, json) => json),
+  };
+});
 
 // Mock parallel-runner
 const mockRunParallel = vi.fn();
@@ -1444,6 +1450,63 @@ describe('api-publisher', () => {
       await publishApi(client, store, testContext, apiDescriptor, configWithOverrides);
 
       expect(client.putResource).toHaveBeenCalled();
+    });
+
+    it('should honor workspace API auth and path overrides during root post-processing', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({
+        name: 'orders-api',
+        properties: {
+          path: 'workspace/orders',
+          authenticationSettings: {
+            oAuth2: { authorizationServerId: 'workspace-server' },
+            oAuth2AuthenticationSettings: [{ authorizationServerId: 'artifact-server' }],
+          },
+        },
+      });
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.Api,
+        nameParts: ['orders-api'],
+        workspace: 'team-a',
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        envMapping: {
+          prefix: 'dev-',
+          suffix: '',
+          apiPathPrefix: 'dev/',
+          appliesTo: DEFAULT_APPLIES_TO,
+        },
+        overrides: {
+          workspaces: {
+            'team-a': {
+              properties: {},
+              children: {
+                apis: {
+                  'orders-api': {
+                    properties: {
+                      path: 'workspace/orders',
+                      authenticationSettings: {
+                        oAuth2: { authorizationServerId: 'workspace-server' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      await publishApi(client, store, testContext, descriptor, config);
+
+      const putJson = client.putResource.mock.calls[0]?.[2] as Record<string, unknown>;
+      const properties = putJson.properties as Record<string, unknown>;
+      expect(properties.path).toBe('workspace/orders');
+      expect(properties.authenticationSettings).toEqual({
+        oAuth2: { authorizationServerId: 'workspace-server' },
+      });
     });
 
     it('should return failed result on exception', async () => {

@@ -5,6 +5,42 @@ All notable changes to the APIOps CLI are documented in this file.
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This project uses [Semantic Versioning](https://semver.org/) with alpha pre-release tags.
 
+## [1.0.5] - 2026-10-09
+
+### Features
+
+- **Extract and publish output** - group text output by dependency tier, report elapsed time and resource-level retries, and include retry statistics in publish JSON output ([#301](https://github.com/Azure/apiops-cli/pull/301))
+
+### Bug Fixes
+
+- **Workspace-scoped overrides** - resolve resource, named-value, and API authentication overrides within the matching workspace, including environment-prefixed publishing ([#309](https://github.com/Azure/apiops-cli/pull/309), [#311](https://github.com/Azure/apiops-cli/pull/311))
+- **Product subscriptions** - publish extracted 24-hex-character subscription names and clean up subscriptions automatically created with a new product before restoring extracted subscriptions ([#310](https://github.com/Azure/apiops-cli/pull/310))
+- **API tag descriptions** - strip source-service `tagId` references from published API tag description payloads ([#313](https://github.com/Azure/apiops-cli/pull/313))
+- **WebSocket publishing** - skip the APIM-managed `onHandshake` operation during publish and dry-run planning ([#318](https://github.com/Azure/apiops-cli/pull/318))
+- **Named-value dependencies** - resolve policy `{{displayName}}` references to named-value resource names during transitive extraction and avoid duplicate extraction ([#319](https://github.com/Azure/apiops-cli/pull/319))
+- **Retry and error reporting** - attribute retries to the resource that retried, stop retrying HTTP 429 after the final attempt, keep publish JSON mode free of text progress output, and list APIs whose sub-resource extraction failed ([#301](https://github.com/Azure/apiops-cli/pull/301))
+
+## [1.0.4] - 2026-09-25
+
+### Bug Fixes
+
+- **Operation-filtered specifications** - apply the `operations` API sub-filter to extracted OpenAPI/Swagger specifications, removing excluded operations and empty paths while preserving shared definitions and scalar precision ([#296](https://github.com/Azure/apiops-cli/pull/296))
+- **Version flag** - `apiops -v` now prints the CLI version, alongside `-V` and `--version` ([#298](https://github.com/Azure/apiops-cli/pull/298))
+- **Identity setup prompts** - generated Copilot identity setup prompts ask for one value per question instead of combined `NAME=` templates ([#300](https://github.com/Azure/apiops-cli/pull/300))
+
+### Docs & Testing
+
+- **Identity setup guidance** - README describes the generated Copilot prompt file and manual setup guide for workflow identity setup ([#299](https://github.com/Azure/apiops-cli/pull/299))
+- **Filtering guide** - document how operation filters apply to extracted specifications and their known limitations ([#296](https://github.com/Azure/apiops-cli/pull/296))
+
+## [1.0.3] - 2026-09-20
+
+### Bug Fixes
+
+- **Cross-service publishing** - strip source-service ARM IDs from PUT and PATCH payloads when publishing extracted resources to another APIM service ([#285](https://github.com/Azure/apiops-cli/pull/285))
+- **Diagnostic logger references** - rebuild logger IDs against the target service, including workspace paths and environment-mapped names ([#285](https://github.com/Azure/apiops-cli/pull/285))
+- **WSDL re-import** - remove external XSD import locations when their namespaces are available in inline schemas, allowing re-import without resolving those external URLs ([#285](https://github.com/Azure/apiops-cli/pull/285))
+
 ## [1.0.2] - 2026-09-11
 
 ### Bug Fixes

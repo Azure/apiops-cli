@@ -35,6 +35,13 @@ This flow is designed for Microsoft-hosted or self-hosted agents and uses worklo
 
 **Copilot:** Ask the user for the following values before proceeding. Store each answer for use in later steps.
 
+**Ask for one value per question:**
+- Ask for each variable in its own separate question. Never combine two or more variables into a single question, and never ask the user to fill in a `NAME=` template.
+- For each environment, first ask whether the user will provide Option A or Option B, then ask for each value of that option individually.
+- In each question, state what the value is for (for example, "Resource group of the **prod** APIM instance") and show the example value.
+- Accept the plain value as the answer (for example, `rg-apim-prod`, not `APIM_RG_PROD=rg-apim-prod`).
+- If you can detect a likely value (for example, from `az account show`), offer it as the suggested answer to that single question so the user can accept or change it.
+
 For each environment, provide either **Option A** (three separate values) or **Option B** (a single full APIM resource ID in the form `/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ApiManagement/service/<name>`). Copilot will parse Option B into the individual components automatically.
 
 | Variable | Description | Example |

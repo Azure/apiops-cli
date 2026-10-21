@@ -249,6 +249,13 @@ apis:
 - If a sub-resource key is an **empty array** (`[]`), all sub-resources of that type are excluded
 - If a sub-resource key lists **names**, only those sub-resources are included
 
+During extraction, the `operations` filter also applies to the API's OpenAPI specification
+(`specification.yaml` or `specification.json`, including Swagger 2.0). Excluded operations
+are removed from the specification, and paths with no remaining operations are removed.
+Shared definitions and metadata on retained paths are preserved. Omitting `operations`
+leaves the specification unchanged; `operations: []` removes all operations from it.
+GraphQL, WSDL, and WADL specifications are not filtered.
+
 ### Workspace sub-resource filters
 
 The configuration format supports specifying which workspace-scoped resources to extract:
