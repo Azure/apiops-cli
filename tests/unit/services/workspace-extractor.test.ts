@@ -500,6 +500,17 @@ describe('workspace-extractor', () => {
         }
       };
       client.getResource.mockImplementation(async (_ctx, descriptor) => {
+        if (
+          descriptor.type === ResourceType.PolicyFragment &&
+          descriptor.nameParts[0] === 'shared-fragment'
+        ) {
+          return {
+            name: 'shared-fragment',
+            properties: {
+              value: '<set-header name="key"><value>{{workspace-secret}}</value></set-header>',
+            },
+          };
+        }
         if (descriptor.type === ResourceType.Workspace) {
           return { name: 'team-a', properties: {} };
         }

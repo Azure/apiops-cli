@@ -235,6 +235,28 @@ describe('transitive-resolver', () => {
         expect(store.readResource).not.toHaveBeenCalled();
       });
 
+      it('scans references from an XML-only policy fragment', async () => {
+        const store = {
+          readResource: vi.fn().mockResolvedValue(undefined),
+          readContent: vi.fn().mockResolvedValue({
+            content: '<fragment><set-backend-service backend-id="shared-backend" /></fragment>',
+          }),
+          readAssociation: vi.fn(),
+        };
+
+        await expect(
+          scanArtifactReferences(store, '/source', {
+            type: ResourceType.PolicyFragment,
+            nameParts: ['shared-fragment'],
+            workspace: 'team-a',
+          })
+        ).resolves.toContainEqual({
+          type: ResourceType.Backend,
+          nameParts: ['shared-backend'],
+          workspace: 'team-a',
+        });
+      });
+
       it('should scan backend pools without treating links as transitive dependencies', async () => {
         const store = {
           readResource: vi.fn()

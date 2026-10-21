@@ -238,7 +238,7 @@
       "expected": [
         {
           "name": "src-fragment-cors",
-          "files": ["policyFragmentInformation.json"],
+          "files": ["policyFragmentInformation.json", "policy.xml"],
           "spotChecks": {
             "policyFragmentInformation.json": {
               "properties.description": "CORS policy fragment"
@@ -247,7 +247,7 @@
         },
         {
           "name": "src-fragment-ratelimit",
-          "files": ["policyFragmentInformation.json"],
+          "files": ["policyFragmentInformation.json", "policy.xml"],
           "spotChecks": {
             "policyFragmentInformation.json": {
               "properties.description": "Rate limit policy fragment"

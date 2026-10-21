@@ -27,7 +27,7 @@ export interface IArtifactStore {
     baseDir: string,
     descriptor: ResourceDescriptor,
     content: string,
-    contentType: 'policy' | 'specification',
+    contentType: 'policy' | 'policy-fragment' | 'specification',
     format?: string
   ): Promise<void>;
 

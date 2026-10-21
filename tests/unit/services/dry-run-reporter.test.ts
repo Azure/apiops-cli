@@ -136,6 +136,111 @@ describe('dry-run-reporter', () => {
       );
     });
 
+    it('should skip a metadata-only policy fragment', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({
+        properties: {
+          description: 'Shared authentication',
+        },
+      });
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+
+      const report = await generateDryRunReport(
+        store,
+        client,
+        testContext,
+        testConfig,
+        [descriptor]
+      );
+
+      expect(report.actions).toEqual([
+        expect.objectContaining({
+          operation: 'SKIP',
+          descriptor,
+          reason: expect.stringContaining('no policy value was found'),
+        }),
+      ]);
+      expect(report.summary.skips).toBe(1);
+    });
+
+    it('should publish a policy fragment with an explicitly empty value in dry-run', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({
+        properties: {
+          value: '',
+          format: 'rawxml',
+        },
+      });
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+
+      const report = await generateDryRunReport(
+        store,
+        client,
+        testContext,
+        testConfig,
+        [descriptor]
+      );
+
+      expect(report.actions).toEqual([
+        expect.objectContaining({
+          operation: 'PUT',
+          descriptor,
+        }),
+      ]);
+      expect(report.summary.skips).toBe(0);
+    });
+
+    it('should publish a metadata-only policy fragment when an override supplies the value in dry-run', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({
+        properties: {
+          description: 'Shared authentication',
+        },
+      });
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+      const config: PublishConfig = {
+        ...testConfig,
+        overrides: {
+          policyFragments: {
+            'shared-auth': {
+              properties: {
+                value: '<fragment><set-header name="x" exists-action="override" /></fragment>',
+                format: 'rawxml',
+              },
+            },
+          },
+        },
+      };
+
+      const report = await generateDryRunReport(
+        store,
+        client,
+        testContext,
+        config,
+        [descriptor]
+      );
+
+      expect(report.actions).toEqual([
+        expect.objectContaining({
+          operation: 'PUT',
+          descriptor,
+        }),
+      ]);
+      expect(report.summary.skips).toBe(0);
+    });
+
     it('checks the deployed descriptor when environment mapping is active', async () => {
       const client = createMockClient();
       const store = createMockStore();
@@ -1004,6 +1109,46 @@ describe('dry-run-reporter', () => {
           }),
         ]);
         expect(report.summary).toEqual({ creates: 0, patches: 0, deletes: 0, skips: 1 });
+      });
+
+      it('reports spec-import operation PUT and PATCH plans as live publishing does', async () => {
+        const client = createMockClient();
+        const store = createMockStore();
+        store.listResources.mockResolvedValue([api, operation]);
+        store.readResource.mockImplementation(
+          async (_dir: string, descriptor: ResourceDescriptor) =>
+            descriptor.type === ResourceType.Api
+              ? { properties: { type: 'websocket' } }
+              : { properties: { description: 'Imported operation description' } }
+        );
+        store.readContent.mockImplementation(
+          async (_dir: string, descriptor: ResourceDescriptor, kind: string) =>
+            descriptor.type === ResourceType.Api && kind === 'specification'
+              ? {
+                  content:
+                    'openapi: "3.0.0"\npaths:\n  /connect:\n    get:\n      operationId: onHandshake\n      description: null\n',
+                  format: 'yaml',
+                }
+              : undefined
+        );
+
+        const report = await generateDryRunReport(
+          store, client, testContext, testConfig, [api, operation]
+        );
+
+        expect(report.actions).toEqual(expect.arrayContaining([
+          expect.objectContaining({
+            operation: 'PUT',
+            type: ResourceType.ApiOperation,
+            name: 'ws-api/onHandshake',
+          }),
+          expect.objectContaining({
+            operation: 'PATCH',
+            type: ResourceType.ApiOperation,
+            name: 'ws-api/onHandshake',
+          }),
+        ]));
+        expect(report.summary).toEqual({ creates: 2, patches: 1, deletes: 0, skips: 0 });
       });
     });
   });

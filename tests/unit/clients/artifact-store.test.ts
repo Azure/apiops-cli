@@ -93,6 +93,21 @@ describe('ArtifactStore', () => {
       expect(result!.content).toBe(policy);
     });
 
+    it('preserves entities and CDATA in raw policy fragments', async () => {
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+      const fragment =
+        '<fragment><set-body>Tom &amp; Jerry</set-body><![CDATA[&amp; literal]]></fragment>';
+
+      await store.writeContent(tmpDir, descriptor, fragment, 'policy-fragment');
+
+      await expect(store.readContent(tmpDir, descriptor, 'policy')).resolves.toEqual({
+        content: fragment,
+      });
+    });
+
     it('should write and read API specification', async () => {
       const descriptor: ResourceDescriptor = {
         type: ResourceType.Api,
@@ -309,6 +324,21 @@ describe('ArtifactStore', () => {
         .filter((d) => d.type === ResourceType.Product)
         .map((d) => d.nameParts[0]);
       expect(products).toContain('prod1');
+    });
+
+    it('should list an XML-only policy fragment', async () => {
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+      };
+      await store.writeContent(
+        tmpDir,
+        descriptor,
+        '<fragment><base /></fragment>',
+        'policy'
+      );
+
+      await expect(store.listResources(tmpDir)).resolves.toContainEqual(descriptor);
     });
   });
 

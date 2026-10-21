@@ -53,16 +53,18 @@ export class ArtifactStore implements IArtifactStore {
     baseDir: string,
     descriptor: ResourceDescriptor,
     content: string,
-    contentType: 'policy' | 'specification',
+    contentType: 'policy' | 'policy-fragment' | 'specification',
     format?: string
   ): Promise<void> {
     let filePath: string;
     // Decode HTML entities in policy XML that APIM returns in JSON format
     let fileContent = content;
 
-    if (contentType === 'policy') {
+    if (contentType === 'policy' || contentType === 'policy-fragment') {
       filePath = buildPolicyFilePath(baseDir, descriptor);
-      fileContent = he.decode(content);
+      if (contentType === 'policy') {
+        fileContent = he.decode(content);
+      }
     } else if (contentType === 'specification') {
       const specFormat = (format ?? 'yaml') as 'yaml' | 'json' | 'graphql' | 'wsdl' | 'wadl';
       filePath = buildSpecificationFilePath(baseDir, descriptor, specFormat);

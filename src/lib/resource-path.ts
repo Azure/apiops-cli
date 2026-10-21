@@ -442,6 +442,20 @@ export function parseArtifactPath(
     }
   }
 
+  if (fileName === 'policy.xml') {
+    const policyFragmentParts = parseTemplatePath(
+      RESOURCE_TYPE_METADATA[ResourceType.PolicyFragment].artifactDirectory,
+      parts.slice(startIndex, -1).join('/')
+    );
+    if (policyFragmentParts !== undefined) {
+      return {
+        type: ResourceType.PolicyFragment,
+        nameParts: policyFragmentParts,
+        workspace,
+      };
+    }
+  }
+
   // Try to match against each resource type's pattern
   for (const [typeKey, metadata] of Object.entries(RESOURCE_TYPE_METADATA)) {
     const type = typeKey as ResourceType;
@@ -494,6 +508,8 @@ function parseWorkspaceContainerDescriptor(
  * files that belong to a resource but are not the primary info file.
  *
  * Currently supports:
+ * - Policy fragment content (`policyFragments/{fragment}/policy.xml`)
+ * - Workspace-scoped policy fragment content
  * - API specification files (`apis/{api}/specification.{ext}`)
  * - Workspace-scoped API specification files
  *   (`workspaces/{workspace}/apis/{api}/specification.{ext}`)

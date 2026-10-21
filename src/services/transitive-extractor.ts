@@ -11,6 +11,7 @@ import { logger } from '../lib/logger.js';
 import { runParallel } from '../lib/parallel-runner.js';
 import { redactSecrets } from './secret-redactor.js';
 import { findTransitiveDependencies } from './transitive-resolver.js';
+import { writePolicyFragmentArtifact } from './policy-fragment-artifact.js';
 
 const DEFAULT_CONCURRENCY = 5;
 
@@ -133,17 +134,32 @@ export async function extractTransitiveDependencies(
           serviceContext && dep.workspace !== workspace ? serviceContext : context;
         let target = dep;
         if (dep.type === ResourceType.NamedValue) {
-          target = await resolveNamedValueDescriptor(client, dependencyContext, dep, namedValueIndex);
+          target = await resolveNamedValueDescriptor(
+            client,
+            dependencyContext,
+            dep,
+            namedValueIndex
+          );
           const targetKey = getResourceDescriptorKey(target);
           if (claimedNamedValues.has(targetKey)) {
             return { dep: target, skipped: true };
           }
           claimedNamedValues.add(targetKey);
         }
+
         const json = await client.getResource(dependencyContext, target);
         if (json) {
-          const safeJson = redactSecrets(target, json);
-          await store.writeResource(outputDir, target, safeJson);
+          let safeJson = redactSecrets(target, json);
+          if (target.type === ResourceType.PolicyFragment) {
+            safeJson = await writePolicyFragmentArtifact(
+              store,
+              outputDir,
+              target,
+              safeJson
+            );
+          } else {
+            await store.writeResource(outputDir, target, safeJson);
+          }
           logger.info(`Extracted transitive dependency ${buildResourceLabel(target)}`);
           return { dep: target, json: safeJson };
         }

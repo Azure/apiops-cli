@@ -29,7 +29,7 @@ These resources exist at the APIM service scope — they are not children of any
 | Logger | `/loggers/{name}` | `loggers/{0}` | `loggerInformation.json` | Logging destinations (Application Insights, Event Hub) |
 | Group | `/groups/{name}` | `groups/{0}` | `groupInformation.json` | User groups for access control |
 | Diagnostic | `/diagnostics/{name}` | `diagnostics/{0}` | `diagnosticInformation.json` | Logging/diagnostic settings (references a Logger) |
-| PolicyFragment | `/policyFragments/{name}` | `policyFragments/{0}` | `policyFragmentInformation.json` | Reusable policy XML snippets |
+| PolicyFragment | `/policyFragments/{name}` | `policyFragments/{0}` | `policy.xml` and optional `policyFragmentInformation.json` | Reusable policy XML snippets |
 | ServicePolicy | `/policies/policy` | *(root)* | `policy.xml` | Global policy applied to all APIs |
 | GlobalSchema | `/schemas/{name}` | `schemas/{0}` | `schemaInformation.json` | Service-level schemas (shared across APIs) |
 | PolicyRestriction | `/policyRestrictions/{name}` | `policyRestrictions/{0}` | `policyRestrictionInformation.json` | Rules restricting which policies can be used |
