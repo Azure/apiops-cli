@@ -388,18 +388,12 @@ async function planDryRunPublications(
         }
       }
       for (const operation of apiPlan.operationDescriptionPuts) {
-        const eligibility = await evaluateResourceEligibility(store, operation, config);
-        addPlan({ descriptor: operation, ...eligibility, operation: 'PUT' });
+        addPlan({ descriptor: operation, eligible: true, operation: 'PUT' });
       }
       for (const patch of apiPlan.operationPatches) {
-        const eligibility = await evaluateResourceEligibility(
-          store,
-          patch.descriptor,
-          config
-        );
         addPlan({
           descriptor: patch.descriptor,
-          ...eligibility,
+          eligible: true,
           operation: 'PATCH',
         });
       }

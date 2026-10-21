@@ -1111,7 +1111,7 @@ describe('dry-run-reporter', () => {
         expect(report.summary).toEqual({ creates: 0, patches: 0, deletes: 0, skips: 1 });
       });
 
-      it('reports SKIP for spec-import operation PUT and PATCH plans', async () => {
+      it('reports spec-import operation PUT and PATCH plans as live publishing does', async () => {
         const client = createMockClient();
         const store = createMockStore();
         store.listResources.mockResolvedValue([api, operation]);
@@ -1136,16 +1136,19 @@ describe('dry-run-reporter', () => {
           store, client, testContext, testConfig, [api, operation]
         );
 
-        expect(report.actions.filter((action) => action.operation === 'SKIP')).toHaveLength(2);
         expect(report.actions).toEqual(expect.arrayContaining([
           expect.objectContaining({
-            operation: 'SKIP',
+            operation: 'PUT',
             type: ResourceType.ApiOperation,
             name: 'ws-api/onHandshake',
-            reason: expect.stringContaining('WebSocket'),
+          }),
+          expect.objectContaining({
+            operation: 'PATCH',
+            type: ResourceType.ApiOperation,
+            name: 'ws-api/onHandshake',
           }),
         ]));
-        expect(report.summary).toEqual({ creates: 1, patches: 0, deletes: 0, skips: 2 });
+        expect(report.summary).toEqual({ creates: 2, patches: 1, deletes: 0, skips: 0 });
       });
     });
   });

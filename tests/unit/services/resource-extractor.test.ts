@@ -160,8 +160,78 @@ describe('resource-extractor', () => {
         '/output',
         expect.objectContaining({ type: ResourceType.PolicyFragment }),
         '<fragment><base /></fragment>',
-        'policy'
+        'policy-fragment'
       );
+    });
+
+    it('fetches the full policy fragment when LIST omits its value', async () => {
+      const client = {
+        ...createMockClient(),
+        listResources: async function* () {
+          yield { name: 'shared-auth', properties: { description: 'Shared authentication' } };
+        },
+        getResource: vi.fn().mockResolvedValue({
+          name: 'shared-auth',
+          properties: {
+            description: 'Shared authentication',
+            value: '<fragment><base /></fragment>',
+            format: 'rawxml',
+          },
+        }),
+      };
+      const store = createMockStore();
+
+      const result = await extractResourceType(
+        client,
+        store,
+        testContext,
+        ResourceType.PolicyFragment,
+        '/output'
+      );
+
+      expect(client.getResource).toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({
+          type: ResourceType.PolicyFragment,
+          nameParts: ['shared-auth'],
+        })
+      );
+      expect(result.errorCount).toBe(0);
+      expect(store.writeContent).toHaveBeenCalledWith(
+        '/output',
+        expect.objectContaining({ type: ResourceType.PolicyFragment }),
+        '<fragment><base /></fragment>',
+        'policy-fragment'
+      );
+    });
+
+    it('reports an extraction error when the full policy fragment GET is missing', async () => {
+      const client = {
+        ...createMockClient(),
+        listResources: async function* () {
+          yield { name: 'shared-auth', properties: { description: 'Shared authentication' } };
+        },
+        getResource: vi.fn().mockResolvedValue(undefined),
+      };
+      const store = createMockStore();
+
+      const result = await extractResourceType(
+        client,
+        store,
+        testContext,
+        ResourceType.PolicyFragment,
+        '/output'
+      );
+
+      expect(result.errorCount).toBe(1);
+      expect(result.extracted).toEqual([
+        expect.objectContaining({
+          status: 'error',
+          error: expect.stringContaining('Failed to fetch full policyFragments/shared-auth'),
+        }),
+      ]);
+      expect(store.writeResource).not.toHaveBeenCalled();
+      expect(store.writeContent).not.toHaveBeenCalled();
     });
 
     it('should handle errors gracefully', async () => {

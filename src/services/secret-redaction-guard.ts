@@ -22,7 +22,11 @@ import type { IArtifactStore } from '../clients/iartifact-store.js';
 import type { PublishConfig } from '../models/config.js';
 import type { ResourceDescriptor } from '../models/types.js';
 import { ResourceType } from '../models/resource-types.js';
-import { applyOverrides, hasNamedValueOverride } from './override-merger.js';
+import {
+  applyOverrides,
+  hasNamedValueOverride,
+  resolveOverrideSection,
+} from './override-merger.js';
 import {
   hasExplicitPropertyOverride,
   POLICY_TYPES,
@@ -120,14 +124,22 @@ function getPolicyFragmentValueLocation(
   artifactSource: 'policy.xml' | 'policyFragmentInformation.json' | undefined
 ): string {
   const name = getNamePart(descriptor.nameParts, 0);
+  const overrideSection = resolveOverrideSection(
+    config.overrides,
+    'policyFragments',
+    descriptor.workspace
+  );
   if (
     hasExplicitPropertyOverride(
       name,
       'value',
-      config.overrides?.policyFragments
+      overrideSection
     )
   ) {
-    return `overrides.policyFragments.${name}.properties.value`;
+    const overridePath = descriptor.workspace
+      ? `overrides.workspaces.${descriptor.workspace}.children.policyFragments`
+      : 'overrides.policyFragments';
+    return `${overridePath}.${name}.properties.value`;
   }
 
   return artifactSource === 'policyFragmentInformation.json'

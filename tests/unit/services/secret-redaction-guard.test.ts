@@ -166,6 +166,54 @@ describe('secret-redaction-guard', () => {
       );
     });
 
+    it('reports a workspace-scoped fragment override at its workspace path', async () => {
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({
+        properties: { description: 'Shared authentication' },
+      });
+      const fragmentDescriptor: ResourceDescriptor = {
+        type: ResourceType.PolicyFragment,
+        nameParts: ['shared-auth'],
+        workspace: 'team',
+      };
+      const configWithOverride: PublishConfig = {
+        ...testConfig,
+        overrides: {
+          policyFragments: {
+            'shared-auth': {
+              properties: {
+                value: '<fragment>service marker should not be used</fragment>',
+              },
+            },
+          },
+          workspaces: {
+            team: {
+              children: {
+                policyFragments: {
+                  'shared-auth': {
+                    properties: {
+                      value: `<fragment>${REDACTION_MARKER}</fragment>`,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      const findings = await scanForRedactionMarkers(
+        store,
+        configWithOverride,
+        [fragmentDescriptor]
+      );
+
+      expect(findings).toHaveLength(1);
+      expect(findings[0].location).toBe(
+        'overrides.workspaces.team.children.policyFragments.shared-auth.properties.value'
+      );
+    });
+
     it('flags a secret named value that equals the redaction marker', async () => {
       const store = createMockStore();
       store.readResource.mockResolvedValue({

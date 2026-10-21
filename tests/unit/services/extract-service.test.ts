@@ -767,6 +767,17 @@ describe('extract-service', () => {
         ],
       });
       client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor) => {
+        if (
+          descriptor.type === ResourceType.PolicyFragment &&
+          descriptor.nameParts[0] === 'shared-fragment'
+        ) {
+          return {
+            name: 'shared-fragment',
+            properties: {
+              value: '<set-header name="key"><value>{{shared-secret}}</value></set-header>',
+            },
+          };
+        }
         if (descriptor.type === ResourceType.Backend && descriptor.nameParts[0] === 'member') {
           return { name: 'member', properties: {} };
         }

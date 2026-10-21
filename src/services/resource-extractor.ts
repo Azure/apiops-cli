@@ -118,6 +118,10 @@ export async function extractResourceType(
           const full = await client.getResource(context, descriptor);
           if (full) {
             json = full;
+          } else if (type === ResourceType.PolicyFragment) {
+            throw new Error(
+              `Failed to fetch full ${buildResourceLabel(descriptor)} after listing it`
+            );
           }
         }
 

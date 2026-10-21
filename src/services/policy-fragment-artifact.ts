@@ -114,7 +114,7 @@ export async function writePolicyFragmentArtifact(
   }
 
   const redactedContent = redactAndWarnPolicySecrets(descriptor, value);
-  await store.writeContent(baseDir, descriptor, redactedContent, 'policy');
+  await store.writeContent(baseDir, descriptor, redactedContent, 'policy-fragment');
 
   return {
     ...json,

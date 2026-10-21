@@ -109,7 +109,7 @@ describe('policy-fragment-artifact', () => {
       '/output',
       descriptor,
       '<fragment><base /></fragment>',
-      'policy'
+      'policy-fragment'
     );
   });
 });

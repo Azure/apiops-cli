@@ -158,6 +158,7 @@ export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> 
     artifactDirectory: 'policyFragments/{0}',
     infoFile: 'policyFragmentInformation.json',
     supportsGet: true,
+    listOmitsFields: true, // LIST may omit properties.value, which is required for policy.xml
     workspaceSupported: true,
   },
   [ResourceType.ServicePolicy]: {
