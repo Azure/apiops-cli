@@ -21,6 +21,16 @@ const NAMED_VALUE_PATTERN = /\{\{([^}]+)\}\}/g;
 const BACKEND_PATTERN = /<set-backend-service\s+backend-id="([^"]+)"/g;
 const FRAGMENT_PATTERN = /<include-fragment\s+fragment-id="([^"]+)"/g;
 
+function isLiteralBackendId(value: string): boolean {
+  const backendId = value.trim();
+  return (
+    backendId.length > 0 &&
+    !backendId.includes('{{') &&
+    !backendId.startsWith('@(') &&
+    !backendId.startsWith('@{')
+  );
+}
+
 /**
  * Represents a discovered transitive dependency.
  */
@@ -60,7 +70,7 @@ export function scanPolicyReferences(policyXml: string): TransitiveDependency[] 
 
   // Backend references
   for (const match of policyXml.matchAll(BACKEND_PATTERN)) {
-    if (match[1]) {
+    if (match[1] && isLiteralBackendId(match[1])) {
       dependencies.push({
         type: ResourceType.Backend,
         name: match[1].trim(),
