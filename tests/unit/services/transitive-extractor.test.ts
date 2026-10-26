@@ -244,4 +244,37 @@ describe('transitive-extractor', () => {
       expect(result.extractedDescriptors).toEqual([]);
     });
   });
+
+  describe('backend named-value references (#331)', () => {
+    it('should extract the named value without requesting a backend for its placeholder', async () => {
+      const client = createMockClient();
+      client.listResources = namedValueList({ name: 'demo-backend-id', displayName: 'demo-backend-id' });
+      client.getResource.mockImplementation(async (_ctx, descriptor: ResourceDescriptor) => {
+        if (descriptor.type === ResourceType.NamedValue && descriptor.nameParts[0] === 'demo-backend-id') {
+          return {
+            name: 'demo-backend-id',
+            properties: { displayName: 'demo-backend-id', secret: false, value: 'backend-xyz' },
+          };
+        }
+        return undefined;
+      });
+      const store = createMockStore();
+      const policies = new Map([
+        ['api-1', '<policies><inbound><set-backend-service backend-id="{{demo-backend-id}}" /></inbound></policies>'],
+      ]);
+
+      const result = await extractTransitiveDependencies(
+        client, store, testContext, '/output', policies, new Map(), [], []
+      );
+
+      expect(result.errorCount).toBe(0);
+      expect(result.extractedDescriptors).toContainEqual(
+        expect.objectContaining({ type: ResourceType.NamedValue, nameParts: ['demo-backend-id'] })
+      );
+      expect(client.getResource).not.toHaveBeenCalledWith(
+        testContext,
+        expect.objectContaining({ type: ResourceType.Backend, nameParts: ['{{demo-backend-id}}'] })
+      );
+    });
+  });
 });

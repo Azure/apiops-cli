@@ -45,6 +45,21 @@ describe('transitive-resolver', () => {
       });
     });
 
+    it('should not treat named values or policy expressions as backend names', () => {
+      const policy = `
+        <set-backend-service backend-id="{{demo-backend-id}}" />
+        <set-backend-service backend-id="@(context.Request.Url.Host)" />
+        <set-backend-service backend-id="@{ return context.Request.Url.Host; }" />
+      `;
+      const refs = scanPolicyReferences(policy);
+
+      expect(refs).toContainEqual({
+        type: ResourceType.NamedValue,
+        name: 'demo-backend-id',
+      });
+      expect(refs.filter((ref) => ref.type === ResourceType.Backend)).toHaveLength(0);
+    });
+
     it('should detect policy fragment references', () => {
       const policy = '<policies><inbound><include-fragment fragment-id="my-fragment" /></inbound></policies>';
       const refs = scanPolicyReferences(policy);
