@@ -4,13 +4,14 @@
  * Unit tests for Publish orchestration service
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ResourceDescriptor, ApimServiceContext } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
 import { LogLevel } from '../../../src/lib/logger.js';
 import { recordRetry, withRetryResource } from '../../../src/lib/retry-tracker.js';
 import { getResourceDescriptorKey } from '../../../src/lib/resource-path.js';
+import { ApimClient } from '../../../src/clients/apim-client.js';
 
 // Mock service dependencies
 vi.mock('../../../src/services/git-diff-service.js');
@@ -1604,6 +1605,74 @@ describe('publish-service', () => {
       await runPublish(client, store, config);
 
       expect(client.putResource).not.toHaveBeenCalled();
+    });
+
+    describe('without Reader on the resource group', () => {
+      const rgUrl = 'https://management.azure.com/subscriptions/sub-1/resourceGroups/rg-1?api-version=2021-04-01';
+      const serviceUrl = `${testContext.baseUrl}?api-version=${testContext.apiVersion}`;
+      const config: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      /**
+       * Real ApimClient whose pre-flight GETs hit a stubbed fetch: the resource
+       * group read is forbidden and the APIM service read returns `serviceStatus`.
+       * Resource writes are stubbed on the instance so only pre-flight goes through fetch.
+       */
+      function createClientWithForbiddenResourceGroup(serviceStatus: number) {
+        const client = new ApimClient();
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
+        vi.spyOn(client, 'getResource').mockResolvedValue(undefined);
+        vi.spyOn(client, 'putResource').mockResolvedValue(undefined);
+        vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+          if (url === rgUrl) {
+            return Promise.resolve(new Response(
+              JSON.stringify({ error: { code: 'AuthorizationFailed', message: 'resourceGroups/read' } }),
+              { status: 403, headers: { 'Content-Type': 'application/json' } },
+            ));
+          }
+          if (url === serviceUrl) {
+            return Promise.resolve(new Response('{}', { status: serviceStatus, headers: { 'Content-Type': 'application/json' } }));
+          }
+          return Promise.reject(new Error(`Unexpected URL: ${url}`));
+        }));
+        return client;
+      }
+
+      afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+      });
+
+      it('should publish when the resource group read is forbidden but the APIM service exists', async () => {
+        const client = createClientWithForbiddenResourceGroup(200);
+        const store = createMockStore([{ type: ResourceType.Tag, nameParts: ['tag1'] }]);
+
+        const result = await runPublish(client, store, config);
+
+        expect(result.exitCode).toBe(0);
+        expect(client.putResource).toHaveBeenCalledWith(
+          testContext,
+          expect.objectContaining({ type: ResourceType.Tag, nameParts: ['tag1'] }),
+          expect.anything(),
+        );
+      });
+
+      it('should fail pre-flight when the resource group read is forbidden and the APIM service is not found', async () => {
+        const client = createClientWithForbiddenResourceGroup(404);
+        const store = createMockStore([{ type: ResourceType.Tag, nameParts: ['tag1'] }]);
+
+        const result = await runPublish(client, store, config);
+
+        expect(result.exitCode).toBe(2);
+        expect(result.totalErrors).toBe(1);
+        expect(client.putResource).not.toHaveBeenCalled();
+      });
     });
   });
 

@@ -101,6 +101,8 @@ export interface IApimClient {
   /**
    * Validate that the target resource group and APIM service instance exist.
    * Throws an error with a clear message if either is not found (404).
+   * The resource group check is skipped when the caller lacks permission to
+   * read the resource group (403); only the APIM service check is required.
    * Must be called before any publish operations to surface missing infrastructure early.
    */
   validatePreFlight(context: ApimServiceContext): Promise<void>;

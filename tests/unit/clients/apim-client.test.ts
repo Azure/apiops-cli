@@ -72,6 +72,118 @@ describe('ApimClient.validatePreFlight', () => {
       expect.objectContaining({ method: 'GET' }),
     );
   });
+
+  describe('resource group check', () => {
+    const rgUrl = 'https://management.azure.com/subscriptions/sub-1/resourceGroups/rg-1?api-version=2021-04-01';
+    const serviceUrl = `${testContext.baseUrl}?api-version=${testContext.apiVersion}`;
+    const rgForbidden = {
+      error: {
+        code: 'AuthorizationFailed',
+        message:
+          "The client does not have authorization to perform action 'Microsoft.Resources/subscriptions/resourceGroups/read' " +
+          "over scope '/subscriptions/sub-1/resourceGroups/rg-1'",
+      },
+    };
+
+    let client: ApimClient;
+    let fetchSpy: ReturnType<typeof vi.fn>;
+
+    /** Stub fetch with separate responses for the resource group and APIM service GETs. */
+    function stubResponses(rg: () => Response, service: () => Response): void {
+      fetchSpy.mockImplementation((url: string) => {
+        if (url === rgUrl) return Promise.resolve(rg());
+        if (url === serviceUrl) return Promise.resolve(service());
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
+    }
+
+    beforeEach(() => {
+      client = new ApimClient();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
+      fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+    });
+
+    it('should pass when the resource group read is forbidden but the APIM service exists', async () => {
+      const debugSpy = vi.spyOn(logger, 'debug');
+      stubResponses(() => makeResponse(403, rgForbidden), () => makeResponse(200, {}));
+
+      await expect(client.validatePreFlight(testContext)).resolves.toBeUndefined();
+
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(fetchSpy).toHaveBeenNthCalledWith(2, serviceUrl, expect.objectContaining({ method: 'GET' }));
+      expect(debugSpy).toHaveBeenCalledWith(
+        expect.stringContaining("No permission to read resource group 'rg-1' (HTTP 403)"),
+      );
+    });
+
+    it('should not warn when the resource group read is forbidden', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn');
+      stubResponses(() => makeResponse(403, rgForbidden), () => makeResponse(200, {}));
+
+      await client.validatePreFlight(testContext);
+
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it('should report a possibly wrong resource group when the resource group read is forbidden and the APIM service is not found', async () => {
+      stubResponses(() => makeResponse(403, rgForbidden), () => makeResponse(404, { error: { code: 'ResourceNotFound' } }));
+
+      const error = await client.validatePreFlight(testContext).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe(
+        "APIM service 'apim-1' not found in resource group 'rg-1' of subscription 'sub-1'. " +
+        'Ensure the subscription, resource group and APIM service name are correct and that the APIM instance exists before publishing.',
+      );
+    });
+
+    it('should keep the permission error when the resource group read is forbidden and the APIM service read is forbidden', async () => {
+      stubResponses(() => makeResponse(403, rgForbidden), () => makeResponse(403, { error: { code: 'AuthorizationFailed' } }));
+
+      await expect(client.validatePreFlight(testContext)).rejects.toThrow(
+        "Insufficient permissions to read APIM service 'apim-1'. " +
+        'Ensure the service principal has at least Reader role on the APIM resource.',
+      );
+    });
+
+    it('should report a missing resource group without checking the APIM service', async () => {
+      stubResponses(() => makeResponse(404, { error: { code: 'ResourceGroupNotFound' } }), () => makeResponse(200, {}));
+
+      await expect(client.validatePreFlight(testContext)).rejects.toThrow(
+        "Resource group 'rg-1' not found in subscription 'sub-1'. Ensure the resource group exists before publishing.",
+      );
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should report a missing APIM service when the resource group exists', async () => {
+      stubResponses(() => makeResponse(200, {}), () => makeResponse(404, { error: { code: 'ResourceNotFound' } }));
+
+      await expect(client.validatePreFlight(testContext)).rejects.toThrow(
+        "APIM service 'apim-1' not found in resource group 'rg-1'. Ensure the APIM instance exists before publishing.",
+      );
+    });
+
+    it('should fail with an authentication error when the resource group read returns 401', async () => {
+      stubResponses(() => makeResponse(401, { error: { code: 'InvalidAuthenticationToken' } }), () => makeResponse(200, {}));
+
+      await expect(client.validatePreFlight(testContext)).rejects.toThrow(
+        "Authentication failed when checking resource group 'rg-1'.",
+      );
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should rethrow other resource group errors unchanged', async () => {
+      stubResponses(() => makeResponse(400, { error: { code: 'InvalidSubscriptionId' } }), () => makeResponse(200, {}));
+
+      const error = await client.validatePreFlight(testContext).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(HttpError);
+      expect((error as HttpError).status).toBe(400);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+  });
 });
 
 describe('ApimClient.listResources', () => {

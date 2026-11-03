@@ -47,7 +47,7 @@ For each environment, do the following steps:
 
 1. In the **Azure portal**, open the resource group that contains the APIM instance for that environment.
 2. Go to **Access control (IAM)** → **Add role assignment**.
-3. Assign **Reader** on the resource group to the app registration.
+3. Optionally, assign **Reader** on the resource group to the app registration. `apiops publish` doesn't need it, but with it a missing resource group is reported clearly; without it, publish skips that check and checks the APIM service directly.
 4. Open the APIM service itself and assign **API Management Service Contributor** to the app registration.
 5. Wait a few minutes for RBAC changes to propagate before you test the workflow.
 

@@ -305,7 +305,8 @@ apiops-cli needs these Azure RBAC roles on the APIM service instance:
 | Role | Scope | Purpose |
 |------|-------|---------|
 | **API Management Service Contributor** | APIM service resource | Read and write APIM resources (APIs, products, policies, etc.) |
-| **Reader** | Resource group | List resources in the resource group |
+
+**Reader** on the resource group is not required. Before publishing, `apiops publish` checks that the resource group exists so it can report a missing resource group clearly. If the identity cannot read the resource group (HTTP 403), the CLI skips that check and checks the APIM service directly.
 
 ### Assign RBAC
 
@@ -315,11 +316,6 @@ az role assignment create \
   --assignee {principal-id} \
   --role "API Management Service Contributor" \
   --scope "/subscriptions/{sub-id}/resourceGroups/{rg}/providers/Microsoft.ApiManagement/service/{apim-name}"
-
-az role assignment create \
-  --assignee {principal-id} \
-  --role "Reader" \
-  --scope "/subscriptions/{sub-id}/resourceGroups/{rg}"
 ```
 
 > **Principle of least privilege:** Scope the Contributor role to the specific APIM instance, not the entire resource group or subscription.
