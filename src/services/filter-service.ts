@@ -149,37 +149,7 @@ export function shouldReconcileResource(
     return false;
   }
 
-  const workspaceFilter = getWorkspaceFilter(descriptor.workspace, filter);
-  return shouldIncludeResource(descriptor, workspaceFilter);
-}
-
-function getWorkspaceFilter(
-  workspaceName: string,
-  filter?: FilterConfig
-): FilterConfig | undefined {
-  const matchingKey = Object.keys(filter?.workspaceSubFilters ?? {}).find(
-    key => key.toLowerCase() === workspaceName.toLowerCase()
-  );
-  if (!matchingKey) {
-    return undefined;
-  }
-
-  const subFilter = filter?.workspaceSubFilters?.[matchingKey];
-  return subFilter ? {
-    apis: subFilter.apis,
-    apiSubFilters: subFilter.apiSubFilters,
-    backends: subFilter.backends,
-    diagnostics: subFilter.diagnostics,
-    groups: subFilter.groups,
-    loggers: subFilter.loggers,
-    namedValues: subFilter.namedValues,
-    policyFragments: subFilter.policyFragments,
-    products: subFilter.products,
-    schemas: subFilter.schemas,
-    subscriptions: subFilter.subscriptions,
-    tags: subFilter.tags,
-    versionSets: subFilter.versionSets,
-  } : undefined;
+  return shouldIncludeResource(descriptor, resolveWorkspaceFilter(descriptor.workspace, filter));
 }
 
 /**
@@ -207,11 +177,9 @@ export function resolveWorkspaceFilter(
   workspaceName: string,
   filter?: FilterConfig
 ): FilterConfig | undefined {
-  const lowerName = workspaceName.toLowerCase();
-  const matchingKey = Object.keys(filter?.workspaceSubFilters ?? {}).find(
-    (key) => key.toLowerCase() === lowerName
-  );
-  const subFilter = matchingKey ? filter?.workspaceSubFilters?.[matchingKey] : undefined;
+  // A sub-filter keyed by a pattern (for example `team-*`) applies to every
+  // workspace it matches; one keyed by the workspace's name takes precedence.
+  const subFilter = findSubFilter(workspaceName, filter?.workspaceSubFilters);
   return subFilter ? workspaceSubFilterToFilterConfig(subFilter) : undefined;
 }
 
@@ -362,23 +330,29 @@ function cachedWorkspaceFilter(workspace: string, filter: FilterConfig | undefin
 }
 
 /**
- * The sub-filter that applies to an API: the one keyed by its name
- * (case-insensitive), otherwise the first one keyed by a wildcard pattern
- * that matches it (for example `*` for every API).
+ * The sub-filter that applies to a named API or workspace: the one keyed by
+ * its name (case-insensitive), otherwise the first one keyed by a wildcard
+ * pattern that matches it (for example `*`). Exclusion keys (`!name`) never
+ * apply.
  */
+function findSubFilter<T>(name: string, subFilters: Record<string, T> | undefined): T | undefined {
+  if (!subFilters) {
+    return undefined;
+  }
+  const lowerName = name.toLowerCase();
+  const keys = Object.keys(subFilters).filter((key) => !key.startsWith('!'));
+  const key =
+    keys.find((k) => k.toLowerCase() === lowerName) ??
+    keys.find((k) => isWildcardPattern(k) && matchesFilter(name, [k]));
+  return key === undefined ? undefined : subFilters[key];
+}
+
+/** The sub-filter that applies to an API (see {@link findSubFilter}). */
 export function findApiSubFilter(
   apiName: string,
   apiSubFilters: Record<string, ApiSubFilter> | undefined
 ): ApiSubFilter | undefined {
-  if (!apiSubFilters) {
-    return undefined;
-  }
-  const lowerName = apiName.toLowerCase();
-  const keys = Object.keys(apiSubFilters);
-  const key =
-    keys.find((k) => k.toLowerCase() === lowerName) ??
-    keys.find((k) => isWildcardPattern(k) && matchesFilter(apiName, [k]));
-  return key === undefined ? undefined : apiSubFilters[key];
+  return findSubFilter(apiName, apiSubFilters);
 }
 
 /**

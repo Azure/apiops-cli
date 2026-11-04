@@ -208,7 +208,7 @@ const extractorSchema = {
         {
           type: 'object',
           description:
-            'A single workspace name mapped to sub-resource filters for that workspace.',
+            'A single workspace name, or a wildcard pattern such as team-*, mapped to sub-resource filters for the matching workspaces. A name takes precedence over a pattern.',
           minProperties: 1,
           maxProperties: 1,
           patternProperties: {

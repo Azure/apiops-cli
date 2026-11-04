@@ -50,6 +50,21 @@ describe('filter-service', () => {
         filter
       )).toBe(false);
     });
+
+    it('should use a workspace sub-filter keyed by a pattern', () => {
+      const filter: FilterConfig = {
+        workspaces: ['team-*'],
+        workspaceSubFilters: {
+          'team-*': { namedValues: ['workspace-value'] },
+        },
+      };
+
+      expect(shouldReconcileResource(workspaceNamedValue, filter)).toBe(true);
+      expect(shouldReconcileResource(
+        { ...workspaceNamedValue, nameParts: ['other-value'] },
+        filter
+      )).toBe(false);
+    });
   });
 
   describe('isInRemoveStaleScope', () => {

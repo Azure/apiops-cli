@@ -290,6 +290,10 @@ workspaces:
 
 Supported workspace sub-filter keys: `apis`, `backends`, `diagnostics`, `groups`, `loggers`, `namedValues`, `policyFragments`, `products`, `schemas`, `subscriptions`, `tags`, `versionSets`.
 
+As for APIs, the key can be a wildcard pattern: `- 'team-*': { apis: [orders] }` selects every matching workspace and applies the sub-filter to each. An entry keyed by the workspace's name takes precedence over a pattern; otherwise the first matching pattern applies.
+
+A sub-filter can't be attached to an exclusion (`- '!team-c': {...}`), for APIs or workspaces: the exclusion still applies, but its sub-filter is ignored with a warning.
+
 ---
 
 ## All 17 Filterable Resource Types
