@@ -192,7 +192,7 @@ const extractorSchema = {
         {
           type: 'object',
           description:
-            'A single API name mapped to sub-resource filters for that API.',
+            'A single API name, or a wildcard pattern such as *, mapped to sub-resource filters for the matching APIs. A name takes precedence over a pattern.',
           minProperties: 1,
           maxProperties: 1,
           patternProperties: {

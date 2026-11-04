@@ -68,6 +68,7 @@ const API_SUB_FILTER_KEY_MAP: Partial<Record<ResourceType, keyof ApiSubFilter>> 
   [ResourceType.ApiDiagnostic]: 'diagnostics',
   [ResourceType.ApiSchema]: 'schemas',
   [ResourceType.ApiRelease]: 'releases',
+  [ResourceType.ApiTagDescription]: 'tagDescriptions',
 };
 
 /**
@@ -251,18 +252,12 @@ function matchesApiSubFilter(
   parentApiName: string,
   apiSubFilters: Record<string, ApiSubFilter>
 ): boolean {
-  // Find matching sub-filter using case-insensitive API name
-  const lowerParent = parentApiName.toLowerCase();
-  const matchingKey = Object.keys(apiSubFilters).find(
-    (k) => k.toLowerCase() === lowerParent
-  );
-
-  if (!matchingKey) {
+  const subFilter = findApiSubFilter(parentApiName, apiSubFilters);
+  if (!subFilter) {
     // No sub-filter for this API — include all children
     return true;
   }
 
-  const subFilter = apiSubFilters[matchingKey];
   const subFilterKey = API_SUB_FILTER_KEY_MAP[descriptor.type];
 
   if (!subFilterKey) {
@@ -364,6 +359,26 @@ function cachedWorkspaceFilter(workspace: string, filter: FilterConfig | undefin
     byWorkspace.set(key, resolveWorkspaceFilter(workspace, filter));
   }
   return byWorkspace.get(key);
+}
+
+/**
+ * The sub-filter that applies to an API: the one keyed by its name
+ * (case-insensitive), otherwise the first one keyed by a wildcard pattern
+ * that matches it (for example `*` for every API).
+ */
+export function findApiSubFilter(
+  apiName: string,
+  apiSubFilters: Record<string, ApiSubFilter> | undefined
+): ApiSubFilter | undefined {
+  if (!apiSubFilters) {
+    return undefined;
+  }
+  const lowerName = apiName.toLowerCase();
+  const keys = Object.keys(apiSubFilters);
+  const key =
+    keys.find((k) => k.toLowerCase() === lowerName) ??
+    keys.find((k) => isWildcardPattern(k) && matchesFilter(apiName, [k]));
+  return key === undefined ? undefined : apiSubFilters[key];
 }
 
 /**

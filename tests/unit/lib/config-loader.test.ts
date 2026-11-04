@@ -201,6 +201,25 @@ apis:
       });
     });
 
+    it('should load a wildcard API sub-filter with tagDescriptions (#316, #307)', async () => {
+      const content = `
+apis:
+  - '*':
+      operations: []
+      schemas: []
+      tagDescriptions: []
+`;
+      const filePath = path.join(tmpDir, 'wildcard-api-filter.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+
+      expect(config!.apis).toEqual(['*']);
+      expect(config!.apiSubFilters).toEqual({
+        '*': { operations: [], schemas: [], tagDescriptions: [] },
+      });
+    });
+
     it('should load nested workspace filter entries', async () => {
       const content = `
 workspaces:

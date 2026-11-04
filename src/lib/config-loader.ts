@@ -163,7 +163,7 @@ export async function loadFilterConfig(filePath: string): Promise<FilterConfig |
         config.apis = names;
         if (Object.keys(subFilters).length > 0) {
           config.apiSubFilters = {};
-          const validApiSubKeys = ['operations', 'diagnostics', 'schemas', 'releases'] as const;
+          const validApiSubKeys = ['operations', 'diagnostics', 'schemas', 'releases', 'tagDescriptions'] as const;
           for (const [apiName, sf] of Object.entries(subFilters)) {
             const apiSub: ApiSubFilter = {};
             for (const subKey of validApiSubKeys) {

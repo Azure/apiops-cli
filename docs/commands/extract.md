@@ -159,7 +159,7 @@ For every key, the value semantics are:
 ### API sub-filters
 
 To restrict which child resources of an API are extracted (operations,
-diagnostics, schemas, releases), use the **nested object entry** form under
+diagnostics, schemas, releases, tag descriptions), use the **nested object entry** form under
 `apis:`. Each entry becomes a `name: { subKey: [...] }` map:
 
 ```yaml
@@ -175,8 +175,12 @@ apis:
       releases: []
 ```
 
-Supported API sub-filter keys: `operations`, `diagnostics`, `schemas`, `releases`.
+Supported API sub-filter keys: `operations`, `diagnostics`, `schemas`, `releases`, `tagDescriptions`.
 Same value semantics as top-level keys (omitted = include all, `[]` = include none, list = allowlist).
+
+The key of a nested entry can be a wildcard pattern (`'*'`, `'v2-*'`), so one
+sub-filter applies to every matching API. An entry keyed by an API's name takes
+precedence over a pattern. See [One sub-filter for many APIs](../guides/filtering-resources.md#one-sub-filter-for-many-apis).
 
 ### Workspace sub-filters
 

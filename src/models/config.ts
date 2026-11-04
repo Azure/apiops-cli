@@ -27,6 +27,7 @@ export interface ApiSubFilter {
   diagnostics?: string[];
   schemas?: string[];
   releases?: string[];
+  tagDescriptions?: string[];
 }
 
 /**

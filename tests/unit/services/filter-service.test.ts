@@ -17,6 +17,7 @@ import {
   isWildcardPattern,
   wildcardToRegex,
   wildcardMatch,
+  findApiSubFilter,
   isExplicitlyExcluded,
 } from '../../../src/services/filter-service.js';
 
@@ -360,6 +361,47 @@ describe('filter-service', () => {
       const result = filterResources(descriptors, filter);
       expect(result).toHaveLength(1);
       expect(result[0]?.nameParts[0]).toBe('api-1');
+    });
+  });
+
+  describe('wildcard API sub-filters (#316) and tagDescriptions (#307)', () => {
+    const filter: FilterConfig = {
+      apis: ['*', 'orders'],
+      apiSubFilters: {
+        '*': { operations: [], schemas: [], tagDescriptions: [] },
+        orders: { operations: ['get-order'] },
+      },
+    };
+    const child = (type: ResourceType, api: string, name: string): ResourceDescriptor => ({
+      type,
+      nameParts: [api, name],
+    });
+
+    it('should prefer a sub-filter keyed by the API name over a pattern, ignoring case, and find none without a match', () => {
+      expect(findApiSubFilter('ORDERS', filter.apiSubFilters)).toEqual({ operations: ['get-order'] });
+      expect(findApiSubFilter('orders', { 'pet*': { schemas: [] } })).toBeUndefined();
+      expect(findApiSubFilter('orders', undefined)).toBeUndefined();
+    });
+
+    it('should exclude operations, schemas and tag descriptions from every API matched by the pattern', () => {
+      for (const type of [ResourceType.ApiOperation, ResourceType.ApiSchema, ResourceType.ApiTagDescription]) {
+        expect(shouldIncludeResource(child(type, 'petstore', 'x'), filter)).toBe(false);
+      }
+      expect(shouldIncludeResource(child(ResourceType.ApiDiagnostic, 'petstore', 'applicationinsights'), filter)).toBe(true);
+    });
+
+    it('should apply the named sub-filter to the named API only', () => {
+      expect(shouldIncludeResource(child(ResourceType.ApiOperation, 'orders', 'get-order'), filter)).toBe(true);
+      expect(shouldIncludeResource(child(ResourceType.ApiOperation, 'orders', 'delete-order'), filter)).toBe(false);
+      // The named sub-filter does not list schemas, so the API's schemas are all included.
+      expect(shouldIncludeResource(child(ResourceType.ApiSchema, 'orders', 'schema-1'), filter)).toBe(true);
+    });
+
+    it('should filter tag descriptions by name', () => {
+      const tagFilter: FilterConfig = { apis: ['orders'], apiSubFilters: { orders: { tagDescriptions: ['public'] } } };
+
+      expect(shouldIncludeResource(child(ResourceType.ApiTagDescription, 'orders', 'public'), tagFilter)).toBe(true);
+      expect(shouldIncludeResource(child(ResourceType.ApiTagDescription, 'orders', 'internal'), tagFilter)).toBe(false);
     });
   });
 

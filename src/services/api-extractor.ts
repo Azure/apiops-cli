@@ -13,7 +13,7 @@ import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { FilterConfig } from '../models/config.js';
 import * as yaml from 'js-yaml';
-import { extractRootApiName, shouldIncludeResource } from './filter-service.js';
+import { extractRootApiName, findApiSubFilter, shouldIncludeResource } from './filter-service.js';
 import { extractResourceType, ExtractedResource } from './resource-extractor.js';
 import { redactAndWarnPolicySecrets } from './secret-redactor.js';
 import { logger } from '../lib/logger.js';
@@ -381,10 +381,7 @@ function filterOpenApiOperations(
 ): string {
   const apiName = getNamePart(apiDescriptor.nameParts, 0);
   const rootName = extractRootApiName(apiName).toLowerCase();
-  const subFilterKey = Object.keys(filter?.apiSubFilters ?? {}).find(
-    key => key.toLowerCase() === rootName
-  );
-  if (!subFilterKey || filter?.apiSubFilters?.[subFilterKey].operations === undefined) {
+  if (findApiSubFilter(rootName, filter?.apiSubFilters)?.operations === undefined) {
     return content;
   }
 

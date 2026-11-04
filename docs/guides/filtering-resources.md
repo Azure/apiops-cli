@@ -228,7 +228,7 @@ apis:
 
 ### API sub-resource filters
 
-For APIs, you can control which sub-resources (operations, diagnostics, schemas, releases) are extracted. Use an object entry instead of a plain string:
+For APIs, you can control which sub-resources (operations, diagnostics, schemas, releases, tag descriptions) are extracted. Use an object entry instead of a plain string:
 
 ```yaml
 apis:
@@ -242,12 +242,27 @@ apis:
       schemas: []                 # Empty = exclude ALL schemas
       releases:
         - v1-release
+      tagDescriptions: []         # By name, as under apis/<api>/tagDescriptions/
 ```
 
 **Sub-filter rules:**
 - If a sub-resource key is **omitted**, all sub-resources of that type are included
 - If a sub-resource key is an **empty array** (`[]`), all sub-resources of that type are excluded
 - If a sub-resource key lists **names**, only those sub-resources are included
+
+#### One sub-filter for many APIs
+
+The key of a nested entry can be a wildcard pattern (`*`, `?`) instead of an API name. Like a plain pattern, it selects the matching APIs, and its sub-filter applies to each of them. For example, to extract every API without its operations, schemas or tag descriptions:
+
+```yaml
+apis:
+  - '*':
+      operations: []
+      schemas: []
+      tagDescriptions: []
+```
+
+An entry keyed by an API's name takes precedence over a pattern; otherwise the first matching pattern applies. Quote patterns that start with `*` so YAML reads them as strings.
 
 During extraction, the `operations` filter also applies to the API's OpenAPI specification
 (`specification.yaml` or `specification.json`, including Swagger 2.0). Excluded operations
