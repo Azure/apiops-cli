@@ -13,7 +13,7 @@ import * as path from 'node:path';
 import { ExtractConfig, FilterConfig } from '../models/config.js';
 import { ApimServiceContext } from '../models/types.js';
 import { runExtraction, ExtractionResult } from '../services/extract-service.js';
-import { shouldReconcileResource } from '../services/filter-service.js';
+import { isInRemoveStaleScope } from '../services/filter-service.js';
 import { loadFilterConfig } from '../lib/config-loader.js';
 import { logger, parseLogLevel } from '../lib/logger.js';
 import { ApimClient } from '../clients/apim-client.js';
@@ -156,7 +156,7 @@ export async function executeExtract(
       await store.commitStagedExtraction(
         stagingDir,
         outputDir,
-        descriptor => shouldReconcileResource(descriptor, filterConfig),
+        descriptor => isInRemoveStaleScope(descriptor, filterConfig),
         shouldRemoveStaleArtifacts(result, options.removeStale ?? false)
       );
     }

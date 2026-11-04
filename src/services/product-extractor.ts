@@ -15,6 +15,8 @@ import { redactAndWarnPolicySecrets } from './secret-redactor.js';
 import { logger } from '../lib/logger.js';
 import { getNamePart } from '../lib/resource-path.js';
 import { isWorkspaceScope, extractNameFromLink, extractLinkTarget } from '../lib/workspace-link.js';
+import { isExplicitlyExcluded } from './filter-service.js';
+import { associationTarget } from './transitive-resolver.js';
 
 /**
  * Result of product-specific extraction for a single product.
@@ -40,7 +42,11 @@ export async function extractProductResources(
   context: ApimServiceContext,
   productDescriptor: ResourceDescriptor,
   outputDir: string,
-  _filter?: FilterConfig,
+  /**
+   * The top-level filter (for a workspace product too): links to groups and
+   * tags it excludes by name are left out with them.
+   */
+  filter?: FilterConfig,
   _workspace?: string
 ): Promise<ProductExtractionResult> {
   const productName = getNamePart(productDescriptor.nameParts, 0);
@@ -62,7 +68,7 @@ export async function extractProductResources(
 
   // Extract product group associations
   result.groups = await extractProductAssociations(
-    client, store, context, productDescriptor, outputDir, 'groups', () => result.errorCount++
+    client, store, context, productDescriptor, outputDir, 'groups', () => result.errorCount++, filter
   );
 
   // Extract product policy
@@ -84,7 +90,7 @@ export async function extractProductResources(
   // in the workspace extractor.
   if (!isWorkspaceScope(context)) {
     result.tags = await extractProductTags(
-      client, store, context, productDescriptor, outputDir, () => result.errorCount++
+      client, store, context, productDescriptor, outputDir, () => result.errorCount++, filter
     );
   }
 
@@ -101,9 +107,10 @@ async function extractProductAssociations(
   productDescriptor: ResourceDescriptor,
   outputDir: string,
   associationType: 'apis' | 'groups',
-  onError: () => void
+  onError: () => void,
+  filter?: FilterConfig
 ): Promise<string[]> {
-  const entries: AssociationEntry[] = [];
+  let entries: AssociationEntry[] = [];
   const resourceType = associationType === 'apis'
     ? ResourceType.ProductApi
     : ResourceType.ProductGroup;
@@ -137,6 +144,10 @@ async function extractProductAssociations(
       }
     }
 
+    if (associationType === 'groups') {
+      entries = withoutExcludedTargets(productDescriptor, 'groups', entries, filter);
+    }
+
     // Write association file
     if (entries.length > 0) {
       await store.writeAssociation(outputDir, productDescriptor, associationType, entries);
@@ -151,6 +162,20 @@ async function extractProductAssociations(
 }
 
 /**
+ * A product's link entries without the ones to groups or tags the filter
+ * excludes by name: those are not extracted, so the links would only be
+ * skipped on every publish (as an API's links to excluded tags are left out).
+ */
+function withoutExcludedTargets(
+  product: ResourceDescriptor,
+  associationType: 'groups' | 'tags',
+  entries: AssociationEntry[],
+  filter: FilterConfig | undefined
+): AssociationEntry[] {
+  return entries.filter((entry) => !isExplicitlyExcluded(associationTarget(product, associationType, entry), filter));
+}
+
+/**
  * Extract product tags and write to artifact store as tags.json.
  * Only used in service scope; workspace scope is handled by extractWorkspaceProductTags().
  */
@@ -160,9 +185,10 @@ async function extractProductTags(
   context: ApimServiceContext,
   productDescriptor: ResourceDescriptor,
   outputDir: string,
-  onError: () => void
+  onError: () => void,
+  filter?: FilterConfig
 ): Promise<string[]> {
-  const entries: AssociationEntry[] = [];
+  let entries: AssociationEntry[] = [];
   const workspaceScoped = isWorkspaceScope(context);
   const linkProperty = RESOURCE_TYPE_METADATA[ResourceType.ProductTag].workspaceLinkIdProperty;
 
@@ -187,6 +213,8 @@ async function extractProductTags(
         onError();
       }
     }
+
+    entries = withoutExcludedTargets(productDescriptor, 'tags', entries, filter);
 
     // Write tags association file
     if (entries.length > 0) {

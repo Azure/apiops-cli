@@ -124,8 +124,10 @@ apiops publish \
 ```
 
 The publish filter uses the same YAML file and matching rules as `apiops extract --filter`.
-Referenced named values, backends (including backend pool members), policy fragments, and version
-sets are included automatically. Add `--no-transitive` to publish only the exact filter matches.
+The resources the selected ones depend on, such as referenced named values, backends (including
+backend pool members), policy fragments, version sets, tags, groups and loggers, are included
+automatically; see [Transitive Dependency Behavior](docs/guides/filtering-resources.md#transitive-dependency-behavior).
+Add `--no-transitive` to publish only the exact filter matches.
 
 ### `apiops init`
 

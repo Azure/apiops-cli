@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ResourceDescriptor, ApimServiceContext } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
-import { LogLevel } from '../../../src/lib/logger.js';
+import { LogLevel, logger } from '../../../src/lib/logger.js';
 import { recordRetry, withRetryResource } from '../../../src/lib/retry-tracker.js';
 import { getResourceDescriptorKey } from '../../../src/lib/resource-path.js';
 
@@ -482,6 +482,72 @@ describe('publish-service', () => {
       expect(publishApi).not.toHaveBeenCalled();
     });
 
+    it('should prefer the named value whose display name a reference uses over one with that resource name', async () => {
+      const resources = [
+        { type: ResourceType.PolicyFragment, nameParts: ['auth'] },
+        { type: ResourceType.NamedValue, nameParts: ['one'] },
+        { type: ResourceType.NamedValue, nameParts: ['two'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      store.readResource.mockImplementation(async (_sourceDir, descriptor) => {
+        if (descriptor.type === ResourceType.PolicyFragment) {
+          return { properties: { value: '<fragment><set-header name="k"><value>{{TWO}}</value></set-header></fragment>' } };
+        }
+        return { properties: { displayName: descriptor.nameParts[0] === 'one' ? 'two' : 'three', value: 'x' } };
+      });
+
+      await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { policyFragments: ['auth'], namedValues: [] },
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      const namedValuePuts = client.putResource.mock.calls
+        .filter((call) => call[1].type === ResourceType.NamedValue)
+        .map((call) => call[1].nameParts[0]);
+      expect(namedValuePuts).toEqual(['one']);
+    });
+
+    it('should warn and match by resource name when a named value artifact cannot be read', async () => {
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      const resources = [
+        { type: ResourceType.PolicyFragment, nameParts: ['auth'] },
+        { type: ResourceType.NamedValue, nameParts: ['broken'] },
+        { type: ResourceType.NamedValue, nameParts: ['plain'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      let namedValueReads = 0;
+      store.readResource.mockImplementation(async (_sourceDir, descriptor) => {
+        if (descriptor.type === ResourceType.PolicyFragment) {
+          return { properties: { value: '<fragment><set-header name="k"><value>{{plain}}</value></set-header></fragment>' } };
+        }
+        if (descriptor.nameParts[0] === 'broken' && ++namedValueReads === 1) {
+          throw new Error('Unexpected token in JSON');
+        }
+        return { properties: { displayName: descriptor.nameParts[0], value: 'x' } };
+      });
+
+      await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { policyFragments: ['auth'], namedValues: [] },
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('to match {{references}} by display name'));
+      expect(client.putResource.mock.calls
+        .filter((call) => call[1].type === ResourceType.NamedValue)
+        .map((call) => call[1].nameParts[0])).toEqual(['plain']);
+      warn.mockRestore();
+    });
+
     it('should include backend pool members transitively', async () => {
       const resources = [
         { type: ResourceType.Backend, nameParts: ['pool'] },
@@ -518,6 +584,71 @@ describe('publish-service', () => {
         call[1].type === ResourceType.Backend &&
         call[1].nameParts[0] === 'member'
       )).toBe(true);
+    });
+
+    it("should include an API diagnostic's logger, an API's tags, and a product's groups and tags transitively", async () => {
+      const resources = [
+        { type: ResourceType.Api, nameParts: ['orders'] },
+        { type: ResourceType.ApiDiagnostic, nameParts: ['orders', 'applicationinsights'] },
+        { type: ResourceType.ApiTag, nameParts: ['orders', 'public'] },
+        { type: ResourceType.Product, nameParts: ['starter'] },
+        { type: ResourceType.Logger, nameParts: ['app-insights'] },
+        { type: ResourceType.Logger, nameParts: ['unrelated'] },
+        { type: ResourceType.Tag, nameParts: ['public'] },
+        { type: ResourceType.Tag, nameParts: ['partner'] },
+        { type: ResourceType.Group, nameParts: ['support-team'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      store.readResource.mockImplementation(async (_sourceDir, descriptor) =>
+        descriptor.type === ResourceType.ApiDiagnostic
+          ? { properties: { loggerId: '/loggers/app-insights' } }
+          : { properties: {} }
+      );
+      store.readAssociation.mockImplementation(async (_sourceDir, _descriptor, type) =>
+        type === 'groups' ? [{ name: 'support-team' }] : type === 'tags' ? [{ name: 'partner' }] : []
+      );
+
+      await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { apis: ['orders'], products: ['starter'], loggers: [], tags: [], groups: [] },
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      const put = client.putResource.mock.calls.map((call) => `${call[1].type}:${call[1].nameParts.join('/')}`);
+      expect(put).toEqual(expect.arrayContaining([
+        'Logger:app-insights',
+        'Tag:public',
+        'Tag:partner',
+        'Group:support-team',
+      ]));
+      expect(put).not.toContain('Logger:unrelated');
+    });
+
+    it('should not pull in a tag the filter excludes by name', async () => {
+      const resources = [
+        { type: ResourceType.Api, nameParts: ['orders'] },
+        { type: ResourceType.ApiTag, nameParts: ['orders', 'internal'] },
+        { type: ResourceType.Tag, nameParts: ['internal'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      store.readResource.mockResolvedValue({ properties: {} });
+
+      await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { apis: ['orders'], tags: ['!internal'] },
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      const put = client.putResource.mock.calls.map((call) => `${call[1].type}:${call[1].nameParts.join('/')}`);
+      expect(put).not.toContain('Tag:internal');
     });
 
     it('should not include transitive dependencies when disabled', async () => {

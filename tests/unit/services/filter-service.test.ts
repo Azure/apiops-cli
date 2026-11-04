@@ -11,11 +11,13 @@ import { FilterConfig } from '../../../src/models/config.js';
 import {
   shouldIncludeResource,
   shouldReconcileResource,
+  isInRemoveStaleScope,
   filterResources,
   extractRootApiName,
   isWildcardPattern,
   wildcardToRegex,
   wildcardMatch,
+  isExplicitlyExcluded,
 } from '../../../src/services/filter-service.js';
 
 describe('filter-service', () => {
@@ -46,6 +48,22 @@ describe('filter-service', () => {
         { ...workspaceNamedValue, nameParts: ['excluded-value'] },
         filter
       )).toBe(false);
+    });
+  });
+
+  describe('isInRemoveStaleScope', () => {
+    const internalLink: ResourceDescriptor = { type: ResourceType.ApiTag, nameParts: ['orders', 'internal'] };
+
+    it("should count an API's link to an excluded tag as the API's to manage", () => {
+      const filter: FilterConfig = { apis: ['orders'], tags: ['!internal'] };
+
+      expect(shouldReconcileResource(internalLink, filter)).toBe(false);
+      expect(isInRemoveStaleScope(internalLink, filter)).toBe(true);
+      expect(isInRemoveStaleScope({ type: ResourceType.Tag, nameParts: ['internal'] }, filter)).toBe(false);
+    });
+
+    it("should leave an unselected API's tag links alone", () => {
+      expect(isInRemoveStaleScope(internalLink, { apis: ['billing'] })).toBe(false);
     });
   });
 
@@ -342,6 +360,45 @@ describe('filter-service', () => {
       const result = filterResources(descriptors, filter);
       expect(result).toHaveLength(1);
       expect(result[0]?.nameParts[0]).toBe('api-1');
+    });
+  });
+
+  describe('isExplicitlyExcluded', () => {
+    it.each([
+      ['a name excluded by an exclusion entry', { tags: ['!internal', '*'] }, 'internal', true],
+      ['a name matched by a wildcard exclusion', { tags: ['!int*'] }, 'internal', true],
+      ['a name the exclusions do not match', { tags: ['!internal', '*'] }, 'public', false],
+      ['a type set to []', { tags: [] }, 'internal', false],
+      ['a list that just does not name it', { tags: ['public'] }, 'internal', false],
+    ])('should report %s', (_label, filter, name, expected) => {
+      expect(isExplicitlyExcluded({ type: ResourceType.Tag, nameParts: [name] }, filter as FilterConfig)).toBe(expected);
+    });
+
+    it("should check a workspace resource against its workspace's sub-filter", () => {
+      const filter: FilterConfig = {
+        tags: ['!shared'],
+        workspaces: ['team-a'],
+        workspaceSubFilters: { 'team-a': { tags: ['!internal'] } },
+      };
+
+      expect(isExplicitlyExcluded({ type: ResourceType.Tag, nameParts: ['internal'], workspace: 'team-a' }, filter)).toBe(true);
+      expect(isExplicitlyExcluded({ type: ResourceType.Tag, nameParts: ['shared'], workspace: 'team-a' }, filter)).toBe(false);
+      expect(isExplicitlyExcluded({ type: ResourceType.Tag, nameParts: ['shared'] }, filter)).toBe(true);
+    });
+  });
+
+  describe('links to tags excluded by name', () => {
+    const link = (tag: string): ResourceDescriptor => ({ type: ResourceType.ApiTag, nameParts: ['orders', tag] });
+
+    it("should leave out an API's link to a tag the filter excludes by name", () => {
+      const filter: FilterConfig = { apis: ['orders'], tags: ['!internal', '*'] };
+
+      expect(shouldIncludeResource(link('internal'), filter)).toBe(false);
+      expect(shouldIncludeResource(link('public'), filter)).toBe(true);
+    });
+
+    it('should keep links to tags the filter leaves out with [] (they are pulled in as dependencies)', () => {
+      expect(shouldIncludeResource(link('internal'), { apis: ['orders'], tags: [] })).toBe(true);
     });
   });
 

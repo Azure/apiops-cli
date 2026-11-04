@@ -90,6 +90,22 @@ describe('transitive-extractor', () => {
       );
     });
 
+    it('should not extract a {{displayName}} reference whose resource name is excluded', async () => {
+      const client = createMockClient();
+      client.listResources = namedValueList({ name: 'my-secret', displayName: 'My Secret' });
+      client.getResource.mockResolvedValue({ name: 'my-secret', properties: { displayName: 'My Secret' } });
+      const store = createMockStore();
+
+      const result = await extractTransitiveDependencies(
+        client, store, testContext, '/output', policiesWith('My Secret'), new Map(), [], [],
+        { skip: (dep) => dep.nameParts[0] === 'my-secret' }
+      );
+
+      expect(result).toEqual({ extractedDescriptors: [], failedDescriptors: [], errorCount: 0 });
+      expect(client.getResource).not.toHaveBeenCalled();
+      expect(store.writeResource).not.toHaveBeenCalled();
+    });
+
     it('should fall back to the reference as resource name when no displayName matches', async () => {
       const client = createMockClient();
       client.listResources = namedValueList({ name: 'other', displayName: 'other' });
@@ -134,6 +150,22 @@ describe('transitive-extractor', () => {
         ([, type]) => type === ResourceType.NamedValue
       );
       expect(namedValueLists).toHaveLength(1);
+    });
+
+    it('should match a {{displayName}} reference ignoring case', async () => {
+      const client = createMockClient();
+      client.listResources = namedValueList({ name: 'nv-resource', displayName: 'NV_Display' });
+      client.getResource.mockImplementation(async (_ctx, descriptor: ResourceDescriptor) => ({
+        name: descriptor.nameParts[0],
+        properties: {},
+      }));
+      const store = createMockStore();
+
+      const result = await extractTransitiveDependencies(
+        client, store, testContext, '/output', policiesWith('nv_display'), new Map(), [], []
+      );
+
+      expect(result.extractedDescriptors.map((descriptor) => descriptor.nameParts[0])).toEqual(['nv-resource']);
     });
 
     it('should extract each resolved resource when a resource name is also another display name', async () => {
@@ -222,7 +254,8 @@ describe('transitive-extractor', () => {
       const store = createMockStore();
 
       const result = await extractTransitiveDependencies(
-        client, store, wsContext, '/output', policiesWith('ws_display'), new Map(), [], [], 'team-a', testContext
+        client, store, wsContext, '/output', policiesWith('ws_display'), new Map(), [], [],
+        { workspace: 'team-a', serviceContext: testContext }
       );
 
       expect(result.errorCount).toBe(0);

@@ -30,7 +30,7 @@ import { REDACTION_MARKER } from './secret-redactor.js';
 import { isAssociationReferenceNotFoundError, isLinkAlreadyExistsError } from '../clients/apim-client.js';
 import type { OverrideConfig, OverrideSection } from '../models/config.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
-import { hasExplicitTypeFilter, resolveWorkspaceFilter, shouldIncludeResource } from './filter-service.js';
+import { hasExplicitTypeFilter, isExplicitlyExcluded, resolveWorkspaceFilter, shouldIncludeResource } from './filter-service.js';
 import { findSubscriptionTargets } from './transitive-resolver.js';
 import { mapDescriptor, toDeployedName } from './env-mapper.js';
 import type { EnvMapping } from './env-mapper.js';
@@ -259,7 +259,9 @@ export async function publishResource(
       const eligibility = await evaluateResourceEligibility(
         store,
         descriptor,
-        config
+        config,
+        undefined,
+        allowedDescriptors
       );
       if (!eligibility.eligible) {
         logger.warn(
@@ -739,7 +741,7 @@ async function buildAssociationPublicationPlan(
     store,
     target,
     config,
-    allowedDescriptors
+    { allowedDescriptors }
   );
   const metadata = RESOURCE_TYPE_METADATA[type];
   const workspaceScoped = !!workspace || isWorkspaceScope(context);
@@ -764,13 +766,37 @@ async function buildAssociationPublicationPlan(
   return { descriptor, deployedDescriptor, target, payload, ...eligibility };
 }
 
+export interface AssociationEligibilityOptions {
+  /**
+   * The publish set, when the caller has one. Besides marking targets as
+   * published, it decides availability for targets the filter lists.
+   */
+  allowedDescriptors?: ResourceDescriptor[];
+  /**
+   * Resources being published, used only to accept targets in it (defaults
+   * to allowedDescriptors). The ApiTag check passes this without
+   * allowedDescriptors, so an incremental publish still accepts a tag that
+   * exists on disk but is not in the diff.
+   */
+  publishSet?: ResourceDescriptor[];
+}
+
 export async function evaluateAssociationEligibility(
   store: IArtifactStore,
   target: ResourceDescriptor,
   config: PublishConfig,
-  allowedDescriptors?: ResourceDescriptor[]
+  { allowedDescriptors, publishSet = allowedDescriptors }: AssociationEligibilityOptions = {}
 ): Promise<PublishEligibility> {
   if (!config.filter) {
+    return { eligible: true };
+  }
+
+  // A target being published is linked even when the filter leaves its type
+  // out, because dependency resolution pulled it in (a tag or group).
+  if (
+    !isExplicitlyExcluded(target, config.filter) &&
+    publishSet?.some((included) => sameResourceDescriptor(included, target))
+  ) {
     return { eligible: true };
   }
 
@@ -782,12 +808,6 @@ export async function evaluateAssociationEligibility(
   }
 
   if (allowedDescriptors) {
-    if (
-      allowedDescriptors.some((allowed) => sameResourceDescriptor(allowed, target))
-    ) {
-      return { eligible: true };
-    }
-
     if (config.commitId) {
       const exists = (await store.readResource(config.sourceDir, target)) !== undefined;
       return exists
@@ -897,7 +917,8 @@ export async function evaluateResourceEligibility(
   store: IArtifactStore,
   descriptor: ResourceDescriptor,
   config: PublishConfig,
-  json?: Record<string, unknown>
+  json?: Record<string, unknown>,
+  publishSet?: ResourceDescriptor[]
 ): Promise<PublishEligibility> {
   if (descriptor.type === ResourceType.ApiTag) {
     const target: ResourceDescriptor = {
@@ -905,7 +926,7 @@ export async function evaluateResourceEligibility(
       nameParts: [getNamePart(descriptor.nameParts, 1)],
       workspace: descriptor.workspace,
     };
-    return evaluateAssociationEligibility(store, target, config);
+    return evaluateAssociationEligibility(store, target, config, { publishSet });
   }
 
   if (descriptor.type === ResourceType.ApiOperation) {

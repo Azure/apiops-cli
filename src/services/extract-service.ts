@@ -27,8 +27,9 @@ import { extractApiResources, ApiExtractionResult } from './api-extractor.js';
 import { extractProductResources, ProductExtractionResult } from './product-extractor.js';
 import { extractWorkspaces, WorkspaceExtractionResult } from './workspace-extractor.js';
 import { extractTransitiveDependencies } from './transitive-extractor.js';
+import { findAssociationDependencies } from './transitive-resolver.js';
 import { redactAndWarnPolicySecrets } from './secret-redactor.js';
-import { shouldIncludeResource } from './filter-service.js';
+import { isExplicitlyExcluded, shouldIncludeResource } from './filter-service.js';
 import { logger } from '../lib/logger.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
 import { EXIT_SUCCESS, EXIT_PARTIAL, EXIT_FATAL } from '../lib/exit-codes.js';
@@ -125,8 +126,9 @@ export async function runExtraction(
     await extractServicePolicy(client, store, service, outputDir, filter, result);
 
     // Phase 6: Transitive dependency resolution (if enabled)
+    let failedTransitive: ResourceDescriptor[] = [];
     if (config.includeTransitive && filter) {
-      await resolveAndExtractTransitive(client, store, service, outputDir, result);
+      failedTransitive = await resolveAndExtractTransitive(client, store, service, outputDir, filter, result);
     }
 
     // Phase 7: Extract workspace-scoped resources
@@ -137,7 +139,8 @@ export async function runExtraction(
       outputDir,
       filter,
       config.includeTransitive,
-      result
+      result,
+      failedTransitive
     );
 
     // Compute exit code
@@ -517,8 +520,9 @@ async function resolveAndExtractTransitive(
   store: IArtifactStore,
   context: ApimServiceContext,
   outputDir: string,
+  filter: FilterConfig,
   result: ExtractionResult
-): Promise<void> {
+): Promise<ResourceDescriptor[]> {
   logger.info('Resolving transitive dependencies...');
 
   // Build maps for transitive resolution
@@ -535,14 +539,19 @@ async function resolveAndExtractTransitive(
     }
   }
 
-  const resources = result.typeResults.flatMap((typeResult) =>
-    typeResult.extracted
-      .filter((extracted) => extracted.status === 'success')
-      .map((extracted) => ({
-        descriptor: extracted.descriptor,
-        json: extracted.json,
-      }))
-  );
+  // Top-level resources, plus the API children that reference other
+  // resources: diagnostics (their logger) and tag links (the tag).
+  const extractedResources = [
+    ...result.typeResults.flatMap((typeResult) => typeResult.extracted),
+    ...result.apiResults.flatMap((apiResult) => [...apiResult.diagnostics, ...apiResult.tags]),
+  ];
+  const resources = extractedResources
+    .filter((extracted) => extracted.status === 'success')
+    .map((extracted) => ({
+      descriptor: extracted.descriptor,
+      json: extracted.json,
+    }));
+  const linkedDependencies = await findProductLinkDependencies(store, outputDir, result);
   const transitiveResult = await extractTransitiveDependencies(
     client,
     store,
@@ -551,11 +560,37 @@ async function resolveAndExtractTransitive(
     result.collectedPolicies,
     apiJsonMap,
     resources,
-    result.extractedDescriptors
+    result.extractedDescriptors,
+    {
+      linkedDependencies,
+      skip: (dep) => isExplicitlyExcluded(dep, filter),
+    }
   );
   result.totalExtracted += transitiveResult.extractedDescriptors.length;
   result.totalErrors += transitiveResult.errorCount;
   result.extractedDescriptors.push(...transitiveResult.extractedDescriptors);
+  return transitiveResult.failedDescriptors;
+}
+
+/**
+ * The groups and tags that extracted products link to, read back from the
+ * groups.json and tags.json files written for them.
+ */
+async function findProductLinkDependencies(
+  store: IArtifactStore,
+  outputDir: string,
+  result: ExtractionResult
+): Promise<ResourceDescriptor[]> {
+  const dependencies: ResourceDescriptor[] = [];
+  for (const typeResult of result.typeResults.filter((r) => r.type === ResourceType.Product)) {
+    for (const product of typeResult.extracted.filter((r) => r.status === 'success')) {
+      for (const associationType of ['groups', 'tags'] as const) {
+        const entries = await store.readAssociation(outputDir, product.descriptor, associationType);
+        dependencies.push(...findAssociationDependencies(product.descriptor, associationType, entries));
+      }
+    }
+  }
+  return dependencies;
 }
 
 /**
@@ -568,10 +603,13 @@ async function extractWorkspaceResources(
   outputDir: string,
   filter: FilterConfig | undefined,
   includeTransitive: boolean,
-  result: ExtractionResult
+  result: ExtractionResult,
+  /** Dependencies the service-level transitive pass tried and failed to extract. */
+  failedTransitive: ResourceDescriptor[] = []
 ): Promise<void> {
   const wsResults = await extractWorkspaces(
-    client, store, context, outputDir, filter, includeTransitive
+    client, store, context, outputDir, filter, includeTransitive,
+    [...result.extractedDescriptors, ...failedTransitive]
   );
 
   result.workspaceResults = wsResults;

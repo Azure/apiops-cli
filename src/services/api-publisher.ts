@@ -185,7 +185,8 @@ export async function publishApi(
       store,
       context,
       config,
-      publicationPlan
+      publicationPlan,
+      allowedDescriptors
     ));
 
     return {
@@ -718,7 +719,8 @@ async function publishApiChildren(
   store: IArtifactStore,
   context: ApimServiceContext,
   config: PublishConfig,
-  plan: ApiPublicationPlan
+  plan: ApiPublicationPlan,
+  allowedDescriptors?: ResourceDescriptor[]
 ): Promise<ResourcePublishResult[]> {
   const results: ResourcePublishResult[] = [];
   // Group resources by publish tier for dependency ordering.
@@ -738,7 +740,7 @@ async function publishApiChildren(
     const descriptors = tierMap.get(tier) ?? [];
     if (descriptors.length > 0) {
       const tasks = descriptors.map((descriptor) => async () => {
-        return publishResource(client, store, context, descriptor, config);
+        return publishResource(client, store, context, descriptor, config, allowedDescriptors);
       });
       const taskResults = await runParallel(tasks, 5);
       for (const [index, taskResult] of (taskResults ?? []).entries()) {

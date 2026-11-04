@@ -110,6 +110,15 @@ export function shouldIncludeResource(
         return false;
       }
 
+      // An API's link to a tag the filter excludes by name is left out with
+      // the tag, rather than extracted and then skipped on every publish.
+      if (
+        descriptor.type === ResourceType.ApiTag &&
+        isExcludedByName(ResourceType.Tag, getNamePart(descriptor.nameParts, 1), filter)
+      ) {
+        return false;
+      }
+
       // Second check: does the parent have sub-resource filters?
       if (parentField === 'apis' && filter.apiSubFilters) {
         return matchesApiSubFilter(descriptor, parentName, filter.apiSubFilters);
@@ -170,6 +179,23 @@ function getWorkspaceFilter(
     tags: subFilter.tags,
     versionSets: subFilter.versionSets,
   } : undefined;
+}
+
+/**
+ * Whether `extract --remove-stale` manages this artifact, removing it when
+ * the extract does not write it again. As shouldReconcileResource, except
+ * that an API's tag links belong to the API even when the filter excludes
+ * the tag: extract doesn't write a link to an excluded tag, so one left by
+ * an earlier extract is removed with the API's other stale children.
+ */
+export function isInRemoveStaleScope(descriptor: ResourceDescriptor, filter?: FilterConfig): boolean {
+  if (descriptor.type === ResourceType.ApiTag) {
+    return shouldReconcileResource(
+      { type: ResourceType.Api, nameParts: [getNamePart(descriptor.nameParts, 0)], workspace: descriptor.workspace },
+      filter
+    );
+  }
+  return shouldReconcileResource(descriptor, filter);
 }
 
 /**
@@ -293,6 +319,51 @@ export function hasExplicitTypeFilter(type: ResourceType, filter?: FilterConfig)
 export function extractRootApiName(name: string): string {
   const semiIndex = name.indexOf(';');
   return semiIndex >= 0 ? name.substring(0, semiIndex) : name;
+}
+
+/**
+ * Whether the filter excludes this resource by name: its type's list has a
+ * `!pattern` entry that matches it. Dependency resolution respects these
+ * exclusions, while it still pulls in resources whose type is `[]` or that a
+ * list simply does not name. A workspace resource is checked against its
+ * workspace's sub-filter.
+ */
+export function isExplicitlyExcluded(descriptor: ResourceDescriptor, filter?: FilterConfig): boolean {
+  if (descriptor.nameParts.length === 0) {
+    return false;
+  }
+  const effectiveFilter = descriptor.workspace ? cachedWorkspaceFilter(descriptor.workspace, filter) : filter;
+  return isExcludedByName(descriptor.type, getNamePart(descriptor.nameParts, 0), effectiveFilter);
+}
+
+/** Whether `filter` (already resolved for the resource's scope) excludes `name` of `type` by name. */
+function isExcludedByName(type: ResourceType, name: string, filter: FilterConfig | undefined): boolean {
+  const field = FILTER_FIELD_MAP[type];
+  const list = field && filter ? (filter[field] as string[] | undefined) : undefined;
+  const exclusions = list?.filter((entry) => entry.startsWith('!')) ?? [];
+  return exclusions.length > 0 && !matchesFilter(name, exclusions);
+}
+
+/**
+ * Resolved workspace filters, cached per filter object and workspace: the
+ * exclusion check runs for every reference during publish expansion.
+ */
+const workspaceFilterCache = new WeakMap<FilterConfig, Map<string, FilterConfig | undefined>>();
+
+function cachedWorkspaceFilter(workspace: string, filter: FilterConfig | undefined): FilterConfig | undefined {
+  if (!filter) {
+    return undefined;
+  }
+  let byWorkspace = workspaceFilterCache.get(filter);
+  if (!byWorkspace) {
+    byWorkspace = new Map();
+    workspaceFilterCache.set(filter, byWorkspace);
+  }
+  const key = workspace.toLowerCase();
+  if (!byWorkspace.has(key)) {
+    byWorkspace.set(key, resolveWorkspaceFilter(workspace, filter));
+  }
+  return byWorkspace.get(key);
 }
 
 /**

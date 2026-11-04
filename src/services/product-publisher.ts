@@ -291,7 +291,7 @@ export async function planProductAssociationPublications(
       store,
       targetDescriptor,
       config,
-      allowedDescriptors
+      { allowedDescriptors }
     );
     const deployedDescriptor = config.envMapping
       ? mapDescriptor(descriptor, config.envMapping)

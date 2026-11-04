@@ -749,6 +749,37 @@ describe('resource-publisher', () => {
       expect(client.putResource).not.toHaveBeenCalled();
     });
 
+    it('should publish an ApiTag link whose excluded Tag was pulled into the publish set', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({ properties: { displayName: 'public' } });
+      const descriptor: ResourceDescriptor = { type: ResourceType.ApiTag, nameParts: ['orders', 'public'] };
+      const tag: ResourceDescriptor = { type: ResourceType.Tag, nameParts: ['public'] };
+      const config: PublishConfig = { ...testConfig, filter: { apis: ['orders'], tags: [] } };
+
+      const pulledIn = await publishResource(client, store, testContext, descriptor, config, [descriptor, tag]);
+      const notPulledIn = await publishResource(client, store, testContext, descriptor, config, [descriptor]);
+
+      expect(pulledIn.status).toBe('success');
+      expect(notPulledIn.status).toBe('skipped');
+      expect(client.putResource).toHaveBeenCalledTimes(1);
+    });
+
+    it('should skip a link to a target in the publish set that the filter excludes by name', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const descriptor: ResourceDescriptor = { type: ResourceType.ApiTag, nameParts: ['orders', 'internal'] };
+      const config: PublishConfig = { ...testConfig, filter: { apis: ['orders'], tags: ['!internal', '*'] } };
+
+      const result = await publishResource(client, store, testContext, descriptor, config, [
+        descriptor,
+        { type: ResourceType.Tag, nameParts: ['internal'] },
+      ]);
+
+      expect(result.status).toBe('skipped');
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
     it('should publish a GatewayApi association when its target passes an explicit filter and was extracted', async () => {
       const client = createMockClient();
       const store = createMockStore();

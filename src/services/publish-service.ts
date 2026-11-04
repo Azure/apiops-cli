@@ -29,6 +29,7 @@ import {
 } from '../lib/resource-path.js';
 import {
   extractRootApiName,
+  isExplicitlyExcluded,
   resolveWorkspaceFilter,
   shouldIncludeResource,
   shouldReconcileResource,
@@ -326,6 +327,18 @@ async function expandTransitivePublishTargets(
   const availableByKey = new Map(
     availableDescriptors.map((descriptor) => [getResourceDescriptorKey(descriptor), descriptor])
   );
+  // Policies reference named values as {{displayName}}, which can differ
+  // from the resource name the artifact is stored under. As in APIM (and on
+  // extract), the display name decides; the resource name is the fallback.
+  let namedValuesByDisplayName: Promise<Map<string, ResourceDescriptor>> | undefined;
+  const findAvailable = async (reference: ResourceDescriptor): Promise<ResourceDescriptor | undefined> => {
+    const key = getResourceDescriptorKey(reference);
+    if (reference.type !== ResourceType.NamedValue) {
+      return availableByKey.get(key);
+    }
+    namedValuesByDisplayName ??= indexNamedValuesByDisplayName(store, sourceDir, availableDescriptors);
+    return (await namedValuesByDisplayName).get(key) ?? availableByKey.get(key);
+  };
   const expanded = [...initialDescriptors];
   const included = new Set(expanded.map(getResourceDescriptorKey));
   const scanQueue = [...initialDescriptors];
@@ -385,8 +398,12 @@ async function expandTransitivePublishTargets(
       continue;
     }
     for (const reference of references) {
-      const available = availableByKey.get(getResourceDescriptorKey(reference));
-      if (available && !included.has(getResourceDescriptorKey(available))) {
+      const available = await findAvailable(reference);
+      if (
+        available &&
+        !included.has(getResourceDescriptorKey(available)) &&
+        !isExplicitlyExcluded(available, filter)
+      ) {
         included.add(getResourceDescriptorKey(available));
         expanded.push(available);
         scanQueue.push(available);
@@ -400,6 +417,32 @@ async function expandTransitivePublishTargets(
     );
   }
   return expanded;
+}
+
+/**
+ * The named value artifacts keyed as a `{{displayName}}` reference to them
+ * would be (case-insensitive, like every descriptor key).
+ */
+async function indexNamedValuesByDisplayName(
+  store: IArtifactStore,
+  sourceDir: string,
+  availableDescriptors: ResourceDescriptor[]
+): Promise<Map<string, ResourceDescriptor>> {
+  const index = new Map<string, ResourceDescriptor>();
+  for (const descriptor of availableDescriptors.filter((d) => d.type === ResourceType.NamedValue)) {
+    let json: Record<string, unknown> | undefined;
+    try {
+      json = await store.readResource(sourceDir, descriptor);
+    } catch (error) {
+      logger.warn(`Unable to read ${buildResourceLabel(descriptor)} to match {{references}} by display name: ${String(error)}`);
+      continue;
+    }
+    const displayName = (json?.properties as Record<string, unknown> | undefined)?.displayName;
+    if (typeof displayName === 'string') {
+      index.set(getResourceDescriptorKey({ ...descriptor, nameParts: [displayName] }), descriptor);
+    }
+  }
+  return index;
 }
 
 function filterPublishDescriptors(

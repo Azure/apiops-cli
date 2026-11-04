@@ -2,14 +2,16 @@
 // Licensed under the MIT license.
 /**
  * Transitive dependency resolver
- * Scan policies for named value refs, backend refs, policy fragment refs.
- * Scan apiInformation.json for apiVersionSetId.
+ * Scan policies for named value, backend, policy fragment, logger and schema
+ * refs; apiInformation.json for apiVersionSetId; diagnostics for their
+ * logger; logger and backend credentials for named values; API and product
+ * links for their tags and groups.
  * Fixed-point expansion; --no-transitive bypass.
  */
 
 import { FilterConfig } from '../models/config.js';
-import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
-import { ResourceDescriptor } from '../models/types.js';
+import { isBuiltInGroup, ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
+import { AssociationEntry, ResourceDescriptor } from '../models/types.js';
 import type { IArtifactStore } from '../clients/iartifact-store.js';
 import { logger } from '../lib/logger.js';
 import { getResourceDescriptorKey } from '../lib/resource-path.js';
@@ -18,8 +20,35 @@ import { getResourceDescriptorKey } from '../lib/resource-path.js';
  * Reference detection patterns for policy XML content.
  */
 const NAMED_VALUE_PATTERN = /\{\{([^}]+)\}\}/g;
-const BACKEND_PATTERN = /<set-backend-service\s+backend-id="([^"]+)"/g;
-const FRAGMENT_PATTERN = /<include-fragment\s+fragment-id="([^"]+)"/g;
+
+/**
+ * One XML attribute (`name="value"` or `name='value'`) with its leading
+ * whitespace. Matching whole attributes, rather than any character up to `>`,
+ * lets a value contain `>` (as policy expressions can).
+ */
+const XML_ATTRIBUTE = String.raw`\s+[\w:.-]+\s*=\s*(?:"[^"]*"|'[^']*')`;
+
+/**
+ * Build a pattern matching `attribute="value"` (either quote) anywhere on an
+ * `element` start tag; the value is capture group 2.
+ */
+function attributePattern(element: string, attribute: string): RegExp {
+  return new RegExp(`<${element}(?:${XML_ATTRIBUTE})*?\\s+${attribute}\\s*=\\s*(["'])(.*?)\\1`, 'g');
+}
+
+/** Policy attributes that name another resource, by the type they name. */
+const POLICY_REFERENCE_PATTERNS: ReadonlyArray<{ type: ResourceType; pattern: RegExp }> = [
+  { type: ResourceType.Backend, pattern: attributePattern('set-backend-service', 'backend-id') },
+  { type: ResourceType.Backend, pattern: attributePattern('llm-content-safety', 'backend-id') },
+  {
+    type: ResourceType.Backend,
+    pattern: attributePattern('(?:azure-openai|llm)-semantic-cache-lookup', 'embeddings-backend-id'),
+  },
+  { type: ResourceType.PolicyFragment, pattern: attributePattern('include-fragment', 'fragment-id') },
+  { type: ResourceType.Logger, pattern: attributePattern('log-to-eventhub', 'logger-id') },
+  // validate-content's <content schema-id="..."> names a schema added to the service.
+  { type: ResourceType.GlobalSchema, pattern: attributePattern('content', 'schema-id') },
+];
 
 /**
  * Represents a discovered transitive dependency.
@@ -38,43 +67,41 @@ const POLICY_RESOURCE_TYPES = new Set<ResourceType>([
 ]);
 
 /**
+ * Scan text for named value references ({{displayName}}).
+ */
+function scanNamedValueReferences(text: string): TransitiveDependency[] {
+  const dependencies: TransitiveDependency[] = [];
+  for (const match of text.matchAll(NAMED_VALUE_PATTERN)) {
+    if (match[1]) {
+      dependencies.push({ type: ResourceType.NamedValue, name: match[1].trim() });
+    }
+  }
+  return dependencies;
+}
+
+/**
  * Scan policy XML content for references to other resources.
  *
- * Detects:
+ * Detects, with the attribute anywhere on the element and in either quote:
  * - Named values: {{namedValueName}} syntax
- * - Backends: <set-backend-service backend-id="backendName">
- * - Policy fragments: <include-fragment fragment-id="fragmentName">
+ * - Backends: <set-backend-service backend-id>, <llm-content-safety backend-id>,
+ *   and embeddings-backend-id on the semantic cache lookup policies
+ * - Policy fragments: <include-fragment fragment-id>
+ * - Loggers: <log-to-eventhub logger-id>
+ * - Schemas: validate-content's <content schema-id>
+ *
+ * A value that is a policy expression (`@...`) or a named value reference
+ * (`{{...}}`, found by the named value scan) does not name a resource.
  */
 export function scanPolicyReferences(policyXml: string): TransitiveDependency[] {
-  const dependencies: TransitiveDependency[] = [];
+  const dependencies = scanNamedValueReferences(policyXml);
 
-  // Named value references
-  for (const match of policyXml.matchAll(NAMED_VALUE_PATTERN)) {
-    if (match[1]) {
-      dependencies.push({
-        type: ResourceType.NamedValue,
-        name: match[1].trim(),
-      });
-    }
-  }
-
-  // Backend references
-  for (const match of policyXml.matchAll(BACKEND_PATTERN)) {
-    if (match[1]) {
-      dependencies.push({
-        type: ResourceType.Backend,
-        name: match[1].trim(),
-      });
-    }
-  }
-
-  // Policy fragment references
-  for (const match of policyXml.matchAll(FRAGMENT_PATTERN)) {
-    if (match[1]) {
-      dependencies.push({
-        type: ResourceType.PolicyFragment,
-        name: match[1].trim(),
-      });
+  for (const { type, pattern } of POLICY_REFERENCE_PATTERNS) {
+    for (const match of policyXml.matchAll(pattern)) {
+      const name = match[2]?.trim();
+      if (name && !name.startsWith('@') && !name.includes('{{')) {
+        dependencies.push({ type, name });
+      }
     }
   }
 
@@ -228,6 +255,42 @@ export function findTransitiveDependencies(
   for (const { descriptor, json } of resources) {
     const properties = json.properties as Record<string, unknown> | undefined;
 
+    // A diagnostic sends its data to the logger named by properties.loggerId, in the diagnostic's own
+    // scope. APIM returns a workspace diagnostic's loggerId without the workspace segment
+    // (.../service/{name}/loggers/{logger}), so the ID can't say which scope the logger is in; publish
+    // makes the same assumption when it rebuilds the ID.
+    if (descriptor.type === ResourceType.Diagnostic || descriptor.type === ResourceType.ApiDiagnostic) {
+      const loggerId = properties?.loggerId;
+      const name = typeof loggerId === 'string' ? extractResourceNameFromId(loggerId, 'loggers') : undefined;
+      if (name) {
+        dependencies.push({
+          type: ResourceType.Logger,
+          nameParts: [name],
+          workspace: descriptor.workspace,
+        });
+      }
+    }
+
+    // Logger and backend credentials can hold named value references (for
+    // example the Application Insights key APIM stores as a named value).
+    if (
+      (descriptor.type === ResourceType.Logger || descriptor.type === ResourceType.Backend) &&
+      properties?.credentials !== undefined
+    ) {
+      for (const dep of scanNamedValueReferences(JSON.stringify(properties.credentials))) {
+        dependencies.push({ type: dep.type, nameParts: [dep.name], workspace: descriptor.workspace });
+      }
+    }
+
+    // An API's tag link needs the tag itself.
+    if (descriptor.type === ResourceType.ApiTag && descriptor.nameParts[1]) {
+      dependencies.push({
+        type: ResourceType.Tag,
+        nameParts: [descriptor.nameParts[1]],
+        workspace: descriptor.workspace,
+      });
+    }
+
     if (descriptor.type === ResourceType.Backend) {
       const pool = isRecord(properties?.pool) ? properties.pool : undefined;
       const services = pool?.services;
@@ -267,10 +330,46 @@ export function findTransitiveDependencies(
 }
 
 /**
+ * The groups or tags a product's links (groups.json, tags.json) need. A link
+ * recorded at service scope targets a service-level resource even when the
+ * product is in a workspace. Built-in groups are left out.
+ */
+export function findAssociationDependencies(
+  owner: ResourceDescriptor,
+  associationType: 'groups' | 'tags',
+  entries: ReadonlyArray<AssociationEntry>
+): ResourceDescriptor[] {
+  return deduplicateDescriptors(
+    entries
+      .map((entry) => associationTarget(owner, associationType, entry))
+      // Built-in groups exist in every APIM instance, so they are not dependencies.
+      .filter((target) => !isBuiltInGroup(target))
+  );
+}
+
+/**
+ * The group or tag a product's link entry points to. An entry recorded at
+ * service scope targets a service-level resource even when the product is
+ * in a workspace.
+ */
+export function associationTarget(
+  owner: ResourceDescriptor,
+  associationType: 'groups' | 'tags',
+  entry: AssociationEntry
+): ResourceDescriptor {
+  return {
+    type: associationType === 'groups' ? ResourceType.Group : ResourceType.Tag,
+    nameParts: [entry.name],
+    workspace: entry.scope === 'service' ? undefined : owner.workspace,
+  };
+}
+
+/**
  * Read intrinsic dependencies from one on-disk artifact.
  *
- * Association and subscription targets are links to independently selected
- * composite resources, not transitive dependencies.
+ * A product's group and tag links pull in those groups and tags. API,
+ * product and gateway targets of links and subscriptions are independently
+ * selected composite resources, not transitive dependencies.
  */
 export async function scanArtifactReferences(
   store: IArtifactStore,
@@ -307,6 +406,13 @@ export async function scanArtifactReferences(
       json ? [{ descriptor, json }] : []
     )
   );
+
+  if (descriptor.type === ResourceType.Product) {
+    for (const associationType of ['groups', 'tags'] as const) {
+      const entries = await store.readAssociation(sourceDir, descriptor, associationType);
+      references.push(...findAssociationDependencies(descriptor, associationType, entries));
+    }
+  }
 
   return deduplicateDescriptors(references);
 }

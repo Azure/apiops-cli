@@ -97,6 +97,27 @@ export interface ResourceTypeMetadata {
   readonly workspaceLinkIdProperty?: string;
 }
 
+/** Groups every APIM instance has; they are never created, changed or deleted. */
+export const BUILT_IN_GROUP_NAMES: readonly string[] = ['administrators', 'developers', 'guests'];
+
+/** Whether `name` is one of the built-in groups (case-insensitive). */
+export function isBuiltInGroupName(name: string): boolean {
+  return BUILT_IN_GROUP_NAMES.includes(name.toLowerCase());
+}
+
+/**
+ * Whether a descriptor is a built-in group. Built-in groups exist only at
+ * service level; a workspace group with the same name is a custom group.
+ */
+export function isBuiltInGroup(descriptor: { type: ResourceType; nameParts: string[]; workspace?: string }): boolean {
+  return (
+    descriptor.type === ResourceType.Group &&
+    !descriptor.workspace &&
+    descriptor.nameParts.length === 1 &&
+    isBuiltInGroupName(descriptor.nameParts[0] ?? '')
+  );
+}
+
 export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> = {
   [ResourceType.NamedValue]: {
     armPathSuffix: 'namedValues/{0}',

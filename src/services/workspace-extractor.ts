@@ -16,6 +16,7 @@ import { extractProductResources, extractWorkspaceProductTags } from './product-
 import { logger } from '../lib/logger.js';
 import { getNamePart } from '../lib/resource-path.js';
 import {
+  isExplicitlyExcluded,
   isWildcardPattern,
   resolveWorkspaceFilter,
   shouldIncludeResource,
@@ -24,6 +25,7 @@ import {
   extractTransitiveDependencies,
   type TransitiveResourceArtifact,
 } from './transitive-extractor.js';
+import { findAssociationDependencies } from './transitive-resolver.js';
 
 export { resolveWorkspaceFilter };
 
@@ -50,6 +52,9 @@ export interface WorkspaceExtractionResult {
  * @param context - APIM service context
  * @param outputDir - Output directory
  * @param filter - Optional filter config (workspace names come from here)
+ * @param includeTransitive - Whether to pull in the resources extracted ones depend on
+ * @param serviceExtracted - Resources the service-level extraction already
+ *   wrote or tried, so service-level dependencies are not fetched again
  * @returns Results per workspace
  */
 export async function extractWorkspaces(
@@ -58,7 +63,8 @@ export async function extractWorkspaces(
   context: ApimServiceContext,
   outputDir: string,
   filter?: FilterConfig,
-  includeTransitive: boolean = false
+  includeTransitive: boolean = false,
+  serviceExtracted: ReadonlyArray<ResourceDescriptor> = []
 ): Promise<WorkspaceExtractionResult[]> {
   const results: WorkspaceExtractionResult[] = [];
   let workspaceNames: string[];
@@ -109,6 +115,13 @@ export async function extractWorkspaces(
 
   logger.info(`Extracting ${workspaceNames.length} workspace(s)...`);
 
+  // As at service level, dependencies are only resolved when a filter
+  // narrows what is extracted. Service-level dependencies are shared by
+  // every workspace, so each is fetched once.
+  const transitive: WorkspaceTransitiveOptions | undefined = includeTransitive && filter
+    ? { serviceDependencies: serviceExtracted.filter((descriptor) => !descriptor.workspace) }
+    : undefined;
+
   for (const wsName of workspaceNames) {
     // Persist the workspace container itself so publish can recreate it
     // before workspace-scoped children (named values, APIs, products, etc.).
@@ -126,13 +139,22 @@ export async function extractWorkspaces(
     const wsResult = await extractWorkspace(
       client, store, context, wsName, outputDir,
       resolveWorkspaceFilter(wsName, filter),
-      includeTransitive
+      filter,
+      transitive
     );
     wsResult.errorCount += workspaceContainerError;
     results.push(wsResult);
   }
 
   return results;
+}
+
+interface WorkspaceTransitiveOptions {
+  /**
+   * Service-level resources already extracted; each workspace adds the ones
+   * it tried, extracted or failed, so they are not tried again.
+   */
+  serviceDependencies: ResourceDescriptor[];
 }
 
 async function extractWorkspace(
@@ -142,7 +164,13 @@ async function extractWorkspace(
   workspaceName: string,
   outputDir: string,
   filter?: FilterConfig,
-  includeTransitive: boolean = false
+  /**
+   * The whole filter: it decides for service-level resources and, through
+   * its workspace sub-filters, for workspace ones.
+   */
+  serviceFilter?: FilterConfig,
+  /** Set when dependencies are resolved. */
+  transitive?: WorkspaceTransitiveOptions
 ): Promise<WorkspaceExtractionResult> {
   logger.info(`Extracting workspace "${workspaceName}"...`);
 
@@ -202,6 +230,12 @@ async function extractWorkspace(
             );
             const apiName = getNamePart(api.descriptor.nameParts, 0);
             apis.set(apiName, api.json);
+            // Diagnostics reference their logger.
+            for (const diagnostic of apiResult.diagnostics) {
+              if (diagnostic.status === 'success') {
+                resources.push({ descriptor: diagnostic.descriptor, json: diagnostic.json });
+              }
+            }
             for (let index = 0; index < apiResult.policies.length; index++) {
               const policy = apiResult.policies[index];
               if (policy !== undefined) {
@@ -226,7 +260,7 @@ async function extractWorkspace(
           try {
             const productResult = await extractProductResources(
               client, store, wsContext, product.descriptor,
-              outputDir, filter, workspaceName
+              outputDir, serviceFilter, workspaceName
             );
             const productName = getNamePart(product.descriptor.nameParts, 0);
             for (let index = 0; index < productResult.policies.length; index++) {
@@ -249,14 +283,31 @@ async function extractWorkspace(
     }
   }
 
+  // Workspace tag links can only be listed per tag (one apiLinks and one
+  // productLinks request each). When the filter leaves some tags out and
+  // transitive resolution is on, look on every workspace tag the filter does
+  // not exclude by name, so tags linked to the extracted APIs and products
+  // are found and pulled in below; otherwise the extracted tags are all
+  // there is to check.
+  const hasLinkOwners = extractedApiNames.size > 0 || extractedProducts.length > 0;
+  const linkTagNames = transitive && hasLinkOwners && leavesOutUnnamed(filter?.tags)
+    ? (await listWorkspaceTagNames(client, wsContext, workspaceName, extractedTagNames)).filter(
+        (name) => !isExplicitlyExcluded(
+          { type: ResourceType.Tag, nameParts: [name], workspace: workspaceName },
+          serviceFilter
+        )
+      )
+    : extractedTagNames;
+
   // Extract workspace API tags using the tag-centric apiLinks endpoint.
   // This must happen after both Tags and APIs are extracted since the
   // workspace scope uses `tags/{tag}/apiLinks` (inverted parent-child).
-  if (extractedTagNames.length > 0 && extractedApiNames.size > 0) {
+  if (linkTagNames.length > 0 && extractedApiNames.size > 0) {
     try {
       const apiTagCount = await extractWorkspaceApiTags(
-        client, store, wsContext, extractedTagNames, extractedApiNames,
-        outputDir, workspaceName
+        client, store, wsContext, linkTagNames, extractedApiNames,
+        outputDir, workspaceName,
+        (descriptor, json) => resources.push({ descriptor, json })
       );
       resourceCount += apiTagCount;
     } catch (error) {
@@ -267,10 +318,10 @@ async function extractWorkspace(
 
   // Extract workspace product tags using the tag-centric productLinks endpoint.
   // Similar to ApiTag, workspace ProductTag uses `tags/{tag}/productLinks`.
-  if (extractedTagNames.length > 0 && extractedProducts.length > 0) {
+  if (linkTagNames.length > 0 && extractedProducts.length > 0) {
     try {
       const productTagCount = await extractWorkspaceProductTags(
-        client, store, wsContext, extractedTagNames, extractedProducts,
+        client, store, wsContext, linkTagNames, extractedProducts,
         outputDir, workspaceName
       );
       resourceCount += productTagCount;
@@ -280,8 +331,19 @@ async function extractWorkspace(
     }
   }
 
-  if (includeTransitive && filter) {
+  // Without a sub-filter the whole workspace was extracted, and its resources
+  // depend only on resources in it: APIM doesn't let a workspace product link
+  // to a custom service-level group, and the built-in ones are never pulled in.
+  if (transitive && filter) {
     logger.info(`Resolving transitive dependencies for workspace "${workspaceName}"...`);
+    // The groups and tags the extracted products link to.
+    const linkedDependencies: ResourceDescriptor[] = [];
+    for (const product of extractedProducts) {
+      for (const associationType of ['groups', 'tags'] as const) {
+        const entries = await store.readAssociation(outputDir, product.descriptor, associationType);
+        linkedDependencies.push(...findAssociationDependencies(product.descriptor, associationType, entries));
+      }
+    }
     const transitiveResult = await extractTransitiveDependencies(
       client,
       store,
@@ -290,9 +352,18 @@ async function extractWorkspace(
       policies,
       apis,
       resources,
-      extractedDescriptors,
-      workspaceName,
-      context
+      [...extractedDescriptors, ...transitive.serviceDependencies],
+      {
+        workspace: workspaceName,
+        serviceContext: context,
+        linkedDependencies,
+        skip: (dep) => isExplicitlyExcluded(dep, serviceFilter),
+      }
+    );
+    // Later workspaces skip the service-level ones, including any that failed.
+    transitive.serviceDependencies.push(
+      ...[...transitiveResult.extractedDescriptors, ...transitiveResult.failedDescriptors]
+        .filter((descriptor) => !descriptor.workspace)
     );
     resourceCount += transitiveResult.extractedDescriptors.length;
     errorCount += transitiveResult.errorCount;
@@ -301,6 +372,46 @@ async function extractWorkspace(
   logger.info(`Workspace "${workspaceName}": extracted ${resourceCount} resources, ${errorCount} errors`);
 
   return { workspaceName, resourceCount, errorCount };
+}
+
+/**
+ * Whether a filter list leaves out resources it does not name: it is `[]` or
+ * names some to include. A list of exclusions only (`['!internal']`), or one
+ * including `*`, keeps everything else, so all it leaves out is excluded by
+ * name.
+ */
+function leavesOutUnnamed(list: string[] | undefined): boolean {
+  if (list === undefined) {
+    return false;
+  }
+  const includes = list.filter((entry) => !entry.startsWith('!'));
+  return list.length === 0 || (includes.length > 0 && !includes.includes('*'));
+}
+
+/**
+ * Every tag in the workspace, or the extracted ones if the list fails.
+ */
+async function listWorkspaceTagNames(
+  client: IApimClient,
+  wsContext: ApimServiceContext,
+  workspaceName: string,
+  extractedTagNames: string[]
+): Promise<string[]> {
+  const names: string[] = [];
+  try {
+    for await (const json of client.listResources(wsContext, ResourceType.Tag)) {
+      if (typeof json.name === 'string') {
+        names.push(json.name);
+      }
+    }
+    return names;
+  } catch (error) {
+    logger.warn(
+      `Failed to list tags in workspace "${workspaceName}"; only links to extracted tags are included: ` +
+      `${(error as Error).message}`
+    );
+    return extractedTagNames;
+  }
 }
 
 /**

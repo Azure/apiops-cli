@@ -810,6 +810,7 @@ async function extractGraphQLResolvers(
  * @param extractedApiNames - API names already extracted for this workspace
  * @param outputDir - Output directory
  * @param workspace - Workspace name
+ * @param onLink - Called with each ApiTag artifact written
  * @returns Number of ApiTag artifacts written
  */
 export async function extractWorkspaceApiTags(
@@ -819,7 +820,8 @@ export async function extractWorkspaceApiTags(
   extractedTagNames: string[],
   extractedApiNames: Set<string>,
   outputDir: string,
-  workspace: string
+  workspace: string,
+  onLink?: (descriptor: ResourceDescriptor, json: Record<string, unknown>) => void
 ): Promise<number> {
   const linkProperty = RESOURCE_TYPE_METADATA[ResourceType.ApiTag].workspaceLinkIdProperty;
   if (!linkProperty) {
@@ -866,6 +868,7 @@ export async function extractWorkspaceApiTags(
 
         await store.writeResource(outputDir, apiTagDescriptor, tagJson);
         logger.info(`Extracted workspace ApiTag: ${apiName}/tags/${tagName}`);
+        onLink?.(apiTagDescriptor, tagJson);
         count++;
       }
     } catch (error) {

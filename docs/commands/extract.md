@@ -199,7 +199,7 @@ Supported workspace sub-filter keys: `apis`, `backends`, `diagnostics`,
 
 ### Transitive dependencies
 
-When extracting with a filter, transitive dependencies are **included automatically**. For example, extracting `echo-api` also extracts any backends, named values, and policy fragments that `echo-api` references in its policies.
+When extracting with a filter, transitive dependencies are **included automatically**. For example, extracting `echo-api` also extracts the backends, named values and policy fragments its policies reference, its version set, its tags, and the loggers its diagnostics use. See [Transitive Dependency Behavior](../guides/filtering-resources.md#transitive-dependency-behavior) for the full list.
 
 Use `--no-transitive` to disable this behavior and extract only the explicitly listed resources.
 

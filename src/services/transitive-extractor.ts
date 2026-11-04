@@ -21,18 +21,24 @@ export interface TransitiveResourceArtifact {
 
 export interface TransitiveExtractionResult {
   extractedDescriptors: ResourceDescriptor[];
+  /** Dependencies that were not found or could not be extracted. */
+  failedDescriptors: ResourceDescriptor[];
   errorCount: number;
 }
 
 interface TransitiveTaskResult {
   dep: ResourceDescriptor;
   json?: Record<string, unknown>;
-  /** Resolved to a resource already extracted under its real name. */
+  /**
+   * Resolved to a resource already extracted or claimed by another reference,
+   * or to one the filter excludes by name.
+   */
   skipped?: boolean;
 }
 
 /**
- * Per-context (keyed by baseUrl) index of named value displayName → resource name.
+ * Per-context (keyed by baseUrl) index of named value displayName (lower
+ * case, as names are compared everywhere else) → resource name.
  * Stored as promises so concurrent tasks share a single LIST call.
  */
 type NamedValueNameIndex = Map<string, Promise<Map<string, string>>>;
@@ -47,7 +53,7 @@ async function loadNamedValueNames(
       const name = json.name;
       const displayName = (json.properties as Record<string, unknown> | undefined)?.displayName;
       if (typeof name === 'string' && typeof displayName === 'string') {
-        byDisplayName.set(displayName, name);
+        byDisplayName.set(displayName.toLowerCase(), name);
       }
     }
   } catch (error) {
@@ -78,13 +84,27 @@ async function resolveNamedValueDescriptor(
   }
 
   const ref = dep.nameParts[0] ?? '';
-  const name = (await names).get(ref);
+  const name = (await names).get(ref.toLowerCase());
   if (!name || name === ref) {
     return dep;
   }
 
   logger.debug(`Resolved named value reference "{{${ref}}}" to resource name "${name}"`);
   return { ...dep, nameParts: [name] };
+}
+
+export interface TransitiveExtractionOptions {
+  /** Workspace being extracted; its resources are fetched through `context`. */
+  workspace?: string;
+  /** Service-level context, for dependencies outside the workspace. */
+  serviceContext?: ApimServiceContext;
+  /** Dependencies already known from links (a product's groups and tags). */
+  linkedDependencies?: ResourceDescriptor[];
+  /**
+   * Dependencies not to extract: ones the filter excludes by name, or ones
+   * the caller knows are extracted already.
+   */
+  skip?: (dep: ResourceDescriptor) => boolean;
 }
 
 export async function extractTransitiveDependencies(
@@ -96,29 +116,32 @@ export async function extractTransitiveDependencies(
   apis: Map<string, Record<string, unknown>>,
   resources: TransitiveResourceArtifact[],
   alreadyExtracted: ResourceDescriptor[],
-  workspace?: string,
-  serviceContext?: ApimServiceContext
+  {
+    workspace,
+    serviceContext,
+    linkedDependencies = [],
+    skip = () => false,
+  }: TransitiveExtractionOptions = {}
 ): Promise<TransitiveExtractionResult> {
   const attempted = new Set(alreadyExtracted.map(getResourceDescriptorKey));
   const claimedNamedValues = new Set(alreadyExtracted.map(getResourceDescriptorKey));
   const extractedDescriptors: ResourceDescriptor[] = [];
+  const failedDescriptors: ResourceDescriptor[] = [];
   const namedValueIndex: NamedValueNameIndex = new Map();
   let errorCount = 0;
   let foundDependencies = false;
 
   while (true) {
-    const newDeps = findTransitiveDependencies(
-      policies,
-      apis,
-      workspace,
-      resources
-    ).filter((dep) => !attempted.has(getResourceDescriptorKey(dep)));
+    const newDeps = [
+      ...findTransitiveDependencies(policies, apis, workspace, resources),
+      ...linkedDependencies,
+    ].filter((dep) => !attempted.has(getResourceDescriptorKey(dep)) && !skip(dep));
 
     if (newDeps.length === 0) {
       if (!foundDependencies) {
         logger.debug('No additional transitive dependencies found');
       }
-      return { extractedDescriptors, errorCount };
+      return { extractedDescriptors, failedDescriptors, errorCount };
     }
 
     foundDependencies = true;
@@ -135,6 +158,11 @@ export async function extractTransitiveDependencies(
         if (dep.type === ResourceType.NamedValue) {
           target = await resolveNamedValueDescriptor(client, dependencyContext, dep, namedValueIndex);
           const targetKey = getResourceDescriptorKey(target);
+          // A {{displayName}} reference is checked again under the resource
+          // name it resolves to, which is what an exclusion names.
+          if (target !== dep && skip(target)) {
+            return { dep: target, skipped: true };
+          }
           if (claimedNamedValues.has(targetKey)) {
             return { dep: target, skipped: true };
           }
@@ -165,6 +193,9 @@ export async function extractTransitiveDependencies(
       }
       if (!value?.json) {
         errorCount++;
+        if (value) {
+          failedDescriptors.push(value.dep);
+        }
         continue;
       }
 

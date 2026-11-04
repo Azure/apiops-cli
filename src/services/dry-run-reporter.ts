@@ -361,7 +361,9 @@ async function planDryRunPublications(
       }
       for (const child of apiPlan.childPuts) {
         if (child.type === ResourceType.ApiTag) {
-          const eligibility = await evaluateResourceEligibility(store, child, config);
+          const eligibility = await evaluateResourceEligibility(
+            store, child, config, undefined, targetDescriptors
+          );
           if (
             eligibility.eligible &&
             !child.workspace &&
@@ -415,7 +417,9 @@ async function planDryRunPublications(
       const eligibility = await evaluateResourceEligibility(
         store,
         descriptor,
-        config
+        config,
+        undefined,
+        targetDescriptors
       );
       if (
         eligibility.eligible &&

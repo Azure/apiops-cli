@@ -14,6 +14,7 @@ import {
   findTransitiveDependencies,
   findSubscriptionTargets,
   scanArtifactReferences,
+  findAssociationDependencies,
 } from '../../../src/services/transitive-resolver.js';
 
 describe('transitive-resolver', () => {
@@ -247,7 +248,7 @@ describe('transitive-resolver', () => {
               },
             }),
           readContent: vi.fn().mockResolvedValue(undefined),
-          readAssociation: vi.fn(),
+          readAssociation: vi.fn().mockResolvedValue([]),
         };
 
         const backendRefs = await scanArtifactReferences(
@@ -272,7 +273,8 @@ describe('transitive-resolver', () => {
           '/source',
           { type: ResourceType.Product, nameParts: ['starter'] }
         )).resolves.toEqual([]);
-        expect(store.readAssociation).not.toHaveBeenCalled();
+        // A product's API links are not dependencies, so they are not read.
+        expect(store.readAssociation.mock.calls.map((call) => call[2])).not.toContain('apis');
       });
 
       it('should identify subscription targets separately from transitive dependencies', () => {
@@ -337,6 +339,147 @@ describe('transitive-resolver', () => {
           workspace: 'Team A',
         });
       });
+    });
+  });
+
+  describe('dependency coverage', () => {
+    const SERVICE = '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a';
+
+    it.each([
+      ['an attribute before backend-id', '<set-backend-service id="apim-generated-policy" backend-id="func-backend" />', ResourceType.Backend, 'func-backend'],
+      ['single quotes', "<set-backend-service backend-id='quoted-backend' />", ResourceType.Backend, 'quoted-backend'],
+      ['llm-content-safety', '<llm-content-safety backend-id="content-safety" shield-prompt="true" />', ResourceType.Backend, 'content-safety'],
+      ['azure-openai-semantic-cache-lookup', '<azure-openai-semantic-cache-lookup score-threshold="0.8" embeddings-backend-id="embeddings" />', ResourceType.Backend, 'embeddings'],
+      ['llm-semantic-cache-lookup', '<llm-semantic-cache-lookup embeddings-backend-id="llm-embeddings" />', ResourceType.Backend, 'llm-embeddings'],
+      ['include-fragment with another attribute first', '<include-fragment id="x" fragment-id="frag-a" />', ResourceType.PolicyFragment, 'frag-a'],
+      ['log-to-eventhub', '<log-to-eventhub logger-id="eventhub-logger">@(context.RequestId)</log-to-eventhub>', ResourceType.Logger, 'eventhub-logger'],
+      [
+        'validate-content schema-id',
+        '<validate-content unspecified-content-type-action="ignore" max-size="1024" size-exceeded-action="ignore"><content type="application/json" validate-as="json" action="prevent" schema-id="order-schema" /></validate-content>',
+        ResourceType.GlobalSchema,
+        'order-schema',
+      ],
+    ])('should detect a reference written with %s', (_label, policy, type, name) => {
+      expect(scanPolicyReferences(policy)).toContainEqual({ type, name });
+    });
+
+    it("should find a reference after an attribute whose value contains '>'", () => {
+      const refs = scanPolicyReferences(
+        '<llm-content-safety shield-prompt="@(context.Variables.GetValueOrDefault&lt;int&gt;(&quot;n&quot;) > 0)" ' +
+        'backend-id="content-safety" />'
+      );
+
+      expect(refs).toEqual([{ type: ResourceType.Backend, name: 'content-safety' }]);
+    });
+
+    it('should not treat policy expressions or named value placeholders as resource names', () => {
+      const refs = scanPolicyReferences(
+        '<set-backend-service backend-id="@(context.Variables.GetValueOrDefault<string>("b"))" />' +
+        '<set-backend-service backend-id="{{backend-name}}" />'
+      );
+
+      expect(refs).toEqual([{ type: ResourceType.NamedValue, name: 'backend-name' }]);
+    });
+
+    it.each([
+      [ResourceType.Diagnostic, ['applicationinsights'], `${SERVICE}/loggers/app-insights`, undefined, undefined],
+      [ResourceType.ApiDiagnostic, ['orders', 'azuremonitor'], '/loggers/app-insights', 'team-a', 'team-a'],
+      // APIM returns a workspace diagnostic's loggerId without the workspace segment.
+      [ResourceType.ApiDiagnostic, ['orders', 'applicationinsights'], `${SERVICE}/loggers/app-insights`, 'team-a', 'team-a'],
+    ])('should follow a %s loggerId to the logger in its own scope', (type, nameParts, loggerId, workspace, loggerWorkspace) => {
+      const deps = findTransitiveDependencies(new Map(), new Map(), workspace, [
+        { descriptor: { type, nameParts, workspace }, json: { properties: { loggerId } } },
+      ]);
+
+      expect(deps).toEqual([{ type: ResourceType.Logger, nameParts: ['app-insights'], workspace: loggerWorkspace }]);
+    });
+
+    it('should follow named values in logger and backend credentials', () => {
+      const deps = findTransitiveDependencies(new Map(), new Map(), undefined, [
+        {
+          descriptor: { type: ResourceType.Logger, nameParts: ['app-insights'] },
+          json: { properties: { loggerType: 'applicationInsights', credentials: { instrumentationKey: '{{Logger-Credentials--abc}}' } } },
+        },
+        {
+          descriptor: { type: ResourceType.Backend, nameParts: ['orders'], workspace: 'team-a' },
+          json: {
+            properties: {
+              url: 'https://orders.example.com',
+              credentials: {
+                header: { 'x-api-key': ['{{orders-key}}'] },
+                query: { code: ['{{orders-code}}'] },
+                authorization: { scheme: 'Bearer', parameter: '{{orders-token}}' },
+              },
+            },
+          },
+        },
+      ]);
+
+      expect(deps).toEqual([
+        { type: ResourceType.NamedValue, nameParts: ['Logger-Credentials--abc'], workspace: undefined },
+        { type: ResourceType.NamedValue, nameParts: ['orders-key'], workspace: 'team-a' },
+        { type: ResourceType.NamedValue, nameParts: ['orders-code'], workspace: 'team-a' },
+        { type: ResourceType.NamedValue, nameParts: ['orders-token'], workspace: 'team-a' },
+      ]);
+    });
+
+    it("should follow an API's tag link to the tag", () => {
+      const deps = findTransitiveDependencies(new Map(), new Map(), 'team-a', [
+        { descriptor: { type: ResourceType.ApiTag, nameParts: ['orders', 'public'], workspace: 'team-a' }, json: {} },
+      ]);
+
+      expect(deps).toEqual([{ type: ResourceType.Tag, nameParts: ['public'], workspace: 'team-a' }]);
+    });
+
+    it("should follow a product's group and tag links, keeping service-scope targets at service level", () => {
+      const product = { type: ResourceType.Product, nameParts: ['starter'], workspace: 'team-a' };
+
+      expect(findAssociationDependencies(product, 'groups', [
+        { name: 'support-team', scope: 'service' },
+        { name: 'partners', scope: 'workspace' },
+        { name: 'partners' },
+      ])).toEqual([
+        { type: ResourceType.Group, nameParts: ['support-team'], workspace: undefined },
+        { type: ResourceType.Group, nameParts: ['partners'], workspace: 'team-a' },
+      ]);
+      expect(findAssociationDependencies(product, 'tags', [{ name: 'public' }])).toEqual([
+        { type: ResourceType.Tag, nameParts: ['public'], workspace: 'team-a' },
+      ]);
+    });
+
+    it('should leave built-in groups out of product link dependencies', () => {
+      expect(findAssociationDependencies({ type: ResourceType.Product, nameParts: ['starter'] }, 'groups', [
+        { name: 'Developers' },
+        { name: 'guests' },
+        { name: 'administrators' },
+        { name: 'support-team' },
+      ])).toEqual([{ type: ResourceType.Group, nameParts: ['support-team'], workspace: undefined }]);
+    });
+
+    it('should treat a workspace group with a built-in name as a custom group', () => {
+      const product = { type: ResourceType.Product, nameParts: ['starter'], workspace: 'team-a' };
+
+      expect(findAssociationDependencies(product, 'groups', [
+        { name: 'developers', scope: 'workspace' },
+        { name: 'administrators', scope: 'service' },
+      ])).toEqual([{ type: ResourceType.Group, nameParts: ['developers'], workspace: 'team-a' }]);
+    });
+
+    it("should read a product's group and tag links when scanning it for publish", async () => {
+      const store = {
+        readResource: vi.fn().mockResolvedValue({ properties: { displayName: 'Starter' } }),
+        readContent: vi.fn().mockResolvedValue(undefined),
+        readAssociation: vi.fn(async (_dir: string, _descriptor: unknown, type: string) =>
+          type === 'groups' ? [{ name: 'support-team' }] : [{ name: 'public' }]
+        ),
+      };
+
+      const refs = await scanArtifactReferences(store, '/source', { type: ResourceType.Product, nameParts: ['starter'] });
+
+      expect(refs).toEqual([
+        { type: ResourceType.Group, nameParts: ['support-team'], workspace: undefined },
+        { type: ResourceType.Tag, nameParts: ['public'], workspace: undefined },
+      ]);
     });
   });
 });

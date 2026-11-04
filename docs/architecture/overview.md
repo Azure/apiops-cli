@@ -124,7 +124,7 @@ flowchart TD
 ### Key Extract Behaviors
 
 - **Topological ordering** — Resources are extracted in dependency order across 4 tiers, ensuring parent resources are written before children.
-- **Transitive dependency resolution** — Policy XML is scanned for references to named values, backends, and policy fragments. Referenced resources are included even if not explicitly listed in the filter.
+- **Transitive dependency resolution** — Policy XML is scanned for references to named values, backends, policy fragments, loggers and schemas; APIs, diagnostics, loggers, backends and products are scanned for their version set, logger, credential named values, tags and groups. Referenced resources are included even if not explicitly listed in the filter.
 - **Dual output format** — Resource metadata is written as JSON (`*.info.json`), while policies are written as raw XML (`policy.xml`).
 - **LIST then GET** — Some APIM list endpoints omit fields. When `listOmitsFields` is set for a resource type, individual GET calls fetch the full representation.
 

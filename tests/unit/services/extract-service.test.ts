@@ -273,6 +273,105 @@ describe('extract-service', () => {
       expect(result.collectedPolicies.get('service-policy')).toBe(redactedPolicy);
     });
 
+    it("should pull in an API diagnostic's logger, an API's tags, and a product's groups and tags", async () => {
+      const client = createMockClient({
+        [ResourceType.Api]: [{ name: 'orders', properties: {} }],
+        [ResourceType.ApiDiagnostic]: [{ name: 'applicationinsights', properties: { loggerId: '/loggers/app-insights' } }],
+        [ResourceType.ApiTag]: [{ name: 'public', properties: { displayName: 'public' } }],
+        [ResourceType.Product]: [{ name: 'starter', properties: {} }],
+      });
+      client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor: ResourceDescriptor) =>
+        [ResourceType.Logger, ResourceType.Tag, ResourceType.Group].includes(descriptor.type)
+          ? { name: descriptor.nameParts[0], properties: {} }
+          : undefined
+      );
+      const store = createMockStore();
+      store.readAssociation.mockImplementation(async (_dir: string, _descriptor: ResourceDescriptor, type: string) =>
+        type === 'groups' ? [{ name: 'support-team' }] : type === 'tags' ? [{ name: 'partner' }] : []
+      );
+      const filter: FilterConfig = {
+        apis: ['orders'],
+        products: ['starter'],
+        loggers: [],
+        tags: [],
+        groups: [],
+      };
+
+      const result = await runExtraction(client, store, {
+        service: testContext,
+        outputDir: '/output',
+        filter,
+        includeTransitive: true,
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(result.extractedDescriptors).toEqual(expect.arrayContaining([
+        { type: ResourceType.Logger, nameParts: ['app-insights'], workspace: undefined },
+        { type: ResourceType.Tag, nameParts: ['public'], workspace: undefined },
+        { type: ResourceType.Group, nameParts: ['support-team'], workspace: undefined },
+        { type: ResourceType.Tag, nameParts: ['partner'], workspace: undefined },
+      ]));
+    });
+
+    it('should not try again in a workspace a service-level dependency the service pass failed to extract', async () => {
+      const client = createMockClient({
+        [ResourceType.Product]: [{ name: 'starter', properties: {} }],
+      });
+      client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor: ResourceDescriptor) =>
+        descriptor.type === ResourceType.Group ? undefined : { name: descriptor.nameParts[0], properties: {} }
+      );
+      const store = createMockStore();
+      store.readAssociation.mockImplementation(async (_dir: string, _descriptor: ResourceDescriptor, type: string) =>
+        type === 'groups' ? [{ name: 'old-team', scope: 'service' }] : []
+      );
+
+      const result = await runExtraction(client, store, {
+        service: testContext,
+        outputDir: '/output',
+        filter: { products: ['starter'], groups: [], workspaces: ['team-a'] },
+        includeTransitive: true,
+        logLevel: LogLevel.INFO,
+      });
+
+      const groupGets = client.getResource.mock.calls.filter(([, d]) => (d as ResourceDescriptor).type === ResourceType.Group);
+      expect(groupGets).toHaveLength(1);
+      expect(result.workspaceResults?.[0]?.errorCount).toBe(0);
+    });
+
+    it('should not pull in a tag the filter excludes by name', async () => {
+      const client = createMockClient({
+        [ResourceType.Api]: [{ name: 'orders', properties: {} }],
+        [ResourceType.ApiTag]: [
+          { name: 'internal', properties: { displayName: 'internal' } },
+          { name: 'public', properties: { displayName: 'public' } },
+        ],
+      });
+      client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor: ResourceDescriptor) =>
+        descriptor.type === ResourceType.Tag ? { name: descriptor.nameParts[0], properties: {} } : undefined
+      );
+
+      const store = createMockStore();
+      await runExtraction(client, store, {
+        service: testContext,
+        outputDir: '/output',
+        filter: { apis: ['orders'], tags: ['!internal', 'none'] },
+        includeTransitive: true,
+        logLevel: LogLevel.INFO,
+      });
+
+      const fetchedTags = client.getResource.mock.calls
+        .map(([, descriptor]) => descriptor as ResourceDescriptor)
+        .filter((descriptor) => descriptor.type === ResourceType.Tag)
+        .map((descriptor) => descriptor.nameParts[0]);
+      expect(fetchedTags).toEqual(['public']);
+      // The link to the excluded tag is not written either.
+      expect(store.writeResource).not.toHaveBeenCalledWith(
+        '/output',
+        expect.objectContaining({ type: ResourceType.ApiTag, nameParts: ['orders', 'internal'] }),
+        expect.anything()
+      );
+    });
+
     it('should not crash during transitive dedupe when a singleton (ServicePolicy) is already extracted', async () => {
       // Regression: transitive resolution previously keyed the
       // already-extracted set on getNamePart(d.nameParts, 0), which threw

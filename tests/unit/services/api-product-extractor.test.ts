@@ -1493,6 +1493,65 @@ describe('product-extractor', () => {
       expect(result.errorCount).toBe(1);
     });
 
+    it('leaves out links to groups and tags the filter excludes by name', async () => {
+      const client = createMockClient();
+      client.listResources = async function* (_ctx, type) {
+        if (type === ResourceType.ProductGroup) {
+          yield { name: 'partners' };
+          yield { name: 'support-team' };
+        }
+        if (type === ResourceType.ProductTag) {
+          yield { name: 'internal' };
+          yield { name: 'public' };
+        }
+      };
+      client.getResource = vi.fn().mockResolvedValue(undefined);
+      const store = createMockStore();
+      const filter: FilterConfig = { products: ['starter'], groups: ['!partners', '*'], tags: ['!internal'] };
+
+      const result = await extractProductResources(
+        client, store, testContext,
+        { type: ResourceType.Product, nameParts: ['starter'] },
+        '/output', filter
+      );
+
+      expect(result.groups).toEqual(['support-team']);
+      expect(result.tags).toEqual(['public']);
+      expect(store.writeAssociation).toHaveBeenCalledWith('/output', expect.anything(), 'groups', [{ name: 'support-team' }]);
+      expect(store.writeAssociation).toHaveBeenCalledWith('/output', expect.anything(), 'tags', [{ name: 'public' }]);
+    });
+
+    it("decides a workspace product's links by the scope each target is in", async () => {
+      const SERVICE = '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a';
+      const client = createMockClient();
+      client.listResources = async function* (_ctx, type) {
+        if (type === ResourceType.ProductGroup) {
+          yield { name: 'l1', properties: { groupId: `${SERVICE}/groups/partners` } };
+          yield { name: 'l2', properties: { groupId: `${SERVICE}/workspaces/team-a/groups/partners` } };
+          yield { name: 'l3', properties: { groupId: `${SERVICE}/workspaces/team-a/groups/ops` } };
+        }
+      };
+      client.getResource = vi.fn().mockResolvedValue(undefined);
+      const store = createMockStore();
+      const filter: FilterConfig = {
+        groups: ['!partners', '*'],
+        workspaceSubFilters: { 'team-a': { groups: ['!ops', '*'] } },
+      };
+
+      const result = await extractProductResources(
+        client, store, { ...testContext, baseUrl: `${testContext.baseUrl}/workspaces/team-a` },
+        { type: ResourceType.Product, nameParts: ['starter'], workspace: 'team-a' },
+        '/output', filter, 'team-a'
+      );
+
+      // The service-level partners group is excluded at the top level; the
+      // workspace's own partners group is not, but its ops group is.
+      expect(result.groups).toEqual(['partners']);
+      expect(store.writeAssociation).toHaveBeenCalledWith(
+        '/output', expect.anything(), 'groups', [{ name: 'partners', scope: 'workspace' }]
+      );
+    });
+
     it('counts failed product associations and wiki extraction', async () => {
       const client = createMockClient();
       // eslint-disable-next-line require-yield

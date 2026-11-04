@@ -268,6 +268,52 @@ describe('product-publisher', () => {
       );
     });
 
+    it('links groups and tags that were pulled into the publish set although the filter excludes them', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockImplementation(async (_dir: string, _descriptor: ResourceDescriptor, type: string) =>
+        type === 'groups' ? [{ name: 'support-team' }] : type === 'tags' ? [{ name: 'partner' }, { name: 'internal' }] : []
+      );
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: { products: ['my-product'], groups: [], tags: [] },
+      };
+
+      await publishProduct(client, store, testContext, productDescriptor, config, [
+        productDescriptor,
+        { type: ResourceType.Group, nameParts: ['support-team'] },
+        { type: ResourceType.Tag, nameParts: ['partner'] },
+      ]);
+
+      const links = client.putResource.mock.calls
+        .map(([, descriptor]) => `${descriptor.type}:${descriptor.nameParts.join('/')}`)
+        .filter((key) => key.startsWith('ProductGroup') || key.startsWith('ProductTag'));
+      expect(links).toEqual(['ProductGroup:my-product/support-team', 'ProductTag:my-product/partner']);
+    });
+
+    it('publishes links to built-in groups only when the filter includes them', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockImplementation(async (_dir: string, _descriptor: ResourceDescriptor, type: string) =>
+        type === 'groups' ? [{ name: 'developers' }] : []
+      );
+      const developers: ResourceDescriptor = { type: ResourceType.Group, nameParts: ['developers'] };
+      const linksFor = async (groups: string[]) => {
+        client.putResource.mockClear();
+        // A group the filter includes is in the publish set, as after extracting it.
+        await publishProduct(client, store, testContext, productDescriptor, {
+          ...testConfig,
+          filter: { products: ['my-product'], groups },
+        }, groups.length > 0 ? [productDescriptor, developers] : [productDescriptor]);
+        return client.putResource.mock.calls
+          .map(([, descriptor]) => `${descriptor.type}:${descriptor.nameParts.join('/')}`)
+          .filter((key) => key.startsWith('ProductGroup'));
+      };
+
+      expect(await linksFor([])).toEqual([]);
+      expect(await linksFor(['developers'])).toEqual(['ProductGroup:my-product/developers']);
+    });
+
     it('does not let resolved targets override explicit API exclusions', async () => {
       const client = createMockClient();
       const store = createMockStore();
