@@ -614,6 +614,28 @@ describe('ArmHttpClient.request errors and retries', () => {
     expect(delays).toEqual([1000]);
   });
 
+  it('should name the cause of a network error that outlasts the retries', async () => {
+    fetchSpy.mockRejectedValue(new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND example.test') }));
+
+    const error = await client().request(URL_1).catch((e: unknown) => e);
+
+    expect((error as Error).message).toBe('fetch failed (getaddrinfo ENOTFOUND example.test)');
+    expect((error as Error).cause).toBeInstanceOf(TypeError);
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
+  });
+
+  it('should not retry a request the proxy refuses with 407', async () => {
+    fetchSpy.mockRejectedValue(
+      new TypeError('fetch failed', { cause: new Error('Proxy response (407) !== 200 when HTTP Tunneling') }),
+    );
+
+    const error = await client().request(URL_1).catch((e: unknown) => e);
+
+    expect((error as Error).message).toMatch(/failed: the proxy refused the request with 407 Proxy Authentication Required\. Check the user name and password/);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(delays).toEqual([]);
+  });
+
   it('should wait for numeric and HTTP-date Retry-After on 429', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));

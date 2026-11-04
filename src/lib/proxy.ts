@@ -22,6 +22,7 @@
  */
 
 import { Agent, getGlobalDispatcher, ProxyAgent, setGlobalDispatcher, type Dispatcher } from 'undici';
+import { errorCauses } from './error-message.js';
 import { logger } from './logger.js';
 
 /** Proxy variables in the order the Azure SDK's proxy policy reads them. */
@@ -96,6 +97,30 @@ function createProxyDispatcher(proxyUrl: string, noProxy: readonly string[]): {
       await Promise.all([proxied.close(), direct.close()]);
     },
   };
+}
+
+/**
+ * The messages undici fails a request with when the proxy answers 407 Proxy
+ * Authentication Required: to a CONNECT for an HTTPS request, or to a
+ * forwarded plain-HTTP request.
+ */
+const PROXY_AUTHENTICATION_FAILURES = [
+  'Proxy response (407) !== 200 when HTTP Tunneling',
+  'Proxy Authentication Required (407)',
+];
+
+/**
+ * Whether a request failed because the proxy refused it with 407 Proxy
+ * Authentication Required: the proxy URL has no credentials, or wrong ones.
+ * `fetch` gives undici's error as the cause of its "fetch failed".
+ */
+export function isProxyAuthenticationError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return [error, ...errorCauses(error)].some(({ message }) =>
+    PROXY_AUTHENTICATION_FAILURES.some((failure) => message.includes(failure))
+  );
 }
 
 export type ProxySetupResult =

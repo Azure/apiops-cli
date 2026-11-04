@@ -15,6 +15,7 @@ import { DefaultAzureCredential, getBearerTokenProvider } from '@azure/identity'
 import { getArmHostsForAuthScope, getCloudConfig } from '../lib/cloud-config.js';
 import { errorMessage } from '../lib/error-message.js';
 import { formatDuration } from '../lib/format-duration.js';
+import { isProxyAuthenticationError } from '../lib/proxy.js';
 import { logger } from '../lib/logger.js';
 import { recordRetry } from '../lib/retry-tracker.js';
 import { USER_AGENT } from '../lib/user-agent.js';
@@ -585,8 +586,18 @@ export class ArmHttpClient implements IArmHttpClient {
         ) {
           throw error;
         }
+        // Retrying with the same proxy credentials gets the same answer.
+        if (isProxyAuthenticationError(error)) {
+          throw new Error(
+            `${target} failed: the proxy refused the request with 407 Proxy Authentication Required. ` +
+            'Check the user name and password in the proxy URL (HTTPS_PROXY, ALL_PROXY or HTTP_PROXY).',
+            { cause: error },
+          );
+        }
         if (attempt >= maxRetries) {
-          throw error;
+          // fetch's "fetch failed" says nothing on its own; name the cause.
+          const message = errorMessage(error);
+          throw error instanceof Error && message !== error.message ? new Error(message, { cause: error }) : error;
         }
         const delayMs = ArmHttpClient.backoff(attempt);
         logRetry(

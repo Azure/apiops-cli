@@ -11,7 +11,13 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getGlobalDispatcher } from 'undici';
 import { logger } from '../../../src/lib/logger.js';
-import { applyProxyFromEnv, isProxyBypassed, parseNoProxy, type ProxySetupResult } from '../../../src/lib/proxy.js';
+import {
+  applyProxyFromEnv,
+  isProxyAuthenticationError,
+  isProxyBypassed,
+  parseNoProxy,
+  type ProxySetupResult,
+} from '../../../src/lib/proxy.js';
 
 describe('parseNoProxy', () => {
   it('should split on commas, trim entries and drop empty ones', () => {
@@ -184,5 +190,48 @@ describe('applyProxyFromEnv', () => {
 
     expect(getGlobalDispatcher()).toBe(before);
     expect(await fetchTarget()).toBe('direct');
+  });
+});
+
+describe('isProxyAuthenticationError', () => {
+  let server: http.Server;
+  let result: ProxySetupResult | undefined;
+
+  beforeEach(async () => {
+    // A proxy that wants credentials it never accepts.
+    server = http.createServer((_request, response) => {
+      response.writeHead(407, { 'Proxy-Authenticate': 'Basic realm="proxy"' }).end();
+    });
+    server.on('connect', (_request, socket) => {
+      socket.end('HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="proxy"\r\n\r\n');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    result = applyProxyFromEnv({ HTTPS_PROXY: `http://user:wrong@127.0.0.1:${port}` });
+  });
+
+  afterEach(async () => {
+    if (result?.status === 'applied') {
+      await result.restore();
+    }
+    await close(server);
+  });
+
+  it.each([
+    ['an HTTPS request the proxy refuses to tunnel', 'https://management.azure.com/'],
+    ['a plain-HTTP request the proxy refuses to forward', 'http://example.test/'],
+  ])('should recognise %s with 407', async (_label, url) => {
+    const error = await fetch(url).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(TypeError);
+    expect(isProxyAuthenticationError(error)).toBe(true);
+  });
+
+  it.each([
+    ['another proxy answer', new TypeError('fetch failed', { cause: new Error('Proxy response (403) !== 200 when HTTP Tunneling') })],
+    ['a refused connection', new TypeError('fetch failed', { cause: new Error('connect ECONNREFUSED 127.0.0.1:1') })],
+    ['a value that is not an error', 'Proxy Authentication Required (407)'],
+  ])('should not match %s', (_label, error) => {
+    expect(isProxyAuthenticationError(error)).toBe(false);
   });
 });
