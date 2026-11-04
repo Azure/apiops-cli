@@ -67,6 +67,34 @@ const POLICY_RESOURCE_TYPES = new Set<ResourceType>([
 ]);
 
 /**
+ * XML comments: references inside them are not in effect. Only a closed
+ * comment is removed, so a stray `<!--` (for example in a policy expression
+ * string) cannot hide the rest of the policy.
+ */
+const XML_COMMENT_PATTERN = /<!--[\s\S]*?-->/g;
+
+/**
+ * The body of a `<set-body template="liquid">` element: its `{{ ... }}` are
+ * Liquid output expressions, not named value references. A self-closing
+ * set-body has no body and is not matched.
+ */
+const LIQUID_BODY_PATTERN = new RegExp(
+  `(<set-body(?:${XML_ATTRIBUTE})*?\\s+template\\s*=\\s*(["'])liquid\\2(?:${XML_ATTRIBUTE})*\\s*>)` +
+    `[\\s\\S]*?(<\\/set-body\\s*>)`,
+  'gi'
+);
+
+/**
+ * Policy XML with the parts that cannot reference other resources removed:
+ * XML comments, and the bodies of Liquid templates.
+ */
+function stripNonReferenceContent(policyXml: string): string {
+  return policyXml
+    .replace(XML_COMMENT_PATTERN, '')
+    .replace(LIQUID_BODY_PATTERN, (_match, open: string, _quote: string, close: string) => `${open}${close}`);
+}
+
+/**
  * Scan text for named value references ({{displayName}}).
  */
 function scanNamedValueReferences(text: string): TransitiveDependency[] {
@@ -92,12 +120,16 @@ function scanNamedValueReferences(text: string): TransitiveDependency[] {
  *
  * A value that is a policy expression (`@...`) or a named value reference
  * (`{{...}}`, found by the named value scan) does not name a resource.
+ * References inside XML comments, and `{{ ... }}` inside a
+ * `<set-body template="liquid">` body (Liquid output, not named values), are
+ * ignored.
  */
 export function scanPolicyReferences(policyXml: string): TransitiveDependency[] {
-  const dependencies = scanNamedValueReferences(policyXml);
+  const scannable = stripNonReferenceContent(policyXml);
+  const dependencies = scanNamedValueReferences(scannable);
 
   for (const { type, pattern } of POLICY_REFERENCE_PATTERNS) {
-    for (const match of policyXml.matchAll(pattern)) {
+    for (const match of scannable.matchAll(pattern)) {
       const name = match[2]?.trim();
       if (name && !name.startsWith('@') && !name.includes('{{')) {
         dependencies.push({ type, name });

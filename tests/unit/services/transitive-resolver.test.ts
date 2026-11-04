@@ -363,13 +363,48 @@ describe('transitive-resolver', () => {
       expect(scanPolicyReferences(policy)).toContainEqual({ type, name });
     });
 
+    it('should ignore references inside XML comments (#305)', () => {
+      const refs = scanPolicyReferences(
+        '<!-- <set-backend-service backend-id="old-backend" /> {{old-secret}} -->' +
+        '<set-backend-service backend-id="live-backend" />'
+      );
+
+      expect(refs).toEqual([{ type: ResourceType.Backend, name: 'live-backend' }]);
+    });
+
+    it('should not let a stray "<!--" in a policy expression hide later references', () => {
+      const refs = scanPolicyReferences(
+        '<set-variable name="marker" value="@(&quot;<!--&quot;)" />' +
+        '<set-backend-service backend-id="orders-backend" />'
+      );
+
+      expect(refs).toContainEqual({ type: ResourceType.Backend, name: 'orders-backend' });
+    });
+
     it("should find a reference after an attribute whose value contains '>'", () => {
       const refs = scanPolicyReferences(
         '<llm-content-safety shield-prompt="@(context.Variables.GetValueOrDefault&lt;int&gt;(&quot;n&quot;) > 0)" ' +
-        'backend-id="content-safety" />'
+        'backend-id="content-safety" />' +
+        '<set-body x="@(1 > 0)" template="liquid">{{body.ignored}}</set-body>'
       );
 
       expect(refs).toEqual([{ type: ResourceType.Backend, name: 'content-safety' }]);
+    });
+
+    it('should ignore Liquid output in set-body templates but keep named values elsewhere (#276)', () => {
+      const refs = scanPolicyReferences(`
+        <set-header name="Auth"><value>{{real-value}}</value></set-header>
+        <set-body template="liquid">{{context.Request.MatchedParameters["id"]}}</set-body>
+        <set-body x="1" template='liquid'>{{body.envelope.body.fault.faultcode}}</set-body>
+        <set-body template="liquid" />
+        <set-body>{{after-liquid}}</set-body>
+        <set-body template="none">{{not-liquid}}</set-body>`);
+
+      expect(refs).toEqual([
+        { type: ResourceType.NamedValue, name: 'real-value' },
+        { type: ResourceType.NamedValue, name: 'after-liquid' },
+        { type: ResourceType.NamedValue, name: 'not-liquid' },
+      ]);
     });
 
     it('should not treat policy expressions or named value placeholders as resource names', () => {

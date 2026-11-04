@@ -318,7 +318,7 @@ When you filter resources, `apiops extract` and `apiops publish` automatically i
 
 A reference written as a policy expression (`backend-id="@(...)"`) is not followed, because its value is only known at run time.
 
-A `{{...}}` reference, in a policy or in credentials, names a named value by its display name, as APIM does; when no named value has that display name, it is read as a resource name. The `namedValues` list and its exclusions (`'!name'`) use the resource name, which can differ from the display name.
+A `{{...}}` reference, in a policy or in credentials, names a named value by its display name, as APIM does; when no named value has that display name, it is read as a resource name. The `namedValues` list and its exclusions (`'!name'`) use the resource name, which can differ from the display name. References inside XML comments are ignored, and so is a `{{...}}` inside a `<set-body template="liquid">` body, which is Liquid output, not a named value.
 
 A resource the filter excludes by name (`'!name'`) is never pulled in, and links to it are not extracted: an API's or product's link to an excluded tag, or a product's link to an excluded group. Built-in groups (`administrators`, `developers`, `guests`) exist at service level in every APIM instance, so they are not pulled in either; a product's links to them are published only when the filter includes them, as for any group.
 
