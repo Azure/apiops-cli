@@ -99,6 +99,28 @@ describe('stale-dependency-finder', () => {
     ]);
   });
 
+  it("should follow a policy attribute set to a named value to the backend the named value's value names", async () => {
+    const policy = (api: string): ResourceDescriptor => ({ type: ResourceType.ApiPolicy, nameParts: [api] });
+    const writePolicy = (dir: string, api: string) =>
+      store.writeContent(dir, policy(api), '<policies><inbound><set-backend-service backend-id="{{Backend_Id}}" /></inbound></policies>', 'policy', 'xml');
+    const backendFilter: FilterConfig = { ...filter, backends: [] };
+    await write(outputDir, orders);
+    await writePolicy(outputDir, 'orders');
+    await write(outputDir, { type: ResourceType.NamedValue, nameParts: ['backend-id'] }, { displayName: 'Backend_Id', value: 'function-backend' });
+    await write(outputDir, { type: ResourceType.Backend, nameParts: ['function-backend'] });
+    await write(stagingDir, orders);
+
+    expect(names(await findStaleDependencies(store, outputDir, stagingDir, backendFilter))).toEqual([
+      'Backend:function-backend',
+      'NamedValue:backend-id',
+    ]);
+
+    // Another API left in the output still sends requests to the backend.
+    await write(outputDir, billing);
+    await writePolicy(outputDir, 'billing');
+    expect(await findStaleDependencies(store, outputDir, stagingDir, backendFilter)).toEqual([]);
+  });
+
   it("should keep a dependency's own dependency that another artifact still uses", async () => {
     const diagnostic: ResourceDescriptor = { type: ResourceType.ApiDiagnostic, nameParts: ['orders', 'applicationinsights'] };
     await write(outputDir, orders);

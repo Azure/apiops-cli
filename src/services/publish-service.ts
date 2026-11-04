@@ -51,9 +51,15 @@ import {
 } from './delete-unmatched-service.js';
 import { computeGitDiff } from './git-diff-service.js';
 import { scanForRedactionMarkers } from './secret-redaction-guard.js';
-import { hasNamedValueOverride } from './override-merger.js';
+import { applyOverrides, hasNamedValueOverride } from './override-merger.js';
 import { REDACTION_MARKER } from './secret-redactor.js';
-import { createArtifactReferenceResolver, scanArtifactReferences } from './transitive-resolver.js';
+import {
+  createArtifactReferenceResolver,
+  createNamedValueReader,
+  indexNamedValueTargetTypes,
+  namedValueTargetName,
+  scanArtifactReferences,
+} from './transitive-resolver.js';
 import { validateAndBuildEnvMapping } from './env-mapping-validator.js';
 import { mapDescriptor } from './env-mapper.js';
 
@@ -310,7 +316,8 @@ async function determinePublishTargets(
       config.sourceDir,
       targetDescriptors,
       availableDescriptors,
-      config.filter
+      config.filter,
+      config.overrides
     );
   }
 
@@ -322,12 +329,53 @@ async function expandTransitivePublishTargets(
   sourceDir: string,
   initialDescriptors: ResourceDescriptor[],
   availableDescriptors: ResourceDescriptor[],
-  filter: FilterConfig
+  filter: FilterConfig,
+  overrides: OverrideConfig | undefined
 ): Promise<ResourceDescriptor[]> {
   const findAvailable = createArtifactReferenceResolver(
     availableDescriptors,
     (descriptor) => store.readResource(sourceDir, descriptor)
   );
+  // A named value as it is published: with this environment's overrides,
+  // which can name a different resource. One that can't be read only hides
+  // what a policy attribute set to it names; publishing the named value
+  // reports the error. One the filter excludes isn't published, so neither
+  // is what it names.
+  const readNamedValueJson = async (descriptor: ResourceDescriptor) => {
+    if (isExplicitlyExcluded(descriptor, filter)) {
+      return undefined;
+    }
+    try {
+      const json = await store.readResource(sourceDir, descriptor);
+      return json ? applyOverrides(descriptor, json, overrides) : undefined;
+    } catch (error) {
+      logger.warn(`Unable to read ${buildResourceLabel(descriptor)} to find what policies set to it name: ${String(error)}`);
+      return undefined;
+    }
+  };
+  const readNamedValue = createNamedValueReader(findAvailable, readNamedValueJson);
+  // A published named value needs the resource its value names when any
+  // policy or fragment in the source uses it as a resource name
+  // (backend-id="{{name}}"), even one the filter leaves out: APIM checks every
+  // policy on the target that uses a named value when the named value
+  // changes, and rejects the change while the resource it names is missing.
+  // The policies are read once, on the first named value in the publish set.
+  let targetTypes: Promise<Map<string, Set<ResourceType>>> | undefined;
+  const findNamedValueTargets = async (namedValue: ResourceDescriptor): Promise<ResourceDescriptor[]> => {
+    targetTypes ??= indexNamedValueTargetTypes(
+      store,
+      sourceDir,
+      availableDescriptors,
+      availableDescriptors,
+      findAvailable
+    );
+    const types = (await targetTypes).get(getResourceDescriptorKey(namedValue));
+    const json = types ? await readNamedValueJson(namedValue) : undefined;
+    const name = json ? namedValueTargetName(json) : undefined;
+    return types && name
+      ? [...types].map((type) => ({ type, nameParts: [name], workspace: namedValue.workspace }))
+      : [];
+  };
   const expanded = [...initialDescriptors];
   const included = new Set(expanded.map(getResourceDescriptorKey));
   const scanQueue = [...initialDescriptors];
@@ -379,7 +427,10 @@ async function expandTransitivePublishTargets(
   for (let index = 0; index < scanQueue.length; index++) {
     let references: ResourceDescriptor[];
     try {
-      references = await scanArtifactReferences(store, sourceDir, scanQueue[index]);
+      references = await scanArtifactReferences(store, sourceDir, scanQueue[index], readNamedValue);
+      if (scanQueue[index].type === ResourceType.NamedValue) {
+        references.push(...await findNamedValueTargets(scanQueue[index]));
+      }
     } catch (error) {
       logger.warn(
         `Unable to scan transitive references for ${scanQueue[index].type} "${scanQueue[index].nameParts.join('/')}": ${String(error)}`

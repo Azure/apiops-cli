@@ -20,10 +20,13 @@ import { buildResourceLabel } from '../lib/resource-uri.js';
 import { logger } from '../lib/logger.js';
 import { runParallel } from '../lib/parallel-runner.js';
 import { isInRemoveStaleScope } from './filter-service.js';
-import { createArtifactReferenceResolver, scanArtifactReferences } from './transitive-resolver.js';
-
-/** Artifact files read at once while scanning references: the extract's own concurrency. */
-const SCAN_CONCURRENCY = 5;
+import {
+  createArtifactReferenceResolver,
+  createNamedValueReader,
+  REFERENCE_SCAN_CONCURRENCY,
+  scanArtifactReferences,
+  type NamedValueReader,
+} from './transitive-resolver.js';
 
 interface ArtifactLocation {
   descriptor: ResourceDescriptor;
@@ -37,11 +40,12 @@ interface ArtifactLocation {
  */
 async function scanAll(
   store: IArtifactStore,
-  artifacts: ReadonlyArray<ArtifactLocation>
+  artifacts: ReadonlyArray<ArtifactLocation>,
+  readNamedValue: NamedValueReader
 ): Promise<{ references: ResourceDescriptor[]; failed: ResourceDescriptor[] }> {
   const results = await runParallel(
-    artifacts.map(({ descriptor, dir }) => () => scanArtifactReferences(store, dir, descriptor)),
-    SCAN_CONCURRENCY
+    artifacts.map(({ descriptor, dir }) => () => scanArtifactReferences(store, dir, descriptor, readNamedValue)),
+    REFERENCE_SCAN_CONCURRENCY
   );
   const references: ResourceDescriptor[] = [];
   const failed: ResourceDescriptor[] = [];
@@ -91,15 +95,14 @@ export async function findStaleDependencies(
 
   // What the selection depended on before this extract, followed through
   // pulled-in artifacts (a logger's named value, say).
-  const resolveExisting = createArtifactReferenceResolver(
-    existing,
-    (descriptor) => store.readResource(outputDir, descriptor)
-  );
+  const readExisting = (descriptor: ResourceDescriptor) => store.readResource(outputDir, descriptor);
+  const resolveExisting = createArtifactReferenceResolver(existing, readExisting);
+  const readExistingNamedValue = createNamedValueReader(resolveExisting, readExisting);
   const candidates = new Map<string, ResourceDescriptor>();
   let wave: ArtifactLocation[] = existing.filter(isSelected).map((descriptor) => ({ descriptor, dir: outputDir }));
   while (wave.length > 0) {
     // An artifact that can't be scanned contributes no candidates, which only keeps more.
-    const { references } = await scanAll(store, wave);
+    const { references } = await scanAll(store, wave, readExistingNamedValue);
     wave = [];
     for (const reference of references) {
       const target = await resolveExisting(reference);
@@ -117,10 +120,10 @@ export async function findStaleDependencies(
   // What is left after the commit: everything staged, and every existing
   // artifact that --remove-stale keeps. A candidate anything left references
   // is still needed, and so is whatever that candidate references.
-  const resolveRemaining = createArtifactReferenceResolver(
-    [...staged, ...kept],
-    (descriptor) => store.readResource(stagedKeys.has(key(descriptor)) ? stagingDir : outputDir, descriptor)
-  );
+  const readRemaining = (descriptor: ResourceDescriptor) =>
+    store.readResource(stagedKeys.has(key(descriptor)) ? stagingDir : outputDir, descriptor);
+  const resolveRemaining = createArtifactReferenceResolver([...staged, ...kept], readRemaining);
+  const readRemainingNamedValue = createNamedValueReader(resolveRemaining, readRemaining);
   const stale = new Map(candidates);
   const referrers: ArtifactLocation[] = [
     ...staged.map((descriptor) => ({ descriptor, dir: stagingDir })),
@@ -140,7 +143,7 @@ export async function findStaleDependencies(
         }
         let references: ResourceDescriptor[];
         try {
-          references = await scanArtifactReferences(store, dir, descriptor);
+          references = await scanArtifactReferences(store, dir, descriptor, readRemainingNamedValue);
         } catch (error) {
           logger.warn(`Unable to scan ${buildResourceLabel(descriptor)} for references: ${String(error)}`);
           failed.push(descriptor);
@@ -153,7 +156,7 @@ export async function findStaleDependencies(
           }
         }
       }),
-      SCAN_CONCURRENCY
+      REFERENCE_SCAN_CONCURRENCY
     );
     if (failed.length > 0) {
       logger.warn('Keeping every pulled-in dependency, since not every artifact could be checked for references');

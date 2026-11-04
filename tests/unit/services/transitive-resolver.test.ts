@@ -13,6 +13,8 @@ import {
   findSubscriptionTargets,
   scanArtifactReferences,
   findAssociationDependencies,
+  scanNamedValueTargets,
+  createNamedValueReader,
 } from '../../../src/services/transitive-resolver.js';
 
 describe('transitive-resolver', () => {
@@ -449,6 +451,113 @@ describe('transitive-resolver', () => {
         { name: 'developers', scope: 'workspace' },
         { name: 'administrators', scope: 'service' },
       ])).toEqual([{ type: ResourceType.Group, nameParts: ['developers'], workspace: 'team-a' }]);
+    });
+
+    describe('policy attributes set to a named value (#331)', () => {
+      const POLICY = '<set-backend-service backend-id="{{Backend_Id}}" />';
+      const namedValue = (properties: Record<string, unknown>, name = 'backend-id', workspace?: string) => ({
+        descriptor: { type: ResourceType.NamedValue, nameParts: [name], workspace },
+        json: { properties },
+      });
+
+      it('should read each named value once, however many policies set attributes to it', async () => {
+        const descriptor = { type: ResourceType.NamedValue, nameParts: ['backend-id'] };
+        const readResource = vi.fn(async () => ({ properties: { value: 'function-backend' } }));
+        const read = createNamedValueReader(async () => descriptor, readResource);
+
+        const results = await Promise.all([read(descriptor), read(descriptor), read({ ...descriptor, nameParts: ['BACKEND-ID'] })]);
+
+        expect(results.map((result) => result?.json)).toEqual(Array(3).fill({ properties: { value: 'function-backend' } }));
+        expect(readResource).toHaveBeenCalledTimes(1);
+      });
+
+      it('should find attributes whose whole value is a named value reference', () => {
+        expect(scanNamedValueTargets(
+          '<set-backend-service backend-id=" {{ Backend_Id }} " />' +
+          '<llm-content-safety backend-id="{{safety}}" />' +
+          '<include-fragment fragment-id="{{fragment}}" />' +
+          '<set-backend-service backend-id="prefix-{{suffix}}" />' +
+          '<!-- <set-backend-service backend-id="{{commented}}" /> -->'
+        )).toEqual([
+          { type: ResourceType.Backend, namedValue: 'Backend_Id' },
+          { type: ResourceType.Backend, namedValue: 'safety' },
+        ]);
+      });
+
+      it("should follow the named value's value to the resource it names, matching the display name", () => {
+        const deps = findTransitiveDependencies(new Map([['p', POLICY]]), new Map(), undefined, [
+          namedValue({ displayName: 'backend_id', value: ' function-backend ' }),
+        ]);
+
+        expect(deps).toContainEqual({ type: ResourceType.Backend, nameParts: ['function-backend'], workspace: undefined });
+      });
+
+      it('should fall back to the resource name, and let a display name match win', () => {
+        const byName = findTransitiveDependencies(new Map([['p', POLICY]]), new Map(), undefined, [
+          namedValue({ displayName: 'Other', value: 'by-name' }, 'Backend_Id'),
+        ]);
+        const byDisplayName = findTransitiveDependencies(new Map([['p', POLICY]]), new Map(), undefined, [
+          namedValue({ displayName: 'Other', value: 'by-name' }, 'Backend_Id'),
+          namedValue({ displayName: 'Backend_Id', value: 'by-display-name' }, 'nv-1'),
+        ]);
+
+        expect(byName).toContainEqual({ type: ResourceType.Backend, nameParts: ['by-name'], workspace: undefined });
+        expect(byDisplayName.filter((dep) => dep.type === ResourceType.Backend)).toEqual([
+          { type: ResourceType.Backend, nameParts: ['by-display-name'], workspace: undefined },
+        ]);
+      });
+
+      it.each([
+        ['a secret', { displayName: 'Backend_Id', value: '***REDACTED***', secret: true }],
+        ['a policy expression', { displayName: 'Backend_Id', value: '@(context.Variables["b"])' }],
+        ['a nested reference', { displayName: 'Backend_Id', value: '{{other}}' }],
+      ])('should not follow %s named value', (_kind, properties) => {
+        const deps = findTransitiveDependencies(new Map([['p', POLICY]]), new Map(), undefined, [namedValue(properties)]);
+
+        expect(deps.filter((dep) => dep.type === ResourceType.Backend)).toEqual([]);
+      });
+
+      it("should only match a named value in the policy's own scope", () => {
+        const deps = findTransitiveDependencies(new Map([['p', POLICY]]), new Map(), 'team-a', [
+          namedValue({ displayName: 'Backend_Id', value: 'service-backend' }),
+          namedValue({ displayName: 'Backend_Id', value: 'ws-backend' }, 'backend-id', 'team-a'),
+        ]);
+
+        expect(deps.filter((dep) => dep.type === ResourceType.Backend)).toEqual([
+          { type: ResourceType.Backend, nameParts: ['ws-backend'], workspace: 'team-a' },
+        ]);
+      });
+
+      it('should follow one in a policy fragment', () => {
+        const deps = findTransitiveDependencies(new Map(), new Map(), undefined, [
+          { descriptor: { type: ResourceType.PolicyFragment, nameParts: ['route'] }, json: { properties: { value: POLICY } } },
+          namedValue({ displayName: 'Backend_Id', value: 'function-backend' }),
+        ]);
+
+        expect(deps).toContainEqual({ type: ResourceType.Backend, nameParts: ['function-backend'], workspace: undefined });
+      });
+
+      it('should read the named value when scanning an artifact, given a reader', async () => {
+        const store = {
+          readResource: vi.fn(),
+          readContent: vi.fn().mockResolvedValue({ content: POLICY, format: 'xml' }),
+          readAssociation: vi.fn(),
+        };
+        const readNamedValue = vi.fn().mockResolvedValue(
+          namedValue({ displayName: 'Backend_Id', value: 'ws-backend' }, 'backend-id', 'team-a')
+        );
+        const policy = { type: ResourceType.ApiPolicy, nameParts: ['orders'], workspace: 'team-a' };
+
+        const withReader = await scanArtifactReferences(store, '/source', policy, readNamedValue);
+        const withoutReader = await scanArtifactReferences(store, '/source', policy);
+
+        expect(readNamedValue).toHaveBeenCalledWith({ type: ResourceType.NamedValue, nameParts: ['Backend_Id'], workspace: 'team-a' });
+        expect(withReader).toEqual([
+          { type: ResourceType.NamedValue, nameParts: ['Backend_Id'], workspace: 'team-a' },
+          { type: ResourceType.Backend, nameParts: ['ws-backend'], workspace: 'team-a' },
+        ]);
+        expect(withoutReader).toEqual([{ type: ResourceType.NamedValue, nameParts: ['Backend_Id'], workspace: 'team-a' }]);
+      });
     });
 
     it("should read a product's group and tag links when scanning it for publish", async () => {

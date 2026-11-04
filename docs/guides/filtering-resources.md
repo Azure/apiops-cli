@@ -335,7 +335,7 @@ When you filter resources, `apiops extract` and `apiops publish` automatically i
 | Backend pool | Its member backends |
 | Product | The groups and tags it is linked to |
 
-A reference written as a policy expression (`backend-id="@(...)"`) is not followed, because its value is only known at run time.
+A reference written as a policy expression (`backend-id="@(...)"`) is not followed, because its value is only known at run time. One set to a named value (`backend-id="{{backend-name}}"`) pulls in the named value and the resource its value names, in the same scope (except `<include-fragment fragment-id>`, where APIM doesn't substitute named values); publish reads the value with your `--overrides` applied, so each environment gets the resource its own value names. A named value that is published also brings the resource its value names whenever any policy or fragment in the source uses it that way, even one the filter leaves out: APIM checks every policy on the target that uses a named value when its value changes. A resource the filter excludes by name, or that isn't in the source, isn't published, so it has to exist on the target already. A secret or Key Vault named value's value isn't known, so the resource it names isn't pulled in; add that resource to the filter.
 
 A `{{...}}` reference, in a policy or in credentials, names a named value by its display name, as APIM does; when no named value has that display name, it is read as a resource name. The `namedValues` list and its exclusions (`'!name'`) use the resource name, which can differ from the display name. References inside XML comments are ignored, and so is a `{{...}}` inside a `<set-body template="liquid">` body, which is Liquid output, not a named value.
 
