@@ -16,6 +16,7 @@ import { logger } from '../lib/logger.js';
 import { isWorkspaceScope } from '../lib/workspace-link.js';
 import { USER_AGENT } from '../lib/user-agent.js';
 import { formatDuration } from '../lib/format-duration.js';
+import { validateServicePreFlight, PreFlightServiceKind } from './preflight.js';
 import { recordRetry, withRetryResource } from '../lib/retry-tracker.js';
 
 /**
@@ -43,6 +44,13 @@ export class HttpError extends Error {
 export function isLinkAlreadyExistsError(error: unknown): boolean {
   return error instanceof HttpError && error.status === 409;
 }
+
+/** Pre-flight wording for APIM services. */
+const APIM_PREFLIGHT_KIND: PreFlightServiceKind = {
+  label: 'APIM service',
+  instance: 'APIM instance',
+  roleTarget: 'the APIM resource',
+};
 
 /** Returns true when APIM reports that an association's referenced API/group is absent. */
 export function isAssociationReferenceNotFoundError(error: unknown): boolean {
@@ -137,9 +145,6 @@ export class ApimClient implements IApimClient {
     'management.usgovcloudapi.net',
     'management.microsoftazure.de',
   ];
-  /** Stable ARM API version for Resource Group existence checks */
-  private static readonly RESOURCE_GROUP_API_VERSION = '2021-04-01';
-
   /**
    * @param authScope OAuth2 scope for ARM token requests.
    *   Defaults to the Azure public cloud scope.
@@ -874,78 +879,9 @@ export class ApimClient implements IApimClient {
   }
 
   async validatePreFlight(context: ApimServiceContext): Promise<void> {
-    // Check resource group exists. This check only exists to give a clearer
-    // error for a missing resource group; publish itself needs no access to the
-    // resource group. A principal scoped to the APIM service only (no Reader on
-    // the resource group) gets 403 here, so skip the check and let the service
-    // check below decide.
-    const armEndpoint = new URL(context.baseUrl).origin;
-    const rgUrl = `${armEndpoint}/subscriptions/${encodeURIComponent(context.subscriptionId)}/resourceGroups/${encodeURIComponent(context.resourceGroup)}?api-version=${ApimClient.RESOURCE_GROUP_API_VERSION}`;
-    let rgResponse: Response | undefined;
-    try {
-      rgResponse = await this.request(rgUrl, { method: 'GET' });
-    } catch (error) {
-      if (error instanceof HttpError && error.status === 403) {
-        logger.debug(
-          `No permission to read resource group '${context.resourceGroup}' (HTTP 403) — ` +
-          `skipping resource group pre-flight check and checking the APIM service directly.`
-        );
-      } else {
-        this.throwPreFlightHttpError(error, `resource group '${context.resourceGroup}'`, `the subscription or resource group`);
-      }
-    }
-    if (rgResponse?.status === 404) {
-      throw new Error(
-        `Resource group '${context.resourceGroup}' not found in subscription '${context.subscriptionId}'. ` +
-        `Ensure the resource group exists before publishing.`
-      );
-    }
-
-    // Check APIM service instance exists
-    const apimUrl = `${context.baseUrl}?api-version=${context.apiVersion}`;
-    let apimResponse: Response;
-    try {
-      apimResponse = await this.request(apimUrl, { method: 'GET' });
-    } catch (error) {
-      this.throwPreFlightHttpError(error, `APIM service '${context.serviceName}'`, `the APIM resource`);
-    }
-    if (apimResponse.status === 404) {
-      if (!rgResponse) {
-        // The resource group check was skipped, so a 404 here can also mean
-        // the resource group (or subscription) is wrong.
-        throw new Error(
-          `APIM service '${context.serviceName}' not found in resource group '${context.resourceGroup}' ` +
-          `of subscription '${context.subscriptionId}'. ` +
-          `Ensure the subscription, resource group and APIM service name are correct and that the APIM instance exists before publishing.`
-        );
-      }
-      throw new Error(
-        `APIM service '${context.serviceName}' not found in resource group '${context.resourceGroup}'. ` +
-        `Ensure the APIM instance exists before publishing.`
-      );
-    }
-  }
-
-  /**
-   * Rethrows HttpError 401/403 responses from pre-flight checks as actionable errors.
-   * Non-HTTP errors and other status codes are re-thrown unchanged.
-   */
-  private throwPreFlightHttpError(error: unknown, resourceLabel: string, roleTarget: string): never {
-    if (error instanceof HttpError && error.status === 403) {
-      throw new Error(
-        `Insufficient permissions to read ${resourceLabel}. ` +
-        `Ensure the service principal has at least Reader role on ${roleTarget}.`,
-        { cause: error }
-      );
-    }
-    if (error instanceof HttpError && error.status === 401) {
-      throw new Error(
-        `Authentication failed when checking ${resourceLabel}. ` +
-        `Verify that credentials are valid and the correct tenant/subscription is targeted.`,
-        { cause: error }
-      );
-    }
-    throw error as Error;
+    await validateServicePreFlight(context, APIM_PREFLIGHT_KIND, (url) =>
+      this.request(url, { method: 'GET' })
+    );
   }
 
   private detectSpecificationFormat(

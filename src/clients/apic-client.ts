@@ -20,6 +20,7 @@ import {
 } from '../lib/apic-uri.js';
 import { logger } from '../lib/logger.js';
 import { USER_AGENT } from '../lib/user-agent.js';
+import { validateServicePreFlight, PreFlightServiceKind } from './preflight.js';
 
 /** HTTP error carrying the response status code and optional ARM error code. */
 export class ApicHttpError extends Error {
@@ -37,6 +38,13 @@ export class ApicHttpError extends Error {
 const TERMINAL_SUCCESS = 'Succeeded';
 const TERMINAL_FAILURES = new Set(['Failed', 'Canceled']);
 
+/** Pre-flight wording for API Center services. */
+const APIC_PREFLIGHT_KIND: PreFlightServiceKind = {
+  label: 'API Center service',
+  instance: 'API Center service',
+  roleTarget: 'the API Center resource',
+};
+
 export class ApicClient implements IApicClient {
   private readonly credential: DefaultAzureCredential;
   private readonly authScope: string;
@@ -51,7 +59,6 @@ export class ApicClient implements IApicClient {
   private static readonly ASYNC_POLL_TIMEOUT_MS = 10 * 60 * 1000;
   /** Default interval between LRO polls when no Retry-After header is present. */
   private static readonly ASYNC_POLL_INTERVAL_MS = 5000;
-  private static readonly RESOURCE_GROUP_API_VERSION = '2021-04-01';
 
   constructor(authScope = 'https://management.azure.com/.default') {
     this.credential = new DefaultAzureCredential();
@@ -341,26 +348,9 @@ export class ApicClient implements IApicClient {
   }
 
   async validatePreFlight(context: ApicServiceContext): Promise<void> {
-    const cloudRoot = context.baseUrl.split('/subscriptions/')[0];
-    const rgUrl =
-      `${cloudRoot}/subscriptions/${encodeURIComponent(context.subscriptionId)}` +
-      `/resourceGroups/${encodeURIComponent(context.resourceGroup)}` +
-      `?api-version=${ApicClient.RESOURCE_GROUP_API_VERSION}`;
-    const rgResponse = await this.request(rgUrl, { method: 'GET' });
-    if (rgResponse.status === 404) {
-      throw new Error(
-        `Resource group "${context.resourceGroup}" not found in subscription ${context.subscriptionId}.`,
-      );
-    }
-
-    const serviceUrl = `${context.baseUrl}?api-version=${context.apiVersion}`;
-    const svcResponse = await this.request(serviceUrl, { method: 'GET' });
-    if (svcResponse.status === 404) {
-      throw new Error(
-        `API Center service "${context.serviceName}" not found in resource group ` +
-        `"${context.resourceGroup}". Create it (Bicep/ARM) before publishing.`,
-      );
-    }
+    await validateServicePreFlight(context, APIC_PREFLIGHT_KIND, (url) =>
+      this.request(url, { method: 'GET' }),
+    );
   }
 
   /**
