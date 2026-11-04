@@ -22,10 +22,12 @@ import {
   shouldIncludeResource,
 } from './filter-service.js';
 import {
+  apiDependencyResources,
+  collectPolicies,
   extractTransitiveDependencies,
   type TransitiveResourceArtifact,
 } from './transitive-extractor.js';
-import { findAssociationDependencies } from './transitive-resolver.js';
+import { readProductLinkDependencies } from './transitive-resolver.js';
 
 export { resolveWorkspaceFilter };
 
@@ -230,18 +232,8 @@ async function extractWorkspace(
             );
             const apiName = getNamePart(api.descriptor.nameParts, 0);
             apis.set(apiName, api.json);
-            // Diagnostics reference their logger.
-            for (const diagnostic of apiResult.diagnostics) {
-              if (diagnostic.status === 'success') {
-                resources.push({ descriptor: diagnostic.descriptor, json: diagnostic.json });
-              }
-            }
-            for (let index = 0; index < apiResult.policies.length; index++) {
-              const policy = apiResult.policies[index];
-              if (policy !== undefined) {
-                policies.set(`api:${apiName}:policy:${index}`, policy);
-              }
-            }
+            resources.push(...apiDependencyResources(apiResult));
+            collectPolicies(policies, 'api', apiName, apiResult.policies);
             resourceCount += apiResult.operations.length +
               apiResult.tags.length +
               apiResult.schemas.length;
@@ -263,12 +255,7 @@ async function extractWorkspace(
               outputDir, serviceFilter, workspaceName
             );
             const productName = getNamePart(product.descriptor.nameParts, 0);
-            for (let index = 0; index < productResult.policies.length; index++) {
-              const policy = productResult.policies[index];
-              if (policy !== undefined) {
-                policies.set(`product:${productName}:policy:${index}`, policy);
-              }
-            }
+            collectPolicies(policies, 'product', productName, productResult.policies);
             resourceCount++;
             errorCount += productResult.errorCount;
           } catch (error) {
@@ -339,10 +326,7 @@ async function extractWorkspace(
     // The groups and tags the extracted products link to.
     const linkedDependencies: ResourceDescriptor[] = [];
     for (const product of extractedProducts) {
-      for (const associationType of ['groups', 'tags'] as const) {
-        const entries = await store.readAssociation(outputDir, product.descriptor, associationType);
-        linkedDependencies.push(...findAssociationDependencies(product.descriptor, associationType, entries));
-      }
+      linkedDependencies.push(...await readProductLinkDependencies(store, outputDir, product.descriptor));
     }
     const transitiveResult = await extractTransitiveDependencies(
       client,

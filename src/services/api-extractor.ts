@@ -10,7 +10,7 @@
 import { IApimClient, ApiSpecDialect } from '../clients/iapim-client.js';
 import { IArtifactStore } from '../clients/iartifact-store.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
-import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
+import { ResourceType } from '../models/resource-types.js';
 import { FilterConfig } from '../models/config.js';
 import * as yaml from 'js-yaml';
 import { extractRootApiName, findApiSubFilter, shouldIncludeResource } from './filter-service.js';
@@ -20,7 +20,7 @@ import { logger } from '../lib/logger.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
 import { getNamePart } from '../lib/resource-path.js';
 import { normalizeWsdl } from '../lib/wsdl-normalizer.js';
-import { isWorkspaceScope, extractNameFromLink } from '../lib/workspace-link.js';
+import { isWorkspaceScope, listWorkspaceTagLinks } from '../lib/workspace-link.js';
 
 /**
  * `JSON.parse`'s reviver `context` argument and `JSON.rawJSON` are ES2024
@@ -820,58 +820,33 @@ export async function extractWorkspaceApiTags(
   workspace: string,
   onLink?: (descriptor: ResourceDescriptor, json: Record<string, unknown>) => void
 ): Promise<number> {
-  const linkProperty = RESOURCE_TYPE_METADATA[ResourceType.ApiTag].workspaceLinkIdProperty;
-  if (!linkProperty) {
-    return 0;
-  }
-
   let count = 0;
 
-  for (const tagName of extractedTagNames) {
-    // List apiLinks under this tag.
-    // Do NOT set workspace on this descriptor — context.baseUrl already includes
-    // the workspace prefix and buildArmUri would double it.
-    const tagDescriptor: ResourceDescriptor = {
-      type: ResourceType.Tag,
-      nameParts: [tagName],
+  for await (const { tagName, targetName: apiName } of listWorkspaceTagLinks(
+    client, context, extractedTagNames, ResourceType.ApiTag
+  )) {
+    // Only create ApiTag artifacts for APIs that were extracted
+    if (!extractedApiNames.has(apiName)) {
+      logger.debug(`Skipping apiLink for tag "${tagName}" → API "${apiName}" (API not extracted)`);
+      continue;
+    }
+
+    const apiTagDescriptor: ResourceDescriptor = {
+      type: ResourceType.ApiTag,
+      nameParts: [apiName, tagName],
+      workspace,
+    };
+    // ApiTag artifacts store a minimal tag information JSON
+    const tagJson: Record<string, unknown> = {
+      properties: {
+        displayName: tagName,
+      },
     };
 
-    try {
-      for await (const linkJson of client.listResources(context, ResourceType.ApiTag, tagDescriptor)) {
-        const apiName = extractNameFromLink(linkJson, linkProperty);
-        if (!apiName) {
-          throw new Error(`Failed to extract API name from tag "${tagName}" apiLink response`);
-        }
-
-        // Only create ApiTag artifacts for APIs that were extracted
-        if (!extractedApiNames.has(apiName)) {
-          logger.debug(`Skipping apiLink for tag "${tagName}" → API "${apiName}" (API not extracted)`);
-          continue;
-        }
-
-        // Write the ApiTag artifact
-        const apiTagDescriptor: ResourceDescriptor = {
-          type: ResourceType.ApiTag,
-          nameParts: [apiName, tagName],
-          workspace,
-        };
-
-        // ApiTag artifacts store a minimal tag information JSON
-        const tagJson: Record<string, unknown> = {
-          properties: {
-            displayName: tagName,
-          },
-        };
-
-        await store.writeResource(outputDir, apiTagDescriptor, tagJson);
-        logger.info(`Extracted workspace ApiTag: ${apiName}/tags/${tagName}`);
-        onLink?.(apiTagDescriptor, tagJson);
-        count++;
-      }
-    } catch (error) {
-      logger.warn(`Failed to list apiLinks for tag "${tagName}": ${(error as Error).message}`);
-      throw error;
-    }
+    await store.writeResource(outputDir, apiTagDescriptor, tagJson);
+    logger.info(`Extracted workspace ApiTag: ${apiName}/tags/${tagName}`);
+    onLink?.(apiTagDescriptor, tagJson);
+    count++;
   }
 
   return count;

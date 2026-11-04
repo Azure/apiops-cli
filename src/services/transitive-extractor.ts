@@ -11,12 +11,43 @@ import { logger } from '../lib/logger.js';
 import { runParallel } from '../lib/parallel-runner.js';
 import { redactSecrets } from './secret-redactor.js';
 import { findTransitiveDependencies } from './transitive-resolver.js';
+import type { ExtractedResource } from './resource-extractor.js';
 
 const DEFAULT_CONCURRENCY = 5;
 
 export interface TransitiveResourceArtifact {
   descriptor: ResourceDescriptor;
   json: Record<string, unknown>;
+}
+
+/**
+ * Add an API's or product's extracted policies to the policies scanned for
+ * dependencies, keyed `api:{name}:policy:{n}` / `product:{name}:policy:{n}`.
+ */
+export function collectPolicies(
+  collected: Map<string, string>,
+  owner: 'api' | 'product',
+  name: string,
+  policies: ReadonlyArray<string | undefined>
+): void {
+  policies.forEach((policy, index) => {
+    if (policy !== undefined) {
+      collected.set(`${owner}:${name}:policy:${index}`, policy);
+    }
+  });
+}
+
+/**
+ * The extracted API children that reference other resources: diagnostics
+ * (their logger) and tag links (the tag).
+ */
+export function apiDependencyResources(apiResult: {
+  diagnostics: ReadonlyArray<ExtractedResource>;
+  tags: ReadonlyArray<ExtractedResource>;
+}): TransitiveResourceArtifact[] {
+  return [...apiResult.diagnostics, ...apiResult.tags]
+    .filter((extracted) => extracted.status === 'success')
+    .map(({ descriptor, json }) => ({ descriptor, json }));
 }
 
 export interface TransitiveExtractionResult {

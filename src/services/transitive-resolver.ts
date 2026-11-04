@@ -9,11 +9,10 @@
  * Fixed-point expansion; --no-transitive bypass.
  */
 
-import { FilterConfig } from '../models/config.js';
 import { isBuiltInGroup, ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { AssociationEntry, ResourceDescriptor } from '../models/types.js';
 import type { IArtifactStore } from '../clients/iartifact-store.js';
-import { logger } from '../lib/logger.js';
+import { armNameAfter, armReferenceWorkspace } from '../lib/arm-id.js';
 import { getResourceDescriptorKey } from '../lib/resource-path.js';
 
 /**
@@ -156,7 +155,7 @@ export function scanApiVersionSetReference(
     return undefined;
   }
 
-  const name = extractResourceNameFromId(versionSetId, 'apiVersionSets');
+  const name = armNameAfter(versionSetId, 'apiVersionSets');
   if (!name) {
     return undefined;
   }
@@ -165,95 +164,6 @@ export function scanApiVersionSetReference(
     type: ResourceType.VersionSet,
     name,
   };
-}
-
-/**
- * Resolve transitive dependencies by expanding the extraction set
- * until no new dependencies are found (fixed-point).
- *
- * @param extractedPolicies - Map of descriptor key to policy XML content
- * @param extractedApis - Map of API name to API JSON (for version set refs)
- * @param currentFilter - Current filter config to expand
- * @returns Updated filter config with transitive dependencies included
- */
-export function resolveTransitiveDependencies(
-  extractedPolicies: Map<string, string>,
-  extractedApis: Map<string, Record<string, unknown>>,
-  currentFilter: FilterConfig
-): FilterConfig {
-  const expanded = { ...currentFilter };
-  let changed = true;
-  let iterations = 0;
-  const maxIterations = 10; // Safety limit
-
-  while (changed && iterations < maxIterations) {
-    changed = false;
-    iterations++;
-
-    // Scan all extracted policies for references
-    for (const [, policyXml] of extractedPolicies) {
-      const refs = scanPolicyReferences(policyXml);
-
-      for (const ref of refs) {
-        if (addToFilter(expanded, ref)) {
-          changed = true;
-        }
-      }
-    }
-
-    // Scan API information for version set references
-    for (const [, apiJson] of extractedApis) {
-      const versionSetRef = scanApiVersionSetReference(apiJson);
-      if (versionSetRef && addToFilter(expanded, versionSetRef)) {
-        changed = true;
-      }
-    }
-  }
-
-  if (iterations > 1) {
-    logger.debug(`Transitive resolution completed in ${iterations} iterations`);
-  }
-
-  return expanded;
-}
-
-/**
- * Add a transitive dependency to the filter config.
- * Returns true if the filter was actually modified (new entry added).
- */
-function addToFilter(
-  filter: FilterConfig,
-  dep: TransitiveDependency
-): boolean {
-  type StringArrayField = 'namedValues' | 'backends' | 'policyFragments' | 'versionSets';
-  const fieldMap: Partial<Record<ResourceType, StringArrayField>> = {
-    [ResourceType.NamedValue]: 'namedValues',
-    [ResourceType.Backend]: 'backends',
-    [ResourceType.PolicyFragment]: 'policyFragments',
-    [ResourceType.VersionSet]: 'versionSets',
-  };
-
-  const field = fieldMap[dep.type];
-  if (!field) {
-    return false;
-  }
-
-  // Get current array; if undefined, the type is not filtered so no need to add
-  const current = filter[field];
-  if (current === undefined) {
-    return false;
-  }
-
-  // Check if already included (case-insensitive)
-  const lowerName = dep.name.toLowerCase();
-  if (current.some((n: string) => n.toLowerCase() === lowerName)) {
-    return false;
-  }
-
-  // Add to filter
-  (filter[field] as string[]) = [...current, dep.name];
-  logger.debug(`Transitive: added ${dep.type} "${dep.name}" to filter`);
-  return true;
 }
 
 /**
@@ -293,7 +203,7 @@ export function findTransitiveDependencies(
     // makes the same assumption when it rebuilds the ID.
     if (descriptor.type === ResourceType.Diagnostic || descriptor.type === ResourceType.ApiDiagnostic) {
       const loggerId = properties?.loggerId;
-      const name = typeof loggerId === 'string' ? extractResourceNameFromId(loggerId, 'loggers') : undefined;
+      const name = typeof loggerId === 'string' ? armNameAfter(loggerId, 'loggers') : undefined;
       if (name) {
         dependencies.push({
           type: ResourceType.Logger,
@@ -329,12 +239,12 @@ export function findTransitiveDependencies(
       if (Array.isArray(services)) {
         for (const service of services) {
           if (isRecord(service) && typeof service.id === 'string') {
-            const name = extractResourceNameFromId(service.id, 'backends');
+            const name = armNameAfter(service.id, 'backends');
             if (name) {
               dependencies.push({
                 type: ResourceType.Backend,
                 nameParts: [name],
-                workspace: workspaceFromReference(service.id, descriptor.workspace),
+                workspace: armReferenceWorkspace(service.id, descriptor.workspace),
               });
             }
           }
@@ -397,6 +307,23 @@ export function associationTarget(
 }
 
 /**
+ * The groups and tags a product links to, read from its groups.json and
+ * tags.json association files.
+ */
+export async function readProductLinkDependencies(
+  store: Pick<IArtifactStore, 'readAssociation'>,
+  baseDir: string,
+  product: ResourceDescriptor
+): Promise<ResourceDescriptor[]> {
+  const dependencies: ResourceDescriptor[] = [];
+  for (const associationType of ['groups', 'tags'] as const) {
+    const entries = await store.readAssociation(baseDir, product, associationType);
+    dependencies.push(...findAssociationDependencies(product, associationType, entries));
+  }
+  return dependencies;
+}
+
+/**
  * Read intrinsic dependencies from one on-disk artifact.
  *
  * A product's group and tag links pull in those groups and tags. API,
@@ -440,10 +367,7 @@ export async function scanArtifactReferences(
   );
 
   if (descriptor.type === ResourceType.Product) {
-    for (const associationType of ['groups', 'tags'] as const) {
-      const entries = await store.readAssociation(sourceDir, descriptor, associationType);
-      references.push(...findAssociationDependencies(descriptor, associationType, entries));
-    }
+    references.push(...await readProductLinkDependencies(store, sourceDir, descriptor));
   }
 
   return deduplicateDescriptors(references);
@@ -469,45 +393,18 @@ export function findSubscriptionTargets(
       ['apis', ResourceType.Api],
       ['products', ResourceType.Product],
     ] as const) {
-      const name = extractResourceNameFromId(value, segment);
+      const name = armNameAfter(value, segment);
       if (name) {
         references.push({
           type,
           nameParts: [name],
-          workspace: workspaceFromReference(value, workspace),
+          workspace: armReferenceWorkspace(value, workspace),
         });
       }
     }
   }
 
   return deduplicateDescriptors(references);
-}
-
-function extractResourceNameFromId(value: string, segment: string): string | undefined {
-  const match = value.match(new RegExp(`(?:^|/)${segment}/([^/]+)(?:/|$)`, 'i'));
-  return match?.[1] ? decodeArmSegment(match[1]) : undefined;
-}
-
-function workspaceFromReference(value: string, fallback?: string): string | undefined {
-  const match = value.match(/\/workspaces\/([^/]+)/i);
-  if (match?.[1]) {
-    return decodeArmSegment(match[1]);
-  }
-
-  const isFullArmId =
-    /\/subscriptions\/[^/]+\/resourceGroups\/[^/]+\/providers\/Microsoft\.ApiManagement\/service\/[^/]+/i.test(
-      value
-    );
-  return isFullArmId ? undefined : fallback;
-}
-
-function decodeArmSegment(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch (error) {
-    logger.warn(`Unable to decode ARM resource ID segment; using the raw value: ${String(error)}`);
-    return value;
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

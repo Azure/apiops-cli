@@ -23,6 +23,7 @@ import { parseArmUri } from '../lib/resource-uri.js';
 import { isWorkspaceScope, buildLinkPayload } from '../lib/workspace-link.js';
 import { isLinkAlreadyExistsError } from '../clients/apim-client.js';
 import { mapDescriptor, toDeployedName } from './env-mapper.js';
+import { armNameAfter } from '../lib/arm-id.js';
 
 export type ProductAssociationPublicationPlan = AssociationPublicationPlan;
 
@@ -147,7 +148,7 @@ async function cleanupProductSubscriptions(
     if (
       typeof name !== 'string' ||
       typeof scope !== 'string' ||
-      getScopedProductName(scope)?.toLowerCase() !== productNameLower
+      armNameAfter(scope, 'products')?.toLowerCase() !== productNameLower
     ) {
       continue;
     }
@@ -167,16 +168,6 @@ async function cleanupProductSubscriptions(
 
   if (deleted > 0) {
     logger.info(`Deleted ${deleted} auto-created subscription(s) for product: ${productName}`);
-  }
-}
-
-function getScopedProductName(scope: string): string | undefined {
-  const segment = scope.match(/\/products\/([^/]+)\/?$/i)?.[1];
-  if (!segment) return undefined;
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return segment;
   }
 }
 

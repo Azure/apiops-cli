@@ -6,11 +6,9 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { ResourceType } from '../../../src/models/resource-types.js';
-import { FilterConfig } from '../../../src/models/config.js';
 import {
   scanPolicyReferences,
   scanApiVersionSetReference,
-  resolveTransitiveDependencies,
   findTransitiveDependencies,
   findSubscriptionTargets,
   scanArtifactReferences,
@@ -120,53 +118,6 @@ describe('transitive-resolver', () => {
         type: ResourceType.VersionSet,
         name: 'version%',
       });
-    });
-  });
-
-  describe('resolveTransitiveDependencies', () => {
-    it('should expand filter with discovered dependencies', () => {
-      const policies = new Map<string, string>();
-      policies.set('service-policy', '<value>{{my-secret}}</value>');
-
-      const apis = new Map<string, Record<string, unknown>>();
-
-      const filter: FilterConfig = {
-        apis: ['my-api'],
-        namedValues: [], // Start with empty — should be expanded
-      };
-
-      const expanded = resolveTransitiveDependencies(policies, apis, filter);
-      expect(expanded.namedValues).toContain('my-secret');
-    });
-
-    it('should not add to undefined filter fields (unfiltered types)', () => {
-      const policies = new Map<string, string>();
-      policies.set('policy', '<value>{{my-secret}}</value>');
-
-      const apis = new Map<string, Record<string, unknown>>();
-
-      // namedValues is undefined = all named values included
-      const filter: FilterConfig = {
-        apis: ['my-api'],
-      };
-
-      const expanded = resolveTransitiveDependencies(policies, apis, filter);
-      // Should remain undefined (no need to add — all are already included)
-      expect(expanded.namedValues).toBeUndefined();
-    });
-
-    it('should not duplicate existing entries', () => {
-      const policies = new Map<string, string>();
-      policies.set('policy', '<value>{{existing-secret}}</value>');
-
-      const apis = new Map<string, Record<string, unknown>>();
-
-      const filter: FilterConfig = {
-        namedValues: ['existing-secret'],
-      };
-
-      const expanded = resolveTransitiveDependencies(policies, apis, filter);
-      expect(expanded.namedValues).toEqual(['existing-secret']);
     });
   });
 
@@ -516,5 +467,6 @@ describe('transitive-resolver', () => {
         { type: ResourceType.Tag, nameParts: ['public'], workspace: undefined },
       ]);
     });
+
   });
 });

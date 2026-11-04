@@ -11,7 +11,11 @@
  * these link responses and to build link payloads for publishing.
  */
 
-import { ApimServiceContext, AssociationScope } from '../models/types.js';
+import type { IApimClient } from '../clients/iapim-client.js';
+import { ApimServiceContext, AssociationScope, ResourceDescriptor } from '../models/types.js';
+import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
+import { armLastName, armScope } from './arm-id.js';
+import { logger } from './logger.js';
 
 /**
  * Determines whether an ARM resource ID refers to a workspace-scoped or a
@@ -22,9 +26,7 @@ import { ApimServiceContext, AssociationScope } from '../models/types.js';
  * IDs do not (e.g. `.../service/apim/groups/administrators`).
  */
 export function extractScopeFromLinkId(armId: string): AssociationScope {
-  return /\/Microsoft\.ApiManagement\/service\/[^/]+\/workspaces\/[^/]+/i.test(armId)
-    ? 'workspace'
-    : 'service';
+  return armScope(armId);
 }
 
 /**
@@ -82,12 +84,7 @@ export function extractNameFromLink(
   }
 
   // ARM resource IDs look like: /subscriptions/.../apis/myApiName
-  // Extract the last segment as the resource name
-  const segments = armId.split('/');
-  const lastSegment = segments[segments.length - 1];
-  return lastSegment && lastSegment.length > 0
-    ? decodeURIComponent(lastSegment)
-    : undefined;
+  return armLastName(armId);
 }
 
 /**
@@ -176,4 +173,51 @@ export function buildLinkPayload(
       [linkIdProperty]: resourceId,
     },
   };
+}
+
+/**
+ * In a workspace, API and product tags are links listed under each tag
+ * (`tags/{tag}/apiLinks`, `tags/{tag}/productLinks`). Yield each tag and the
+ * name of the API or product it links to. A link without a readable target,
+ * or a failed listing, throws.
+ *
+ * @param context - Workspace-scoped context (its baseUrl includes the workspace)
+ * @param tagNames - Tags to list links for
+ * @param linkType - ApiTag (apiLinks) or ProductTag (productLinks)
+ */
+export async function* listWorkspaceTagLinks(
+  client: IApimClient,
+  context: ApimServiceContext,
+  tagNames: Iterable<string>,
+  linkType: ResourceType.ApiTag | ResourceType.ProductTag
+): AsyncGenerator<{ tagName: string; targetName: string }> {
+  const linkProperty = RESOURCE_TYPE_METADATA[linkType].workspaceLinkIdProperty;
+  if (!linkProperty) {
+    return;
+  }
+  const [targetNoun, linkName] = linkType === ResourceType.ApiTag
+    ? ['API', 'apiLink']
+    : ['product', 'productLink'];
+
+  for (const tagName of tagNames) {
+    // Do NOT set workspace on this descriptor — context.baseUrl already
+    // includes the workspace prefix and buildArmUri would double it.
+    const tagDescriptor: ResourceDescriptor = { type: ResourceType.Tag, nameParts: [tagName] };
+    const targets: string[] = [];
+    try {
+      for await (const linkJson of client.listResources(context, linkType, tagDescriptor)) {
+        const targetName = extractNameFromLink(linkJson, linkProperty);
+        if (!targetName) {
+          throw new Error(`Failed to extract ${targetNoun} name from tag "${tagName}" ${linkName} response`);
+        }
+        targets.push(targetName);
+      }
+    } catch (error) {
+      logger.warn(`Failed to list ${linkName}s for tag "${tagName}": ${(error as Error).message}`);
+      throw error;
+    }
+    for (const targetName of targets) {
+      yield { tagName, targetName };
+    }
+  }
 }

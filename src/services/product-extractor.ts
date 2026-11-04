@@ -14,7 +14,7 @@ import { extractResourceName } from './resource-extractor.js';
 import { redactAndWarnPolicySecrets } from './secret-redactor.js';
 import { logger } from '../lib/logger.js';
 import { getNamePart } from '../lib/resource-path.js';
-import { isWorkspaceScope, extractNameFromLink, extractLinkTarget } from '../lib/workspace-link.js';
+import { isWorkspaceScope, extractLinkTarget, listWorkspaceTagLinks } from '../lib/workspace-link.js';
 import { isExplicitlyExcluded } from './filter-service.js';
 import { associationTarget } from './transitive-resolver.js';
 
@@ -322,38 +322,15 @@ export async function extractWorkspaceProductTags(
   outputDir: string,
   _workspace: string
 ): Promise<number> {
-  const linkProperty = RESOURCE_TYPE_METADATA[ResourceType.ProductTag].workspaceLinkIdProperty;
-  if (!linkProperty) {
-    return 0;
-  }
-
   // Build a map of product name → tags for that product
   const productTagsMap = new Map<string, string[]>();
-
-  for (const tagName of extractedTagNames) {
-    // Do NOT set workspace on this descriptor — context.baseUrl already includes
-    // the workspace prefix and buildArmUri would double it.
-    const tagDescriptor: ResourceDescriptor = {
-      type: ResourceType.Tag,
-      nameParts: [tagName],
-    };
-
-    try {
-      for await (const linkJson of client.listResources(context, ResourceType.ProductTag, tagDescriptor)) {
-        const productName = extractNameFromLink(linkJson, linkProperty);
-        if (!productName) {
-          throw new Error(`Failed to extract product name from tag "${tagName}" productLink response`);
-        }
-
-        if (!productTagsMap.has(productName)) {
-          productTagsMap.set(productName, []);
-        }
-        productTagsMap.get(productName)!.push(tagName);
-      }
-    } catch (error) {
-      logger.warn(`Failed to list productLinks for tag "${tagName}": ${(error as Error).message}`);
-      throw error;
+  for await (const { tagName, targetName: productName } of listWorkspaceTagLinks(
+    client, context, extractedTagNames, ResourceType.ProductTag
+  )) {
+    if (!productTagsMap.has(productName)) {
+      productTagsMap.set(productName, []);
     }
+    productTagsMap.get(productName)!.push(tagName);
   }
 
   // Write tags.json for each product that has tag associations

@@ -26,8 +26,12 @@ import { isSingletonType, isChildType } from '../lib/resource-path.js';
 import { extractApiResources, ApiExtractionResult } from './api-extractor.js';
 import { extractProductResources, ProductExtractionResult } from './product-extractor.js';
 import { extractWorkspaces, WorkspaceExtractionResult } from './workspace-extractor.js';
-import { extractTransitiveDependencies } from './transitive-extractor.js';
-import { findAssociationDependencies } from './transitive-resolver.js';
+import {
+  apiDependencyResources,
+  collectPolicies,
+  extractTransitiveDependencies,
+} from './transitive-extractor.js';
+import { readProductLinkDependencies } from './transitive-resolver.js';
 import { redactAndWarnPolicySecrets } from './secret-redactor.js';
 import { isExplicitlyExcluded, shouldIncludeResource } from './filter-service.js';
 import { logger } from '../lib/logger.js';
@@ -288,13 +292,7 @@ async function extractApiSubResources(
       result.totalExtracted += subCount;
 
       // Collect policies for transitive resolution
-      for (let pi = 0; pi < apiResult.policies.length; pi++) {
-        const policyContent = apiResult.policies[pi];
-        if (policyContent !== undefined) {
-          const key = `api:${apiName}:policy:${pi}`;
-          result.collectedPolicies.set(key, policyContent);
-        }
-      }
+      collectPolicies(result.collectedPolicies, 'api', apiName, apiResult.policies);
 
       // Track sub-resource descriptors
       for (const sub of [
@@ -385,13 +383,7 @@ async function extractProductSubResources(
       result.totalExtracted += subCount;
 
       // Collect policies for transitive resolution
-      for (let pi = 0; pi < prodResult.policies.length; pi++) {
-        const policyContent = prodResult.policies[pi];
-        if (policyContent !== undefined) {
-          const key = `product:${productName}:policy:${pi}`;
-          result.collectedPolicies.set(key, policyContent);
-        }
-      }
+      collectPolicies(result.collectedPolicies, 'product', productName, prodResult.policies);
     }
   }
 }
@@ -540,17 +532,14 @@ async function resolveAndExtractTransitive(
   }
 
   // Top-level resources, plus the API children that reference other
-  // resources: diagnostics (their logger) and tag links (the tag).
-  const extractedResources = [
-    ...result.typeResults.flatMap((typeResult) => typeResult.extracted),
-    ...result.apiResults.flatMap((apiResult) => [...apiResult.diagnostics, ...apiResult.tags]),
+  // resources (diagnostics and tag links).
+  const resources = [
+    ...result.typeResults
+      .flatMap((typeResult) => typeResult.extracted)
+      .filter((extracted) => extracted.status === 'success')
+      .map(({ descriptor, json }) => ({ descriptor, json })),
+    ...result.apiResults.flatMap(apiDependencyResources),
   ];
-  const resources = extractedResources
-    .filter((extracted) => extracted.status === 'success')
-    .map((extracted) => ({
-      descriptor: extracted.descriptor,
-      json: extracted.json,
-    }));
   const linkedDependencies = await findProductLinkDependencies(store, outputDir, result);
   const transitiveResult = await extractTransitiveDependencies(
     client,
@@ -584,10 +573,7 @@ async function findProductLinkDependencies(
   const dependencies: ResourceDescriptor[] = [];
   for (const typeResult of result.typeResults.filter((r) => r.type === ResourceType.Product)) {
     for (const product of typeResult.extracted.filter((r) => r.status === 'success')) {
-      for (const associationType of ['groups', 'tags'] as const) {
-        const entries = await store.readAssociation(outputDir, product.descriptor, associationType);
-        dependencies.push(...findAssociationDependencies(product.descriptor, associationType, entries));
-      }
+      dependencies.push(...await readProductLinkDependencies(store, outputDir, product.descriptor));
     }
   }
   return dependencies;

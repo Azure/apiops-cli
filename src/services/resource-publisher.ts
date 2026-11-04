@@ -36,6 +36,7 @@ import { mapDescriptor, toDeployedName } from './env-mapper.js';
 import type { EnvMapping } from './env-mapper.js';
 import { rewritePolicyRefs } from './policy-ref-rewriter.js';
 import type { KnownArtifactSets } from '../models/config.js';
+import { armLastName, armNameAfter, armScope } from '../lib/arm-id.js';
 
 export type { KnownArtifactSets } from '../models/config.js';
 
@@ -880,9 +881,9 @@ export async function resolveAssociationDeleteDescriptor(
     if (
       typeof targetId !== 'string' ||
       typeof linkName !== 'string' ||
-      getArmResourceName(targetId).toLowerCase() !== expectedTarget.toLowerCase() ||
+      (armLastName(targetId) ?? '').toLowerCase() !== expectedTarget.toLowerCase() ||
       (descriptor.targetScope !== undefined &&
-        getAssociationTargetScope(targetId) !== descriptor.targetScope)
+        armScope(targetId) !== descriptor.targetScope)
     ) {
       continue;
     }
@@ -897,20 +898,7 @@ export async function resolveAssociationDeleteDescriptor(
     };
   }
 
-  function getAssociationTargetScope(resourceId: string): 'service' | 'workspace' {
-    return /\/workspaces\/[^/]+\//i.test(resourceId) ? 'workspace' : 'service';
-  }
-
   return undefined;
-}
-
-function getArmResourceName(resourceId: string): string {
-  const segment = resourceId.split('/').filter(Boolean).at(-1) ?? '';
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return segment;
-  }
 }
 
 export async function evaluateResourceEligibility(
@@ -1353,7 +1341,7 @@ export function normalizeDiagnosticLoggerId(
     return json;
   }
 
-  const loggerName = getArmResourceName(loggerId);
+  const loggerName = armLastName(loggerId);
   if (!loggerName) {
     return json;
   }
@@ -1406,7 +1394,7 @@ export function normalizeApiVersionSetId(
     return json;
   }
 
-  const versionSetName = getArmResourceName(versionSetId);
+  const versionSetName = armLastName(versionSetId);
   if (!versionSetName) {
     return json;
   }
@@ -1453,19 +1441,15 @@ function normalizeBackendPoolServices(
       return typedService;
     }
 
-    const workspaceMatch = id.match(/\/workspaces\/([^/]+)\/backends\/([^/]+)$/i);
-    const serviceMatch = id.match(/\/backends\/([^/]+)$/i);
-    const backendName = getArmResourceName(id);
-    if (!backendName || (!workspaceMatch && !serviceMatch)) {
+    const backendName = armNameAfter(id, 'backends');
+    if (!backendName) {
       return typedService;
     }
 
     const deployedBackend = envMapping
       ? toDeployedName(backendName, ResourceType.Backend, envMapping)
       : backendName;
-    const sourceWorkspace = workspaceMatch?.[1]
-      ? getArmResourceName(`/workspaces/${workspaceMatch[1]}`)
-      : undefined;
+    const sourceWorkspace = armNameAfter(id, 'workspaces');
     const deployedWorkspace = sourceWorkspace
       ? envMapping
         ? toDeployedName(sourceWorkspace, ResourceType.Workspace, envMapping)
