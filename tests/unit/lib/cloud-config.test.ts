@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import {
   getCloudConfig,
   buildArmBaseUrl,
+  getArmHosts,
 } from '../../../src/lib/cloud-config.js';
 
 describe('getCloudConfig', () => {
@@ -145,5 +146,16 @@ describe('buildArmBaseUrl', () => {
     expect(url).toMatch(
       /\/subscriptions\/[^/]+\/resourceGroups\/[^/]+\/providers\/Microsoft\.ApiManagement\/service\/[^/]+$/,
     );
+  });
+});
+
+describe('getArmHosts', () => {
+  it('should return the ARM host name of every known cloud', () => {
+    expect(getArmHosts()).toEqual([
+      'management.azure.com',
+      'management.chinacloudapi.cn',
+      'management.usgovcloudapi.net',
+      'management.microsoftazure.de',
+    ]);
   });
 });

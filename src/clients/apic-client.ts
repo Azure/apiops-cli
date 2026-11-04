@@ -20,6 +20,7 @@ import {
 } from '../lib/apic-uri.js';
 import { logger } from '../lib/logger.js';
 import { USER_AGENT } from '../lib/user-agent.js';
+import { getArmHosts } from '../lib/cloud-config.js';
 import { validateServicePreFlight, PreFlightServiceKind } from './preflight.js';
 
 /** HTTP error carrying the response status code and optional ARM error code. */
@@ -34,9 +35,43 @@ export class ApicHttpError extends Error {
   }
 }
 
-/** Terminal states for an ARM long-running operation. */
-const TERMINAL_SUCCESS = 'Succeeded';
-const TERMINAL_FAILURES = new Set(['Failed', 'Canceled']);
+/** Terminal states for an ARM long-running operation (compared lower-case). */
+const TERMINAL_SUCCESS = 'succeeded';
+const TERMINAL_FAILURES = new Set(['failed', 'canceled', 'cancelled']);
+
+/**
+ * Parse a `Retry-After` header (delay-seconds or HTTP-date) into milliseconds.
+ * Returns undefined when the header is absent or unparsable.
+ */
+function parseRetryAfterMs(value: string | null): number | undefined {
+  if (value === null) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) {
+    return Number(trimmed) * 1000;
+  }
+  const date = Date.parse(trimmed);
+  return Number.isNaN(date) ? undefined : Math.max(0, date - Date.now());
+}
+
+/**
+ * True when `url` is an HTTPS URL on a known ARM host (or a subdomain of one),
+ * i.e. safe to send the ARM bearer token to.
+ */
+function isArmUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      parsed.protocol === 'https:' &&
+      getArmHosts().some(
+        (host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`),
+      )
+    );
+  } catch {
+    return false;
+  }
+}
 
 /** Pre-flight wording for API Center services. */
 const APIC_PREFLIGHT_KIND: PreFlightServiceKind = {
@@ -113,6 +148,8 @@ export class ApicClient implements IApicClient {
     const headers = new Headers(options.headers);
     if (skipAuth) {
       headers.delete('Authorization');
+      headers.delete('Proxy-Authorization');
+      headers.delete('x-ms-authorization-auxiliary');
     } else {
       headers.set('Authorization', `Bearer ${await this.getToken()}`);
       headers.set('Content-Type', 'application/json');
@@ -129,11 +166,12 @@ export class ApicClient implements IApicClient {
         logger.debug(`HTTP ${method} ${logUrl}`);
         const response = await fetch(url, { ...options, headers });
 
-        if (response.status === 429) {
-          const retryAfter = response.headers.get('Retry-After');
-          const delaySeconds = retryAfter ? parseInt(retryAfter, 10) : Math.pow(2, attempt);
-          logger.warn(`Rate limited (429), retrying after ${delaySeconds}s`);
-          await this.delay(delaySeconds * 1000);
+        // On the final attempt a 429 falls through and is thrown with its status.
+        if (response.status === 429 && attempt < ApicClient.MAX_RETRIES) {
+          const delayMs =
+            parseRetryAfterMs(response.headers.get('Retry-After')) ?? Math.pow(2, attempt) * 1000;
+          logger.warn(`Rate limited (429), retrying after ${delayMs / 1000}s`);
+          await this.delay(delayMs);
           attempt++;
           continue;
         }
@@ -219,6 +257,12 @@ export class ApicClient implements IApicClient {
         }
       }
       url = data.nextLink ?? '';
+      // nextLink comes from the response; never send the token anywhere but ARM.
+      if (url && !isArmUrl(url)) {
+        throw new Error(
+          `Refusing to follow nextLink to a non-ARM URL: ${url.split('?')[0]}`,
+        );
+      }
     }
   }
 
@@ -246,13 +290,13 @@ export class ApicClient implements IApicClient {
       body: JSON.stringify(payload),
     });
 
-    if (response.status === 201 || response.status === 202) {
-      const asyncUrl = this.asyncOperationUrl(response);
-      if (asyncUrl) {
-        await this.pollAsyncOperation(asyncUrl, buildApicLabel(descriptor));
-        const settled = await this.getResource(context, descriptor);
-        return settled ?? {};
-      }
+    // Poll any async-operation header, including updates that return 200 while
+    // provisioning continues. A Location header on a 200 is not a polling URL.
+    const asyncUrl = this.asyncOperationUrl(response, response.status !== 200);
+    if (asyncUrl) {
+      await this.pollAsyncOperation(asyncUrl, buildApicLabel(descriptor));
+      const settled = await this.getResource(context, descriptor);
+      return settled ?? {};
     }
 
     const text = await response.text();
@@ -269,10 +313,10 @@ export class ApicClient implements IApicClient {
       return false;
     }
     if (response.status === 202) {
-      const asyncUrl = this.asyncOperationUrl(response);
-      if (asyncUrl) {
-        await this.pollAsyncOperation(asyncUrl, buildApicLabel(descriptor), true);
-      }
+      // Without a (valid) polling header, poll the resource itself until it
+      // is gone: 404 is success and a Failed provisioningState fails.
+      const asyncUrl = this.asyncOperationUrl(response) ?? url;
+      await this.pollAsyncOperation(asyncUrl, buildApicLabel(descriptor), true);
     }
     return true;
   }
@@ -382,13 +426,25 @@ export class ApicClient implements IApicClient {
     return `${base}/${action}?${query}`;
   }
 
-  /** Extract the LRO polling URL from response headers, if any. */
-  private asyncOperationUrl(response: Response): string | undefined {
-    return (
+  /**
+   * Extract the LRO polling URL from response headers, if any. Prefers
+   * Azure-AsyncOperation, then Operation-Location, then (when
+   * `includeLocation`) Location. URLs that are not HTTPS on a known ARM host
+   * are ignored so the bearer token is never sent elsewhere.
+   */
+  private asyncOperationUrl(response: Response, includeLocation = true): string | undefined {
+    const asyncUrl =
       response.headers.get('Azure-AsyncOperation') ??
-      response.headers.get('Location') ??
-      undefined
-    );
+      response.headers.get('Operation-Location') ??
+      (includeLocation ? response.headers.get('Location') : null);
+    if (!asyncUrl) {
+      return undefined;
+    }
+    if (!isArmUrl(asyncUrl)) {
+      logger.warn(`Ignoring async operation URL that is not HTTPS on a known ARM host: ${asyncUrl.split('?')[0]}`);
+      return undefined;
+    }
+    return asyncUrl;
   }
 
   /**
@@ -411,21 +467,22 @@ export class ApicClient implements IApicClient {
         throw new Error(`Async operation for ${label} not found (404).`);
       }
 
-      const retryAfter = response.headers.get('Retry-After');
+      const retryAfterMs = parseRetryAfterMs(response.headers.get('Retry-After'));
       const text = await response.text();
       const status = this.readOperationStatus(text, response.status);
 
-      if (status === TERMINAL_SUCCESS) {
+      if (status.toLowerCase() === TERMINAL_SUCCESS) {
         return;
       }
-      if (TERMINAL_FAILURES.has(status)) {
+      if (TERMINAL_FAILURES.has(status.toLowerCase())) {
         throw new Error(`Async operation for ${label} ${status}: ${text.substring(0, 500)}`);
       }
 
-      const waitMs = retryAfter
-        ? parseInt(retryAfter, 10) * 1000
-        : ApicClient.ASYNC_POLL_INTERVAL_MS;
-      await this.delay(waitMs);
+      await this.delay(
+        retryAfterMs !== undefined && retryAfterMs > 0
+          ? retryAfterMs
+          : ApicClient.ASYNC_POLL_INTERVAL_MS,
+      );
     }
     throw new Error(`Async operation for ${label} timed out after ${ApicClient.ASYNC_POLL_TIMEOUT_MS}ms.`);
   }
@@ -437,18 +494,19 @@ export class ApicClient implements IApicClient {
    * treated as success.
    */
   private readOperationStatus(text: string, httpStatus: number): string {
+    const fallback = httpStatus === 200 ? 'Succeeded' : 'InProgress';
     if (!text.trim()) {
-      return httpStatus === 200 ? TERMINAL_SUCCESS : 'InProgress';
+      return fallback;
     }
     try {
       const body = JSON.parse(text) as {
-        status?: string;
-        properties?: { provisioningState?: string };
+        status?: unknown;
+        properties?: { provisioningState?: unknown };
       };
       const state = body.status ?? body.properties?.provisioningState;
-      return state ?? (httpStatus === 200 ? TERMINAL_SUCCESS : 'InProgress');
+      return typeof state === 'string' ? state : fallback;
     } catch {
-      return httpStatus === 200 ? TERMINAL_SUCCESS : 'InProgress';
+      return fallback;
     }
   }
 }

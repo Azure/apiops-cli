@@ -988,5 +988,254 @@ describe('ApicClient ARM calls', () => {
       );
       expect(Date.now() - start).toBeGreaterThanOrEqual(10 * 60 * 1000);
     });
+
+    it.each([
+      ['succeeded', true],
+      ['SUCCEEDED', true],
+      ['failed', false],
+      ['canceled', false],
+      ['Cancelled', false],
+    ])('matches the terminal status %s case-insensitively', async (status, succeeds) => {
+      acceptedPut();
+      fetchSpy
+        .mockResolvedValueOnce(json(200, { status, error: { message: 'Spec is invalid' } }))
+        .mockResolvedValueOnce(json(200, { name: 'pet store' }));
+
+      const outcome = settle(client.putResource(testContext, apiDescriptor, {}));
+
+      if (succeeds) {
+        await expect(outcome).resolves.toEqual({ name: 'pet store' });
+        expect(fetchSpy).toHaveBeenCalledTimes(3);
+      } else {
+        await expect(outcome).rejects.toThrow(new RegExp(`${status}.*Spec is invalid`, 'i'));
+        expect(fetchSpy).toHaveBeenCalledTimes(2);
+      }
+    });
+
+    it('waits until an HTTP-date Retry-After between polls', async () => {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+      acceptedPut();
+      fetchSpy
+        .mockResolvedValueOnce(
+          json(200, { status: 'InProgress' }, { 'Retry-After': 'Thu, 01 Jan 2026 00:00:08 GMT' }),
+        )
+        .mockResolvedValueOnce(json(200, { status: 'Succeeded' }))
+        .mockResolvedValueOnce(json(200, { name: 'pet store' }));
+
+      const result = client.putResource(testContext, apiDescriptor, {});
+      await vi.advanceTimersByTimeAsync(7999);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      await settle(result);
+
+      expect(fetchSpy).toHaveBeenCalledTimes(4);
+    });
+
+    it('falls back to the default interval for an unparsable Retry-After', async () => {
+      acceptedPut();
+      fetchSpy
+        .mockResolvedValueOnce(json(200, { status: 'InProgress' }, { 'Retry-After': 'soon' }))
+        .mockResolvedValueOnce(json(200, { status: 'Succeeded' }))
+        .mockResolvedValueOnce(json(200, { name: 'pet store' }));
+
+      const result = client.putResource(testContext, apiDescriptor, {});
+      await vi.advanceTimersByTimeAsync(4999);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(1);
+      await settle(result);
+
+      expect(fetchSpy).toHaveBeenCalledTimes(4);
+    });
+
+    it('polls Azure-AsyncOperation when a PUT update returns 200', async () => {
+      fetchSpy
+        .mockResolvedValueOnce(
+          json(200, { properties: { provisioningState: 'Updating' } }, { 'Azure-AsyncOperation': OPERATION_URL }),
+        )
+        .mockResolvedValueOnce(json(200, { status: 'Succeeded' }))
+        .mockResolvedValueOnce(json(200, { name: 'pet store', properties: { title: 'Settled' } }));
+
+      const result = await settle(client.putResource(testContext, apiDescriptor, {}));
+
+      expect(result).toEqual({ name: 'pet store', properties: { title: 'Settled' } });
+      expect(urls()).toEqual([API_URL, OPERATION_URL, API_URL]);
+    });
+
+    it('does not poll a Location header on a PUT that returns 200', async () => {
+      fetchSpy.mockResolvedValueOnce(json(200, { name: 'pet store' }, { Location: OPERATION_URL }));
+
+      await expect(
+        settle(client.putResource(testContext, apiDescriptor, {})),
+      ).resolves.toEqual({ name: 'pet store' });
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('polls the resource when a DELETE returns 202 without a polling header', async () => {
+      fetchSpy
+        .mockResolvedValueOnce(empty(202))
+        .mockResolvedValueOnce(json(200, { name: 'pet store', properties: { provisioningState: 'Deleting' } }))
+        .mockResolvedValueOnce(empty(404));
+
+      await expect(settle(client.deleteResource(testContext, apiDescriptor))).resolves.toBe(true);
+
+      expect(urls()).toEqual([API_URL, API_URL, API_URL]);
+      expect(call(0).method).toBe('DELETE');
+      expect(call(1).method).toBe('GET');
+      expect(call(2).method).toBe('GET');
+    });
+
+    it('fails a DELETE without a polling header when the resource reports Failed', async () => {
+      fetchSpy
+        .mockResolvedValueOnce(empty(202))
+        .mockResolvedValueOnce(json(200, { properties: { provisioningState: 'Failed' } }));
+
+      await expect(settle(client.deleteResource(testContext, apiDescriptor))).rejects.toThrow(
+        /workspaces\/default\/apis\/pet store.*failed/i,
+      );
+    });
+  });
+
+  /* ------------------------------------------------------------------ */
+  /*  Rate limiting hardening                                           */
+  /* ------------------------------------------------------------------ */
+
+  describe('rate limiting', () => {
+    it('throws ApicHttpError 429 once the retries are exhausted', async () => {
+      fetchSpy.mockImplementation(async () =>
+        json(429, { error: { code: 'TooManyRequests', message: 'slow down' } }, { 'Retry-After': '1' }),
+      );
+
+      const error = await settle(client.getResource(testContext, apiDescriptor)).catch(
+        (e: unknown) => e,
+      );
+
+      expect(error).toBeInstanceOf(ApicHttpError);
+      expect(error).toMatchObject({ status: 429, code: 'TooManyRequests' });
+      expect(fetchSpy).toHaveBeenCalledTimes(4);
+    });
+
+    it('does not wait again after the final 429', async () => {
+      fetchSpy.mockImplementation(async () => empty(429, { 'Retry-After': '10' }));
+
+      const result = client.getResource(testContext, apiDescriptor).catch((e: unknown) => e);
+      // Three retries wait 10s each; the fourth 429 must fail without a fourth wait.
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(fetchSpy).toHaveBeenCalledTimes(4);
+      await expect(result).resolves.toMatchObject({ status: 429 });
+    });
+
+    it('waits until an HTTP-date Retry-After after a 429', async () => {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+      fetchSpy
+        .mockResolvedValueOnce(empty(429, { 'Retry-After': 'Thu, 01 Jan 2026 00:00:03 GMT' }))
+        .mockResolvedValueOnce(json(200, { name: 'pet store' }));
+
+      const result = client.getResource(testContext, apiDescriptor);
+      await vi.advanceTimersByTimeAsync(2999);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+      await expect(result).resolves.toEqual({ name: 'pet store' });
+    });
+
+    it('backs off exponentially for an unparsable Retry-After after a 429', async () => {
+      fetchSpy
+        .mockResolvedValueOnce(empty(429, { 'Retry-After': 'later' }))
+        .mockResolvedValueOnce(json(200, { name: 'pet store' }));
+
+      const result = client.getResource(testContext, apiDescriptor);
+      await vi.advanceTimersByTimeAsync(999);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+      await expect(result).resolves.toEqual({ name: 'pet store' });
+    });
+  });
+
+  /* ------------------------------------------------------------------ */
+  /*  ARM host validation                                               */
+  /* ------------------------------------------------------------------ */
+
+  describe('ARM host validation', () => {
+    it.each([
+      ['a non-HTTPS URL', 'http://management.azure.com/operations/op-1'],
+      ['an unknown host', 'https://attacker.example.com/operations/op-1'],
+      ['a look-alike host', 'https://management.azure.com.attacker.example.com/operations/op-1'],
+    ])('does not poll (or send the token to) %s from a PUT', async (_label, operationUrl) => {
+      fetchSpy.mockResolvedValueOnce(
+        json(201, { name: 'pet store' }, { 'Azure-AsyncOperation': operationUrl }),
+      );
+
+      await expect(
+        settle(client.putResource(testContext, apiDescriptor, {})),
+      ).resolves.toEqual({ name: 'pet store' });
+      expect(urls()).toEqual([API_URL]);
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Ignoring'));
+    });
+
+    it('does not poll an unknown host from a DELETE and polls the resource instead', async () => {
+      fetchSpy
+        .mockResolvedValueOnce(empty(202, { Location: 'https://attacker.example.com/op' }))
+        .mockResolvedValueOnce(empty(404));
+
+      await expect(settle(client.deleteResource(testContext, apiDescriptor))).resolves.toBe(true);
+      expect(urls()).toEqual([API_URL, API_URL]);
+    });
+
+    it.each([
+      'https://management.usgovcloudapi.net/operations/op-1',
+      'https://eastus.management.azure.com/operations/op-1',
+    ])('polls an operation on the known ARM host %s', async (operationUrl) => {
+      fetchSpy
+        .mockResolvedValueOnce(empty(202, { 'Azure-AsyncOperation': operationUrl }))
+        .mockResolvedValueOnce(json(200, { status: 'Succeeded' }));
+
+      await expect(settle(client.deleteResource(testContext, apiDescriptor))).resolves.toBe(true);
+      expect(urls()).toEqual([API_URL, operationUrl]);
+    });
+
+    it('polls Operation-Location', async () => {
+      fetchSpy
+        .mockResolvedValueOnce(empty(202, { 'Operation-Location': OPERATION_URL }))
+        .mockResolvedValueOnce(json(200, { status: 'Succeeded' }));
+
+      await expect(settle(client.deleteResource(testContext, apiDescriptor))).resolves.toBe(true);
+      expect(urls()).toEqual([API_URL, OPERATION_URL]);
+    });
+
+    it('prefers Azure-AsyncOperation over Location', async () => {
+      fetchSpy
+        .mockResolvedValueOnce(
+          empty(202, { 'Azure-AsyncOperation': OPERATION_URL, Location: `${API_URL}&location=1` }),
+        )
+        .mockResolvedValueOnce(json(200, { status: 'Succeeded' }));
+
+      await expect(settle(client.deleteResource(testContext, apiDescriptor))).resolves.toBe(true);
+      expect(urls()).toEqual([API_URL, OPERATION_URL]);
+    });
+
+    it.each([
+      ['an unknown host', 'https://attacker.example.com/apis?page=2'],
+      ['a non-HTTPS URL', 'http://management.azure.com/apis?page=2'],
+    ])('refuses to follow a nextLink to %s', async (_label, nextLink) => {
+      fetchSpy.mockResolvedValueOnce(json(200, { value: [{ name: 'a' }], nextLink }));
+
+      const items: unknown[] = [];
+      const error = await settle(
+        (async () => {
+          for await (const item of client.listResources(testContext, ApicResourceType.Api, [], 'default')) {
+            items.push(item);
+          }
+        })(),
+      ).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toMatch(/nextLink/);
+      expect(items).toEqual([{ name: 'a' }]);
+      expect(urls()).toEqual([`${BASE_URL}/workspaces/default/apis?api-version=${API_VERSION}`]);
+    });
   });
 });
