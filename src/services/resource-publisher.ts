@@ -15,7 +15,7 @@ import type {
   ResourceDescriptor,
 } from '../models/types.js';
 import type { PublishConfig } from '../models/config.js';
-import { ResourceType, RESOURCE_TYPE_METADATA, MANAGED_GATEWAY_NAME } from '../models/resource-types.js';
+import { isBuiltInGroup, ResourceType, RESOURCE_TYPE_METADATA, MANAGED_GATEWAY_NAME } from '../models/resource-types.js';
 import { applyOverrides, resolveOverrideSection } from './override-merger.js';
 import { checkKeyVaultSecretAccess } from './keyvault-checker.js';
 import {
@@ -738,12 +738,9 @@ async function buildAssociationPublicationPlan(
     nameParts: [entry.name],
     workspace: entry.scope === 'service' ? undefined : workspace,
   };
-  const eligibility = await evaluateAssociationEligibility(
-    store,
-    target,
-    config,
-    { allowedDescriptors }
-  );
+  const eligibility = isAdministratorsLink(target, config)
+    ? { eligible: true }
+    : await evaluateAssociationEligibility(store, target, config, { allowedDescriptors });
   const metadata = RESOURCE_TYPE_METADATA[type];
   const workspaceScoped = !!workspace || isWorkspaceScope(context);
   const segment = target.type === ResourceType.Group ? 'groups' : 'apis';
@@ -765,6 +762,21 @@ async function buildAssociationPublicationPlan(
     : {};
 
   return { descriptor, deployedDescriptor, target, payload, ...eligibility };
+}
+
+/**
+ * Whether a product's group link targets the built-in `administrators` group,
+ * which APIM links to every product itself (publish removes the links APIM
+ * adds to a new product, then publishes the extracted ones). The link is kept
+ * whatever the groups filter says, unless the filter excludes the group by
+ * name, so a filter that narrows groups neither drops it nor warns about it.
+ */
+function isAdministratorsLink(target: ResourceDescriptor, config: PublishConfig): boolean {
+  return (
+    isBuiltInGroup(target) &&
+    target.nameParts[0]?.toLowerCase() === 'administrators' &&
+    !(config.filter && isExplicitlyExcluded(target, config.filter))
+  );
 }
 
 export interface AssociationEligibilityOptions {

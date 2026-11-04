@@ -12,7 +12,7 @@ import {
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
-import { LogLevel } from '../../../src/lib/logger.js';
+import { LogLevel, logger } from '../../../src/lib/logger.js';
 import { DEFAULT_APPLIES_TO } from '../../../src/services/env-mapper.js';
 
 // Mock resource-publisher so product-publisher tests don't run full resource-publisher logic
@@ -312,6 +312,32 @@ describe('product-publisher', () => {
 
       expect(await linksFor([])).toEqual([]);
       expect(await linksFor(['developers'])).toEqual(['ProductGroup:my-product/developers']);
+    });
+
+    it('publishes the link APIM adds to administrators whatever the groups filter, unless it excludes the group by name', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockImplementation(async (_dir: string, _descriptor: ResourceDescriptor, type: string) =>
+        type === 'groups' ? [{ name: 'administrators' }] : []
+      );
+      const warn = vi.spyOn(logger, 'warn');
+      const linksFor = async (groups: string[]) => {
+        client.putResource.mockClear();
+        warn.mockClear();
+        await publishProduct(client, store, testContext, productDescriptor, {
+          ...testConfig,
+          filter: { products: ['my-product'], groups },
+        }, [productDescriptor]);
+        return client.putResource.mock.calls
+          .map(([, descriptor]) => `${descriptor.type}:${descriptor.nameParts.join('/')}`)
+          .filter((key) => key.startsWith('ProductGroup'));
+      };
+
+      expect(await linksFor([])).toEqual(['ProductGroup:my-product/administrators']);
+      expect(await linksFor(['support-team'])).toEqual(['ProductGroup:my-product/administrators']);
+      expect(warn).not.toHaveBeenCalled();
+      expect(await linksFor(['!administrators'])).toEqual([]);
+      warn.mockRestore();
     });
 
     it('does not let resolved targets override explicit API exclusions', async () => {
