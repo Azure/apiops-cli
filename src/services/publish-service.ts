@@ -53,7 +53,7 @@ import { computeGitDiff } from './git-diff-service.js';
 import { scanForRedactionMarkers } from './secret-redaction-guard.js';
 import { hasNamedValueOverride } from './override-merger.js';
 import { REDACTION_MARKER } from './secret-redactor.js';
-import { scanArtifactReferences } from './transitive-resolver.js';
+import { createArtifactReferenceResolver, scanArtifactReferences } from './transitive-resolver.js';
 import { validateAndBuildEnvMapping } from './env-mapping-validator.js';
 import { mapDescriptor } from './env-mapper.js';
 
@@ -324,21 +324,10 @@ async function expandTransitivePublishTargets(
   availableDescriptors: ResourceDescriptor[],
   filter: FilterConfig
 ): Promise<ResourceDescriptor[]> {
-  const availableByKey = new Map(
-    availableDescriptors.map((descriptor) => [getResourceDescriptorKey(descriptor), descriptor])
+  const findAvailable = createArtifactReferenceResolver(
+    availableDescriptors,
+    (descriptor) => store.readResource(sourceDir, descriptor)
   );
-  // Policies reference named values as {{displayName}}, which can differ
-  // from the resource name the artifact is stored under. As in APIM (and on
-  // extract), the display name decides; the resource name is the fallback.
-  let namedValuesByDisplayName: Promise<Map<string, ResourceDescriptor>> | undefined;
-  const findAvailable = async (reference: ResourceDescriptor): Promise<ResourceDescriptor | undefined> => {
-    const key = getResourceDescriptorKey(reference);
-    if (reference.type !== ResourceType.NamedValue) {
-      return availableByKey.get(key);
-    }
-    namedValuesByDisplayName ??= indexNamedValuesByDisplayName(store, sourceDir, availableDescriptors);
-    return (await namedValuesByDisplayName).get(key) ?? availableByKey.get(key);
-  };
   const expanded = [...initialDescriptors];
   const included = new Set(expanded.map(getResourceDescriptorKey));
   const scanQueue = [...initialDescriptors];
@@ -417,32 +406,6 @@ async function expandTransitivePublishTargets(
     );
   }
   return expanded;
-}
-
-/**
- * The named value artifacts keyed as a `{{displayName}}` reference to them
- * would be (case-insensitive, like every descriptor key).
- */
-async function indexNamedValuesByDisplayName(
-  store: IArtifactStore,
-  sourceDir: string,
-  availableDescriptors: ResourceDescriptor[]
-): Promise<Map<string, ResourceDescriptor>> {
-  const index = new Map<string, ResourceDescriptor>();
-  for (const descriptor of availableDescriptors.filter((d) => d.type === ResourceType.NamedValue)) {
-    let json: Record<string, unknown> | undefined;
-    try {
-      json = await store.readResource(sourceDir, descriptor);
-    } catch (error) {
-      logger.warn(`Unable to read ${buildResourceLabel(descriptor)} to match {{references}} by display name: ${String(error)}`);
-      continue;
-    }
-    const displayName = (json?.properties as Record<string, unknown> | undefined)?.displayName;
-    if (typeof displayName === 'string') {
-      index.set(getResourceDescriptorKey({ ...descriptor, nameParts: [displayName] }), descriptor);
-    }
-  }
-  return index;
 }
 
 function filterPublishDescriptors(

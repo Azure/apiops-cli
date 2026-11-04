@@ -66,7 +66,7 @@ apiops extract \
 | `--output <dir>` | string | `./apim-artifacts` | No | Output directory path |
 | `--filter <path>` | string | — | No | Filter configuration YAML file |
 | `--no-transitive` | boolean | false (transitive ON) | No | Disable transitive dependency inclusion |
-| `--remove-stale` | boolean | false | No | Remove stale managed artifacts in the selected filter and workspace scope after a fully successful extraction |
+| `--remove-stale` | boolean | false | No | Remove stale managed artifacts in the selected filter and workspace scope, and pulled-in dependencies nothing references any more, after a fully successful extraction |
 
 ### Global flags
 
@@ -210,6 +210,8 @@ by the workspace's name takes precedence over a pattern. See
 When extracting with a filter, transitive dependencies are **included automatically**. For example, extracting `echo-api` also extracts the backends, named values and policy fragments its policies reference, its version set, its tags, and the loggers its diagnostics use. See [Transitive Dependency Behavior](../guides/filtering-resources.md#transitive-dependency-behavior) for the full list.
 
 Use `--no-transitive` to disable this behavior and extract only the explicitly listed resources.
+
+With `--remove-stale`, a pulled-in dependency the filter otherwise leaves out (for example a tag when `tags: []`) is removed once the selected resources no longer reference it and no other artifact in the output does. A dependency another filtered extract into the same output still uses is kept.
 
 ## Output format
 

@@ -14,6 +14,7 @@ import { ExtractConfig, FilterConfig } from '../models/config.js';
 import { ApimServiceContext } from '../models/types.js';
 import { runExtraction, ExtractionResult } from '../services/extract-service.js';
 import { isInRemoveStaleScope } from '../services/filter-service.js';
+import { findStaleDependencies } from '../services/stale-dependency-finder.js';
 import { loadFilterConfig } from '../lib/config-loader.js';
 import { logger, parseLogLevel } from '../lib/logger.js';
 import { ApimClient } from '../clients/apim-client.js';
@@ -24,7 +25,7 @@ import { EXIT_FATAL, EXIT_SUCCESS } from '../lib/exit-codes.js';
 import { getResourceTier, TIER_LABELS } from '../lib/dependency-graph.js';
 import { formatDuration } from '../lib/format-duration.js';
 import { ResourceType } from '../models/resource-types.js';
-import { getNamePart } from '../lib/resource-path.js';
+import { getNamePart, getResourceDescriptorKey } from '../lib/resource-path.js';
 
 /**
  * Interface for extract command options (from CLI flags).
@@ -63,7 +64,7 @@ export function createExtractCommand(): Command {
     .option('--output <dir>', 'Output directory path', './apim-artifacts')
     .option('--filter <path>', 'Filter configuration YAML file')
     .option('--no-transitive', 'Disable transitive dependency inclusion')
-    .option('--remove-stale', 'Remove stale managed artifacts in the selected scope')
+    .option('--remove-stale', 'Remove stale managed artifacts in the selected scope, and pulled-in dependencies nothing references any more')
     .action(async (options: ExtractOptions, command: Command) => {
       const globalOpts = command.optsWithGlobals<{
         logLevel?: string;
@@ -153,11 +154,19 @@ export async function executeExtract(
     result = await dependencies.runExtraction(client, store, extractConfig);
 
     if (result.exitCode !== EXIT_FATAL) {
+      const removeStale = shouldRemoveStaleArtifacts(result, options.removeStale ?? false);
+      // Pulled-in dependencies are outside the filter's scope; remove the
+      // ones the selection no longer needs and nothing else references.
+      const staleDependencies = removeStale && filterConfig
+        ? await findStaleDependencies(store, outputDir, stagingDir, filterConfig)
+        : [];
+      const staleKeys = new Set(staleDependencies.map(getResourceDescriptorKey));
       await store.commitStagedExtraction(
         stagingDir,
         outputDir,
-        descriptor => isInRemoveStaleScope(descriptor, filterConfig),
-        shouldRemoveStaleArtifacts(result, options.removeStale ?? false)
+        descriptor => isInRemoveStaleScope(descriptor, filterConfig) ||
+          staleKeys.has(getResourceDescriptorKey(descriptor)),
+        removeStale
       );
     }
   } finally {

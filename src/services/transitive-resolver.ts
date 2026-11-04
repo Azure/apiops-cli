@@ -14,6 +14,8 @@ import { AssociationEntry, ResourceDescriptor } from '../models/types.js';
 import type { IArtifactStore } from '../clients/iartifact-store.js';
 import { armNameAfter, armReferenceWorkspace } from '../lib/arm-id.js';
 import { getResourceDescriptorKey } from '../lib/resource-path.js';
+import { buildResourceLabel } from '../lib/resource-uri.js';
+import { logger } from '../lib/logger.js';
 
 /**
  * Reference detection patterns for policy XML content.
@@ -63,6 +65,23 @@ const POLICY_RESOURCE_TYPES = new Set<ResourceType>([
   ResourceType.ApiOperationPolicy,
   ResourceType.ProductPolicy,
   ResourceType.GraphQLResolverPolicy,
+]);
+
+/**
+ * The artifact types scanArtifactReferences can find references in: policies,
+ * and the types findTransitiveDependencies and product links read. Keep it in
+ * step with them.
+ */
+const REFERENCING_TYPES = new Set<ResourceType>([
+  ...POLICY_RESOURCE_TYPES,
+  ResourceType.Api,
+  ResourceType.ApiTag,
+  ResourceType.Diagnostic,
+  ResourceType.ApiDiagnostic,
+  ResourceType.Logger,
+  ResourceType.Backend,
+  ResourceType.PolicyFragment,
+  ResourceType.Product,
 ]);
 
 /**
@@ -335,6 +354,9 @@ export async function scanArtifactReferences(
   sourceDir: string,
   descriptor: ResourceDescriptor
 ): Promise<ResourceDescriptor[]> {
+  if (!REFERENCING_TYPES.has(descriptor.type)) {
+    return [];
+  }
   const references: ResourceDescriptor[] = [];
   const policies = new Map<string, string>();
   const apis = new Map<string, Record<string, unknown>>();
@@ -371,6 +393,58 @@ export async function scanArtifactReferences(
   }
 
   return deduplicateDescriptors(references);
+}
+
+/**
+ * Resolve the references scanArtifactReferences returns to the artifacts
+ * they name. Policies reference named values as {{displayName}}, which can
+ * differ from the resource name the artifact is stored under: as in APIM
+ * (and on extract), the display name decides and the resource name is the
+ * fallback. Named value artifacts are read once, on the first named value
+ * reference.
+ *
+ * @param available - The artifacts references can resolve to
+ * @param readResource - Reads an artifact's JSON
+ */
+export function createArtifactReferenceResolver(
+  available: ReadonlyArray<ResourceDescriptor>,
+  readResource: (descriptor: ResourceDescriptor) => Promise<Record<string, unknown> | undefined>
+): (reference: ResourceDescriptor) => Promise<ResourceDescriptor | undefined> {
+  const byKey = new Map(available.map((descriptor) => [getResourceDescriptorKey(descriptor), descriptor]));
+  let byDisplayName: Promise<Map<string, ResourceDescriptor>> | undefined;
+  return async (reference) => {
+    const key = getResourceDescriptorKey(reference);
+    if (reference.type !== ResourceType.NamedValue) {
+      return byKey.get(key);
+    }
+    byDisplayName ??= indexNamedValuesByDisplayName(available, readResource);
+    return (await byDisplayName).get(key) ?? byKey.get(key);
+  };
+}
+
+/**
+ * The named value artifacts keyed as a `{{displayName}}` reference to them
+ * would be (case-insensitive, like every descriptor key).
+ */
+async function indexNamedValuesByDisplayName(
+  available: ReadonlyArray<ResourceDescriptor>,
+  readResource: (descriptor: ResourceDescriptor) => Promise<Record<string, unknown> | undefined>
+): Promise<Map<string, ResourceDescriptor>> {
+  const index = new Map<string, ResourceDescriptor>();
+  for (const descriptor of available.filter((d) => d.type === ResourceType.NamedValue)) {
+    let json: Record<string, unknown> | undefined;
+    try {
+      json = await readResource(descriptor);
+    } catch (error) {
+      logger.warn(`Unable to read ${buildResourceLabel(descriptor)} to match {{references}} by display name: ${String(error)}`);
+      continue;
+    }
+    const displayName = (json?.properties as Record<string, unknown> | undefined)?.displayName;
+    if (typeof displayName === 'string') {
+      index.set(getResourceDescriptorKey({ ...descriptor, nameParts: [displayName] }), descriptor);
+    }
+  }
+  return index;
 }
 
 /**
