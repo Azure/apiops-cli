@@ -9,6 +9,7 @@ import {
   getCloudConfig,
   buildArmBaseUrl,
   getArmHosts,
+  getArmHostsForAuthScope,
 } from '../../../src/lib/cloud-config.js';
 
 describe('getCloudConfig', () => {
@@ -146,6 +147,19 @@ describe('buildArmBaseUrl', () => {
     expect(url).toMatch(
       /\/subscriptions\/[^/]+\/resourceGroups\/[^/]+\/providers\/Microsoft\.ApiManagement\/service\/[^/]+$/,
     );
+  });
+});
+
+describe('getArmHostsForAuthScope', () => {
+  it.each([
+    ['https://management.azure.com/.default', 'management.azure.com'],
+    ['https://MANAGEMENT.usgovcloudapi.net/.default', 'management.usgovcloudapi.net'],
+  ])('should return only the ARM host of the cloud of %s', (authScope, host) => {
+    expect(getArmHostsForAuthScope(authScope)).toEqual([host]);
+  });
+
+  it('should return every known ARM host for a scope of no known cloud', () => {
+    expect(getArmHostsForAuthScope('https://arm.example.test/.default')).toEqual(getArmHosts());
   });
 });
 

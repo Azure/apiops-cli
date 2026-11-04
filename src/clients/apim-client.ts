@@ -2,38 +2,40 @@
 // Licensed under the MIT license.
 /**
  * Azure REST HTTP client implementing IApimClient
- * Uses @azure/identity DefaultAzureCredential for auth
- * Handles pagination, retry, rate limiting, and long-running operations
+ * Uses the shared ArmHttpClient (DefaultAzureCredential auth, retry, rate
+ * limiting, pagination and long-running operation polling) and adds the
+ * APIM-specific handling on top
  */
 
-import { DefaultAzureCredential } from '@azure/identity';
 import { IApimClient, ApiSpecDialect } from './iapim-client.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import { RESOURCE_TYPE_METADATA, ResourceType } from '../models/resource-types.js';
 import { buildArmUri, buildResourceLabel } from '../lib/resource-uri.js';
 import { deriveListPaths, getResourceDescriptorKey } from '../lib/resource-path.js';
 import { logger } from '../lib/logger.js';
+import { errorMessage } from '../lib/error-message.js';
 import { isWorkspaceScope } from '../lib/workspace-link.js';
-import { USER_AGENT } from '../lib/user-agent.js';
 import { formatDuration } from '../lib/format-duration.js';
 import { validateServicePreFlight, PreFlightServiceKind } from './preflight.js';
-import { recordRetry, withRetryResource } from '../lib/retry-tracker.js';
+import { withRetryResource } from '../lib/retry-tracker.js';
+import {
+  ArmHttpClient,
+  ArmHttpClientOptions,
+  HttpError,
+  ArmRequestOptions,
+  AsyncOperation,
+  discardBody,
+  extractAsyncOperation,
+  isFailedState,
+  logRetry,
+  paginateArm,
+  pollArmOperation,
+  readArmState,
+  waitUntilGone,
+} from './arm-http-client.js';
 
-/**
- * Structured HTTP error that carries the response status code.
- * Allows callers to branch on status without parsing the message string.
- */
-export class HttpError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-    public readonly code?: string,  // APIM error code, e.g. "MethodNotAllowedInPricingTier"
-    public readonly body?: unknown
-  ) {
-    super(message);
-    this.name = 'HttpError';
-  }
-}
+/** Re-exported for existing imports from this module; defined in `arm-http-client.js`. */
+export { HttpError } from './arm-http-client.js';
 
 /**
  * Returns true when the error indicates an association link already exists.
@@ -86,48 +88,9 @@ export function stripSourceArmId(
   return rest;
 }
 
-/**
- * Build a short, human-readable description of a request URL for log output.
- * ARM URLs are reduced to the path below the APIM service (e.g.
- * `apis/echo/operations/get`); other URLs keep host and path only.
- * Query strings are always dropped.
- */
-export function describeRequestTarget(url: string): string {
-  let pathname: string;
-  let host = '';
-  try {
-    const parsed = new URL(url);
-    pathname = parsed.pathname;
-    host = parsed.host;
-  } catch {
-    pathname = url.split('?')[0] ?? url;
-  }
-
-  const match = /\/providers\/Microsoft\.ApiManagement\/service\/[^/]+\/?(.*)$/i.exec(pathname);
-  if (match) {
-    return safeDecode(match[1] || 'service');
-  }
-  return safeDecode(`${host}${pathname}`);
-}
-
-function safeDecode(value: string): string {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
 export class ApimClient implements IApimClient {
-  private credential: DefaultAzureCredential;
-  private readonly authScope: string;
-  private tokenCache: { token: string; expiresOn: number } | null = null;
-  private tokenPromise: Promise<string> | null = null;
+  private readonly http: ArmHttpClient;
 
-  private static readonly TOKEN_CACHE_BUFFER_MS = 5 * 60 * 1000; // 5 minutes
-  private static readonly MAX_RETRIES = 3;
-  private static readonly BASE_DELAY_MS = 1000;
-  private static readonly MAX_DELAY_MS = 30000;
   private static readonly MAX_POLLING_ATTEMPTS = 30;
   private static readonly POLL_INTERVAL_MS = 2000;
   /** Deadline for async (LRO) operation polling — 7.5 minutes. */
@@ -138,216 +101,37 @@ export class ApimClient implements IApimClient {
   private static readonly DELETE_CONFLICT_RETRIES = 3;
   /** Base delay between DELETE conflict retries (multiplied by attempt number). */
   private static readonly DELETE_CONFLICT_RETRY_DELAY_MS = 2000;
-  /** Known ARM management plane host suffixes for URL validation. */
-  private static readonly ARM_HOSTS = [
-    'management.azure.com',
-    'management.chinacloudapi.cn',
-    'management.usgovcloudapi.net',
-    'management.microsoftazure.de',
-  ];
+  /**
+   * APIM reports operations blocked by an API's in-progress async operation
+   * as a transient 409 PessimisticConcurrencyConflict, which is retried.
+   */
+  private static readonly REQUEST_OPTIONS: ArmRequestOptions = {
+    isRetryableError: (error) =>
+      error.status === 409 && error.code === 'PessimisticConcurrencyConflict',
+  };
+
   /**
    * @param authScope OAuth2 scope for ARM token requests.
    *   Defaults to the Azure public cloud scope.
+   * @param httpOptions Token credential and wait function for the shared ARM
+   *   client. Default to `DefaultAzureCredential` and a `setTimeout` wait.
    */
-  constructor(authScope = 'https://management.azure.com/.default') {
-    this.credential = new DefaultAzureCredential();
-    this.authScope = authScope;
+  constructor(authScope?: string, httpOptions: Omit<ArmHttpClientOptions, 'authScope'> = {}) {
+    this.http = new ArmHttpClient({ ...httpOptions, authScope });
   }
 
   /**
-   * Get bearer token for Azure Management API.
-   * Uses a promise cache to prevent duplicate token requests under concurrency.
+   * Execute an HTTP request through the shared ARM client. APIM reports
+   * operations blocked by an API's in-progress async operation as a
+   * transient 409 PessimisticConcurrencyConflict, which is retried; other
+   * client errors are deterministic.
    */
-  private async getToken(): Promise<string> {
-    if (this.tokenCache && this.tokenCache.expiresOn > Date.now() + ApimClient.TOKEN_CACHE_BUFFER_MS) {
-      return this.tokenCache.token;
-    }
-
-    if (!this.tokenPromise) {
-      this.tokenPromise = this.fetchToken().finally(() => {
-        this.tokenPromise = null;
-      });
-    }
-
-    return this.tokenPromise;
-  }
-
-  private async fetchToken(): Promise<string> {
-    const tokenResponse = await this.credential.getToken(this.authScope);
-    this.tokenCache = {
-      token: tokenResponse.token,
-      expiresOn: tokenResponse.expiresOnTimestamp,
-    };
-    return tokenResponse.token;
-  }
-
-  /**
-   * Execute HTTP request with retry logic and rate limiting.
-   * @param noRetryOn5xx - When true, 5xx responses are returned immediately
-   *   without retrying (e.g. wiki endpoints that return 500 for missing wikis).
-   * @param skipAuth - When true, skip adding Authorization/Content-Type headers
-   *   (e.g. blob SAS URLs that are self-authenticating).
-   * @param allowedNonOkStatuses - Status codes the caller will handle itself
-   *   (response returned instead of throwing). 404 is always allowed for GETs.
-   */
-  private async request(
+  private request(
     url: string,
-    options: RequestInit = {},
-    noRetryOn5xx = false,
-    skipAuth = false,
-    allowedNonOkStatuses: readonly number[] = []
+    init: RequestInit = {},
+    options: ArmRequestOptions = {}
   ): Promise<Response> {
-    const headers = new Headers(options.headers);
-    if (!skipAuth) {
-      const token = await this.getToken();
-      headers.set('Authorization', `Bearer ${token}`);
-      headers.set('Content-Type', 'application/json');
-    } else {
-      headers.delete('Authorization');
-      headers.delete('Proxy-Authorization');
-      headers.delete('x-ms-authorization-auxiliary');
-    }
-    headers.set('User-Agent', USER_AGENT);
-
-    let attempt = 0;
-    // For SAS blob URLs the query string contains the sig token — strip it before logging.
-    const logUrl = skipAuth ? url.split('?')[0] : url;
-    const method = options.method ?? 'GET';
-    const target = `${method} ${describeRequestTarget(logUrl)}`;
-    const maxAttempts = ApimClient.MAX_RETRIES + 1;
-
-    while (attempt <= ApimClient.MAX_RETRIES) {
-      try {
-        logger.debug(`HTTP ${method} ${logUrl}`);
-        const response = await fetch(url, { ...options, headers });
-
-        // Handle rate limiting (429)
-        if (response.status === 429) {
-          const retryAfter = response.headers.get('Retry-After');
-          if (attempt < ApimClient.MAX_RETRIES) {
-            const delaySeconds = retryAfter ? parseInt(retryAfter, 10) : Math.pow(2, attempt);
-            this.logRetry(
-              `Rate limited (429) on ${target} (attempt ${attempt + 1}/${maxAttempts}), ` +
-              `retrying in ${formatDuration(delaySeconds * 1000)}`
-            );
-            await this.delay(delaySeconds * 1000);
-            attempt++;
-            continue;
-          }
-        }
-
-        // Handle transient errors (5xx)
-        if (response.status >= 500 && response.status < 600) {
-          if (noRetryOn5xx) {
-            // Caller has opted out of 5xx retries — return the raw response so
-            // getResource can treat it as "not found" (e.g. wiki endpoints that
-            // return 500 when the API/product has no wiki).
-            return response;
-          }
-          if (attempt < ApimClient.MAX_RETRIES) {
-            const delayMs = this.exponentialBackoffWithJitter(attempt);
-            this.logRetry(
-              `Server error ${response.status} on ${target} (attempt ${attempt + 1}/${maxAttempts}), ` +
-              `retrying in ${formatDuration(delayMs)}`
-            );
-            await this.delay(delayMs);
-            attempt++;
-            continue;
-          }
-        }
-
-        // Handle 404 gracefully for GET operations (default method is GET when unspecified)
-        if (response.status === 404 && (options.method === 'GET' || !options.method)) {
-          return response;
-        }
-
-        // Caller-opt-in: return specific non-OK statuses instead of throwing
-        // (e.g. 406 from GraphQL `graphql-link` export when the API has no
-        // downloadable SDL — a valid "no spec available" signal, not an error).
-        if (!response.ok && allowedNonOkStatuses.includes(response.status)) {
-          return response;
-        }
-
-        // Check for error responses
-        if (!response.ok) {
-          const errorText = await response.text();
-          let errorCode: string | undefined;
-          let errorBody: unknown;
-          try {
-            errorBody = JSON.parse(errorText);
-            if (
-              typeof errorBody === 'object' && errorBody !== null &&
-              'error' in errorBody &&
-              typeof (errorBody as Record<string, unknown>)['error'] === 'object' &&
-              (errorBody as Record<string, unknown>)['error'] !== null &&
-              'code' in ((errorBody as Record<string, unknown>)['error'] as Record<string, unknown>) &&
-              typeof ((errorBody as Record<string, unknown>)['error'] as Record<string, unknown>)['code'] === 'string'
-            ) {
-              errorCode = ((errorBody as Record<string, unknown>)['error'] as Record<string, unknown>)['code'] as string;
-            }
-          } catch {
-            // Response body is not JSON — no error code available
-          }
-          throw new HttpError(response.status, `HTTP ${response.status}: ${errorText}`, errorCode, errorBody);
-        }
-
-        return response;
-      } catch (error) {
-        // APIM reports operations blocked by an API's in-progress async operation
-        // as a transient 409. Other client errors are deterministic.
-        const isPessimisticConcurrencyConflict =
-          error instanceof HttpError &&
-          error.status === 409 &&
-          error.code === 'PessimisticConcurrencyConflict';
-        if (
-          error instanceof HttpError &&
-          error.status >= 400 &&
-          error.status < 500 &&
-          !isPessimisticConcurrencyConflict
-        ) {
-          throw error;
-        }
-        if (attempt >= ApimClient.MAX_RETRIES) {
-          throw error;
-        }
-        const delayMs = this.exponentialBackoffWithJitter(attempt);
-        this.logRetry(
-          `Request failed on ${target} (attempt ${attempt + 1}/${maxAttempts}): ` +
-          `${(error as Error).message}, retrying in ${formatDuration(delayMs)}`
-        );
-        await this.delay(delayMs);
-        attempt++;
-      }
-    }
-
-    throw new Error('Max retries exceeded');
-  }
-
-  /**
-   * Log an intermediate retry. When the retry is attributed to an active
-   * tracking scope (e.g. a publish operation that reports its retry count on
-   * the final status line), the message is demoted to debug to keep normal
-   * output free of interleaved retry noise.
-   */
-  private logRetry(message: string): void {
-    if (recordRetry()) {
-      logger.debug(message);
-    } else {
-      logger.warn(message);
-    }
-  }
-
-  private exponentialBackoffWithJitter(attempt: number): number {
-    const exponentialDelay = Math.min(
-      ApimClient.BASE_DELAY_MS * Math.pow(2, attempt),
-      ApimClient.MAX_DELAY_MS
-    );
-    const jitter = Math.random() * 0.3 * exponentialDelay;
-    return exponentialDelay + jitter;
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return this.http.request(url, init, { ...ApimClient.REQUEST_OPTIONS, ...options });
   }
 
   async *listResources(
@@ -390,50 +174,27 @@ export class ApimClient implements IApimClient {
     }
 
     // Handle pagination with nextLink
-    while (url) {
-      let response: Response;
-      try {
-        response = await this.request(url);
-      } catch (error) {
+    yield* paginateArm(this.http, url, {
+      requestOptions: ApimClient.REQUEST_OPTIONS,
+      shouldStopOnError: (error) => {
         // HTTP 400 with MethodNotAllowedInPricingTier means the resource type is not
         // supported by this APIM pricing tier. Skip it — do not treat as a failure.
         if (error instanceof HttpError && error.code === 'MethodNotAllowedInPricingTier') {
           logger.debug(`Skipping resource type ${type} — not available in this pricing tier.`);
-          return;
+          return true;
         }
         // Workspace-scoped list may return transient 500s on freshly-created workspaces.
         if (error instanceof HttpError && error.status === 500 && isWorkspaceScoped) {
           logger.warn(`Workspace list for ${type} returned 500, treating as empty list`);
-          return;
+          return true;
         }
-        throw error;
-      }
-
-      // request() returns 404 GET responses directly (non-throwing).
+        return false;
+      },
       // A 404 on a list endpoint means the resource collection does not exist
       // for this service instance — treat as empty.
-      if (!response.ok) {
-        if (response.status === 404) {
-          logger.debug(`Resource type ${type} returned HTTP 404, resource collection not found — returning empty list`);
-          return;
-        }
-
-        throw new HttpError(
-          response.status,
-          `Request failed with HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`
-        );
-      }
-
-      const data = await response.json() as { value?: unknown[]; nextLink?: string };
-
-      if (data.value && Array.isArray(data.value)) {
-        for (const item of data.value) {
-          yield item as Record<string, unknown>;
-        }
-      }
-
-      url = data.nextLink ?? '';
-    }
+      onNotFound: () =>
+        logger.debug(`Resource type ${type} returned HTTP 404, resource collection not found — returning empty list`),
+    });
   }
 
   async getResource(
@@ -465,9 +226,10 @@ export class ApimClient implements IApimClient {
     const suppress500 = isWiki;
 
     try {
-      const response = await this.request(url, { method: 'GET' }, suppress500);
+      const response = await this.request(url, { method: 'GET' }, { noRetryOn5xx: suppress500 });
 
       if (response.status === 404 || (suppress500 && response.status >= 500 && response.status < 600)) {
+        await discardBody(response);
         return undefined;
       }
 
@@ -490,7 +252,7 @@ export class ApimClient implements IApimClient {
         logger.debug(`Resource does not support GET (HTTP 405), treating as not found: ${url}`);
         return undefined;
       }
-      logger.error(`Failed to get resource: ${(error as Error).message}`);
+      logger.error(`Failed to get resource: ${errorMessage(error)}`);
       throw error;
     }
   }
@@ -520,14 +282,20 @@ export class ApimClient implements IApimClient {
     // updates that return 200 while provisioning continues asynchronously.
     // Skip polling for association resources that don't support GET (supportsGet: false in metadata).
     const metadata = RESOURCE_TYPE_METADATA[descriptor.type];
-    const asyncUrl = this.extractAsyncOperationUrl(response, response.status !== 200);
-    if (asyncUrl && metadata.supportsGet) {
-      return await this.pollAsyncOperation(asyncUrl, context, descriptor);
+    const operation = extractAsyncOperation(response, {
+      includeLocation: response.status !== 200,
+      armHosts: this.http.armHosts,
+    });
+    if (operation && metadata.supportsGet) {
+      // The final state comes from polling, so the PUT body is not read.
+      await discardBody(response);
+      return await this.pollAsyncOperation(operation, context, descriptor);
     }
 
     // Headerless creates may still provision asynchronously. Check status before
     // reading the body to avoid consuming XML returned by policy endpoints.
     if (response.status === 201 || response.status === 202) {
+      await discardBody(response);
       if (!metadata.supportsGet) {
         logger.debug(`Skipping provisioning poll for association resource: ${buildResourceLabel(descriptor)}`);
         return {};
@@ -616,6 +384,8 @@ export class ApimClient implements IApimClient {
     for (let attempt = 1; ; attempt++) {
       try {
         const response = await this.request(url, { method: 'DELETE' });
+        // Only the status and headers of a DELETE response are used.
+        await discardBody(response);
 
         if (response.status === 404) {
           return false; // Already deleted
@@ -623,13 +393,11 @@ export class ApimClient implements IApimClient {
 
         // Poll for long-running operations
         if (response.status === 202) {
-          const asyncUrl = this.extractAsyncOperationUrl(response);
-          if (asyncUrl) {
-            await this.pollAsyncOperation(asyncUrl, context, descriptor, { treatMissingAsSuccess: true });
+          const operation = extractAsyncOperation(response, { armHosts: this.http.armHosts });
+          if (operation) {
+            await this.pollAsyncOperation(operation, context, descriptor, { treatMissingAsSuccess: true });
           } else {
-            await this.pollProvisioningState(context, descriptor, {
-              treatMissingAsSuccess: true,
-            });
+            await this.waitForDeletion(context, descriptor);
           }
         }
 
@@ -646,11 +414,11 @@ export class ApimClient implements IApimClient {
           (error.status === 412 || error.code === 'PreconditionFailed');
         if (isConflict && attempt < ApimClient.DELETE_CONFLICT_RETRIES) {
           const delayMs = ApimClient.DELETE_CONFLICT_RETRY_DELAY_MS * attempt;
-          this.logRetry(
+          logRetry(
             `Delete conflict for ${buildResourceLabel(descriptor)} ` +
             `(attempt ${attempt}/${ApimClient.DELETE_CONFLICT_RETRIES}), retrying in ${formatDuration(delayMs)}`
           );
-          await this.delay(delayMs);
+          await this.http.delay(delayMs);
           continue;
         }
         throw error;
@@ -710,16 +478,16 @@ export class ApimClient implements IApimClient {
       const response = await this.request(
         buildExportUrl(exportFormat),
         {},
-        isXmlExport,
-        false,
-        allowedNonOkStatuses
+        { noRetryOn5xx: isXmlExport, allowedNonOkStatuses }
       );
 
       if (response.status === 404) {
+        await discardBody(response);
         return undefined;
       }
 
       if (isGraphQLLink && response.status === 406) {
+        await discardBody(response);
         logger.debug(
           `No graphql-link specification available for ${apiName} (HTTP 406); ` +
           `GraphQL schema will be sourced from /schemas instead.`
@@ -728,6 +496,7 @@ export class ApimClient implements IApimClient {
       }
 
       if (isXmlExport && inlineFormat && response.status >= 500 && response.status < 600) {
+        await discardBody(response);
         logger.warn(
           `APIM returned HTTP ${response.status} exporting ${exportFormat} for ${apiName}; ` +
           `falling back to inline ${inlineFormat} export.`
@@ -744,8 +513,9 @@ export class ApimClient implements IApimClient {
       }
 
       // Fetch the actual spec content from the blob SAS URL (no auth header needed — SAS token is self-authenticating)
-      const blobResponse = await this.request(blobLink, {}, false, true);
+      const blobResponse = await this.request(blobLink, {}, { skipAuth: true });
       if (!blobResponse.ok) {
+        await discardBody(blobResponse);
         logger.warn(`Failed to fetch specification blob for ${apiName}: HTTP ${blobResponse.status}`);
         return undefined;
       }
@@ -760,7 +530,7 @@ export class ApimClient implements IApimClient {
         format,
       };
     } catch (error) {
-      logger.warn(`Failed to get API specification for ${apiName}: ${(error as Error).message}`);
+      logger.warn(`Failed to get API specification for ${apiName}: ${errorMessage(error)}`);
       return undefined;
     }
   }
@@ -780,12 +550,7 @@ export class ApimClient implements IApimClient {
     try {
       const response = await this.request(url);
       if (response.status === 404) {
-        return undefined;
-      }
-      if (!response.ok) {
-        logger.warn(
-          `Inline ${inlineFormat} export for ${apiName} failed: HTTP ${response.status}. Specification will be skipped.`
-        );
+        await discardBody(response);
         return undefined;
       }
 
@@ -827,7 +592,7 @@ export class ApimClient implements IApimClient {
       return { content, format };
     } catch (error) {
       logger.warn(
-        `Inline ${inlineFormat} export for ${apiName} threw: ${(error as Error).message}. Specification will be skipped.`
+        `Inline ${inlineFormat} export for ${apiName} threw: ${errorMessage(error)}. Specification will be skipped.`
       );
       return undefined;
     }
@@ -909,158 +674,50 @@ export class ApimClient implements IApimClient {
   }
 
   /**
-   * Extract the async operation URL from ARM LRO response headers.
-   * Prefers Azure-AsyncOperation over Location.
-   * Validates the URL points to a known ARM management endpoint to prevent
-   * leaking the bearer token to an unexpected host.
+   * Poll an ARM async operation URL until terminal state.
+   * Used for long-running operations like large API spec imports. An
+   * Azure-AsyncOperation or Operation-Location status body without a status
+   * keeps polling.
+   *
+   * On success, GETs the original resource to return the final state
+   * (unless `treatMissingAsSuccess`, used for deletes).
    */
-  private extractAsyncOperationUrl(
-    response: Response,
-    includeLocation = true
-  ): string | undefined {
-    const asyncOpUrl = response.headers.get('Azure-AsyncOperation')
-      ?? response.headers.get('Operation-Location')
-      ?? (includeLocation ? response.headers.get('Location') : undefined);
-
-    if (!asyncOpUrl) return undefined;
-
-    // Validate URL host is a known ARM management endpoint
-    try {
-      const parsed = new URL(asyncOpUrl);
-      if (parsed.protocol !== 'https:') {
-        logger.warn(`Ignoring non-HTTPS async operation URL: ${asyncOpUrl}`);
-        return undefined;
-      }
-      const isArmHost = ApimClient.ARM_HOSTS.some(
-        (host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`)
-      );
-      if (!isArmHost) {
-        logger.warn(
-          `Ignoring async operation URL with unexpected host: ${parsed.hostname}`
-        );
-        return undefined;
-      }
-    } catch {
-      logger.warn(`Ignoring malformed async operation URL: ${asyncOpUrl}`);
-      return undefined;
-    }
-
-    return asyncOpUrl;
+  private async pollAsyncOperation(
+    operation: AsyncOperation,
+    context: ApimServiceContext,
+    descriptor: ResourceDescriptor,
+    options: { treatMissingAsSuccess?: boolean } = {}
+  ): Promise<Record<string, unknown>> {
+    const { treatMissingAsSuccess = false } = options;
+    await pollArmOperation(this.http, operation, buildResourceLabel(descriptor), {
+      treatMissingAsSuccess,
+      timeoutMs: ApimClient.ASYNC_POLL_TIMEOUT_MS,
+      intervalMs: ApimClient.ASYNC_POLL_INTERVAL_MS,
+      initialDelayMs: ApimClient.ASYNC_POLL_INTERVAL_MS,
+    });
+    if (treatMissingAsSuccess) return {};
+    // GET the final resource state
+    return await this.getResource(context, descriptor) ?? {};
   }
 
   /**
-   * Poll an ARM async operation URL until terminal state.
-   * Used for long-running operations like large API spec imports.
-   *
-   * The operation status endpoint returns:
-   *   { "status": "InProgress" | "Succeeded" | "Failed" | "Canceled", ... }
-   *
-   * On success, GETs the original resource to return the final state.
+   * Poll the resource (through getResource, so types without GET and wiki
+   * 500s read as missing) after a PUT until its provisioningState is
+   * terminal, for up to MAX_POLLING_ATTEMPTS polls. The state is compared
+   * case-insensitively: a resource without a state or with Succeeded
+   * completes, and Failed, Canceled and Cancelled throw. A missing resource
+   * keeps polling, since APIM can briefly return 404 while provisioning.
    */
-  private async pollAsyncOperation(
-    operationUrl: string,
-    context: ApimServiceContext,
-    descriptor: ResourceDescriptor,
-    options: { treatMissingAsSuccess?: boolean } = {}
-  ): Promise<Record<string, unknown>> {
-    const { treatMissingAsSuccess = false } = options;
-    const label = buildResourceLabel(descriptor);
-    const deadline = Date.now() + ApimClient.ASYNC_POLL_TIMEOUT_MS;
-    let pollInterval = ApimClient.ASYNC_POLL_INTERVAL_MS;
-
-    logger.debug(`Polling async operation for ${label}: ${operationUrl}`);
-
-    while (Date.now() < deadline) {
-      await this.delay(pollInterval);
-
-      const response = await this.request(operationUrl);
-
-      // Honour Retry-After if the service provides it
-      const retryAfter = response.headers.get('Retry-After');
-      if (retryAfter) {
-        const parsed = parseInt(retryAfter, 10);
-        if (!isNaN(parsed) && parsed > 0) {
-          pollInterval = parsed * 1000;
-        }
-      }
-
-      // Some Location-style polls respond with 202 (still in progress)
-      // and may not have a JSON body — keep polling.
-      if (response.status === 202) {
-        logger.debug(`Async operation still in progress (HTTP 202) for ${label}`);
-        continue;
-      }
-
-      // Try to parse the status body
-      const text = await response.text();
-      if (!text.trim()) {
-        // Empty body on 200/204 — treat as complete
-        if (response.ok) {
-          return treatMissingAsSuccess
-            ? {}
-            : await this.getResource(context, descriptor) ?? {};
-        }
-        throw new Error(`Async operation returned empty body with status ${response.status} for ${label}`);
-      }
-
-      let body: Record<string, unknown>;
-      try {
-        body = JSON.parse(text) as Record<string, unknown>;
-      } catch {
-        // Non-JSON on an OK status — treat as complete
-        if (response.ok) {
-          return treatMissingAsSuccess
-            ? {}
-            : await this.getResource(context, descriptor) ?? {};
-        }
-        throw new Error(`Async operation returned non-JSON with status ${response.status} for ${label}`);
-      }
-
-      const status = (body.status as string | undefined)?.toLowerCase();
-
-      if (status === 'succeeded') {
-        logger.debug(`Async operation succeeded for ${label}`);
-        if (treatMissingAsSuccess) return {};
-        // GET the final resource state
-        return await this.getResource(context, descriptor) ?? {};
-      }
-
-      if (status === 'failed' || status === 'canceled' || status === 'cancelled') {
-        const error = body.error as Record<string, unknown> | undefined;
-        const code = (error?.code as string) ?? 'UnknownError';
-        const message = (error?.message as string) ?? JSON.stringify(body);
-        throw new Error(`Async operation ${status} for ${label}: [${code}] ${message}`);
-      }
-
-      // InProgress or other intermediate status — keep polling
-      logger.debug(`Async operation status: ${status ?? 'unknown'} for ${label}`);
-    }
-
-    throw new Error(
-      `Async operation polling timed out after ${ApimClient.ASYNC_POLL_TIMEOUT_MS / 1000}s for ${label}`
-    );
-  }
-
   private async pollProvisioningState(
     context: ApimServiceContext,
-    descriptor: ResourceDescriptor,
-    options: { treatMissingAsSuccess?: boolean } = {}
+    descriptor: ResourceDescriptor
   ): Promise<Record<string, unknown>> {
-    const { treatMissingAsSuccess = false } = options;
-
     for (let attempt = 0; attempt < ApimClient.MAX_POLLING_ATTEMPTS; attempt++) {
-      await this.delay(ApimClient.POLL_INTERVAL_MS);
+      await this.http.delay(ApimClient.POLL_INTERVAL_MS);
       
       const resource = await this.getResource(context, descriptor);
       
       if (!resource) {
-        if (treatMissingAsSuccess) {
-          logger.debug(
-            `Resource no longer present; operation completed: ${buildResourceLabel(descriptor)}`
-          );
-          return {};
-        }
-
         // APIM can transiently return 404 while asynchronously provisioning a
         // resource (e.g. a Key Vault-backed named value). Treat a missing resource
         // as "not yet visible" and continue polling rather than aborting — the
@@ -1072,21 +729,42 @@ export class ApimClient implements IApimClient {
         continue;
       }
 
-      const properties = resource.properties as Record<string, unknown> | undefined;
-      const provisioningState = properties?.provisioningState as string | undefined;
-      
-      if (!provisioningState || provisioningState === 'Succeeded') {
+      const provisioningState = readArmState(resource, { includeStatus: false });
+      const state = provisioningState?.toLowerCase();
+
+      if (state !== undefined && isFailedState(state)) {
+        throw new Error(`Resource provisioning ${state}: ${JSON.stringify(resource.properties)}`);
+      }
+
+      if (state === undefined || state === 'succeeded') {
         return resource;
       }
-      
-      if (provisioningState === 'Failed') {
-        throw new Error(`Resource provisioning failed: ${JSON.stringify(properties)}`);
-      }
-      
-      logger.debug(`Polling provisioning state: ${provisioningState} (attempt ${attempt + 1}/${ApimClient.MAX_POLLING_ATTEMPTS})`);
+
+      logger.debug(
+        `Polling provisioning state: ${provisioningState} ` +
+        `(attempt ${attempt + 1}/${ApimClient.MAX_POLLING_ATTEMPTS})`
+      );
     }
     
     throw new Error('Provisioning state polling timed out');
+  }
+
+  /**
+   * Wait for the resource to disappear after a DELETE that returned 202
+   * without a polling header (see {@link waitUntilGone}): it is read through
+   * getResource, so types without GET and wiki 500s read as missing. Gives
+   * up after MAX_POLLING_ATTEMPTS polls POLL_INTERVAL_MS apart, the limit of
+   * the provisioning-state poll.
+   */
+  private waitForDeletion(
+    context: ApimServiceContext,
+    descriptor: ResourceDescriptor
+  ): Promise<void> {
+    return waitUntilGone(() => this.getResource(context, descriptor), buildResourceLabel(descriptor), {
+      timeoutMs: ApimClient.MAX_POLLING_ATTEMPTS * ApimClient.POLL_INTERVAL_MS,
+      intervalMs: ApimClient.POLL_INTERVAL_MS,
+      delay: (ms) => this.http.delay(ms),
+    });
   }
 
 }

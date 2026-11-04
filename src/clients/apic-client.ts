@@ -3,13 +3,12 @@
 /**
  * Azure API Center control-plane REST client.
  *
- * Implements {@link IApicClient} using `@azure/identity` DefaultAzureCredential.
- * Handles pagination, retry/back-off, rate limiting, long-running operations
- * (Azure-AsyncOperation/Location polling), and the API definition
- * export/import specification actions.
+ * Implements {@link IApicClient} on top of the shared {@link ArmHttpClient}
+ * (DefaultAzureCredential auth, retry/back-off, rate limiting, pagination and
+ * long-running operation polling) and adds the API definition export/import
+ * specification actions.
  */
 
-import { DefaultAzureCredential } from '@azure/identity';
 import { IApicClient, ApicSpecification } from './iapic-client.js';
 import { ApicResourceType } from '../models/apic-resource-types.js';
 import { ApicResourceDescriptor, ApicServiceContext } from '../models/apic-types.js';
@@ -19,59 +18,27 @@ import {
   buildApicLabel,
 } from '../lib/apic-uri.js';
 import { logger } from '../lib/logger.js';
-import { USER_AGENT } from '../lib/user-agent.js';
-import { getArmHosts } from '../lib/cloud-config.js';
+import { errorMessage } from '../lib/error-message.js';
 import { validateServicePreFlight, PreFlightServiceKind } from './preflight.js';
-
-/** HTTP error carrying the response status code and optional ARM error code. */
-export class ApicHttpError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string,
-    public readonly code?: string,
-  ) {
-    super(message);
-    this.name = 'ApicHttpError';
-  }
-}
-
-/** Terminal states for an ARM long-running operation (compared lower-case). */
-const TERMINAL_SUCCESS = 'succeeded';
-const TERMINAL_FAILURES = new Set(['failed', 'canceled', 'cancelled']);
+import {
+  ArmHttpClient,
+  ArmHttpClientOptions,
+  HttpError,
+  ArmRequestOptions,
+  discardBody,
+  AsyncOperation,
+  extractAsyncOperation,
+  paginateArm,
+  pollArmOperation,
+  PollArmOperationOptions,
+  waitUntilGone,
+} from './arm-http-client.js';
 
 /**
- * Parse a `Retry-After` header (delay-seconds or HTTP-date) into milliseconds.
- * Returns undefined when the header is absent or unparsable.
+ * @deprecated Use {@link HttpError} from `arm-http-client.js`. Kept for
+ * existing imports and `instanceof` checks.
  */
-function parseRetryAfterMs(value: string | null): number | undefined {
-  if (value === null) {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  if (/^\d+$/.test(trimmed)) {
-    return Number(trimmed) * 1000;
-  }
-  const date = Date.parse(trimmed);
-  return Number.isNaN(date) ? undefined : Math.max(0, date - Date.now());
-}
-
-/**
- * True when `url` is an HTTPS URL on a known ARM host (or a subdomain of one),
- * i.e. safe to send the ARM bearer token to.
- */
-function isArmUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    return (
-      parsed.protocol === 'https:' &&
-      getArmHosts().some(
-        (host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`),
-      )
-    );
-  } catch {
-    return false;
-  }
-}
+export { HttpError as ApicHttpError } from './arm-http-client.js';
 
 /** Pre-flight wording for API Center services. */
 const APIC_PREFLIGHT_KIND: PreFlightServiceKind = {
@@ -81,149 +48,34 @@ const APIC_PREFLIGHT_KIND: PreFlightServiceKind = {
 };
 
 export class ApicClient implements IApicClient {
-  private readonly credential: DefaultAzureCredential;
-  private readonly authScope: string;
-  private tokenCache: { token: string; expiresOn: number } | null = null;
-  private tokenPromise: Promise<string> | null = null;
+  private readonly http: ArmHttpClient;
 
-  private static readonly TOKEN_CACHE_BUFFER_MS = 5 * 60 * 1000;
-  private static readonly MAX_RETRIES = 3;
-  private static readonly BASE_DELAY_MS = 1000;
-  private static readonly MAX_DELAY_MS = 30000;
   /** Deadline for LRO polling — 10 minutes. */
   private static readonly ASYNC_POLL_TIMEOUT_MS = 10 * 60 * 1000;
   /** Default interval between LRO polls when no Retry-After header is present. */
   private static readonly ASYNC_POLL_INTERVAL_MS = 5000;
-
-  constructor(authScope = 'https://management.azure.com/.default') {
-    this.credential = new DefaultAzureCredential();
-    this.authScope = authScope;
-  }
-
-  private async getToken(): Promise<string> {
-    if (
-      this.tokenCache &&
-      this.tokenCache.expiresOn > Date.now() + ApicClient.TOKEN_CACHE_BUFFER_MS
-    ) {
-      return this.tokenCache.token;
-    }
-    if (!this.tokenPromise) {
-      this.tokenPromise = this.fetchToken().finally(() => {
-        this.tokenPromise = null;
-      });
-    }
-    return this.tokenPromise;
-  }
-
-  private async fetchToken(): Promise<string> {
-    const tokenResponse = await this.credential.getToken(this.authScope);
-    this.tokenCache = {
-      token: tokenResponse.token,
-      expiresOn: tokenResponse.expiresOnTimestamp,
-    };
-    return tokenResponse.token;
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  private backoff(attempt: number): number {
-    const exp = Math.min(
-      ApicClient.BASE_DELAY_MS * Math.pow(2, attempt),
-      ApicClient.MAX_DELAY_MS,
-    );
-    return exp + Math.random() * 0.3 * exp;
-  }
+  /** API Center returns (rather than throws) a 404 for GET and DELETE. */
+  private static readonly REQUEST_OPTIONS: ArmRequestOptions = {
+    passthrough404Methods: ['GET', 'DELETE'],
+  };
 
   /**
-   * Execute an HTTP request with auth, retry on 429/5xx, and graceful 404 for
-   * GET. `skipAuth` is used for self-authenticating SAS/link URLs.
+   * @param authScope OAuth2 scope for ARM token requests.
+   *   Defaults to the Azure public cloud scope.
+   * @param httpOptions Token credential and wait function for the shared ARM
+   *   client. Default to `DefaultAzureCredential` and a `setTimeout` wait.
    */
-  private async request(
-    url: string,
-    options: RequestInit = {},
-    skipAuth = false,
-  ): Promise<Response> {
-    const headers = new Headers(options.headers);
-    if (skipAuth) {
-      headers.delete('Authorization');
-      headers.delete('Proxy-Authorization');
-      headers.delete('x-ms-authorization-auxiliary');
-    } else {
-      headers.set('Authorization', `Bearer ${await this.getToken()}`);
-      headers.set('Content-Type', 'application/json');
-    }
-    headers.set('User-Agent', USER_AGENT);
-
-    let attempt = 0;
-    const method = options.method ?? 'GET';
-    // Strip SAS query before logging.
-    const logUrl = skipAuth ? url.split('?')[0] : url;
-
-    while (attempt <= ApicClient.MAX_RETRIES) {
-      try {
-        logger.debug(`HTTP ${method} ${logUrl}`);
-        const response = await fetch(url, { ...options, headers });
-
-        // On the final attempt a 429 falls through and is thrown with its status.
-        if (response.status === 429 && attempt < ApicClient.MAX_RETRIES) {
-          const delayMs =
-            parseRetryAfterMs(response.headers.get('Retry-After')) ?? Math.pow(2, attempt) * 1000;
-          logger.warn(`Rate limited (429), retrying after ${delayMs / 1000}s`);
-          await this.delay(delayMs);
-          attempt++;
-          continue;
-        }
-
-        if (response.status >= 500 && response.status < 600) {
-          if (attempt < ApicClient.MAX_RETRIES) {
-            const ms = this.backoff(attempt);
-            logger.warn(`Server error ${response.status}, retrying after ${Math.round(ms)}ms`);
-            await this.delay(ms);
-            attempt++;
-            continue;
-          }
-        }
-
-        if (response.status === 404 && (method === 'GET' || method === 'DELETE')) {
-          return response;
-        }
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new ApicHttpError(
-            response.status,
-            `HTTP ${response.status}: ${errorText}`,
-            this.parseErrorCode(errorText),
-          );
-        }
-
-        return response;
-      } catch (error) {
-        if (error instanceof ApicHttpError && error.status >= 400 && error.status < 500) {
-          throw error;
-        }
-        if (attempt >= ApicClient.MAX_RETRIES) {
-          throw error;
-        }
-        const ms = this.backoff(attempt);
-        logger.warn(`Request failed: ${(error as Error).message}, retrying after ${Math.round(ms)}ms`);
-        await this.delay(ms);
-        attempt++;
-      }
-    }
-    throw new Error('Max retries exceeded');
+  constructor(authScope?: string, httpOptions: Omit<ArmHttpClientOptions, 'authScope'> = {}) {
+    this.http = new ArmHttpClient({ ...httpOptions, authScope });
   }
 
-  private parseErrorCode(errorText: string): string | undefined {
-    try {
-      const body = JSON.parse(errorText) as { error?: { code?: unknown } };
-      const code = body.error?.code;
-      return typeof code === 'string' ? code : undefined;
-    } catch {
-      return undefined;
-    }
+  /** Execute an HTTP request through the shared ARM client. */
+  private request(
+    url: string,
+    init: RequestInit = {},
+    options: ArmRequestOptions = {},
+  ): Promise<Response> {
+    return this.http.request(url, init, { ...ApicClient.REQUEST_OPTIONS, ...options });
   }
 
   async *listResources(
@@ -232,38 +84,10 @@ export class ApicClient implements IApicClient {
     parentNameParts: string[],
     workspace?: string,
   ): AsyncIterable<Record<string, unknown>> {
-    let url = buildApicListUri(context, type, parentNameParts, workspace);
-
-    while (url) {
-      let response: Response;
-      try {
-        response = await this.request(url);
-      } catch (error) {
-        // A missing collection (404) is an empty list, not a failure.
-        if (error instanceof ApicHttpError && error.status === 404) {
-          return;
-        }
-        throw error;
-      }
-
-      if (response.status === 404) {
-        return;
-      }
-
-      const data = (await response.json()) as { value?: unknown[]; nextLink?: string };
-      if (Array.isArray(data.value)) {
-        for (const item of data.value) {
-          yield item as Record<string, unknown>;
-        }
-      }
-      url = data.nextLink ?? '';
-      // nextLink comes from the response; never send the token anywhere but ARM.
-      if (url && !isArmUrl(url)) {
-        throw new Error(
-          `Refusing to follow nextLink to a non-ARM URL: ${url.split('?')[0]}`,
-        );
-      }
-    }
+    // A missing collection (404) is an empty list, not a failure.
+    yield* paginateArm(this.http, buildApicListUri(context, type, parentNameParts, workspace), {
+      requestOptions: ApicClient.REQUEST_OPTIONS,
+    });
   }
 
   async getResource(
@@ -273,6 +97,7 @@ export class ApicClient implements IApicClient {
     const url = buildApicArmUri(context, descriptor);
     const response = await this.request(url, { method: 'GET' });
     if (response.status === 404) {
+      await discardBody(response);
       return undefined;
     }
     const text = await response.text();
@@ -292,9 +117,14 @@ export class ApicClient implements IApicClient {
 
     // Poll any async-operation header, including updates that return 200 while
     // provisioning continues. A Location header on a 200 is not a polling URL.
-    const asyncUrl = this.asyncOperationUrl(response, response.status !== 200);
-    if (asyncUrl) {
-      await this.pollAsyncOperation(asyncUrl, buildApicLabel(descriptor));
+    const operation = extractAsyncOperation(response, {
+      includeLocation: response.status !== 200,
+      armHosts: this.http.armHosts,
+    });
+    if (operation) {
+      // The final state comes from polling, so the PUT body is not read.
+      await discardBody(response);
+      await this.pollAsyncOperation(operation, buildApicLabel(descriptor));
       const settled = await this.getResource(context, descriptor);
       return settled ?? {};
     }
@@ -309,14 +139,25 @@ export class ApicClient implements IApicClient {
   ): Promise<boolean> {
     const url = buildApicArmUri(context, descriptor);
     const response = await this.request(url, { method: 'DELETE' });
+    // Only the status and headers of a DELETE response are used.
+    await discardBody(response);
     if (response.status === 404) {
       return false;
     }
     if (response.status === 202) {
-      // Without a (valid) polling header, poll the resource itself until it
-      // is gone: 404 is success and a Failed provisioningState fails.
-      const asyncUrl = this.asyncOperationUrl(response) ?? url;
-      await this.pollAsyncOperation(asyncUrl, buildApicLabel(descriptor), true);
+      const operation = extractAsyncOperation(response, { armHosts: this.http.armHosts });
+      if (operation) {
+        await this.pollAsyncOperation(operation, buildApicLabel(descriptor), { treatMissingAsSuccess: true });
+      } else {
+        // Without a (valid) polling header, wait until the resource itself is
+        // gone: one that is still returned keeps the wait going, whatever its
+        // state or body, Failed included. The probe checks presence only.
+        await waitUntilGone(() => this.resourceExists(context, descriptor), buildApicLabel(descriptor), {
+          timeoutMs: ApicClient.ASYNC_POLL_TIMEOUT_MS,
+          intervalMs: ApicClient.ASYNC_POLL_INTERVAL_MS,
+          delay: (ms) => this.http.delay(ms),
+        });
+      }
     }
     return true;
   }
@@ -330,16 +171,12 @@ export class ApicClient implements IApicClient {
     try {
       response = await this.request(actionUrl, { method: 'POST' });
     } catch (error) {
-      if (error instanceof ApicHttpError && error.status === 404) {
+      if (error instanceof HttpError && error.status === 404) {
         return undefined;
       }
       logger.warn(
-        `Failed to export specification for ${buildApicLabel(descriptor)}: ${(error as Error).message}`,
+        `Failed to export specification for ${buildApicLabel(descriptor)}: ${errorMessage(error)}`,
       );
-      return undefined;
-    }
-
-    if (response.status === 404) {
       return undefined;
     }
 
@@ -356,8 +193,9 @@ export class ApicClient implements IApicClient {
     // returns the content directly.
     let content = body.value;
     if (body.format === 'link') {
-      const blob = await this.request(body.value, {}, true);
+      const blob = await this.request(body.value, {}, { skipAuth: true });
       if (!blob.ok) {
+        await discardBody(blob);
         logger.warn(`Failed to fetch specification link for ${buildApicLabel(descriptor)}`);
         return undefined;
       }
@@ -382,11 +220,13 @@ export class ApicClient implements IApicClient {
         specification: { name: spec.name, ...(spec.version ? { version: spec.version } : {}) },
       }),
     });
+    // Only the status and headers of the import response are used.
+    await discardBody(response);
 
     if (response.status === 202) {
-      const asyncUrl = this.asyncOperationUrl(response);
-      if (asyncUrl) {
-        await this.pollAsyncOperation(asyncUrl, `${buildApicLabel(descriptor)} (spec import)`);
+      const operation = extractAsyncOperation(response, { armHosts: this.http.armHosts });
+      if (operation) {
+        await this.pollAsyncOperation(operation, `${buildApicLabel(descriptor)} (spec import)`);
       }
     }
   }
@@ -416,6 +256,20 @@ export class ApicClient implements IApicClient {
     };
   }
 
+  /**
+   * GET the resource and report whether it exists: false on 404, true on any
+   * other response the client returns. The body is released unread, so a
+   * body that is not JSON still counts as present.
+   */
+  private async resourceExists(
+    context: ApicServiceContext,
+    descriptor: ApicResourceDescriptor,
+  ): Promise<boolean> {
+    const response = await this.request(buildApicArmUri(context, descriptor), { method: 'GET' });
+    await discardBody(response);
+    return response.status !== 404;
+  }
+
   /** Build an action URL (`.../{resource}/{action}?api-version=...`). */
   private actionUrl(
     context: ApicServiceContext,
@@ -427,86 +281,18 @@ export class ApicClient implements IApicClient {
   }
 
   /**
-   * Extract the LRO polling URL from response headers, if any. Prefers
-   * Azure-AsyncOperation, then Operation-Location, then (when
-   * `includeLocation`) Location. URLs that are not HTTPS on a known ARM host
-   * are ignored so the bearer token is never sent elsewhere.
+   * Poll an ARM long-running operation until it reaches a terminal state.
+   * @param options `treatMissingAsSuccess` for delete operations.
    */
-  private asyncOperationUrl(response: Response, includeLocation = true): string | undefined {
-    const asyncUrl =
-      response.headers.get('Azure-AsyncOperation') ??
-      response.headers.get('Operation-Location') ??
-      (includeLocation ? response.headers.get('Location') : null);
-    if (!asyncUrl) {
-      return undefined;
-    }
-    if (!isArmUrl(asyncUrl)) {
-      logger.warn(`Ignoring async operation URL that is not HTTPS on a known ARM host: ${asyncUrl.split('?')[0]}`);
-      return undefined;
-    }
-    return asyncUrl;
-  }
-
-  /**
-   * Poll an ARM async-operation URL until it reaches a terminal state.
-   * @param treatMissingAsSuccess when true, a 404 during polling (resource gone)
-   *   is treated as success — used for delete operations.
-   */
-  private async pollAsyncOperation(
-    asyncUrl: string,
+  private pollAsyncOperation(
+    operation: AsyncOperation,
     label: string,
-    treatMissingAsSuccess = false,
+    options: Pick<PollArmOperationOptions, 'treatMissingAsSuccess'> = {},
   ): Promise<void> {
-    const deadline = Date.now() + ApicClient.ASYNC_POLL_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      const response = await this.request(asyncUrl, { method: 'GET' });
-      if (response.status === 404) {
-        if (treatMissingAsSuccess) {
-          return;
-        }
-        throw new Error(`Async operation for ${label} not found (404).`);
-      }
-
-      const retryAfterMs = parseRetryAfterMs(response.headers.get('Retry-After'));
-      const text = await response.text();
-      const status = this.readOperationStatus(text, response.status);
-
-      if (status.toLowerCase() === TERMINAL_SUCCESS) {
-        return;
-      }
-      if (TERMINAL_FAILURES.has(status.toLowerCase())) {
-        throw new Error(`Async operation for ${label} ${status}: ${text.substring(0, 500)}`);
-      }
-
-      await this.delay(
-        retryAfterMs !== undefined && retryAfterMs > 0
-          ? retryAfterMs
-          : ApicClient.ASYNC_POLL_INTERVAL_MS,
-      );
-    }
-    throw new Error(`Async operation for ${label} timed out after ${ApicClient.ASYNC_POLL_TIMEOUT_MS}ms.`);
-  }
-
-  /**
-   * Resolve the operation status from a polling response. ARM async operations
-   * report `{ status }`; provisioning-style responses report
-   * `{ properties: { provisioningState } }`. A bare 200 with no status is
-   * treated as success.
-   */
-  private readOperationStatus(text: string, httpStatus: number): string {
-    const fallback = httpStatus === 200 ? 'Succeeded' : 'InProgress';
-    if (!text.trim()) {
-      return fallback;
-    }
-    try {
-      const body = JSON.parse(text) as {
-        status?: unknown;
-        properties?: { provisioningState?: unknown };
-      };
-      const state = body.status ?? body.properties?.provisioningState;
-      return typeof state === 'string' ? state : fallback;
-    } catch {
-      return fallback;
-    }
+    return pollArmOperation(this.http, operation, label, {
+      ...options,
+      timeoutMs: ApicClient.ASYNC_POLL_TIMEOUT_MS,
+      intervalMs: ApicClient.ASYNC_POLL_INTERVAL_MS,
+    });
   }
 }

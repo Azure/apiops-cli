@@ -11,6 +11,7 @@
  */
 
 import { logger } from '../lib/logger.js';
+import { HttpError, discardBody } from './arm-http-client.js';
 
 /** ARM api-version for the resource group GET. */
 const RESOURCE_GROUP_API_VERSION = '2021-04-01';
@@ -37,7 +38,7 @@ export interface PreFlightServiceKind {
 
 /**
  * Issue a GET and return the response. Must return 404 responses and throw
- * an error carrying a numeric `status` for other non-2xx responses.
+ * an {@link HttpError} for other non-2xx responses.
  */
 export type PreFlightGet = (url: string) => Promise<Response>;
 
@@ -61,6 +62,8 @@ export async function validateServicePreFlight(
   let rgResponse: Response | undefined;
   try {
     rgResponse = await get(rgUrl);
+    // Only the status is used.
+    await discardBody(rgResponse);
   } catch (error) {
     if (getHttpStatus(error) === 403) {
       logger.debug(
@@ -85,6 +88,8 @@ export async function validateServicePreFlight(
   } catch (error) {
     throwPreFlightHttpError(error, serviceLabel, kind.roleTarget);
   }
+  // Only the status is used.
+  await discardBody(serviceResponse);
   if (serviceResponse.status === 404) {
     if (!rgResponse) {
       // The resource group check was skipped, so a 404 here can also mean
@@ -122,11 +127,10 @@ function throwPreFlightHttpError(error: unknown, resourceLabel: string, roleTarg
       { cause: error }
     );
   }
-  throw error as Error;
+  throw error;
 }
 
-/** Status code of an HTTP error thrown by either client (`HttpError`, `ApicHttpError`). */
+/** Status code of an {@link HttpError} (thrown by both clients), else undefined. */
 function getHttpStatus(error: unknown): number | undefined {
-  const status = error instanceof Error ? (error as { status?: unknown }).status : undefined;
-  return typeof status === 'number' ? status : undefined;
+  return error instanceof HttpError ? error.status : undefined;
 }

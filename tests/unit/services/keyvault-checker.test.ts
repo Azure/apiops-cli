@@ -4,18 +4,36 @@
  * Unit tests for keyvault-checker service (ARM-based approach)
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
 import {
   checkKeyVaultSecretAccess,
-  type TokenProviderFactory,
+  type KeyVaultArmClientFactory,
   type KeyVaultCheckContext,
 } from '../../../src/services/keyvault-checker.js';
-import { USER_AGENT } from '../../../src/lib/user-agent.js';
+import { ArmHttpClient, type ArmTokenCredential } from '../../../src/clients/arm-http-client.js';
+import { logger } from '../../../src/lib/logger.js';
+
+/** Stands in for DefaultAzureCredential, which only the default client factory creates. */
+const identityMock = vi.hoisted(() => ({
+  constructed: 0,
+  getToken: vi.fn(),
+}));
+
+vi.mock('@azure/identity', async (importOriginal) => ({
+  // Keep the real getBearerTokenProvider (the SDK token cycler) around the mocked credential.
+  ...(await importOriginal<typeof import('@azure/identity')>()),
+  DefaultAzureCredential: class {
+    constructor() {
+      identityMock.constructed++;
+    }
+    getToken = identityMock.getToken;
+  },
+}));
 
 describe('checkKeyVaultSecretAccess', () => {
   let mockGetToken: ReturnType<typeof vi.fn>;
-  let mockTokenProviderFactory: TokenProviderFactory;
   let mockArmRequest: ReturnType<typeof vi.fn>;
+  let mockArmClientFactory: KeyVaultArmClientFactory & ReturnType<typeof vi.fn>;
 
   const validSecretIdentifier = 'https://myvault.vault.azure.net/secrets/my-secret';
 
@@ -85,9 +103,16 @@ describe('checkKeyVaultSecretAccess', () => {
     '/subscriptions/sub-1/resourceGroups/vault-rg/providers/Microsoft.KeyVault/vaults/myvault';
 
   beforeEach(() => {
-    mockGetToken = vi.fn().mockResolvedValue({ token: 'fake-arm-token' });
-    mockTokenProviderFactory = vi.fn().mockReturnValue({ getToken: mockGetToken });
+    mockGetToken = vi.fn().mockResolvedValue('fake-arm-token');
     mockArmRequest = vi.fn();
+    mockArmClientFactory = vi.fn().mockReturnValue({
+      getToken: mockGetToken,
+      request: mockArmRequest,
+    }) as KeyVaultArmClientFactory & ReturnType<typeof vi.fn>;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   /* ------------------------------------------------------------------ */
@@ -98,7 +123,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         'not-a-url', undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).rejects.toMatchObject({
       name: 'KeyVaultAccessError',
@@ -110,7 +135,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         'https://myvault.vault.azure.net/', undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).rejects.toMatchObject({
       name: 'KeyVaultAccessError',
@@ -128,11 +153,27 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).resolves.toBeUndefined();
 
     expect(mockArmRequest).not.toHaveBeenCalled();
+  });
+
+  it('should warn and skip when the ARM client cannot be created', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const factory = vi.fn<KeyVaultArmClientFactory>(() => {
+      throw new Error('Invalid AZURE_CLIENT_ID');
+    });
+
+    await expect(
+      checkKeyVaultSecretAccess(validSecretIdentifier, undefined, apimContext, factory),
+    ).resolves.toBeUndefined();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Unable to acquire ARM token — skipping Key Vault pre-flight check. (Error: Invalid AZURE_CLIENT_ID)',
+    );
+    warnSpy.mockRestore();
   });
 
   /* ------------------------------------------------------------------ */
@@ -145,7 +186,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).rejects.toMatchObject({
       name: 'KeyVaultAccessError',
@@ -161,7 +202,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).rejects.toMatchObject({
       name: 'KeyVaultAccessError',
@@ -177,7 +218,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, 'missing-client-id', apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).rejects.toMatchObject({
       name: 'KeyVaultAccessError',
@@ -191,7 +232,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).resolves.toBeUndefined();
   });
@@ -202,7 +243,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).resolves.toBeUndefined();
   });
@@ -219,7 +260,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).resolves.toBeUndefined();
   });
@@ -232,7 +273,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).resolves.toBeUndefined();
   });
@@ -246,7 +287,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).resolves.toBeUndefined();
   });
@@ -268,7 +309,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).resolves.toBeUndefined();
   });
@@ -285,7 +326,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).resolves.toBeUndefined();
   });
@@ -300,12 +341,50 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).rejects.toMatchObject({
       name: 'KeyVaultAccessError',
       message: expect.stringContaining('no RBAC role assignments'),
     });
+  });
+
+  it('should log access as confirmed only when an RBAC role grants it', async () => {
+    const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+    mockArmRequest
+      .mockResolvedValueOnce(armResponse(200, apimWithSystemIdentity('principal-1')))
+      .mockResolvedValueOnce(armResponse(200, vaultListResponse(VAULT_RESOURCE_ID)))
+      .mockResolvedValueOnce(armResponse(200, vaultWithRbac()))
+      .mockResolvedValueOnce(
+        armResponse(200, { value: [roleAssignment('4633458b-17de-408a-b874-0445c86b69e6')] }),
+      );
+
+    await checkKeyVaultSecretAccess(
+      validSecretIdentifier, undefined, apimContext,
+      mockArmClientFactory,
+    );
+
+    expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('Key Vault access confirmed'));
+  });
+
+  it('should not log access as confirmed when the RBAC check is skipped', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+    mockArmRequest
+      .mockResolvedValueOnce(armResponse(200, apimWithSystemIdentity('principal-1')))
+      .mockResolvedValueOnce(armResponse(200, vaultListResponse(VAULT_RESOURCE_ID)))
+      .mockResolvedValueOnce(armResponse(200, vaultWithRbac()))
+      .mockResolvedValueOnce(armResponse(403, { error: { code: 'AuthorizationFailed' } }));
+
+    await checkKeyVaultSecretAccess(
+      validSecretIdentifier, undefined, apimContext,
+      mockArmClientFactory,
+    );
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Failed to list role assignments (HTTP 403) — skipping RBAC pre-flight check for 'myvault'.",
+    );
+    expect(debugSpy).not.toHaveBeenCalledWith(expect.stringContaining('Key Vault access confirmed'));
   });
 
   it('should succeed when custom role has getSecret dataAction (slow path)', async () => {
@@ -333,7 +412,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).resolves.toBeUndefined();
   });
@@ -361,7 +440,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).resolves.toBeUndefined();
   });
@@ -389,7 +468,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).rejects.toMatchObject({
       name: 'KeyVaultAccessError',
@@ -421,11 +500,69 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).rejects.toMatchObject({
       name: 'KeyVaultAccessError',
     });
+  });
+
+  it('should throw when the only custom role definition cannot be read', async () => {
+    const customRoleGuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
+    mockArmRequest
+      .mockResolvedValueOnce(armResponse(200, apimWithSystemIdentity('principal-1')))
+      .mockResolvedValueOnce(armResponse(200, vaultListResponse(VAULT_RESOURCE_ID)))
+      .mockResolvedValueOnce(armResponse(200, vaultWithRbac()))
+      .mockResolvedValueOnce(
+        armResponse(200, { value: [roleAssignment(customRoleGuid)] }),
+      )
+      .mockResolvedValueOnce(armResponse(403, { error: { code: 'AuthorizationFailed' } }));
+
+    // An unreadable role definition is skipped, so no role is left to grant access.
+    await expect(
+      checkKeyVaultSecretAccess(
+        validSecretIdentifier, undefined, apimContext,
+        mockArmClientFactory,
+      ),
+    ).rejects.toMatchObject({
+      name: 'KeyVaultAccessError',
+      message: expect.stringContaining('data-action'),
+    });
+  });
+
+  it('should skip an unreadable role definition and confirm access from the next one', async () => {
+    const unreadableRoleGuid = 'ffffffff-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const grantingRoleGuid = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+    const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+
+    mockArmRequest
+      .mockResolvedValueOnce(armResponse(200, apimWithSystemIdentity('principal-1')))
+      .mockResolvedValueOnce(armResponse(200, vaultListResponse(VAULT_RESOURCE_ID)))
+      .mockResolvedValueOnce(armResponse(200, vaultWithRbac()))
+      .mockResolvedValueOnce(
+        armResponse(200, {
+          value: [roleAssignment(unreadableRoleGuid), roleAssignment(grantingRoleGuid)],
+        }),
+      )
+      .mockResolvedValueOnce(armResponse(403, { error: { code: 'AuthorizationFailed' } }))
+      .mockResolvedValueOnce(
+        armResponse(200, {
+          properties: {
+            permissions: [{
+              dataActions: ['Microsoft.KeyVault/vaults/secrets/getSecret/action'],
+            }],
+          },
+        }),
+      );
+
+    await expect(
+      checkKeyVaultSecretAccess(
+        validSecretIdentifier, undefined, apimContext,
+        mockArmClientFactory,
+      ),
+    ).resolves.toBeUndefined();
+    expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('Key Vault access confirmed'));
   });
 
   it('should skip RBAC check when role assignments fetch fails', async () => {
@@ -438,7 +575,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).resolves.toBeUndefined();
   });
@@ -461,7 +598,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).resolves.toBeUndefined();
   });
@@ -480,7 +617,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).resolves.toBeUndefined();
   });
@@ -499,7 +636,24 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
+      ),
+    ).rejects.toMatchObject({
+      name: 'KeyVaultAccessError',
+      message: expect.stringContaining("does not have an access policy"),
+    });
+  });
+
+  it('should throw when the vault has no access policies', async () => {
+    mockArmRequest
+      .mockResolvedValueOnce(armResponse(200, apimWithSystemIdentity('principal-1')))
+      .mockResolvedValueOnce(armResponse(200, vaultListResponse(VAULT_RESOURCE_ID)))
+      .mockResolvedValueOnce(armResponse(200, { properties: { enableRbacAuthorization: false } }));
+
+    await expect(
+      checkKeyVaultSecretAccess(
+        validSecretIdentifier, undefined, apimContext,
+        mockArmClientFactory,
       ),
     ).rejects.toMatchObject({
       name: 'KeyVaultAccessError',
@@ -521,12 +675,34 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, undefined, apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).rejects.toMatchObject({
       name: 'KeyVaultAccessError',
       message: expect.stringContaining("does not have an access policy"),
     });
+  });
+
+  it('should log access as confirmed when the principal\'s own access policy grants secret GET', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => undefined);
+    const policies = [
+      { objectId: 'other-principal', permissions: { secrets: ['list'] } },
+      { objectId: 'PRINCIPAL-1', permissions: { secrets: ['List', 'Get'] } },
+    ];
+
+    mockArmRequest
+      .mockResolvedValueOnce(armResponse(200, apimWithSystemIdentity('principal-1')))
+      .mockResolvedValueOnce(armResponse(200, vaultListResponse(VAULT_RESOURCE_ID)))
+      .mockResolvedValueOnce(armResponse(200, vaultWithAccessPolicies(policies)));
+
+    await checkKeyVaultSecretAccess(
+      validSecretIdentifier, undefined, apimContext,
+      mockArmClientFactory,
+    );
+
+    expect(debugSpy).toHaveBeenCalledWith(expect.stringContaining('Key Vault access confirmed'));
+    expect(warnSpy).not.toHaveBeenCalled();
   });
 
   /* ------------------------------------------------------------------ */
@@ -545,7 +721,7 @@ describe('checkKeyVaultSecretAccess', () => {
     await expect(
       checkKeyVaultSecretAccess(
         validSecretIdentifier, 'ua-client', apimContext,
-        mockTokenProviderFactory, mockArmRequest,
+        mockArmClientFactory,
       ),
     ).resolves.toBeUndefined();
 
@@ -572,8 +748,7 @@ describe('checkKeyVaultSecretAccess', () => {
         'https://myvault.vault.azure.net/secrets/my-secret/abc123version',
         undefined,
         apimContext,
-        mockTokenProviderFactory,
-        mockArmRequest,
+        mockArmClientFactory,
       ),
     ).resolves.toBeUndefined();
   });
@@ -607,7 +782,7 @@ describe('checkKeyVaultSecretAccess in sovereign clouds', () => {
   it.each(clouds)(
     'should use the $name ARM scope and endpoint for every request',
     async ({ armBaseUrl, authScope, secretIdentifier }) => {
-      const getToken = vi.fn().mockResolvedValue({ token: 'fake-arm-token' });
+      const getToken = vi.fn().mockResolvedValue('fake-arm-token');
       const armRequest = vi.fn()
         .mockResolvedValueOnce(armResponse(200, {
           identity: { type: 'SystemAssigned', principalId: 'principal-1' },
@@ -623,6 +798,7 @@ describe('checkKeyVaultSecretAccess in sovereign clouds', () => {
             permissions: [{ dataActions: ['Microsoft.KeyVault/vaults/secrets/getSecret/action'] }],
           },
         }));
+      const armClientFactory = vi.fn(() => ({ getToken, request: armRequest }));
 
       await expect(
         checkKeyVaultSecretAccess(
@@ -635,12 +811,12 @@ describe('checkKeyVaultSecretAccess in sovereign clouds', () => {
             armBaseUrl,
             authScope,
           },
-          () => ({ getToken }),
-          armRequest,
+          armClientFactory,
         ),
       ).resolves.toBeUndefined();
 
-      expect(getToken).toHaveBeenCalledWith(authScope);
+      expect(armClientFactory).toHaveBeenCalledWith(authScope);
+      expect(getToken).toHaveBeenCalled();
 
       const urls = armRequest.mock.calls.map((call) => call[0] as string);
       expect(urls).toHaveLength(5);
@@ -682,8 +858,7 @@ describe('checkKeyVaultSecretAccess in sovereign clouds', () => {
           armBaseUrl: 'https://management.usgovcloudapi.net',
           authScope: 'https://management.usgovcloudapi.net/.default',
         },
-        () => ({ getToken: vi.fn().mockResolvedValue({ token: 'fake-arm-token' }) }),
-        armRequest,
+        () => ({ getToken: vi.fn().mockResolvedValue('fake-arm-token'), request: armRequest }),
       ),
     ).resolves.toBeUndefined();
 
@@ -692,7 +867,7 @@ describe('checkKeyVaultSecretAccess in sovereign clouds', () => {
   });
 });
 
-describe('defaultArmRequest User-Agent header', () => {
+describe('checkKeyVaultSecretAccess through ArmHttpClient', () => {
   const apimContextForUserAgentTest: KeyVaultCheckContext = {
     subscriptionId: 'sub-1',
     resourceGroup: 'rg-1',
@@ -701,10 +876,35 @@ describe('defaultArmRequest User-Agent header', () => {
     authScope: 'https://management.azure.com/.default',
   };
   let fetchSpy: ReturnType<typeof vi.fn>;
+  let getToken: Mock<ArmTokenCredential['getToken']>;
+  let delays: number[];
+
+  /** Real ArmHttpClient with a stub credential and instant retry delays. */
+  function armHttpClientFactory(authScope: string): ArmHttpClient {
+    return new ArmHttpClient({
+      authScope,
+      credential: { getToken },
+      delay: async (ms) => {
+        delays.push(ms);
+      },
+    });
+  }
+
+  function jsonResponse(status: number, body: unknown, headers: Record<string, string> = {}): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'Content-Type': 'application/json', ...headers },
+    });
+  }
 
   beforeEach(() => {
     fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
+    getToken = vi.fn<ArmTokenCredential['getToken']>().mockResolvedValue({
+      token: 'fake-arm-token',
+      expiresOnTimestamp: Date.now() + 3600_000,
+    });
+    delays = [];
   });
 
   afterEach(() => {
@@ -712,47 +912,135 @@ describe('defaultArmRequest User-Agent header', () => {
     vi.unstubAllGlobals();
   });
 
-  it('should include User-Agent header when defaultArmRequest is used', async () => {
-    // Arrange: mock all ARM responses so checkKeyVaultSecretAccess runs to completion
-    const apimIdentity = {
-      identity: { type: 'SystemAssigned', principalId: 'pid-1' },
-    };
-    const vaultList = { value: [{ id: '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.KeyVault/vaults/myvault' }] };
-    const vaultDetail = {
-      properties: {
-        enableRbacAuthorization: false,
-        accessPolicies: [
-          {
-            objectId: 'pid-1',
-            permissions: { secrets: ['get'] },
-          },
-        ],
-      },
-    };
+  const VAULT_ID = '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.KeyVault/vaults/myvault';
+  it('should request the token for the cloud scope and send it as a bearer token', async () => {
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, {}));
 
-    fetchSpy
-      .mockResolvedValueOnce(new Response(JSON.stringify(apimIdentity), { status: 200, headers: { 'Content-Type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(vaultList), { status: 200, headers: { 'Content-Type': 'application/json' } }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(vaultDetail), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+    await expect(
+      checkKeyVaultSecretAccess(
+        'https://myvault.vault.usgovcloudapi.net/secrets/my-secret',
+        undefined,
+        {
+          ...apimContextForUserAgentTest,
+          armBaseUrl: 'https://management.usgovcloudapi.net',
+          authScope: 'https://management.usgovcloudapi.net/.default',
+        },
+        armHttpClientFactory,
+      ),
+    ).rejects.toMatchObject({ name: 'KeyVaultAccessError' });
 
-    const mockTokenProviderFactory: TokenProviderFactory = () => ({
-      getToken: vi.fn().mockResolvedValue({ token: 'fake-arm-token' }),
-    });
+    expect(getToken).toHaveBeenCalledTimes(1);
+    expect(getToken).toHaveBeenCalledWith('https://management.usgovcloudapi.net/.default');
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(new URL(url).origin).toBe('https://management.usgovcloudapi.net');
+    const headers = new Headers(init.headers);
+    expect(headers.get('Authorization')).toBe('Bearer fake-arm-token');
+    expect(headers.get('Accept')).toBe('application/json');
+  });
 
-    await checkKeyVaultSecretAccess(
-      'https://myvault.vault.azure.net/secrets/my-secret',
-      undefined,
-      apimContextForUserAgentTest,
-      mockTokenProviderFactory,
-      // No armRequest override — uses defaultArmRequest which must include User-Agent
+  it('should warn and skip when an ARM call fails with a client error, without retrying', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    fetchSpy.mockResolvedValueOnce(jsonResponse(403, { error: { code: 'AuthorizationFailed' } }));
+
+    await expect(
+      checkKeyVaultSecretAccess(
+        'https://myvault.vault.azure.net/secrets/my-secret',
+        undefined,
+        apimContextForUserAgentTest,
+        armHttpClientFactory,
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Failed to fetch APIM service (HTTP 403) — skipping Key Vault pre-flight check.',
     );
+  });
 
-    // All three fetch calls should include the User-Agent header
-    expect(fetchSpy.mock.calls.length).toBeGreaterThan(0);
-    for (const call of fetchSpy.mock.calls) {
-      const [_url, init] = call as [string, RequestInit];
-      const headers = new Headers(init?.headers);
-      expect(headers.get('User-Agent')).toBe(USER_AGENT);
-    }
+  it('should warn and skip when an ARM call keeps failing with a server error', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    fetchSpy
+      .mockResolvedValueOnce(jsonResponse(200, { identity: { type: 'SystemAssigned', principalId: 'pid-1' } }))
+      .mockImplementation(async () => new Response('down', { status: 503 }));
+
+    await expect(
+      checkKeyVaultSecretAccess(
+        'https://myvault.vault.azure.net/secrets/my-secret',
+        undefined,
+        apimContextForUserAgentTest,
+        armHttpClientFactory,
+      ),
+    ).resolves.toBeUndefined();
+
+    // 1 APIM GET + 4 attempts at the vault search
+    expect(fetchSpy).toHaveBeenCalledTimes(5);
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Failed to search for Key Vault 'myvault' (HTTP 503) — skipping pre-flight check.",
+    );
+  });
+
+  it('should cancel the unread body of a 404 it skips the check for', async () => {
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const cancel = vi.fn();
+    fetchSpy
+      .mockResolvedValueOnce(jsonResponse(200, { identity: { type: 'SystemAssigned', principalId: 'pid-1' } }))
+      .mockResolvedValueOnce(jsonResponse(200, { value: [{ id: VAULT_ID }] }))
+      .mockResolvedValueOnce(new Response(new ReadableStream({ cancel }), { status: 404 }));
+
+    await expect(
+      checkKeyVaultSecretAccess(
+        'https://myvault.vault.azure.net/secrets/my-secret',
+        undefined,
+        apimContextForUserAgentTest,
+        armHttpClientFactory,
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      "Failed to read Key Vault 'myvault' (HTTP 404) — skipping pre-flight check.",
+    );
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('checkKeyVaultSecretAccess with the default ARM client', () => {
+  // The default factory keeps its clients for the whole run (module), so each
+  // test uses auth scopes of its own.
+  function context(authScope: string): KeyVaultCheckContext {
+    return {
+      subscriptionId: 'sub-1',
+      resourceGroup: 'rg-1',
+      serviceName: 'apim-1',
+      armBaseUrl: 'https://management.azure.com',
+      authScope,
+    };
+  }
+
+  beforeEach(() => {
+    identityMock.constructed = 0;
+    identityMock.getToken.mockReset();
+    identityMock.getToken.mockImplementation(async () => ({
+      token: 'fake-arm-token',
+      expiresOnTimestamp: Date.now() + 60 * 60 * 1000,
+    }));
+    // Every check stops at the APIM service GET (404) and skips.
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('should reuse one client and its token for checks with the same auth scope', async () => {
+    const ctx = context('https://reuse.example/.default');
+
+    await checkKeyVaultSecretAccess('https://v1.vault.azure.net/secrets/s1', undefined, ctx);
+    await checkKeyVaultSecretAccess('https://v2.vault.azure.net/secrets/s2', undefined, ctx);
+
+    expect(identityMock.constructed).toBe(1);
+    expect(identityMock.getToken).toHaveBeenCalledTimes(1);
+    expect(identityMock.getToken).toHaveBeenCalledWith('https://reuse.example/.default');
   });
 });

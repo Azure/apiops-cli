@@ -190,7 +190,7 @@ See [Pipeline Recovery](pipeline-recovery.md) for CI/CD-specific recovery steps.
 
 **Solution:**
 
-- The CLI automatically retries on 429 responses with the delay specified in the `Retry-After` header
+- The CLI automatically retries a 429 response up to 3 times. Like the Azure SDK, it waits for the `retry-after-ms`, `x-ms-retry-after-ms` or `Retry-After` header (seconds or an HTTP date); `0` or a date already passed retries at once. When none of these headers is present or readable, it waits 1, 2 and then 4 seconds instead. A 503 that sends one of these headers is retried after that wait too
 - If retries are exhausted, reduce the number of resources being processed (use filters for extract or incremental publish)
 - Wait a few minutes and re-run
 
