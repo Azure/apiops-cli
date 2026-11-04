@@ -381,10 +381,13 @@ export async function publishResource(
         const secretIdentifier = kvBlock.secretIdentifier as string | undefined;
         const identityClientId = kvBlock.identityClientId as string | undefined;
         if (secretIdentifier) {
+          // Target the same cloud as the APIM client (resolved from --cloud).
           await checkKeyVaultSecretAccess(secretIdentifier, identityClientId, {
             subscriptionId: context.subscriptionId,
             resourceGroup: context.resourceGroup,
             serviceName: context.serviceName,
+            armBaseUrl: config.cloud.armBaseUrl,
+            authScope: config.cloud.authScope,
           });
         }
       }

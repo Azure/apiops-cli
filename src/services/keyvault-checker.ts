@@ -27,9 +27,6 @@ const RESOURCES_API_VERSION = '2021-04-01';
 const KEYVAULT_API_VERSION = '2023-07-01';
 const AUTHZ_API_VERSION = '2022-04-01';
 
-/** ARM management scope */
-const ARM_SCOPE = 'https://management.azure.com/.default';
-
 /**
  * Well-known Azure RBAC role-definition GUIDs that grant
  * the `Microsoft.KeyVault/vaults/secrets/getSecret/action` data-action.
@@ -63,6 +60,13 @@ export interface KeyVaultCheckContext {
   subscriptionId: string;
   resourceGroup: string;
   serviceName: string;
+  /**
+   * ARM base URL of the target cloud, without a trailing slash
+   * (e.g. `https://management.usgovcloudapi.net`).
+   */
+  armBaseUrl: string;
+  /** OAuth2 scope for ARM token requests in the target cloud. */
+  authScope: string;
 }
 
 /** Minimal response shape from an ARM HTTP call. */
@@ -111,11 +115,13 @@ async function defaultArmRequest(url: string, token: string): Promise<ArmRespons
  * specified Key Vault secret via ARM RBAC or access policies.
  *
  * @param secretIdentifier  Full Key Vault secret URI, e.g.
- *   `https://myvault.vault.azure.net/secrets/my-secret[/version]`
+ *   `https://myvault.vault.azure.net/secrets/my-secret[/version]`.
+ *   Only the first host label (the vault name) is used, so sovereign-cloud
+ *   vault suffixes (e.g. `vault.usgovcloudapi.net`) are accepted.
  * @param identityClientId  Client ID of the user-assigned managed identity
  *   that APIM will use. Omit for system-assigned identity.
  * @param apimContext  Subscription / resource-group / service-name of the
- *   APIM instance.
+ *   APIM instance, plus the ARM base URL and auth scope of its cloud.
  * @param tokenProviderFactory  (testing) Override the ARM credential.
  * @param armRequest  (testing) Override the HTTP call.
  */
@@ -148,7 +154,7 @@ export async function checkKeyVaultSecretAccess(
   const credential = tokenProviderFactory();
   let token: string;
   try {
-    token = (await credential.getToken(ARM_SCOPE)).token;
+    token = (await credential.getToken(apimContext.authScope)).token;
   } catch (error) {
     logger.warn(
       `Unable to acquire ARM token — skipping Key Vault pre-flight check. ` +
@@ -172,6 +178,7 @@ export async function checkKeyVaultSecretAccess(
 
   /* ---- 4. Locate the vault in the same subscription ---- */
   const vault = await findVaultInSubscription(
+    apimContext.armBaseUrl,
     apimContext.subscriptionId,
     vaultName,
     token,
@@ -185,6 +192,7 @@ export async function checkKeyVaultSecretAccess(
 
   if (vaultProps?.enableRbacAuthorization === true) {
     await checkRbacAccess(
+      apimContext.armBaseUrl,
       vault.resourceId,
       principalId,
       identityLabel,
@@ -233,7 +241,7 @@ async function resolveApimPrincipal(
     : 'system-assigned identity';
 
   const apimUrl =
-    `https://management.azure.com/subscriptions/${ctx.subscriptionId}` +
+    `${ctx.armBaseUrl}/subscriptions/${ctx.subscriptionId}` +
     `/resourceGroups/${ctx.resourceGroup}` +
     `/providers/Microsoft.ApiManagement/service/${ctx.serviceName}` +
     `?api-version=${APIM_API_VERSION}`;
@@ -306,6 +314,7 @@ async function resolveApimPrincipal(
  * vault is not found (e.g. it lives in a different subscription).
  */
 async function findVaultInSubscription(
+  armBaseUrl: string,
   subscriptionId: string,
   vaultName: string,
   token: string,
@@ -315,7 +324,7 @@ async function findVaultInSubscription(
     `resourceType eq 'Microsoft.KeyVault/vaults' and name eq '${vaultName}'`,
   );
   const listUrl =
-    `https://management.azure.com/subscriptions/${subscriptionId}` +
+    `${armBaseUrl}/subscriptions/${subscriptionId}` +
     `/resources?$filter=${filter}&api-version=${RESOURCES_API_VERSION}`;
 
   let vaultResourceId: string | undefined;
@@ -348,7 +357,7 @@ async function findVaultInSubscription(
 
   // GET the vault resource to read properties (RBAC mode, access policies)
   const vaultUrl =
-    `https://management.azure.com${vaultResourceId}` +
+    `${armBaseUrl}${vaultResourceId}` +
     `?api-version=${KEYVAULT_API_VERSION}`;
 
   try {
@@ -394,6 +403,7 @@ const SECRET_GET_WILDCARDS = [
  *      for the `Microsoft.KeyVault/vaults/secrets/getSecret/action` data-action.
  */
 async function checkRbacAccess(
+  armBaseUrl: string,
   vaultResourceId: string,
   principalId: string,
   identityLabel: string,
@@ -404,7 +414,7 @@ async function checkRbacAccess(
 ): Promise<void> {
   const filter = encodeURIComponent(`principalId eq '${principalId}'`);
   const url =
-    `https://management.azure.com${vaultResourceId}` +
+    `${armBaseUrl}${vaultResourceId}` +
     `/providers/Microsoft.Authorization/roleAssignments` +
     `?$filter=${filter}&api-version=${AUTHZ_API_VERSION}`;
 
@@ -465,7 +475,7 @@ async function checkRbacAccess(
     if (!roleDefId) continue;
 
     const hasAccess = await roleDefinitionGrantsSecretGet(
-      roleDefId, token, armRequest,
+      armBaseUrl, roleDefId, token, armRequest,
     );
     if (hasAccess) return; // confirmed via dataActions
   }
@@ -487,12 +497,13 @@ async function checkRbacAccess(
  * fetched — the caller should treat this as inconclusive and keep checking.
  */
 async function roleDefinitionGrantsSecretGet(
+  armBaseUrl: string,
   roleDefinitionId: string,
   token: string,
   armRequest: ArmRequestFn,
 ): Promise<boolean | undefined> {
   const url =
-    `https://management.azure.com${roleDefinitionId}` +
+    `${armBaseUrl}${roleDefinitionId}` +
     `?api-version=${AUTHZ_API_VERSION}`;
 
   let json: Record<string, unknown>;

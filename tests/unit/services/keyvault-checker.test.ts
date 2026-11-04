@@ -23,6 +23,8 @@ describe('checkKeyVaultSecretAccess', () => {
     subscriptionId: 'sub-1',
     resourceGroup: 'rg-1',
     serviceName: 'apim-1',
+    armBaseUrl: 'https://management.azure.com',
+    authScope: 'https://management.azure.com/.default',
   };
 
   /** Build a minimal ARM response stub */
@@ -577,7 +579,127 @@ describe('checkKeyVaultSecretAccess', () => {
   });
 });
 
+describe('checkKeyVaultSecretAccess in sovereign clouds', () => {
+  const VAULT_RESOURCE_ID =
+    '/subscriptions/sub-1/resourceGroups/vault-rg/providers/Microsoft.KeyVault/vaults/myvault';
+  const CUSTOM_ROLE_DEFINITION_ID =
+    '/subscriptions/sub-1/providers/Microsoft.Authorization/roleDefinitions/aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
+
+  function armResponse(status: number, body: unknown) {
+    return { status, json: () => Promise.resolve(body) };
+  }
+
+  const clouds = [
+    {
+      name: 'usgov',
+      armBaseUrl: 'https://management.usgovcloudapi.net',
+      authScope: 'https://management.usgovcloudapi.net/.default',
+      secretIdentifier: 'https://myvault.vault.usgovcloudapi.net/secrets/my-secret',
+    },
+    {
+      name: 'china',
+      armBaseUrl: 'https://management.chinacloudapi.cn',
+      authScope: 'https://management.chinacloudapi.cn/.default',
+      secretIdentifier: 'https://myvault.vault.azure.cn/secrets/my-secret',
+    },
+  ];
+
+  it.each(clouds)(
+    'should use the $name ARM scope and endpoint for every request',
+    async ({ armBaseUrl, authScope, secretIdentifier }) => {
+      const getToken = vi.fn().mockResolvedValue({ token: 'fake-arm-token' });
+      const armRequest = vi.fn()
+        .mockResolvedValueOnce(armResponse(200, {
+          identity: { type: 'SystemAssigned', principalId: 'principal-1' },
+        }))
+        .mockResolvedValueOnce(armResponse(200, { value: [{ id: VAULT_RESOURCE_ID }] }))
+        .mockResolvedValueOnce(armResponse(200, { properties: { enableRbacAuthorization: true } }))
+        // Unknown role GUID forces the role-definition GET (slow path)
+        .mockResolvedValueOnce(armResponse(200, {
+          value: [{ properties: { roleDefinitionId: CUSTOM_ROLE_DEFINITION_ID } }],
+        }))
+        .mockResolvedValueOnce(armResponse(200, {
+          properties: {
+            permissions: [{ dataActions: ['Microsoft.KeyVault/vaults/secrets/getSecret/action'] }],
+          },
+        }));
+
+      await expect(
+        checkKeyVaultSecretAccess(
+          secretIdentifier,
+          undefined,
+          {
+            subscriptionId: 'sub-1',
+            resourceGroup: 'rg-1',
+            serviceName: 'apim-1',
+            armBaseUrl,
+            authScope,
+          },
+          () => ({ getToken }),
+          armRequest,
+        ),
+      ).resolves.toBeUndefined();
+
+      expect(getToken).toHaveBeenCalledWith(authScope);
+
+      const urls = armRequest.mock.calls.map((call) => call[0] as string);
+      expect(urls).toHaveLength(5);
+      for (const url of urls) {
+        expect(new URL(url).origin).toBe(armBaseUrl);
+      }
+      expect(urls[0]).toContain(
+        '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1?',
+      );
+      expect(urls[1]).toContain('/subscriptions/sub-1/resources?');
+      expect(urls[2]).toContain(`${armBaseUrl}${VAULT_RESOURCE_ID}?`);
+      expect(urls[3]).toContain(
+        `${armBaseUrl}${VAULT_RESOURCE_ID}/providers/Microsoft.Authorization/roleAssignments?`,
+      );
+      expect(urls[4]).toContain(`${armBaseUrl}${CUSTOM_ROLE_DEFINITION_ID}?`);
+    },
+  );
+
+  it.each([
+    'https://myvault.vault.usgovcloudapi.net/secrets/my-secret/abc123version',
+    'https://myvault.vault.azure.cn/secrets/my-secret',
+    'https://myvault.vault.microsoftazure.de/secrets/my-secret',
+  ])('should parse the vault name from sovereign-cloud secret URI %s', async (secretIdentifier) => {
+    const armRequest = vi.fn()
+      .mockResolvedValueOnce(armResponse(200, {
+        identity: { type: 'SystemAssigned', principalId: 'principal-1' },
+      }))
+      // Vault not found → soft-skip after the lookup, which carries the parsed name
+      .mockResolvedValueOnce(armResponse(200, { value: [] }));
+
+    await expect(
+      checkKeyVaultSecretAccess(
+        secretIdentifier,
+        undefined,
+        {
+          subscriptionId: 'sub-1',
+          resourceGroup: 'rg-1',
+          serviceName: 'apim-1',
+          armBaseUrl: 'https://management.usgovcloudapi.net',
+          authScope: 'https://management.usgovcloudapi.net/.default',
+        },
+        () => ({ getToken: vi.fn().mockResolvedValue({ token: 'fake-arm-token' }) }),
+        armRequest,
+      ),
+    ).resolves.toBeUndefined();
+
+    const vaultSearchUrl = armRequest.mock.calls[1][0] as string;
+    expect(decodeURIComponent(vaultSearchUrl)).toContain("name eq 'myvault'");
+  });
+});
+
 describe('defaultArmRequest User-Agent header', () => {
+  const apimContextForUserAgentTest: KeyVaultCheckContext = {
+    subscriptionId: 'sub-1',
+    resourceGroup: 'rg-1',
+    serviceName: 'apim-1',
+    armBaseUrl: 'https://management.azure.com',
+    authScope: 'https://management.azure.com/.default',
+  };
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -620,7 +742,7 @@ describe('defaultArmRequest User-Agent header', () => {
     await checkKeyVaultSecretAccess(
       'https://myvault.vault.azure.net/secrets/my-secret',
       undefined,
-      { subscriptionId: 'sub-1', resourceGroup: 'rg-1', serviceName: 'apim-1' },
+      apimContextForUserAgentTest,
       mockTokenProviderFactory,
       // No armRequest override — uses defaultArmRequest which must include User-Agent
     );
