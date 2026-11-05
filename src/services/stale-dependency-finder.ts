@@ -99,7 +99,10 @@ export async function findStaleDependencies(
   const readExisting = (descriptor: ResourceDescriptor) => store.readResource(outputDir, descriptor);
   const resolveExisting = createArtifactReferenceResolver(existing, readExisting);
   const readExistingNamedValue = createNamedValueReader(resolveExisting, readExisting);
+  // A dependency the extract wrote again is not a candidate, but its old
+  // version is still followed: what it no longer references can be stale.
   const candidates = new Map<string, ResourceDescriptor>();
+  const followed = new Set<string>();
   let wave: ArtifactLocation[] = existing.filter(isSelected).map((descriptor) => ({ descriptor, dir: outputDir }));
   while (wave.length > 0) {
     // An artifact that can't be scanned contributes no candidates, which only keeps more.
@@ -107,10 +110,13 @@ export async function findStaleDependencies(
     wave = [];
     for (const reference of references) {
       const target = await resolveExisting(reference);
-      if (!target || isSelected(target) || stagedKeys.has(key(target)) || candidates.has(key(target))) {
+      if (!target || isSelected(target) || followed.has(key(target))) {
         continue;
       }
-      candidates.set(key(target), target);
+      followed.add(key(target));
+      if (!stagedKeys.has(key(target))) {
+        candidates.set(key(target), target);
+      }
       wave.push({ descriptor: target, dir: outputDir });
     }
   }

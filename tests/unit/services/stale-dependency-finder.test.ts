@@ -136,6 +136,20 @@ describe('stale-dependency-finder', () => {
     expect(names(await findStaleDependencies(store, outputDir, stagingDir, filter))).toEqual(['NamedValue:backend-id']);
   });
 
+  it('should report what a dependency the extract wrote again no longer references', async () => {
+    const diagnostic: ResourceDescriptor = { type: ResourceType.ApiDiagnostic, nameParts: ['orders', 'applicationinsights'] };
+    const aiLogger: ResourceDescriptor = { type: ResourceType.Logger, nameParts: ['ai'] };
+    await write(outputDir, orders);
+    await write(outputDir, diagnostic, { loggerId: '/loggers/ai' });
+    await write(outputDir, aiLogger, { credentials: { instrumentationKey: '{{AI Key}}' } });
+    await write(outputDir, { type: ResourceType.NamedValue, nameParts: ['ai-key'] }, { displayName: 'AI Key' });
+    await write(stagingDir, orders);
+    await write(stagingDir, diagnostic, { loggerId: '/loggers/ai' });
+    await write(stagingDir, aiLogger, { credentials: { connectionString: 'InstrumentationKey=00000000-0000-0000-0000-000000000000' } });
+
+    expect(names(await findStaleDependencies(store, outputDir, stagingDir, filter))).toEqual(['NamedValue:ai-key']);
+  });
+
   it("should keep a dependency's own dependency that another artifact still uses", async () => {
     const diagnostic: ResourceDescriptor = { type: ResourceType.ApiDiagnostic, nameParts: ['orders', 'applicationinsights'] };
     await write(outputDir, orders);
