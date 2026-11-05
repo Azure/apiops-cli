@@ -53,10 +53,12 @@ apiops publish \
   --filter ./configuration.extractor.yaml
 ```
 
-The filter uses the same YAML format as `apiops extract --filter`. Referenced named values,
-backends (including backend pool members), policy fragments, and version sets are included by
-default; use `--no-transitive` to publish only exact matches. Product, gateway, and subscription
-links do not pull their API or Product targets into the publish set.
+The filter uses the same YAML format as `apiops extract --filter`. The resources the selected ones
+depend on — such as referenced named values, backends (including backend pool members), policy
+fragments, version sets, tags, groups and loggers — are included by default; see
+[Transitive Dependency Behavior](../guides/filtering-resources.md#transitive-dependency-behavior).
+Use `--no-transitive` to publish only exact matches. Product, gateway, and subscription links do
+not pull their API or Product targets into the publish set.
 
 ### Delete resources not in source
 

@@ -163,8 +163,12 @@ export async function loadFilterConfig(filePath: string): Promise<FilterConfig |
         config.apis = names;
         if (Object.keys(subFilters).length > 0) {
           config.apiSubFilters = {};
-          const validApiSubKeys = ['operations', 'diagnostics', 'schemas', 'releases'] as const;
+          const validApiSubKeys = ['operations', 'diagnostics', 'schemas', 'releases', 'tagDescriptions'] as const;
           for (const [apiName, sf] of Object.entries(subFilters)) {
+            if (apiName.startsWith('!')) {
+              logger.warn(`Sub-filter for exclusion '${apiName}' in '${sourceKey}' has no effect; ignoring.`);
+              continue;
+            }
             const apiSub: ApiSubFilter = {};
             for (const subKey of validApiSubKeys) {
               if (subKey in sf) {
@@ -188,6 +192,10 @@ export async function loadFilterConfig(filePath: string): Promise<FilterConfig |
           const validWsSubKeys = ['apis', 'backends', 'diagnostics', 'groups', 'loggers',
             'namedValues', 'policyFragments', 'products', 'schemas', 'subscriptions', 'tags', 'versionSets'] as const;
           for (const [wsName, sf] of Object.entries(subFilters)) {
+            if (wsName.startsWith('!')) {
+              logger.warn(`Sub-filter for exclusion '${wsName}' in '${sourceKey}' has no effect; ignoring.`);
+              continue;
+            }
             const wsSub: WorkspaceSubFilter = {};
             for (const wsField of validWsSubKeys) {
               if (wsField in sf) {

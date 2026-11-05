@@ -68,6 +68,7 @@ const API_SUB_FILTER_KEY_MAP: Partial<Record<ResourceType, keyof ApiSubFilter>> 
   [ResourceType.ApiDiagnostic]: 'diagnostics',
   [ResourceType.ApiSchema]: 'schemas',
   [ResourceType.ApiRelease]: 'releases',
+  [ResourceType.ApiTagDescription]: 'tagDescriptions',
 };
 
 /**
@@ -110,6 +111,15 @@ export function shouldIncludeResource(
         return false;
       }
 
+      // An API's link to a tag the filter excludes by name is left out with
+      // the tag, rather than extracted and then skipped on every publish.
+      if (
+        descriptor.type === ResourceType.ApiTag &&
+        isExcludedByName(ResourceType.Tag, getNamePart(descriptor.nameParts, 1), filter)
+      ) {
+        return false;
+      }
+
       // Second check: does the parent have sub-resource filters?
       if (parentField === 'apis' && filter.apiSubFilters) {
         return matchesApiSubFilter(descriptor, parentName, filter.apiSubFilters);
@@ -139,37 +149,24 @@ export function shouldReconcileResource(
     return false;
   }
 
-  const workspaceFilter = getWorkspaceFilter(descriptor.workspace, filter);
-  return shouldIncludeResource(descriptor, workspaceFilter);
+  return shouldIncludeResource(descriptor, resolveWorkspaceFilter(descriptor.workspace, filter));
 }
 
-function getWorkspaceFilter(
-  workspaceName: string,
-  filter?: FilterConfig
-): FilterConfig | undefined {
-  const matchingKey = Object.keys(filter?.workspaceSubFilters ?? {}).find(
-    key => key.toLowerCase() === workspaceName.toLowerCase()
-  );
-  if (!matchingKey) {
-    return undefined;
+/**
+ * Whether `extract --remove-stale` manages this artifact, removing it when
+ * the extract does not write it again. As shouldReconcileResource, except
+ * that an API's tag links belong to the API even when the filter excludes
+ * the tag: extract doesn't write a link to an excluded tag, so one left by
+ * an earlier extract is removed with the API's other stale children.
+ */
+export function isInRemoveStaleScope(descriptor: ResourceDescriptor, filter?: FilterConfig): boolean {
+  if (descriptor.type === ResourceType.ApiTag) {
+    return shouldReconcileResource(
+      { type: ResourceType.Api, nameParts: [getNamePart(descriptor.nameParts, 0)], workspace: descriptor.workspace },
+      filter
+    );
   }
-
-  const subFilter = filter?.workspaceSubFilters?.[matchingKey];
-  return subFilter ? {
-    apis: subFilter.apis,
-    apiSubFilters: subFilter.apiSubFilters,
-    backends: subFilter.backends,
-    diagnostics: subFilter.diagnostics,
-    groups: subFilter.groups,
-    loggers: subFilter.loggers,
-    namedValues: subFilter.namedValues,
-    policyFragments: subFilter.policyFragments,
-    products: subFilter.products,
-    schemas: subFilter.schemas,
-    subscriptions: subFilter.subscriptions,
-    tags: subFilter.tags,
-    versionSets: subFilter.versionSets,
-  } : undefined;
+  return shouldReconcileResource(descriptor, filter);
 }
 
 /**
@@ -180,11 +177,9 @@ export function resolveWorkspaceFilter(
   workspaceName: string,
   filter?: FilterConfig
 ): FilterConfig | undefined {
-  const lowerName = workspaceName.toLowerCase();
-  const matchingKey = Object.keys(filter?.workspaceSubFilters ?? {}).find(
-    (key) => key.toLowerCase() === lowerName
-  );
-  const subFilter = matchingKey ? filter?.workspaceSubFilters?.[matchingKey] : undefined;
+  // A sub-filter keyed by a pattern (for example `team-*`) applies to every
+  // workspace it matches; one keyed by the workspace's name takes precedence.
+  const subFilter = findSubFilter(workspaceName, filter?.workspaceSubFilters);
   return subFilter ? workspaceSubFilterToFilterConfig(subFilter) : undefined;
 }
 
@@ -225,18 +220,12 @@ function matchesApiSubFilter(
   parentApiName: string,
   apiSubFilters: Record<string, ApiSubFilter>
 ): boolean {
-  // Find matching sub-filter using case-insensitive API name
-  const lowerParent = parentApiName.toLowerCase();
-  const matchingKey = Object.keys(apiSubFilters).find(
-    (k) => k.toLowerCase() === lowerParent
-  );
-
-  if (!matchingKey) {
+  const subFilter = findApiSubFilter(parentApiName, apiSubFilters);
+  if (!subFilter) {
     // No sub-filter for this API — include all children
     return true;
   }
 
-  const subFilter = apiSubFilters[matchingKey];
   const subFilterKey = API_SUB_FILTER_KEY_MAP[descriptor.type];
 
   if (!subFilterKey) {
@@ -293,6 +282,77 @@ export function hasExplicitTypeFilter(type: ResourceType, filter?: FilterConfig)
 export function extractRootApiName(name: string): string {
   const semiIndex = name.indexOf(';');
   return semiIndex >= 0 ? name.substring(0, semiIndex) : name;
+}
+
+/**
+ * Whether the filter excludes this resource by name: its type's list has a
+ * `!pattern` entry that matches it. Dependency resolution respects these
+ * exclusions, while it still pulls in resources whose type is `[]` or that a
+ * list simply does not name. A workspace resource is checked against its
+ * workspace's sub-filter.
+ */
+export function isExplicitlyExcluded(descriptor: ResourceDescriptor, filter?: FilterConfig): boolean {
+  if (descriptor.nameParts.length === 0) {
+    return false;
+  }
+  const effectiveFilter = descriptor.workspace ? cachedWorkspaceFilter(descriptor.workspace, filter) : filter;
+  return isExcludedByName(descriptor.type, getNamePart(descriptor.nameParts, 0), effectiveFilter);
+}
+
+/** Whether `filter` (already resolved for the resource's scope) excludes `name` of `type` by name. */
+function isExcludedByName(type: ResourceType, name: string, filter: FilterConfig | undefined): boolean {
+  const field = FILTER_FIELD_MAP[type];
+  const list = field && filter ? (filter[field] as string[] | undefined) : undefined;
+  const exclusions = list?.filter((entry) => entry.startsWith('!')) ?? [];
+  return exclusions.length > 0 && !matchesFilter(name, exclusions);
+}
+
+/**
+ * Resolved workspace filters, cached per filter object and workspace: the
+ * exclusion check runs for every reference during publish expansion.
+ */
+const workspaceFilterCache = new WeakMap<FilterConfig, Map<string, FilterConfig | undefined>>();
+
+function cachedWorkspaceFilter(workspace: string, filter: FilterConfig | undefined): FilterConfig | undefined {
+  if (!filter) {
+    return undefined;
+  }
+  let byWorkspace = workspaceFilterCache.get(filter);
+  if (!byWorkspace) {
+    byWorkspace = new Map();
+    workspaceFilterCache.set(filter, byWorkspace);
+  }
+  const key = workspace.toLowerCase();
+  if (!byWorkspace.has(key)) {
+    byWorkspace.set(key, resolveWorkspaceFilter(workspace, filter));
+  }
+  return byWorkspace.get(key);
+}
+
+/**
+ * The sub-filter that applies to a named API or workspace: the one keyed by
+ * its name (case-insensitive), otherwise the first one keyed by a wildcard
+ * pattern that matches it (for example `*`). Exclusion keys (`!name`) never
+ * apply.
+ */
+function findSubFilter<T>(name: string, subFilters: Record<string, T> | undefined): T | undefined {
+  if (!subFilters) {
+    return undefined;
+  }
+  const lowerName = name.toLowerCase();
+  const keys = Object.keys(subFilters).filter((key) => !key.startsWith('!'));
+  const key =
+    keys.find((k) => k.toLowerCase() === lowerName) ??
+    keys.find((k) => isWildcardPattern(k) && matchesFilter(name, [k]));
+  return key === undefined ? undefined : subFilters[key];
+}
+
+/** The sub-filter that applies to an API (see {@link findSubFilter}). */
+export function findApiSubFilter(
+  apiName: string,
+  apiSubFilters: Record<string, ApiSubFilter> | undefined
+): ApiSubFilter | undefined {
+  return findSubFilter(apiName, apiSubFilters);
 }
 
 /**

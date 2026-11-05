@@ -66,7 +66,7 @@ apiops extract \
 | `--output <dir>` | string | `./apim-artifacts` | No | Output directory path |
 | `--filter <path>` | string | — | No | Filter configuration YAML file |
 | `--no-transitive` | boolean | false (transitive ON) | No | Disable transitive dependency inclusion |
-| `--remove-stale` | boolean | false | No | Remove stale managed artifacts in the selected filter and workspace scope after a fully successful extraction |
+| `--remove-stale` | boolean | false | No | Remove stale managed artifacts in the selected filter and workspace scope, and pulled-in dependencies nothing references any more, after a fully successful extraction |
 
 ### Global flags
 
@@ -159,7 +159,7 @@ For every key, the value semantics are:
 ### API sub-filters
 
 To restrict which child resources of an API are extracted (operations,
-diagnostics, schemas, releases), use the **nested object entry** form under
+diagnostics, schemas, releases, tag descriptions), use the **nested object entry** form under
 `apis:`. Each entry becomes a `name: { subKey: [...] }` map:
 
 ```yaml
@@ -175,8 +175,12 @@ apis:
       releases: []
 ```
 
-Supported API sub-filter keys: `operations`, `diagnostics`, `schemas`, `releases`.
+Supported API sub-filter keys: `operations`, `diagnostics`, `schemas`, `releases`, `tagDescriptions`.
 Same value semantics as top-level keys (omitted = include all, `[]` = include none, list = allowlist).
+
+The key of a nested entry can be a wildcard pattern (`'*'`, `'v2-*'`), so one
+sub-filter applies to every matching API. An entry keyed by an API's name takes
+precedence over a pattern. See [One sub-filter for many APIs](../guides/filtering-resources.md#one-sub-filter-for-many-apis).
 
 ### Workspace sub-filters
 
@@ -197,11 +201,17 @@ Supported workspace sub-filter keys: `apis`, `backends`, `diagnostics`,
 `groups`, `loggers`, `namedValues`, `policyFragments`, `products`, `schemas`,
 `subscriptions`, `tags`, `versionSets`.
 
+As for APIs, the key can be a wildcard pattern (`'team-*'`), and an entry keyed
+by the workspace's name takes precedence over a pattern. See
+[Workspace sub-resource filters](../guides/filtering-resources.md#workspace-sub-resource-filters).
+
 ### Transitive dependencies
 
-When extracting with a filter, transitive dependencies are **included automatically**. For example, extracting `echo-api` also extracts any backends, named values, and policy fragments that `echo-api` references in its policies.
+When extracting with a filter, transitive dependencies are **included automatically**. For example, extracting `echo-api` also extracts the backends, named values and policy fragments its policies reference, its version set, its tags, and the loggers its diagnostics use. See [Transitive Dependency Behavior](../guides/filtering-resources.md#transitive-dependency-behavior) for the full list.
 
 Use `--no-transitive` to disable this behavior and extract only the explicitly listed resources.
+
+With `--remove-stale`, a pulled-in dependency the filter otherwise leaves out (for example a tag when `tags: []`) is removed once the selected resources no longer reference it and no other artifact in the output does. A dependency another filtered extract into the same output still uses is kept.
 
 ## Output format
 

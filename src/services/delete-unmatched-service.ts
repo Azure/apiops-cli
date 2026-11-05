@@ -27,7 +27,7 @@ import type { IApimClient } from '../clients/iapim-client.js';
 import type { IArtifactStore } from '../clients/iartifact-store.js';
 import type { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import type { PublishConfig } from '../models/config.js';
-import { ResourceType } from '../models/resource-types.js';
+import { isBuiltInGroupName, ResourceType } from '../models/resource-types.js';
 import { getTopologicalOrder } from '../lib/dependency-graph.js';
 import {
   getNameFromNameParts,
@@ -76,11 +76,6 @@ export function filterRevisionDeletesHandledByBaseApi(
     return !baseApiKeys.has(`${descriptor.workspace ?? ''}::${getApiRootName(apiName)}`);
   });
 }
-
-/**
- * Built-in groups that should never be deleted
- */
-const BUILT_IN_GROUPS = ['administrators', 'developers', 'guests'];
 
 /**
  * System resources that should never be deleted
@@ -393,7 +388,7 @@ function isSystemResource(descriptor: ResourceDescriptor): boolean {
 
   // Check built-in groups
   if (descriptor.type === ResourceType.Group) {
-    if (BUILT_IN_GROUPS.includes(ownName)) {
+    if (isBuiltInGroupName(ownName)) {
       return true;
     }
   }

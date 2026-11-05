@@ -771,7 +771,8 @@ describe('api-publisher', () => {
         store,
         testContext,
         expect.objectContaining({ type: ResourceType.ApiPolicy, nameParts: ['orders-api'] }),
-        testConfig
+        testConfig,
+        undefined
       );
     });
 

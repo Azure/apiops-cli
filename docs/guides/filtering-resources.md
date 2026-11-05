@@ -76,7 +76,7 @@ documentations: []
 workspaces: []
 ```
 
-With transitive resolution enabled (the default), any version set, backend, named value, policy fragment, or tag directly referenced by `my-own-api` or its policies is still pulled in automatically — even though those keys are set to `[]`. Use `--no-transitive` to disable that behavior.
+With transitive resolution enabled (the default), the resources `my-own-api` depends on — such as the backends, named values and policy fragments its policies reference, its version set, its tags, and its diagnostics' loggers — are still pulled in automatically, even though those keys are set to `[]`. See [Transitive Dependency Behavior](#transitive-dependency-behavior) for the full list. Use `--no-transitive` to disable that behavior.
 
 The three states for every key are:
 
@@ -228,7 +228,7 @@ apis:
 
 ### API sub-resource filters
 
-For APIs, you can control which sub-resources (operations, diagnostics, schemas, releases) are extracted. Use an object entry instead of a plain string:
+For APIs, you can control which sub-resources (operations, diagnostics, schemas, releases, tag descriptions) are extracted. Use an object entry instead of a plain string:
 
 ```yaml
 apis:
@@ -242,12 +242,27 @@ apis:
       schemas: []                 # Empty = exclude ALL schemas
       releases:
         - v1-release
+      tagDescriptions: []         # By name, as under apis/<api>/tagDescriptions/
 ```
 
 **Sub-filter rules:**
 - If a sub-resource key is **omitted**, all sub-resources of that type are included
 - If a sub-resource key is an **empty array** (`[]`), all sub-resources of that type are excluded
 - If a sub-resource key lists **names**, only those sub-resources are included
+
+#### One sub-filter for many APIs
+
+The key of a nested entry can be a wildcard pattern (`*`, `?`) instead of an API name. Like a plain pattern, it selects the matching APIs, and its sub-filter applies to each of them. For example, to extract every API without its operations, schemas or tag descriptions:
+
+```yaml
+apis:
+  - '*':
+      operations: []
+      schemas: []
+      tagDescriptions: []
+```
+
+An entry keyed by an API's name takes precedence over a pattern; otherwise the first matching pattern applies. Quote patterns that start with `*` so YAML reads them as strings.
 
 During extraction, the `operations` filter also applies to the API's OpenAPI specification
 (`specification.yaml` or `specification.json`, including Swagger 2.0). Excluded operations
@@ -274,6 +289,10 @@ workspaces:
 ```
 
 Supported workspace sub-filter keys: `apis`, `backends`, `diagnostics`, `groups`, `loggers`, `namedValues`, `policyFragments`, `products`, `schemas`, `subscriptions`, `tags`, `versionSets`.
+
+As for APIs, the key can be a wildcard pattern: `- 'team-*': { apis: [orders] }` selects every matching workspace and applies the sub-filter to each. An entry keyed by the workspace's name takes precedence over a pattern; otherwise the first matching pattern applies.
+
+A sub-filter can't be attached to an exclusion (`- '!team-c': {...}`), for APIs or workspaces: the exclusion still applies, but its sub-filter is ignored with a warning.
 
 ---
 
@@ -303,20 +322,28 @@ Supported workspace sub-filter keys: `apis`, `backends`, `diagnostics`, `groups`
 
 ## Transitive Dependency Behavior
 
-When you filter by API name, `apiops extract` automatically includes resources referenced by those APIs. This is **transitive dependency resolution** — it ensures the extracted artifacts are self-contained and publishable.
+When you filter resources, `apiops extract` and `apiops publish` automatically include the resources the selected ones depend on. This is **transitive dependency resolution** — it keeps the extracted artifacts self-contained and publishable. Dependencies are followed until nothing new is found, so a pulled-in resource's own dependencies are included too.
 
 ### What Gets Auto-Included
 
-```mermaid
-flowchart TD
-    A[Filtered API] --> B[Backends referenced in policies]
-    A --> C[Named Values referenced in policies]
-    A --> D[Policy Fragments included in policies]
-    A --> E[Tags attached to the API]
-    A --> F[Products containing the API]
-    A --> G[Diagnostics configured on the API]
-    A --> H[Version Set the API belongs to]
-```
+| Selected resource | Includes |
+|-------------------|----------|
+| Any policy (service, API, operation, GraphQL resolver, product) and policy fragment | Named values referenced as `{{displayName}}`; backends named by `<set-backend-service backend-id>`, `<llm-content-safety backend-id>` and `embeddings-backend-id` on the semantic cache lookup policies; fragments named by `<include-fragment fragment-id>`; loggers named by `<log-to-eventhub logger-id>`; schemas named by validate-content's `<content schema-id>` |
+| API | Its version set, and the tags it is linked to |
+| Diagnostic (service-level or on an API) | The logger it sends data to (`loggerId`) |
+| Logger, backend | Named values referenced in their credentials |
+| Backend pool | Its member backends |
+| Product | The groups and tags it is linked to |
+
+A reference written as a policy expression (`backend-id="@(...)"`) is not followed, because its value is only known at run time. One set to a named value (`backend-id="{{backend-name}}"`) pulls in the named value and the resource its value names, in the same scope (except `<include-fragment fragment-id>`, where APIM doesn't substitute named values); publish reads the value with your `--overrides` applied, so each environment gets the resource its own value names. A named value that is published also brings the resource its value names whenever any policy or fragment in the source uses it that way, even one the filter leaves out: APIM checks every policy on the target that uses a named value when its value changes. A resource the filter excludes by name, or that isn't in the source, isn't published, so it has to exist on the target already. When a policy uses a named value to name a backend, logger or schema that is published in the same run, publish creates that resource before it updates the named value, and publishes policy fragments, and any backend or logger using the named value in its credentials, after it, since APIM rejects a named value change that would leave a policy using it pointing at a resource that doesn't exist. A secret or Key Vault named value's value isn't known, so the resource it names isn't pulled in; add that resource to the filter.
+
+A `{{...}}` reference, in a policy or in credentials, names a named value by its display name, as APIM does; when no named value has that display name, it is read as a resource name. The `namedValues` list and its exclusions (`'!name'`) use the resource name, which can differ from the display name. References inside XML comments are ignored. Inside a `<set-body template="liquid">` body, a `{{name}}` is followed only when a named value has that name: APIM substitutes those there and leaves every other `{{ ... }}` (`{{body.id}}`, `{{ name }}`, `{{x | upcase}}`) to Liquid, so those are skipped without an error.
+
+A resource the filter excludes by name (`'!name'`) is never pulled in, and links to it are not extracted: an API's or product's link to an excluded tag, or a product's link to an excluded group. Built-in groups (`administrators`, `developers`, `guests`) exist at service level in every APIM instance, so they are not pulled in either; a product's links to them are published only when the filter includes them, as for any group. The exception is the link to `administrators`, which APIM adds to every product itself: it is published whatever the `groups` filter says, unless the filter excludes `administrators` by name.
+
+**Not included:** the products, gateways and subscriptions an API is linked to, and the APIs a product contains. These are independent resources, not dependencies; add them to the filter to include them. On publish, links to APIs or products outside the publish set are skipped.
+
+> **Logger keys:** APIM stores an Application Insights logger's key as an auto-generated secret named value, named with a 24-character hex ID (its display name is `Logger-Credentials--<id>`). It is pulled in with the logger and extracted with its value redacted. Publish skips it unless you provide an override for it: an instance that already has the logger already has its key, but on a new instance the logger can't be published without one. See [Logger credentials with auto-generated named values](environment-overrides.md#logger-credentials-with-auto-generated-named-values).
 
 ### Example
 
@@ -325,6 +352,12 @@ Given this filter:
 ```yaml
 apis:
   - petstore-api
+backends: []
+namedValues: []
+policyFragments: []
+loggers: []
+tags: []
+products: []
 ```
 
 If `petstore-api` has a policy that references:
@@ -332,11 +365,10 @@ If `petstore-api` has a policy that references:
 - Named value `petstore-api-key` → **auto-included**
 - Policy fragment `rate-limit-fragment` → **auto-included**
 
-And `petstore-api` is assigned to:
-- Product `starter` → **auto-included**
-- Tag `production` → **auto-included**
-
-The extract output includes all of these, even though only `apiNames` was specified in the filter.
+And `petstore-api`:
+- has a diagnostic that sends data to logger `appinsights` → **auto-included**
+- is tagged `production` → **auto-included**
+- is in product `starter` → **not included**; add `starter` to `products` to include it
 
 ### Why Transitive Matters
 
@@ -379,7 +411,7 @@ apis:
   - orders-admin-api
 ```
 
-Transitive dependencies (backends, named values, policy fragments) are auto-included.
+Transitive dependencies (backends, named values, policy fragments, version sets, tags and loggers) are auto-included.
 
 ### Product-Focused Extract
 

@@ -15,7 +15,7 @@ import type {
   ResourceDescriptor,
 } from '../models/types.js';
 import type { PublishConfig } from '../models/config.js';
-import { ResourceType, RESOURCE_TYPE_METADATA, MANAGED_GATEWAY_NAME } from '../models/resource-types.js';
+import { isBuiltInGroup, ResourceType, RESOURCE_TYPE_METADATA, MANAGED_GATEWAY_NAME } from '../models/resource-types.js';
 import { applyOverrides, resolveOverrideSection } from './override-merger.js';
 import { checkKeyVaultSecretAccess } from './keyvault-checker.js';
 import {
@@ -30,12 +30,13 @@ import { REDACTION_MARKER } from './secret-redactor.js';
 import { isAssociationReferenceNotFoundError, isLinkAlreadyExistsError } from '../clients/apim-client.js';
 import type { OverrideConfig, OverrideSection } from '../models/config.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
-import { hasExplicitTypeFilter, resolveWorkspaceFilter, shouldIncludeResource } from './filter-service.js';
+import { hasExplicitTypeFilter, isExplicitlyExcluded, resolveWorkspaceFilter, shouldIncludeResource } from './filter-service.js';
 import { findSubscriptionTargets } from './transitive-resolver.js';
 import { mapDescriptor, toDeployedName } from './env-mapper.js';
 import type { EnvMapping } from './env-mapper.js';
 import { rewritePolicyRefs } from './policy-ref-rewriter.js';
 import type { KnownArtifactSets } from '../models/config.js';
+import { armLastName, armNameAfter, armScope } from '../lib/arm-id.js';
 
 export type { KnownArtifactSets } from '../models/config.js';
 
@@ -259,7 +260,9 @@ export async function publishResource(
       const eligibility = await evaluateResourceEligibility(
         store,
         descriptor,
-        config
+        config,
+        undefined,
+        allowedDescriptors
       );
       if (!eligibility.eligible) {
         logger.warn(
@@ -735,12 +738,9 @@ async function buildAssociationPublicationPlan(
     nameParts: [entry.name],
     workspace: entry.scope === 'service' ? undefined : workspace,
   };
-  const eligibility = await evaluateAssociationEligibility(
-    store,
-    target,
-    config,
-    allowedDescriptors
-  );
+  const eligibility = isAdministratorsLink(target, config)
+    ? { eligible: true }
+    : await evaluateAssociationEligibility(store, target, config, { allowedDescriptors });
   const metadata = RESOURCE_TYPE_METADATA[type];
   const workspaceScoped = !!workspace || isWorkspaceScope(context);
   const segment = target.type === ResourceType.Group ? 'groups' : 'apis';
@@ -764,13 +764,52 @@ async function buildAssociationPublicationPlan(
   return { descriptor, deployedDescriptor, target, payload, ...eligibility };
 }
 
+/**
+ * Whether a product's group link targets the built-in `administrators` group,
+ * which APIM links to every product itself (publish removes the links APIM
+ * adds to a new product, then publishes the extracted ones). The link is kept
+ * whatever the groups filter says, unless the filter excludes the group by
+ * name, so a filter that narrows groups neither drops it nor warns about it.
+ */
+function isAdministratorsLink(target: ResourceDescriptor, config: PublishConfig): boolean {
+  return (
+    isBuiltInGroup(target) &&
+    target.nameParts[0]?.toLowerCase() === 'administrators' &&
+    !(config.filter && isExplicitlyExcluded(target, config.filter))
+  );
+}
+
+export interface AssociationEligibilityOptions {
+  /**
+   * The publish set, when the caller has one. Besides marking targets as
+   * published, it decides availability for targets the filter lists.
+   */
+  allowedDescriptors?: ResourceDescriptor[];
+  /**
+   * Resources being published, used only to accept targets in it (defaults
+   * to allowedDescriptors). The ApiTag check passes this without
+   * allowedDescriptors, so an incremental publish still accepts a tag that
+   * exists on disk but is not in the diff.
+   */
+  publishSet?: ResourceDescriptor[];
+}
+
 export async function evaluateAssociationEligibility(
   store: IArtifactStore,
   target: ResourceDescriptor,
   config: PublishConfig,
-  allowedDescriptors?: ResourceDescriptor[]
+  { allowedDescriptors, publishSet = allowedDescriptors }: AssociationEligibilityOptions = {}
 ): Promise<PublishEligibility> {
   if (!config.filter) {
+    return { eligible: true };
+  }
+
+  // A target being published is linked even when the filter leaves its type
+  // out, because dependency resolution pulled it in (a tag or group).
+  if (
+    !isExplicitlyExcluded(target, config.filter) &&
+    publishSet?.some((included) => sameResourceDescriptor(included, target))
+  ) {
     return { eligible: true };
   }
 
@@ -782,12 +821,6 @@ export async function evaluateAssociationEligibility(
   }
 
   if (allowedDescriptors) {
-    if (
-      allowedDescriptors.some((allowed) => sameResourceDescriptor(allowed, target))
-    ) {
-      return { eligible: true };
-    }
-
     if (config.commitId) {
       const exists = (await store.readResource(config.sourceDir, target)) !== undefined;
       return exists
@@ -860,9 +893,9 @@ export async function resolveAssociationDeleteDescriptor(
     if (
       typeof targetId !== 'string' ||
       typeof linkName !== 'string' ||
-      getArmResourceName(targetId).toLowerCase() !== expectedTarget.toLowerCase() ||
+      (armLastName(targetId) ?? '').toLowerCase() !== expectedTarget.toLowerCase() ||
       (descriptor.targetScope !== undefined &&
-        getAssociationTargetScope(targetId) !== descriptor.targetScope)
+        armScope(targetId) !== descriptor.targetScope)
     ) {
       continue;
     }
@@ -877,27 +910,15 @@ export async function resolveAssociationDeleteDescriptor(
     };
   }
 
-  function getAssociationTargetScope(resourceId: string): 'service' | 'workspace' {
-    return /\/workspaces\/[^/]+\//i.test(resourceId) ? 'workspace' : 'service';
-  }
-
   return undefined;
-}
-
-function getArmResourceName(resourceId: string): string {
-  const segment = resourceId.split('/').filter(Boolean).at(-1) ?? '';
-  try {
-    return decodeURIComponent(segment);
-  } catch {
-    return segment;
-  }
 }
 
 export async function evaluateResourceEligibility(
   store: IArtifactStore,
   descriptor: ResourceDescriptor,
   config: PublishConfig,
-  json?: Record<string, unknown>
+  json?: Record<string, unknown>,
+  publishSet?: ResourceDescriptor[]
 ): Promise<PublishEligibility> {
   if (descriptor.type === ResourceType.ApiTag) {
     const target: ResourceDescriptor = {
@@ -905,7 +926,7 @@ export async function evaluateResourceEligibility(
       nameParts: [getNamePart(descriptor.nameParts, 1)],
       workspace: descriptor.workspace,
     };
-    return evaluateAssociationEligibility(store, target, config);
+    return evaluateAssociationEligibility(store, target, config, { publishSet });
   }
 
   if (descriptor.type === ResourceType.ApiOperation) {
@@ -1332,7 +1353,7 @@ export function normalizeDiagnosticLoggerId(
     return json;
   }
 
-  const loggerName = getArmResourceName(loggerId);
+  const loggerName = armLastName(loggerId);
   if (!loggerName) {
     return json;
   }
@@ -1385,7 +1406,7 @@ export function normalizeApiVersionSetId(
     return json;
   }
 
-  const versionSetName = getArmResourceName(versionSetId);
+  const versionSetName = armLastName(versionSetId);
   if (!versionSetName) {
     return json;
   }
@@ -1432,19 +1453,15 @@ function normalizeBackendPoolServices(
       return typedService;
     }
 
-    const workspaceMatch = id.match(/\/workspaces\/([^/]+)\/backends\/([^/]+)$/i);
-    const serviceMatch = id.match(/\/backends\/([^/]+)$/i);
-    const backendName = getArmResourceName(id);
-    if (!backendName || (!workspaceMatch && !serviceMatch)) {
+    const backendName = armNameAfter(id, 'backends');
+    if (!backendName) {
       return typedService;
     }
 
     const deployedBackend = envMapping
       ? toDeployedName(backendName, ResourceType.Backend, envMapping)
       : backendName;
-    const sourceWorkspace = workspaceMatch?.[1]
-      ? getArmResourceName(`/workspaces/${workspaceMatch[1]}`)
-      : undefined;
+    const sourceWorkspace = armNameAfter(id, 'workspaces');
     const deployedWorkspace = sourceWorkspace
       ? envMapping
         ? toDeployedName(sourceWorkspace, ResourceType.Workspace, envMapping)
@@ -1651,7 +1668,9 @@ async function publishWorkspaceApiTagLink(
  * rewrites the reference.
  *
  * References that already use displayName (or don't match any named value
- * artifact) are left unchanged.
+ * artifact) are left unchanged. A reference is matched as APIM matches it,
+ * by display name first, so one that is another named value's display name
+ * stays a reference to that named value.
  */
 async function rewriteNamedValueReferences(
   json: Record<string, unknown>,
@@ -1671,16 +1690,36 @@ async function rewriteNamedValueReferences(
   const credStr = JSON.stringify(credentials);
   const refPattern = /\{\{([^}]+)\}\}/g;
   const rewriteMap = new Map<string, string>();
+  // The named values in the logger's scope by display name (lower case),
+  // read on the first reference.
+  let displayNames: Promise<Map<string, string>> | undefined;
+  const readDisplayNames = async (): Promise<Map<string, string>> => {
+    const byDisplayName = new Map<string, string>();
+    const namedValues = (await store.listResources(sourceDir)).filter(
+      (candidate) => candidate.type === ResourceType.NamedValue && candidate.workspace === descriptor.workspace
+    );
+    for (const namedValue of namedValues) {
+      const nvJson = await store.readResource(sourceDir, namedValue).catch(() => undefined);
+      const displayName = nvJson
+        ? (applyOverrides(namedValue, nvJson, overrides).properties as Record<string, unknown> | undefined)?.displayName
+        : undefined;
+      if (typeof displayName === 'string') {
+        byDisplayName.set(displayName.toLowerCase(), getNamePart(namedValue.nameParts, 0));
+      }
+    }
+    return byDisplayName;
+  };
 
   let match;
   while ((match = refPattern.exec(credStr)) !== null) {
     const ref = match[1];
     if (rewriteMap.has(ref)) continue;
-
-    // Try to read the named value artifact by this ref as a resource name
+    // The named value APIM resolves the reference to: the one with that
+    // display name, otherwise the one with that resource name.
+    const nvName = (await (displayNames ??= readDisplayNames())).get(ref.toLowerCase()) ?? ref;
     const nvDescriptor: ResourceDescriptor = {
       type: ResourceType.NamedValue,
-      nameParts: [ref],
+      nameParts: [nvName],
       ...(descriptor.workspace ? { workspace: descriptor.workspace } : {}),
     };
     let nvJson = await store.readResource(sourceDir, nvDescriptor);
@@ -1694,12 +1733,12 @@ async function rewriteNamedValueReferences(
       // use the affixed displayName so {{token}} refs resolve on the shared APIM.
       if (envMapping?.appliesTo.has(ResourceType.NamedValue)) {
         const hasDisplayNameOverride = hasExplicitPropertyOverride(
-          ref,
+          nvName,
           'displayName',
           resolveOverrideSection(overrides, 'namedValues', descriptor.workspace),
         );
         if (!hasDisplayNameOverride) {
-          const baseDisplayName = displayName ?? ref;
+          const baseDisplayName = displayName ?? nvName;
           displayName = toDeployedName(baseDisplayName, ResourceType.NamedValue, envMapping);
         }
       }

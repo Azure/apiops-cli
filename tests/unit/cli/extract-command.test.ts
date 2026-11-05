@@ -17,6 +17,11 @@ import { IArtifactStore } from '../../../src/clients/iartifact-store.js';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApiExtractionResult } from '../../../src/services/api-extractor.js';
 import { TypeExtractionResult } from '../../../src/services/resource-extractor.js';
+import { ArtifactStore } from '../../../src/clients/artifact-store.js';
+import type { ExtractConfig } from '../../../src/models/config.js';
+import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 describe('extract-command', () => {
   describe('createExtractCommand', () => {
@@ -140,6 +145,63 @@ describe('extract-command', () => {
         expect(exit).toHaveBeenCalledWith(exitCode);
       } finally {
         stdout.mockRestore();
+      }
+    });
+  });
+
+  describe('executeExtract stale dependencies', () => {
+    const orders = { type: ResourceType.Api, nameParts: ['orders'] };
+
+    /** Extract into `output` with `filterYaml`, where the extract finds only API orders. */
+    async function extractOrders(root: string, output: string, filterYaml: string, store: ArtifactStore): Promise<string[]> {
+      const filterPath = path.join(root, 'filter.yaml');
+      await fs.writeFile(filterPath, filterYaml);
+      const result: ExtractionResult = {
+        totalExtracted: 1,
+        totalErrors: 0,
+        typeResults: [],
+        apiResults: [],
+        productResults: [],
+        workspaceResults: [],
+        extractedDescriptors: [orders],
+        collectedPolicies: new Map(),
+        exitCode: 0,
+      };
+      const runExtraction = vi.fn(async (_client: unknown, _store: unknown, config: ExtractConfig) => {
+        await store.writeResource(config.outputDir, orders, { name: 'orders', properties: {} });
+        return result;
+      });
+      const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      try {
+        await executeExtract(
+          { resourceGroup: 'rg-1', serviceName: 'apim-1', output, filter: filterPath, transitive: true, removeStale: true },
+          { subscriptionId: 'sub-1', format: 'json' },
+          { runExtraction, createClient: () => ({}) as ApimClient, createStore: () => store, exit: vi.fn() }
+        );
+      } finally {
+        stdout.mockRestore();
+      }
+      return (await store.listResources(output))
+        .map((descriptor) => `${descriptor.type}:${descriptor.nameParts.join('/')}`)
+        .sort();
+    }
+
+    it('should remove an old link to a tag the filter excludes, and the tag', async () => {
+      const filterYaml = "apis: [orders]\ntags: ['!internal']\n";
+      const tagName = 'internal';
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'apiops-extract-stale-'));
+      const output = path.join(root, 'artifacts');
+      const store = new ArtifactStore();
+      try {
+        await store.writeResource(output, orders, { name: 'orders', properties: {} });
+        await store.writeResource(output, { type: ResourceType.ApiTag, nameParts: ['orders', tagName] }, { properties: {} });
+        await store.writeResource(output, { type: ResourceType.Tag, nameParts: [tagName] }, { name: tagName, properties: {} });
+        await store.writeResource(output, { type: ResourceType.Tag, nameParts: ['standalone'] }, { name: 'standalone', properties: {} });
+
+        // Every other tag is in this filter's scope, so standalone goes too: the extract did not find it.
+        expect(await extractOrders(root, output, filterYaml, store)).toEqual(['Api:orders']);
+      } finally {
+        await fs.rm(root, { recursive: true, force: true });
       }
     });
   });

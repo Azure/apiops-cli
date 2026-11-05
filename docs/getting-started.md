@@ -75,7 +75,7 @@ apiops extract \
   --filter filter.yaml
 ```
 
-Referenced backends, named values, and policy fragments are included automatically (transitive dependencies). Use `--no-transitive` to disable this.
+Referenced backends, named values, policy fragments and other dependencies are included automatically ([transitive dependencies](guides/filtering-resources.md#transitive-dependency-behavior)). Use `--no-transitive` to disable this.
 
 ## 4. Publish to a Target Environment
 

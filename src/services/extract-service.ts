@@ -26,9 +26,14 @@ import { isSingletonType, isChildType } from '../lib/resource-path.js';
 import { extractApiResources, ApiExtractionResult } from './api-extractor.js';
 import { extractProductResources, ProductExtractionResult } from './product-extractor.js';
 import { extractWorkspaces, WorkspaceExtractionResult } from './workspace-extractor.js';
-import { extractTransitiveDependencies } from './transitive-extractor.js';
+import {
+  apiDependencyResources,
+  collectPolicies,
+  extractTransitiveDependencies,
+} from './transitive-extractor.js';
+import { readProductLinkDependencies } from './transitive-resolver.js';
 import { redactAndWarnPolicySecrets } from './secret-redactor.js';
-import { shouldIncludeResource } from './filter-service.js';
+import { isExplicitlyExcluded, shouldIncludeResource } from './filter-service.js';
 import { logger } from '../lib/logger.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
 import { EXIT_SUCCESS, EXIT_PARTIAL, EXIT_FATAL } from '../lib/exit-codes.js';
@@ -125,8 +130,9 @@ export async function runExtraction(
     await extractServicePolicy(client, store, service, outputDir, filter, result);
 
     // Phase 6: Transitive dependency resolution (if enabled)
+    let failedTransitive: ResourceDescriptor[] = [];
     if (config.includeTransitive && filter) {
-      await resolveAndExtractTransitive(client, store, service, outputDir, result);
+      failedTransitive = await resolveAndExtractTransitive(client, store, service, outputDir, filter, result);
     }
 
     // Phase 7: Extract workspace-scoped resources
@@ -137,7 +143,8 @@ export async function runExtraction(
       outputDir,
       filter,
       config.includeTransitive,
-      result
+      result,
+      failedTransitive
     );
 
     // Compute exit code
@@ -285,13 +292,7 @@ async function extractApiSubResources(
       result.totalExtracted += subCount;
 
       // Collect policies for transitive resolution
-      for (let pi = 0; pi < apiResult.policies.length; pi++) {
-        const policyContent = apiResult.policies[pi];
-        if (policyContent !== undefined) {
-          const key = `api:${apiName}:policy:${pi}`;
-          result.collectedPolicies.set(key, policyContent);
-        }
-      }
+      collectPolicies(result.collectedPolicies, 'api', apiName, apiResult.policies);
 
       // Track sub-resource descriptors
       for (const sub of [
@@ -382,13 +383,7 @@ async function extractProductSubResources(
       result.totalExtracted += subCount;
 
       // Collect policies for transitive resolution
-      for (let pi = 0; pi < prodResult.policies.length; pi++) {
-        const policyContent = prodResult.policies[pi];
-        if (policyContent !== undefined) {
-          const key = `product:${productName}:policy:${pi}`;
-          result.collectedPolicies.set(key, policyContent);
-        }
-      }
+      collectPolicies(result.collectedPolicies, 'product', productName, prodResult.policies);
     }
   }
 }
@@ -517,8 +512,9 @@ async function resolveAndExtractTransitive(
   store: IArtifactStore,
   context: ApimServiceContext,
   outputDir: string,
+  filter: FilterConfig,
   result: ExtractionResult
-): Promise<void> {
+): Promise<ResourceDescriptor[]> {
   logger.info('Resolving transitive dependencies...');
 
   // Build maps for transitive resolution
@@ -535,14 +531,16 @@ async function resolveAndExtractTransitive(
     }
   }
 
-  const resources = result.typeResults.flatMap((typeResult) =>
-    typeResult.extracted
+  // Top-level resources, plus the API children that reference other
+  // resources (diagnostics and tag links).
+  const resources = [
+    ...result.typeResults
+      .flatMap((typeResult) => typeResult.extracted)
       .filter((extracted) => extracted.status === 'success')
-      .map((extracted) => ({
-        descriptor: extracted.descriptor,
-        json: extracted.json,
-      }))
-  );
+      .map(({ descriptor, json }) => ({ descriptor, json })),
+    ...result.apiResults.flatMap(apiDependencyResources),
+  ];
+  const linkedDependencies = await findProductLinkDependencies(store, outputDir, result);
   const transitiveResult = await extractTransitiveDependencies(
     client,
     store,
@@ -551,11 +549,34 @@ async function resolveAndExtractTransitive(
     result.collectedPolicies,
     apiJsonMap,
     resources,
-    result.extractedDescriptors
+    result.extractedDescriptors,
+    {
+      linkedDependencies,
+      skip: (dep) => isExplicitlyExcluded(dep, filter),
+    }
   );
   result.totalExtracted += transitiveResult.extractedDescriptors.length;
   result.totalErrors += transitiveResult.errorCount;
   result.extractedDescriptors.push(...transitiveResult.extractedDescriptors);
+  return transitiveResult.failedDescriptors;
+}
+
+/**
+ * The groups and tags that extracted products link to, read back from the
+ * groups.json and tags.json files written for them.
+ */
+async function findProductLinkDependencies(
+  store: IArtifactStore,
+  outputDir: string,
+  result: ExtractionResult
+): Promise<ResourceDescriptor[]> {
+  const dependencies: ResourceDescriptor[] = [];
+  for (const typeResult of result.typeResults.filter((r) => r.type === ResourceType.Product)) {
+    for (const product of typeResult.extracted.filter((r) => r.status === 'success')) {
+      dependencies.push(...await readProductLinkDependencies(store, outputDir, product.descriptor));
+    }
+  }
+  return dependencies;
 }
 
 /**
@@ -568,10 +589,13 @@ async function extractWorkspaceResources(
   outputDir: string,
   filter: FilterConfig | undefined,
   includeTransitive: boolean,
-  result: ExtractionResult
+  result: ExtractionResult,
+  /** Dependencies the service-level transitive pass tried and failed to extract. */
+  failedTransitive: ResourceDescriptor[] = []
 ): Promise<void> {
   const wsResults = await extractWorkspaces(
-    client, store, context, outputDir, filter, includeTransitive
+    client, store, context, outputDir, filter, includeTransitive,
+    [...result.extractedDescriptors, ...failedTransitive]
   );
 
   result.workspaceResults = wsResults;

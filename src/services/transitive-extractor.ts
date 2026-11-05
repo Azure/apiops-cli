@@ -10,7 +10,8 @@ import { buildResourceLabel } from '../lib/resource-uri.js';
 import { logger } from '../lib/logger.js';
 import { runParallel } from '../lib/parallel-runner.js';
 import { redactSecrets } from './secret-redactor.js';
-import { findTransitiveDependencies } from './transitive-resolver.js';
+import { findTransitiveDependencies, scanLiquidNamedValueCandidates } from './transitive-resolver.js';
+import type { ExtractedResource } from './resource-extractor.js';
 
 const DEFAULT_CONCURRENCY = 5;
 
@@ -19,35 +20,88 @@ export interface TransitiveResourceArtifact {
   json: Record<string, unknown>;
 }
 
+/**
+ * Add an API's or product's extracted policies to the policies scanned for
+ * dependencies, keyed `api:{name}:policy:{n}` / `product:{name}:policy:{n}`.
+ */
+export function collectPolicies(
+  collected: Map<string, string>,
+  owner: 'api' | 'product',
+  name: string,
+  policies: ReadonlyArray<string | undefined>
+): void {
+  policies.forEach((policy, index) => {
+    if (policy !== undefined) {
+      collected.set(`${owner}:${name}:policy:${index}`, policy);
+    }
+  });
+}
+
+/**
+ * The extracted API children that reference other resources: diagnostics
+ * (their logger) and tag links (the tag).
+ */
+export function apiDependencyResources(apiResult: {
+  diagnostics: ReadonlyArray<ExtractedResource>;
+  tags: ReadonlyArray<ExtractedResource>;
+}): TransitiveResourceArtifact[] {
+  return [...apiResult.diagnostics, ...apiResult.tags]
+    .filter((extracted) => extracted.status === 'success')
+    .map(({ descriptor, json }) => ({ descriptor, json }));
+}
+
 export interface TransitiveExtractionResult {
   extractedDescriptors: ResourceDescriptor[];
+  /** Dependencies that were not found or could not be extracted. */
+  failedDescriptors: ResourceDescriptor[];
   errorCount: number;
 }
 
 interface TransitiveTaskResult {
   dep: ResourceDescriptor;
   json?: Record<string, unknown>;
-  /** Resolved to a resource already extracted under its real name. */
+  /**
+   * Resolved to a resource already extracted or claimed by another reference,
+   * or to one the filter excludes by name.
+   */
   skipped?: boolean;
 }
 
 /**
- * Per-context (keyed by baseUrl) index of named value displayName → resource name.
+ * Per-context (keyed by baseUrl) index of named value displayName, and
+ * resource name where no display name claims it (lower case, as names are
+ * compared everywhere else) → resource name.
  * Stored as promises so concurrent tasks share a single LIST call.
  */
-type NamedValueNameIndex = Map<string, Promise<Map<string, string>>>;
+type NamedValueNameIndex = Map<string, Promise<NamedValueNames>>;
+
+interface NamedValueNames {
+  names: Map<string, string>;
+  /** False when the named values couldn't be listed, so `names` is incomplete. */
+  listed: boolean;
+}
 
 async function loadNamedValueNames(
   client: IApimClient,
   context: ApimServiceContext
-): Promise<Map<string, string>> {
+): Promise<NamedValueNames> {
   const byDisplayName = new Map<string, string>();
+  const resourceNames: string[] = [];
   try {
     for await (const json of client.listResources(context, ResourceType.NamedValue)) {
       const name = json.name;
       const displayName = (json.properties as Record<string, unknown> | undefined)?.displayName;
-      if (typeof name === 'string' && typeof displayName === 'string') {
-        byDisplayName.set(displayName, name);
+      if (typeof name === 'string') {
+        resourceNames.push(name);
+        if (typeof displayName === 'string') {
+          byDisplayName.set(displayName.toLowerCase(), name);
+        }
+      }
+    }
+    // A reference matches a display name first, as in APIM, then a resource name.
+    for (const name of resourceNames) {
+      if (!byDisplayName.has(name.toLowerCase())) {
+        byDisplayName.set(name.toLowerCase(), name);
       }
     }
   } catch (error) {
@@ -56,8 +110,23 @@ async function loadNamedValueNames(
       `Failed to list named values for display name resolution; ` +
       `falling back to resolving {{references}} as resource names: ${message}`
     );
+    return { names: byDisplayName, listed: false };
   }
-  return byDisplayName;
+  return { names: byDisplayName, listed: true };
+}
+
+/** The named value name index for a context, listed once and shared. */
+function namedValueNames(
+  client: IApimClient,
+  context: ApimServiceContext,
+  index: NamedValueNameIndex
+): Promise<NamedValueNames> {
+  let names = index.get(context.baseUrl);
+  if (!names) {
+    names = loadNamedValueNames(client, context);
+    index.set(context.baseUrl, names);
+  }
+  return names;
 }
 
 /**
@@ -71,20 +140,64 @@ async function resolveNamedValueDescriptor(
   dep: ResourceDescriptor,
   index: NamedValueNameIndex
 ): Promise<ResourceDescriptor> {
-  let names = index.get(context.baseUrl);
-  if (!names) {
-    names = loadNamedValueNames(client, context);
-    index.set(context.baseUrl, names);
-  }
-
   const ref = dep.nameParts[0] ?? '';
-  const name = (await names).get(ref);
+  const name = (await namedValueNames(client, context, index)).names.get(ref.toLowerCase());
   if (!name || name === ref) {
     return dep;
   }
 
   logger.debug(`Resolved named value reference "{{${ref}}}" to resource name "${name}"`);
   return { ...dep, nameParts: [name] };
+}
+
+/** The `{{name}}`s in a policy fragment's Liquid bodies (scanLiquidNamedValueCandidates). */
+function fragmentLiquidCandidates({ descriptor, json }: TransitiveResourceArtifact): string[] {
+  if (descriptor.type !== ResourceType.PolicyFragment) {
+    return [];
+  }
+  const properties = json.properties as Record<string, unknown> | undefined;
+  return [properties?.value, properties?.policyContent]
+    .filter((text): text is string => typeof text === 'string')
+    .flatMap(scanLiquidNamedValueCandidates);
+}
+
+/**
+ * The named values Liquid bodies reference: each `{{name}}` candidate that a
+ * named value in this scope has as its display or resource name. The others
+ * are Liquid, skipped without a warning. `listed` is false when the named
+ * values couldn't be listed, so a candidate that is one may be missed.
+ */
+async function liquidNamedValueDependencies(
+  client: IApimClient,
+  context: ApimServiceContext,
+  candidates: ReadonlySet<string>,
+  workspace: string | undefined,
+  index: NamedValueNameIndex
+): Promise<{ dependencies: ResourceDescriptor[]; listed: boolean }> {
+  if (candidates.size === 0) {
+    return { dependencies: [], listed: true };
+  }
+  const { names, listed } = await namedValueNames(client, context, index);
+  return {
+    dependencies: [...candidates]
+      .filter((candidate) => names.has(candidate.toLowerCase()))
+      .map((candidate) => ({ type: ResourceType.NamedValue, nameParts: [candidate], workspace })),
+    listed,
+  };
+}
+
+export interface TransitiveExtractionOptions {
+  /** Workspace being extracted; its resources are fetched through `context`. */
+  workspace?: string;
+  /** Service-level context, for dependencies outside the workspace. */
+  serviceContext?: ApimServiceContext;
+  /** Dependencies already known from links (a product's groups and tags). */
+  linkedDependencies?: ResourceDescriptor[];
+  /**
+   * Dependencies not to extract: ones the filter excludes by name, or ones
+   * the caller knows are extracted already.
+   */
+  skip?: (dep: ResourceDescriptor) => boolean;
 }
 
 export async function extractTransitiveDependencies(
@@ -96,29 +209,69 @@ export async function extractTransitiveDependencies(
   apis: Map<string, Record<string, unknown>>,
   resources: TransitiveResourceArtifact[],
   alreadyExtracted: ResourceDescriptor[],
-  workspace?: string,
-  serviceContext?: ApimServiceContext
+  {
+    workspace,
+    serviceContext,
+    linkedDependencies = [],
+    skip = () => false,
+  }: TransitiveExtractionOptions = {}
 ): Promise<TransitiveExtractionResult> {
-  const attempted = new Set(alreadyExtracted.map(getResourceDescriptorKey));
+  // A {{reference}} to an extracted named value's name can be another named
+  // value's display name, so named value references are only compared with
+  // what is extracted once resolved (claimedNamedValues).
+  const attempted = new Set(
+    alreadyExtracted.filter((descriptor) => descriptor.type !== ResourceType.NamedValue).map(getResourceDescriptorKey)
+  );
   const claimedNamedValues = new Set(alreadyExtracted.map(getResourceDescriptorKey));
   const extractedDescriptors: ResourceDescriptor[] = [];
+  const failedDescriptors: ResourceDescriptor[] = [];
   const namedValueIndex: NamedValueNameIndex = new Map();
+  const contextFor = (dep: ResourceDescriptor): ApimServiceContext =>
+    serviceContext && dep.workspace !== workspace ? serviceContext : context;
   let errorCount = 0;
   let foundDependencies = false;
+  let reportedUnlisted = false;
+
+  // The {{name}}s in Liquid bodies: the policies' found once, and each
+  // fragment's as it is extracted.
+  const liquidCandidates = new Set([...policies.values()].flatMap(scanLiquidNamedValueCandidates));
+  let resourcesScanned = 0;
 
   while (true) {
-    const newDeps = findTransitiveDependencies(
-      policies,
-      apis,
-      workspace,
-      resources
-    ).filter((dep) => !attempted.has(getResourceDescriptorKey(dep)));
+    for (; resourcesScanned < resources.length; resourcesScanned++) {
+      fragmentLiquidCandidates(resources[resourcesScanned]).forEach((name) => liquidCandidates.add(name));
+    }
+    const liquid = await liquidNamedValueDependencies(client, context, liquidCandidates, workspace, namedValueIndex);
+    if (!liquid.listed && !reportedUnlisted) {
+      // A named value used only in a Liquid body may be missing from the
+      // output, so the extract is incomplete (and --remove-stale won't run).
+      reportedUnlisted = true;
+      errorCount++;
+      logger.warn('Unable to tell which {{...}} in Liquid bodies are named values, since the named values could not be listed');
+    }
+    const found = [
+      ...findTransitiveDependencies(policies, apis, workspace, resources),
+      ...linkedDependencies,
+      ...liquid.dependencies,
+    ].filter((dep) => !attempted.has(getResourceDescriptorKey(dep)));
+    const newDeps: ResourceDescriptor[] = [];
+    for (const dep of found) {
+      // A {{reference}} can be a display name, so a named value is checked
+      // under the resource name it resolves to, which is what an exclusion
+      // names.
+      const checked = dep.type === ResourceType.NamedValue
+        ? await resolveNamedValueDescriptor(client, contextFor(dep), dep, namedValueIndex)
+        : dep;
+      if (!skip(checked) && !claimedNamedValues.has(getResourceDescriptorKey(checked))) {
+        newDeps.push(dep);
+      }
+    }
 
     if (newDeps.length === 0) {
       if (!foundDependencies) {
         logger.debug('No additional transitive dependencies found');
       }
-      return { extractedDescriptors, errorCount };
+      return { extractedDescriptors, failedDescriptors, errorCount };
     }
 
     foundDependencies = true;
@@ -129,8 +282,7 @@ export async function extractTransitiveDependencies(
 
     const tasks = newDeps.map((dep) => async (): Promise<TransitiveTaskResult> => {
       try {
-        const dependencyContext =
-          serviceContext && dep.workspace !== workspace ? serviceContext : context;
+        const dependencyContext = contextFor(dep);
         let target = dep;
         if (dep.type === ResourceType.NamedValue) {
           target = await resolveNamedValueDescriptor(client, dependencyContext, dep, namedValueIndex);
@@ -165,6 +317,9 @@ export async function extractTransitiveDependencies(
       }
       if (!value?.json) {
         errorCount++;
+        if (value) {
+          failedDescriptors.push(value.dep);
+        }
         continue;
       }
 

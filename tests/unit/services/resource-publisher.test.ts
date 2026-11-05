@@ -749,6 +749,37 @@ describe('resource-publisher', () => {
       expect(client.putResource).not.toHaveBeenCalled();
     });
 
+    it('should publish an ApiTag link whose excluded Tag was pulled into the publish set', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({ properties: { displayName: 'public' } });
+      const descriptor: ResourceDescriptor = { type: ResourceType.ApiTag, nameParts: ['orders', 'public'] };
+      const tag: ResourceDescriptor = { type: ResourceType.Tag, nameParts: ['public'] };
+      const config: PublishConfig = { ...testConfig, filter: { apis: ['orders'], tags: [] } };
+
+      const pulledIn = await publishResource(client, store, testContext, descriptor, config, [descriptor, tag]);
+      const notPulledIn = await publishResource(client, store, testContext, descriptor, config, [descriptor]);
+
+      expect(pulledIn.status).toBe('success');
+      expect(notPulledIn.status).toBe('skipped');
+      expect(client.putResource).toHaveBeenCalledTimes(1);
+    });
+
+    it('should skip a link to a target in the publish set that the filter excludes by name', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const descriptor: ResourceDescriptor = { type: ResourceType.ApiTag, nameParts: ['orders', 'internal'] };
+      const config: PublishConfig = { ...testConfig, filter: { apis: ['orders'], tags: ['!internal', '*'] } };
+
+      const result = await publishResource(client, store, testContext, descriptor, config, [
+        descriptor,
+        { type: ResourceType.Tag, nameParts: ['internal'] },
+      ]);
+
+      expect(result.status).toBe('skipped');
+      expect(client.putResource).not.toHaveBeenCalled();
+    });
+
     it('should publish a GatewayApi association when its target passes an explicit filter and was extracted', async () => {
       const client = createMockClient();
       const store = createMockStore();
@@ -2144,6 +2175,35 @@ describe('resource-publisher', () => {
       const props = putPayload.properties as Record<string, unknown>;
       const creds = props.credentials as Record<string, unknown>;
       expect(creds.instrumentationKey).toBe('{{Logger-Credentials--abc123}}');
+    });
+
+    it("should keep a reference that is another named value's display name pointing at that named value", async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const namedValue = (name: string): ResourceDescriptor => ({ type: ResourceType.NamedValue, nameParts: [name] });
+      store.listResources.mockResolvedValue([namedValue('one'), namedValue('two')]);
+      store.readResource.mockImplementation(async (_dir: string, desc: ResourceDescriptor) => {
+        if (desc.type === ResourceType.Logger) {
+          return { name: 'my-logger', properties: { loggerType: 'applicationInsights', credentials: { instrumentationKey: '{{two}}' } } };
+        }
+        if (desc.type === ResourceType.NamedValue) {
+          return { name: desc.nameParts[0], properties: { displayName: desc.nameParts[0] === 'one' ? 'two' : 'three' } };
+        }
+        return null;
+      });
+
+      const loggerDescriptor: ResourceDescriptor = { type: ResourceType.Logger, nameParts: ['my-logger'] };
+      const sentKey = () =>
+        (client.putResource.mock.calls.at(-1)?.[2] as { properties: { credentials: Record<string, unknown> } })
+          .properties.credentials.instrumentationKey;
+
+      await publishResource(client, store, testContext, loggerDescriptor, testConfig);
+      expect(sentKey()).toBe('{{two}}');
+
+      // With a prefix, the reference follows that named value's deployed display name.
+      const envMapping = { prefix: 'dev-', suffix: '', appliesTo: new Set([ResourceType.NamedValue]) };
+      await publishResource(client, store, testContext, loggerDescriptor, { ...testConfig, envMapping });
+      expect(sentKey()).toBe('{{dev-two}}');
     });
 
     it('should keep an explicit workspace named-value displayName unprefixed in logger credentials', async () => {

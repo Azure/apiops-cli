@@ -15,7 +15,7 @@ apiops-cli solves this by organizing all 34 resource types into **4 tiers**. Eac
 
 | Tier | Resources | Rule |
 |------|-----------|------|
-| **1** | NamedValue, Tag, Gateway, VersionSet, Backend, Logger, Group, PolicyFragment, GlobalSchema, PolicyRestriction, Documentation | No dependencies — safe to process in any order |
+| **1** | NamedValue, Tag, Gateway, VersionSet, Backend, Logger, Group, PolicyFragment, GlobalSchema, PolicyRestriction, Documentation | No dependencies on other tiers. Within the tier, named values go first, since backends and loggers can use them; pool backends follow the backends they contain; and a named value a policy uses to name a backend, logger or schema published in the same run goes after that resource, with policy fragments after it in that case. A backend or logger in the run that uses such a named value in its credentials goes after the named value, and these are ordered so each comes after what it needs; only where that is impossible (a cycle, as when a backend uses in its credentials the named value that names it, or a pool containing it), the named values in it go first |
 | **2** | Diagnostic, ServicePolicy, Product, Api | Depend only on Tier 1 resources |
 | **3** | ProductPolicy, ProductGroup, ProductTag, ProductApi, ProductWiki, ApiPolicy, ApiTag, ApiDiagnostic, ApiOperation, ApiSchema, ApiRelease, ApiTagDescription, ApiWiki, McpServer, GraphQLResolver, GatewayApi, Subscription | Depend on Tier 1 and/or Tier 2 resources |
 | **4** | ApiOperationPolicy, GraphQLResolverPolicy | Depend on Tier 3 resources |
@@ -163,9 +163,12 @@ If a Tier 2 resource fails to publish, its dependents in Tier 3 and 4 will also 
 
 When using `filter.yaml` to include specific resources, be aware of dependencies.
 
-**During publish**, apiops-cli does **not** auto-include dependencies at the
-artifact level — your filter (and hence your extracted artifact tree) must
-already contain every required parent. For example, publishing an **ApiPolicy**
+**During publish** with a filter, apiops-cli includes the resources the
+selected ones depend on (named values, backends, policy fragments, version
+sets, tags, groups, loggers and so on) unless `--no-transitive` is passed; see
+[Transitive Dependency Behavior](../guides/filtering-resources.md#transitive-dependency-behavior).
+It can only include what is in the artifact tree, so the tree must already
+contain every required resource. For example, publishing an **ApiPolicy**
 without its parent **Api** present in the artifact tree will fail.
 
 **During extract**, apiops-cli **does** auto-follow a limited set of transitive

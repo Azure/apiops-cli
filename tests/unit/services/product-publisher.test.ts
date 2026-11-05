@@ -12,7 +12,7 @@ import {
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
-import { LogLevel } from '../../../src/lib/logger.js';
+import { LogLevel, logger } from '../../../src/lib/logger.js';
 import { DEFAULT_APPLIES_TO } from '../../../src/services/env-mapper.js';
 
 // Mock resource-publisher so product-publisher tests don't run full resource-publisher logic
@@ -266,6 +266,78 @@ describe('product-publisher', () => {
         }),
         {}
       );
+    });
+
+    it('links groups and tags that were pulled into the publish set although the filter excludes them', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockImplementation(async (_dir: string, _descriptor: ResourceDescriptor, type: string) =>
+        type === 'groups' ? [{ name: 'support-team' }] : type === 'tags' ? [{ name: 'partner' }, { name: 'internal' }] : []
+      );
+      const config: PublishConfig = {
+        ...testConfig,
+        filter: { products: ['my-product'], groups: [], tags: [] },
+      };
+
+      await publishProduct(client, store, testContext, productDescriptor, config, [
+        productDescriptor,
+        { type: ResourceType.Group, nameParts: ['support-team'] },
+        { type: ResourceType.Tag, nameParts: ['partner'] },
+      ]);
+
+      const links = client.putResource.mock.calls
+        .map(([, descriptor]) => `${descriptor.type}:${descriptor.nameParts.join('/')}`)
+        .filter((key) => key.startsWith('ProductGroup') || key.startsWith('ProductTag'));
+      expect(links).toEqual(['ProductGroup:my-product/support-team', 'ProductTag:my-product/partner']);
+    });
+
+    it('publishes links to built-in groups only when the filter includes them', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockImplementation(async (_dir: string, _descriptor: ResourceDescriptor, type: string) =>
+        type === 'groups' ? [{ name: 'developers' }] : []
+      );
+      const developers: ResourceDescriptor = { type: ResourceType.Group, nameParts: ['developers'] };
+      const linksFor = async (groups: string[]) => {
+        client.putResource.mockClear();
+        // A group the filter includes is in the publish set, as after extracting it.
+        await publishProduct(client, store, testContext, productDescriptor, {
+          ...testConfig,
+          filter: { products: ['my-product'], groups },
+        }, groups.length > 0 ? [productDescriptor, developers] : [productDescriptor]);
+        return client.putResource.mock.calls
+          .map(([, descriptor]) => `${descriptor.type}:${descriptor.nameParts.join('/')}`)
+          .filter((key) => key.startsWith('ProductGroup'));
+      };
+
+      expect(await linksFor([])).toEqual([]);
+      expect(await linksFor(['developers'])).toEqual(['ProductGroup:my-product/developers']);
+    });
+
+    it('publishes the link APIM adds to administrators whatever the groups filter, unless it excludes the group by name', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readAssociation.mockImplementation(async (_dir: string, _descriptor: ResourceDescriptor, type: string) =>
+        type === 'groups' ? [{ name: 'administrators' }] : []
+      );
+      const warn = vi.spyOn(logger, 'warn');
+      const linksFor = async (groups: string[]) => {
+        client.putResource.mockClear();
+        warn.mockClear();
+        await publishProduct(client, store, testContext, productDescriptor, {
+          ...testConfig,
+          filter: { products: ['my-product'], groups },
+        }, [productDescriptor]);
+        return client.putResource.mock.calls
+          .map(([, descriptor]) => `${descriptor.type}:${descriptor.nameParts.join('/')}`)
+          .filter((key) => key.startsWith('ProductGroup'));
+      };
+
+      expect(await linksFor([])).toEqual(['ProductGroup:my-product/administrators']);
+      expect(await linksFor(['support-team'])).toEqual(['ProductGroup:my-product/administrators']);
+      expect(warn).not.toHaveBeenCalled();
+      expect(await linksFor(['!administrators'])).toEqual([]);
+      warn.mockRestore();
     });
 
     it('does not let resolved targets override explicit API exclusions', async () => {

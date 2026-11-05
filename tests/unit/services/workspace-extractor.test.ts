@@ -10,6 +10,7 @@ import { ApimServiceContext } from '../../../src/models/types.js';
 import { FilterConfig } from '../../../src/models/config.js';
 import { extractWorkspaces } from '../../../src/services/workspace-extractor.js';
 import { resolveWorkspaceFilter } from '../../../src/services/workspace-extractor.js';
+import { logger } from '../../../src/lib/logger.js';
 
 const testContext: ApimServiceContext = {
   subscriptionId: 'sub-1',
@@ -563,7 +564,289 @@ describe('workspace-extractor', () => {
     });
   });
 
+  describe('workspace dependency coverage', () => {
+    const SERVICE = '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a';
+    const wsContext = { ...testContext, baseUrl: `${testContext.baseUrl}/workspaces/team-a` };
+
+    /** A store that keeps association files in memory so they can be read back. */
+    function createAssociationStore() {
+      const store = createMockStore();
+      const associations = new Map<string, unknown[]>();
+      const key = (descriptor: { nameParts: string[]; workspace?: string }, type: string) =>
+        `${descriptor.workspace ?? ''}/${descriptor.nameParts.join('/')}/${type}`;
+      store.writeAssociation.mockImplementation(async (_dir, descriptor, type, entries) => {
+        associations.set(key(descriptor, type), entries);
+      });
+      store.readAssociation.mockImplementation(async (_dir, descriptor, type) =>
+        associations.get(key(descriptor, type)) ?? []
+      );
+      return store;
+    }
+
+    it("should pull in an API diagnostic's logger, tags linked through any workspace tag, and a product's groups and tags", async () => {
+      const client = createMockClient();
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType, parent?: { nameParts: string[] }) {
+        if (type === ResourceType.Api) yield { name: 'orders', properties: {} };
+        if (type === ResourceType.Product) yield { name: 'starter', properties: {} };
+        if (type === ResourceType.Tag) {
+          yield { name: 'public', properties: {} };
+          yield { name: 'internal', properties: {} };
+        }
+        if (type === ResourceType.ApiDiagnostic) {
+          yield { name: 'applicationinsights', properties: { loggerId: `${SERVICE}/workspaces/team-a/loggers/ws-logger` } };
+        }
+        if (type === ResourceType.ApiTag && parent?.nameParts[0] === 'public') {
+          yield { name: 'link-1', properties: { apiId: `${SERVICE}/workspaces/team-a/apis/orders` } };
+        }
+        if (type === ResourceType.ProductTag && parent?.nameParts[0] === 'internal') {
+          yield { name: 'link-2', properties: { productId: `${SERVICE}/workspaces/team-a/products/starter` } };
+        }
+        if (type === ResourceType.ProductGroup) {
+          yield { name: 'link-3', properties: { groupId: `${SERVICE}/groups/support-team` } };
+        }
+      };
+      client.getResource.mockImplementation(async (_ctx, descriptor) => {
+        if (descriptor.type === ResourceType.Workspace) return { name: 'team-a', properties: {} };
+        if ([ResourceType.Logger, ResourceType.Tag, ResourceType.Group].includes(descriptor.type)) {
+          return { name: descriptor.nameParts[0], properties: {} };
+        }
+        return undefined;
+      });
+      const store = createAssociationStore();
+      const filter: FilterConfig = {
+        workspaces: ['team-a'],
+        workspaceSubFilters: {
+          'team-a': { apis: ['orders'], products: ['starter'], tags: [], loggers: [], groups: [] },
+        },
+      };
+
+      await extractWorkspaces(client, store, testContext, '/output', filter, true);
+
+      const fetched = client.getResource.mock.calls.map(([ctx, d]) =>
+        `${d.type}:${d.workspace ?? 'service'}:${d.nameParts.join('/')}@${ctx.baseUrl === wsContext.baseUrl ? 'workspace' : 'service'}`
+      );
+      expect(fetched).toEqual(expect.arrayContaining([
+        'Logger:team-a:ws-logger@workspace',
+        'Tag:team-a:public@workspace',
+        'Tag:team-a:internal@workspace',
+        'Group:service:support-team@service',
+      ]));
+      expect(store.writeResource).toHaveBeenCalledWith(
+        '/output',
+        expect.objectContaining({ type: ResourceType.ApiTag, nameParts: ['orders', 'public'], workspace: 'team-a' }),
+        expect.anything()
+      );
+    });
+
+    it('should fall back to the extracted tags, and report an error, when listing the workspace tags fails', async () => {
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      const client = createMockClient();
+      let tagListings = 0;
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType) {
+        if (type === ResourceType.Api) yield { name: 'orders', properties: {} };
+        if (type === ResourceType.Tag && ++tagListings > 1) throw new Error('HTTP 503');
+      };
+      client.getResource.mockResolvedValue({ name: 'team-a', properties: {} });
+      const filter: FilterConfig = {
+        workspaces: ['team-a'],
+        workspaceSubFilters: { 'team-a': { apis: ['orders'], tags: [] } },
+      };
+
+      const results = await extractWorkspaces(client, createAssociationStore(), testContext, '/output', filter, true);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].errorCount).toBe(1);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Failed to list tags in workspace "team-a"'));
+      warn.mockRestore();
+    });
+
+    it('should not pull in dependencies the workspace or top-level filter excludes by name', async () => {
+      const client = createMockClient();
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType, parent?: { nameParts: string[] }) {
+        if (type === ResourceType.Api) yield { name: 'orders', properties: {} };
+        if (type === ResourceType.Product) yield { name: 'starter', properties: {} };
+        if (type === ResourceType.Tag) {
+          yield { name: 'public', properties: {} };
+          yield { name: 'internal', properties: {} };
+        }
+        if (type === ResourceType.ApiTag && parent) {
+          yield { name: `link-${parent.nameParts[0]}`, properties: { apiId: `${SERVICE}/workspaces/team-a/apis/orders` } };
+        }
+        if (type === ResourceType.ProductGroup) {
+          yield { name: 'link-a', properties: { groupId: `${SERVICE}/groups/partners` } };
+          yield { name: 'link-b', properties: { groupId: `${SERVICE}/groups/support-team` } };
+          yield { name: 'link-c', properties: { groupId: `${SERVICE}/workspaces/team-a/groups/developers` } };
+        }
+      };
+      client.getResource.mockImplementation(async (_ctx, descriptor) => {
+        if (descriptor.type === ResourceType.Workspace) return { name: 'team-a', properties: {} };
+        if ([ResourceType.Tag, ResourceType.Group].includes(descriptor.type)) {
+          return { name: descriptor.nameParts[0], properties: {} };
+        }
+        return undefined;
+      });
+      const filter: FilterConfig = {
+        groups: ['!partners', '*'],
+        workspaces: ['team-a'],
+        workspaceSubFilters: {
+          'team-a': { apis: ['orders'], products: ['starter'], tags: ['!internal', 'none'], groups: [] },
+        },
+      };
+
+      await extractWorkspaces(client, createAssociationStore(), testContext, '/output', filter, true);
+
+      const fetched = client.getResource.mock.calls
+        .map(([, d]) => `${d.type}:${d.workspace ?? 'service'}:${d.nameParts.join('/')}`)
+        .filter((key) => key.startsWith('Tag') || key.startsWith('Group'));
+      expect(fetched.sort()).toEqual([
+        'Group:service:support-team',
+        // A workspace group named like a built-in group is a custom group.
+        'Group:team-a:developers',
+        'Tag:team-a:public',
+      ]);
+    });
+
+    /**
+     * A client whose workspaces each have product 'starter' linked to service
+     * group 'support-team'. APIM refuses that link for a custom group; it
+     * stands in for any service-level dependency a workspace can have.
+     */
+    function createSharedGroupClient(workspaces: string[]) {
+      const client = createMockClient();
+      client.listResources = async function* (ctx: ApimServiceContext, type: ResourceType) {
+        if (type === ResourceType.Workspace) {
+          for (const name of workspaces) yield { name, properties: {} };
+        }
+        if (type === ResourceType.Product && ctx.baseUrl.includes('/workspaces/')) yield { name: 'starter', properties: {} };
+        if (type === ResourceType.ProductGroup) {
+          yield { name: 'link-1', properties: { groupId: `${SERVICE}/groups/support-team` } };
+        }
+      };
+      client.getResource.mockImplementation(async (_ctx, descriptor) =>
+        ({ name: descriptor.nameParts[0], properties: {} })
+      );
+      return client;
+    }
+
+    const groupGets = (client: ReturnType<typeof createMockClient>) =>
+      client.getResource.mock.calls.filter(([, d]) => d.type === ResourceType.Group).length;
+
+    /** A filter extracting product 'starter' from each workspace through a sub-filter. */
+    const starterFilter = (workspaces: string[]): FilterConfig => ({
+      groups: [],
+      workspaces,
+      workspaceSubFilters: Object.fromEntries(workspaces.map((name) => [name, { products: ['starter'] }])),
+    });
+
+    it('should not resolve dependencies in a workspace extracted without a sub-filter', async () => {
+      const client = createSharedGroupClient(['team-a']);
+      const filter: FilterConfig = { groups: ['partners'], workspaces: ['team-a'] };
+
+      await extractWorkspaces(client, createAssociationStore(), testContext, '/output', filter, true);
+
+      expect(groupGets(client)).toBe(0);
+    });
+
+    it('should fetch a service-level dependency once across workspaces', async () => {
+      const client = createSharedGroupClient(['team-a', 'team-b']);
+      const filter = starterFilter(['team-a', 'team-b']);
+
+      const store = createAssociationStore();
+
+      await extractWorkspaces(client, store, testContext, '/output', filter, true);
+
+      expect(groupGets(client)).toBe(1);
+      expect(store.writeResource.mock.calls.filter(([, d]) => d.type === ResourceType.Group)).toHaveLength(1);
+    });
+
+    it('should not fetch a service-level dependency the service extraction already wrote', async () => {
+      const client = createSharedGroupClient(['team-a']);
+      const filter = starterFilter(['team-a']);
+
+      await extractWorkspaces(
+        client, createAssociationStore(), testContext, '/output', filter, true,
+        [{ type: ResourceType.Group, nameParts: ['support-team'] }]
+      );
+
+      expect(groupGets(client)).toBe(0);
+    });
+
+    it('should try a missing service-level dependency once across workspaces', async () => {
+      const client = createSharedGroupClient(['team-a', 'team-b']);
+      client.getResource.mockImplementation(async (_ctx, descriptor) =>
+        descriptor.type === ResourceType.Group ? undefined : { name: descriptor.nameParts[0], properties: {} }
+      );
+      const filter = starterFilter(['team-a', 'team-b']);
+
+      const results = await extractWorkspaces(client, createAssociationStore(), testContext, '/output', filter, true);
+
+      expect(groupGets(client)).toBe(1);
+      expect(results.map((ws) => ws.errorCount)).toEqual([1, 0]);
+    });
+
+    it.each([
+      ['the tags filter only excludes by name', { apis: ['orders'], tags: ['!internal'] }],
+      ['no APIs or products were extracted', { apis: [], products: [], tags: [] }],
+      ['the tags filter includes every tag', { apis: ['orders'], tags: ['*', '!internal'] }],
+      ['the tags key is left out, so every tag is included', { apis: ['orders'] }],
+    ])('should not list the workspace tags again when %s', async (_case, subFilter) => {
+      const client = createMockClient();
+      let tagListings = 0;
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType) {
+        if (type === ResourceType.Api) yield { name: 'orders', properties: {} };
+        if (type === ResourceType.Tag) {
+          tagListings++;
+          yield { name: 'public', properties: {} };
+        }
+      };
+      client.getResource.mockResolvedValue({ name: 'team-a', properties: {} });
+      const filter: FilterConfig = { workspaces: ['team-a'], workspaceSubFilters: { 'team-a': subFilter } };
+
+      await extractWorkspaces(client, createAssociationStore(), testContext, '/output', filter, true);
+
+      expect(tagListings).toBe(1);
+    });
+
+    it('should only use extracted tags for links without transitive resolution', async () => {
+      const client = createMockClient();
+      const listed: ResourceType[] = [];
+      client.listResources = async function* (_ctx: ApimServiceContext, type: ResourceType) {
+        listed.push(type);
+        if (type === ResourceType.Api) yield { name: 'orders', properties: {} };
+      };
+      client.getResource.mockResolvedValue({ name: 'team-a', properties: {} });
+      const filter: FilterConfig = {
+        workspaces: ['team-a'],
+        workspaceSubFilters: { 'team-a': { apis: ['orders'], tags: [] } },
+      };
+
+      await extractWorkspaces(client, createAssociationStore(), testContext, '/output', filter, false);
+
+      expect(listed).not.toContain(ResourceType.ApiTag);
+    });
+  });
+
   describe('resolveWorkspaceFilter', () => {
+    it('should apply a sub-filter keyed by a pattern to every workspace it matches', () => {
+      const filter: FilterConfig = {
+        workspaces: ['team-*'],
+        workspaceSubFilters: {
+          'team-*': { apis: ['orders'], namedValues: [] },
+          'team-b': { apis: ['billing'] },
+          '!team-c': { apis: [] },
+        },
+      };
+
+      expect(resolveWorkspaceFilter('team-a', filter)).toEqual(
+        expect.objectContaining({ apis: ['orders'], namedValues: [] })
+      );
+      // A sub-filter keyed by the workspace's name takes precedence over a pattern.
+      expect(resolveWorkspaceFilter('TEAM-B', filter)).toEqual(expect.objectContaining({ apis: ['billing'] }));
+      // Exclusion keys never apply.
+      expect(resolveWorkspaceFilter('team-c', filter)).toEqual(expect.objectContaining({ apis: ['orders'] }));
+      expect(resolveWorkspaceFilter('platform', filter)).toBeUndefined();
+    });
+
     it('should return undefined when no filter provided', () => {
       expect(resolveWorkspaceFilter('ws-1')).toBeUndefined();
     });
