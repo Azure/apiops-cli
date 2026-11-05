@@ -448,6 +448,21 @@ describe('maskSasSignature', () => {
 });
 
 describe('ArmHttpClient.request errors and retries', () => {
+  it('should ask for the token again before each retry', async () => {
+    const http = client();
+    vi.spyOn(http, 'getToken').mockResolvedValueOnce('t1').mockResolvedValueOnce('t2');
+    const sent: (string | null)[] = [];
+    const responses = [empty(429, { 'Retry-After': '3600' }), json(200, {})];
+    fetchSpy.mockImplementation(async (_url, init) => {
+      sent.push(new Headers(init?.headers).get('Authorization'));
+      return responses.shift()!;
+    });
+
+    await http.request(URL_1);
+
+    expect(sent).toEqual(['Bearer t1', 'Bearer t2']);
+  });
+
   it('should mask the signature in a failed SAS download, naming the URL without its query', async () => {
     const signature = '++++QUJD++++QUJD++++QUJD++++QUJD++++QUJD++8=';
     // A proxy's block page that quotes the request URL, signature and all.

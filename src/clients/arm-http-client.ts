@@ -504,8 +504,6 @@ export class ArmHttpClient implements IArmHttpClient {
 
     const headers = new Headers(init.headers);
     if (!skipAuth) {
-      const token = await this.getToken();
-      headers.set('Authorization', `Bearer ${token}`);
       headers.set('Content-Type', 'application/json');
     } else {
       headers.delete('Authorization');
@@ -523,6 +521,11 @@ export class ArmHttpClient implements IArmHttpClient {
     const maxAttempts = maxRetries + 1;
 
     while (attempt <= maxRetries) {
+      if (!skipAuth) {
+        // Asked for on every attempt: a server-requested wait can outlast the
+        // token, and the provider returns its cached token until it is due.
+        headers.set('Authorization', `Bearer ${await this.getToken()}`);
+      }
       try {
         logger.debug(`HTTP ${method} ${logUrl}`);
         const response = await fetch(url, { ...init, headers });
