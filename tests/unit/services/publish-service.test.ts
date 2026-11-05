@@ -664,8 +664,19 @@ describe('publish-service', () => {
           logLevel: LogLevel.INFO,
         });
         const puts = () => client.putResource.mock.calls.map((call) => `${call[1].type}:${call[1].nameParts.join('/')}`).sort();
-        return { publish, puts };
+        return { publish, puts, store };
       };
+
+      it('should read that policy once, though both the expansion and the order use it', async () => {
+        const { publish, store } = setUp();
+
+        await publish({ apis: ['orders'], backends: [] });
+
+        const billingPolicyReads = store.readContent.mock.calls.filter(
+          (call) => call[1].type === ResourceType.ApiPolicy && call[1].nameParts[0] === 'billing'
+        );
+        expect(billingPolicyReads).toHaveLength(1);
+      });
 
       it('should include the resource its value names, as APIM checks that policy on the target', async () => {
         const { publish, puts } = setUp();
@@ -1947,6 +1958,166 @@ describe('publish-service', () => {
   });
 
   describe('named value ordering within tier 1', () => {
+    const orderingCase = async (
+      extra: ResourceDescriptor[],
+      policy: string,
+      overrides?: PublishConfig['overrides']
+    ): Promise<string[]> => {
+      const publishOrder: string[] = [];
+      const resources: ResourceDescriptor[] = [
+        { type: ResourceType.NamedValue, nameParts: ['backend-id'] },
+        { type: ResourceType.NamedValue, nameParts: ['api-key'] },
+        { type: ResourceType.Backend, nameParts: ['prod-backend'] },
+        { type: ResourceType.Backend, nameParts: ['dev-backend'] },
+        { type: ResourceType.PolicyFragment, nameParts: ['route'] },
+        ...extra,
+      ];
+      const client = createMockClient();
+      vi.mocked(client.putResource).mockImplementation(async (_ctx, descriptor) => {
+        publishOrder.push(descriptor.nameParts.join('/'));
+      });
+      const store = createMockStore(resources);
+      vi.mocked(store.readResource).mockImplementation(async (_sourceDir, descriptor) => {
+        if (descriptor.type === ResourceType.NamedValue) {
+          const value = { 'backend-id': 'dev-backend', 'api-key': 'prod-backend', 'schema-id': 'order-schema' }[descriptor.nameParts[0] ?? ''];
+          return { properties: { displayName: descriptor.nameParts[0], value } };
+        }
+        if (descriptor.type === ResourceType.PolicyFragment) {
+          return { properties: { value: policy } };
+        }
+        return { properties: { url: 'https://example.test' } };
+      });
+
+      await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        overrides,
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+      return publishOrder;
+    };
+
+    it('should publish a named value a policy uses as a backend after the backend its value names, and before fragments', async () => {
+      const order = await orderingCase(
+        [],
+        '<fragment><set-backend-service backend-id="{{backend-id}}" /></fragment>',
+        { namedValues: { 'backend-id': { properties: { value: 'prod-backend' } } } }
+      );
+
+      expect(order.indexOf('backend-id')).toBeGreaterThan(order.indexOf('prod-backend'));
+      expect(order.indexOf('backend-id')).toBeGreaterThan(order.indexOf('dev-backend'));
+      // The fragment uses the named value, so it goes after it.
+      expect(order.indexOf('route')).toBeGreaterThan(order.indexOf('backend-id'));
+      // api-key's value matches a backend's name, but no policy uses it as one.
+      expect(order.indexOf('api-key')).toBeLessThan(order.indexOf('prod-backend'));
+    });
+
+    it('should publish a named value a policy uses as a schema after the schema its value names', async () => {
+      const order = await orderingCase(
+        [
+          { type: ResourceType.NamedValue, nameParts: ['schema-id'] },
+          { type: ResourceType.GlobalSchema, nameParts: ['order-schema'] },
+        ],
+        '<fragment><validate-content><content type="application/json" schema-id="{{schema-id}}" /></validate-content></fragment>'
+      );
+
+      expect(order.indexOf('schema-id')).toBeGreaterThan(order.indexOf('order-schema'));
+      expect(order.indexOf('backend-id')).toBeLessThan(order.indexOf('dev-backend'));
+    });
+
+    const recordOrder = (resources: ResourceDescriptor[]) => {
+      const order: string[] = [];
+      const client = createMockClient();
+      vi.mocked(client.putResource).mockImplementation(async (_ctx, descriptor) => {
+        order.push(descriptor.nameParts.join('/'));
+      });
+      return { order, client, store: createMockStore(resources) };
+    };
+    const publishAll = (client: ReturnType<typeof createMockClient>, store: ReturnType<typeof createMockStore>, filter?: FilterConfig) =>
+      runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter,
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+    it('should publish a named value naming a pool backend after the pool', async () => {
+      const { order, client, store } = recordOrder([
+        { type: ResourceType.NamedValue, nameParts: ['pool-id'] },
+        { type: ResourceType.Backend, nameParts: ['member'] },
+        { type: ResourceType.Backend, nameParts: ['my-pool'] },
+        { type: ResourceType.PolicyFragment, nameParts: ['route'] },
+      ]);
+      vi.mocked(store.readResource).mockImplementation(async (_sourceDir, descriptor) => {
+        if (descriptor.type === ResourceType.NamedValue) {
+          return { properties: { displayName: 'pool-id', value: 'my-pool' } };
+        }
+        if (descriptor.type === ResourceType.PolicyFragment) {
+          return { properties: { value: '<fragment><set-backend-service backend-id="{{pool-id}}" /></fragment>' } };
+        }
+        return descriptor.nameParts[0] === 'my-pool'
+          ? { properties: { type: 'Pool', pool: { services: [{ id: '/backends/member' }] } } }
+          : { properties: { url: 'https://example.test' } };
+      });
+
+      await publishAll(client, store);
+
+      expect(order.indexOf('my-pool')).toBeGreaterThan(order.indexOf('member'));
+      expect(order.indexOf('pool-id')).toBeGreaterThan(order.indexOf('my-pool'));
+      expect(order.indexOf('route')).toBeGreaterThan(order.indexOf('pool-id'));
+    });
+
+    it("should keep a named value first when a backend published with it uses it in its credentials", async () => {
+      const { order, client, store } = recordOrder([
+        { type: ResourceType.NamedValue, nameParts: ['shared'] },
+        { type: ResourceType.Backend, nameParts: ['prod-backend'] },
+        { type: ResourceType.PolicyFragment, nameParts: ['route'] },
+      ]);
+      vi.mocked(store.readResource).mockImplementation(async (_sourceDir, descriptor) => {
+        if (descriptor.type === ResourceType.NamedValue) {
+          return { properties: { displayName: 'shared', value: 'prod-backend' } };
+        }
+        if (descriptor.type === ResourceType.PolicyFragment) {
+          return { properties: { value: '<fragment><set-backend-service backend-id="{{shared}}" /></fragment>' } };
+        }
+        return { properties: { url: 'https://example.test', credentials: { header: { 'x-route': ['{{shared}}'] } } } };
+      });
+
+      await publishAll(client, store);
+
+      expect(order.indexOf('shared')).toBeLessThan(order.indexOf('prod-backend'));
+    });
+
+    it('should order by a policy the filter leaves out, since APIM checks it on the target', async () => {
+      const { order, client, store } = recordOrder([
+        { type: ResourceType.Api, nameParts: ['orders'] },
+        { type: ResourceType.Api, nameParts: ['billing'] },
+        { type: ResourceType.ApiPolicy, nameParts: ['billing'] },
+        { type: ResourceType.NamedValue, nameParts: ['billing-id'] },
+        { type: ResourceType.Backend, nameParts: ['new-billing'] },
+      ]);
+      store.readContent.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) =>
+        descriptor.type === ResourceType.ApiPolicy
+          ? { content: '<policies><inbound><set-backend-service backend-id="{{billing-id}}" /></inbound></policies>' }
+          : undefined
+      );
+      vi.mocked(store.readResource).mockImplementation(async (_sourceDir, descriptor) =>
+        descriptor.type === ResourceType.NamedValue
+          ? { properties: { displayName: 'billing-id', value: 'new-billing' } }
+          : { properties: { url: 'https://example.test' } }
+      );
+
+      // Named values and backends are left out of the filter, so all are selected.
+      await publishAll(client, store, { apis: ['orders'] });
+
+      expect(order).not.toContain('billing');
+      expect(order.indexOf('billing-id')).toBeGreaterThan(order.indexOf('new-billing'));
+    });
+
     it('should publish named values before loggers within tier 1', async () => {
       const publishOrder: string[] = [];
 
