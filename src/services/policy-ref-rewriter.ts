@@ -15,26 +15,21 @@
  *   token, which is extremely unlikely in practice.
  *
  * Known-set filter safety:
- *   Only tokens/attribute values whose exact text is present in the
- *   corresponding known set are rewritten. This naturally excludes APIM
- *   runtime context references such as {{context.request.headers.foo}}
- *   because those strings will never appear as artifact resource names.
+ *   Only tokens that are the display name of a named value in the source, and
+ *   attribute values that name a resource in the source, are rewritten. This
+ *   naturally excludes APIM runtime context references such as
+ *   {{context.request.headers.foo}}, which no named value has as its name.
  */
 
 import { ResourceType } from '../models/resource-types.js';
 import type { EnvMapping } from './env-mapper.js';
 import { toDeployedName } from './env-mapper.js';
 import type { KnownArtifactSets } from '../models/config.js';
+import { replaceNamedValueReferences } from './transitive-resolver.js';
 
 // ---------------------------------------------------------------------------
 // Regex patterns
 // ---------------------------------------------------------------------------
-
-/**
- * Matches {{token}} with optional whitespace inside the braces.
- * Group 1 = token name (no whitespace).
- */
-const NV_PATTERN = /\{\{\s*([A-Za-z0-9._-]+)\s*\}\}/g;
 
 /**
  * Matches the fragment-id attribute on an <include-fragment> element.
@@ -61,44 +56,50 @@ export type { KnownArtifactSets } from '../models/config.js';
  * deployed names.
  *
  * Handled reference styles:
- *   1. `{{tokenName}}` — NamedValue reference. Only rewritten when
- *      tokenName ∈ knownArtifactSets.namedValues AND
- *      ResourceType.NamedValue ∈ mapping.appliesTo.
- *   2. `fragment-id="name"` on <include-fragment>. Only rewritten when
- *      name ∈ knownArtifactSets.fragments AND
+ *   1. `{{token}}` — a named value reference where APIM substitutes one
+ *      (replaceNamedValueReferences: inside a Liquid body, only a bare
+ *      `{{name}}`), resolved as APIM resolves it (by
+ *      display name, ignoring case, in the policy's scope) and rewritten to the
+ *      display name that named value is deployed with
+ *      (KnownArtifactSets.deployedNamedValueReference). Rewritten even without
+ *      a mapping when an explicit displayName override changes it.
+ *   2. `fragment-id="name"` on <include-fragment>. Only rewritten when the
+ *      source has that fragment in the policy's scope AND
  *      ResourceType.PolicyFragment ∈ mapping.appliesTo.
- *   3. `backend-id="name"` on <set-backend-service>. Only rewritten when
- *      name ∈ knownArtifactSets.backends AND
+ *   3. `backend-id="name"` on <set-backend-service>. Only rewritten when the
+ *      source has that backend in the policy's scope AND
  *      ResourceType.Backend ∈ mapping.appliesTo.
  *
- * Returns the input unchanged if `mapping` is undefined or no matches apply.
+ * @param workspace - The policy's workspace, if any: references name
+ *   resources in its own scope
  */
 export function rewritePolicyRefs(
   xml: string,
   mapping: EnvMapping | undefined,
   known: KnownArtifactSets,
+  workspace?: string,
 ): string {
-  if (mapping === undefined) return xml;
+  // A token names the named value with that display name in the policy's
+  // scope, and becomes the display name it is deployed with: changed by an
+  // explicit displayName override even without a mapping. APIM matches
+  // display names ignoring case, so one that differs only in case is kept.
+  let result = replaceNamedValueReferences(xml, (name, match) => {
+    const deployed = known.deployedNamedValueReference(name, workspace);
+    return deployed === undefined || deployed.toLowerCase() === name.toLowerCase() ? match : `{{${deployed}}}`;
+  });
 
-  let result = xml;
-
-  if (mapping.appliesTo.has(ResourceType.NamedValue)) {
-    result = result.replace(NV_PATTERN, (match, name: string) => {
-      if (!known.namedValues.has(name)) return match;
-      return `{{${toDeployedName(name, ResourceType.NamedValue, mapping)}}}`;
-    });
-  }
+  if (mapping === undefined) return result;
 
   if (mapping.appliesTo.has(ResourceType.PolicyFragment)) {
     result = result.replace(FRAGMENT_PATTERN, (match, prefix: string, quote: string, id: string) => {
-      if (!known.fragments.has(id)) return match;
+      if (!known.has(ResourceType.PolicyFragment, id, workspace)) return match;
       return `${prefix}${quote}${toDeployedName(id, ResourceType.PolicyFragment, mapping)}${quote}`;
     });
   }
 
   if (mapping.appliesTo.has(ResourceType.Backend)) {
     result = result.replace(BACKEND_PATTERN, (match, prefix: string, quote: string, id: string) => {
-      if (!known.backends.has(id)) return match;
+      if (!known.has(ResourceType.Backend, id, workspace)) return match;
       return `${prefix}${quote}${toDeployedName(id, ResourceType.Backend, mapping)}${quote}`;
     });
   }

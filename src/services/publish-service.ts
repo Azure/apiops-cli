@@ -149,8 +149,15 @@ async function runPublishPipeline(
     // Step 1b: Validate env mapping and store it on config for downstream use
     validateAndBuildEnvMapping(config.overrides, allDescriptors, config);
 
-    // Step 1c: Build known artifact sets for policy ref rewriting
-    config.knownArtifactSets = buildKnownArtifactSets(allDescriptors);
+    // Step 1c: What publish knows about the whole source to rewrite references
+    // (whatever the filter or incremental diff selects, a reference can name
+    // any artifact in it).
+    config.knownArtifactSets = await buildKnownArtifactSets(
+      store,
+      config,
+      await sourceReferences.available(),
+      sourceReferences.readNamedValue
+    );
 
     logger.debug(
       `Publishing ${targetDescriptors.length} resources (dry-run: ${config.dryRun})`

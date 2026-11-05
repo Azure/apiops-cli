@@ -1403,8 +1403,38 @@ describe('publish-service', () => {
       // envMapping must be populated on config after validation
       expect(config.envMapping).toBeDefined();
       // knownArtifactSets must contain the FULL set of named values, not just changed
-      expect(config.knownArtifactSets?.namedValues.has('nv-unchanged')).toBe(true);
-      expect(config.knownArtifactSets?.namedValues.has('nv-changed')).toBe(true);
+      expect(config.knownArtifactSets?.has(ResourceType.NamedValue, 'nv-unchanged')).toBe(true);
+      expect(config.knownArtifactSets?.has(ResourceType.NamedValue, 'nv-changed')).toBe(true);
+    });
+
+    it("should rewrite a published fragment's references to resources the filter leaves out", async () => {
+      const client = createMockClient();
+      const store = createMockStore([
+        { type: ResourceType.PolicyFragment, nameParts: ['frag'] },
+        { type: ResourceType.NamedValue, nameParts: ['same'] },
+        { type: ResourceType.Backend, nameParts: ['new-backend'] },
+      ]);
+      vi.mocked(store.readResource).mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) =>
+        descriptor.type === ResourceType.NamedValue
+          ? { properties: { displayName: 'same', value: 'x' } }
+          : { properties: { format: 'rawxml', value: '<fragment>{{same}}<set-backend-service backend-id="new-backend" /></fragment>' } }
+      );
+
+      await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { policyFragments: ['frag'], namedValues: [], backends: [] },
+        includeTransitive: false,
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+        overrides: { environment: { namePrefix: 'dev-' } },
+      });
+
+      const fragmentPut = client.putResource.mock.calls.find((call) => call[1].type === ResourceType.PolicyFragment);
+      expect((fragmentPut?.[2] as { properties: { value: string } }).properties.value).toBe(
+        '<fragment>{{dev-same}}<set-backend-service backend-id="dev-new-backend" /></fragment>'
+      );
     });
 
     it('should pass commit-scoped deleted descriptors to dry-run report', async () => {

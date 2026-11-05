@@ -18,6 +18,8 @@ import type { PublishConfig } from '../models/config.js';
 import { ResourceType, RESOURCE_TYPE_METADATA, MANAGED_GATEWAY_NAME } from '../models/resource-types.js';
 import { applyOverrides, resolveOverrideSection } from './override-merger.js';
 import { checkKeyVaultSecretAccess } from './keyvault-checker.js';
+import { namedValueNamesByScope } from './named-value-names.js';
+import { runParallel } from '../lib/parallel-runner.js';
 import {
   getNamePart,
   getResourceDescriptorKey,
@@ -61,22 +63,90 @@ export interface AssociationPublicationPlan extends PublishEligibility {
 }
 
 /**
- * Build the known artifact name sets from a list of descriptors.
- * Called once per publish run after determinePublishTargets.
+ * Build what publish knows about the source (KnownArtifactSets) from every
+ * artifact in it, with each named value read as it is published. Called once
+ * per publish run, once the environment mapping is known.
  */
-export function buildKnownArtifactSets(descriptors: ResourceDescriptor[]): KnownArtifactSets {
-  const namedValues = new Set<string>();
-  const fragments = new Set<string>();
-  const backends = new Set<string>();
-  for (const d of descriptors) {
-    if (d.nameParts.length > 0) {
-      const name = d.nameParts[0];
-      if (d.type === ResourceType.NamedValue) namedValues.add(name);
-      else if (d.type === ResourceType.PolicyFragment) fragments.add(name);
-      else if (d.type === ResourceType.Backend) backends.add(name);
-    }
+export async function buildKnownArtifactSets(
+  store: IArtifactStore,
+  config: PublishConfig,
+  descriptors: ReadonlyArray<ResourceDescriptor>,
+  readNamedValue: (descriptor: ResourceDescriptor) => Promise<Record<string, unknown> | undefined> =
+    (descriptor) => store.readResource(config.sourceDir, descriptor)
+): Promise<KnownArtifactSets> {
+  const key = (type: ResourceType, name: string, workspace: string | undefined) =>
+    `${type}|${(workspace ?? '').toLowerCase()}|${name.toLowerCase()}`;
+  const resources = new Set(
+    descriptors
+      .filter((descriptor) => descriptor.nameParts.length > 0)
+      .map((descriptor) => key(descriptor.type, getNamePart(descriptor.nameParts, 0), descriptor.workspace))
+  );
+  const displayNameOf = (json: Record<string, unknown> | undefined) =>
+    (json?.properties as Record<string, unknown> | undefined)?.displayName;
+  const namedValues = descriptors.filter((descriptor) => descriptor.type === ResourceType.NamedValue);
+  const read = await runParallel(
+    namedValues.map((descriptor) => async () => {
+      const json = await readNamedValue(descriptor);
+      const published = json ? applyOverrides(descriptor, json, config.overrides) : undefined;
+      return {
+        name: getNamePart(descriptor.nameParts, 0),
+        workspace: descriptor.workspace,
+        displayName: displayNameOf(published),
+        sourceDisplayName: displayNameOf(json ?? undefined),
+        deployed: published ? deployedNamedValueDisplayName(descriptor, published, config) : undefined,
+      };
+    }),
+    KNOWN_ARTIFACT_READ_CONCURRENCY
+  );
+  // A named value that can't be read can't be matched by display name;
+  // publishing it reports the error.
+  const entries = read.flatMap((result) => (result.status === 'fulfilled' && result.value ? [result.value] : []));
+  const deployed = new Map(entries.map((entry) => [key(ResourceType.NamedValue, entry.name, entry.workspace), entry.deployed]));
+  const names = namedValueNamesByScope(entries);
+  return {
+    has: (type, name, workspace) => resources.has(key(type, name, workspace)),
+    deployedNamedValueReference: (reference, workspace) => {
+      const name = names(workspace).resolve(reference);
+      return name === undefined ? undefined : deployed.get(key(ResourceType.NamedValue, name, workspace));
+    },
+  };
+}
+
+/** Named value artifacts read at once while building KnownArtifactSets. */
+const KNOWN_ARTIFACT_READ_CONCURRENCY = 5;
+
+/**
+ * KnownArtifactSets for a publish: the run's own, which publish-service builds
+ * once per run, or, for a resource published on its own, built from the
+ * source.
+ */
+async function knownArtifactSetsFor(store: IArtifactStore, config: PublishConfig): Promise<KnownArtifactSets> {
+  return config.knownArtifactSets ?? buildKnownArtifactSets(store, config, await store.listResources(config.sourceDir));
+}
+
+/**
+ * The display name a named value is deployed with, from its JSON with
+ * overrides applied: an explicit displayName override as written, otherwise
+ * its display name (or, without one, its name) with the environment's affix
+ * when the affix applies to named values. APIM resolves {{references}} by
+ * display name, so references are rewritten to this.
+ */
+function deployedNamedValueDisplayName(
+  descriptor: ResourceDescriptor,
+  published: Record<string, unknown>,
+  config: PublishConfig
+): string | undefined {
+  const name = getNamePart(descriptor.nameParts, 0);
+  const displayName = (published.properties as Record<string, unknown> | undefined)?.displayName;
+  const hasDisplayNameOverride = hasExplicitPropertyOverride(
+    name,
+    'displayName',
+    resolveOverrideSection(config.overrides, 'namedValues', descriptor.workspace),
+  );
+  if (!config.envMapping?.appliesTo.has(ResourceType.NamedValue) || hasDisplayNameOverride) {
+    return typeof displayName === 'string' ? displayName : undefined;
   }
-  return { namedValues, fragments, backends };
+  return toDeployedName(typeof displayName === 'string' ? displayName : name, ResourceType.NamedValue, config.envMapping);
 }
 
 /**
@@ -348,28 +418,13 @@ export async function publishResource(
     if (descriptor.type === ResourceType.NamedValue) {
       // Affix displayName when envMapping applies and user hasn't set an explicit override.
       // APIM resolves {{ref}} tokens by displayName, so the deployed displayName must
-      // match the affixed name used elsewhere (descriptor name, policy refs, etc.).
+      // match the one references are rewritten to (deployedNamedValueDisplayName).
       if (config.envMapping?.appliesTo.has(ResourceType.NamedValue) === true) {
-        const canonicalName = getNamePart(descriptor.nameParts, 0);
-        const hasDisplayNameOverride = hasExplicitPropertyOverride(
-          canonicalName,
-          'displayName',
-          resolveOverrideSection(config.overrides, 'namedValues', descriptor.workspace),
-        );
-        if (!hasDisplayNameOverride) {
-          const props = json.properties as Record<string, unknown> | undefined;
-          const currentDisplayName =
-            typeof props?.displayName === 'string' ? props.displayName : canonicalName;
-          const deployedDisplayName = toDeployedName(
-            currentDisplayName,
-            ResourceType.NamedValue,
-            config.envMapping,
-          );
-          json = {
-            ...json,
-            properties: { ...(props ?? {}), displayName: deployedDisplayName },
-          };
-        }
+        const props = json.properties as Record<string, unknown> | undefined;
+        json = {
+          ...json,
+          properties: { ...(props ?? {}), displayName: deployedNamedValueDisplayName(descriptor, json, config) },
+        };
       }
 
       const props = json.properties as Record<string, unknown> | undefined;
@@ -537,10 +592,11 @@ export async function publishResource(
     json = applyApiPathPrefix(json, descriptor, config);
 
     // For PolicyFragment: rewrite cross-resource refs in properties.value (policy XML)
-    if (descriptor.type === ResourceType.PolicyFragment && config.envMapping && config.knownArtifactSets) {
+    if (descriptor.type === ResourceType.PolicyFragment) {
       const props = json.properties as Record<string, unknown> | undefined;
       if (typeof props?.value === 'string') {
-        const rewrittenXml = rewritePolicyRefs(props.value, config.envMapping, config.knownArtifactSets);
+        const known = await knownArtifactSetsFor(store, config);
+        const rewrittenXml = rewritePolicyRefs(props.value, config.envMapping, known, descriptor.workspace);
         json = { ...json, properties: { ...props, value: rewrittenXml } };
       }
     }
@@ -1048,11 +1104,12 @@ async function publishPolicy(
     let mergedPayload = applyOverrides(descriptor, payload, config.overrides);
 
     // Rewrite policy XML references from canonical → deployed names
-    if (config.envMapping && config.knownArtifactSets) {
+    {
       const mProps = mergedPayload.properties as Record<string, unknown> | undefined;
       const mValue = mProps?.value;
       if (typeof mValue === 'string') {
-        const rewrittenXml = rewritePolicyRefs(mValue, config.envMapping, config.knownArtifactSets);
+        const known = await knownArtifactSetsFor(store, config);
+        const rewrittenXml = rewritePolicyRefs(mValue, config.envMapping, known, descriptor.workspace);
         mergedPayload = {
           ...mergedPayload,
           properties: { ...(mergedPayload.properties as object), value: rewrittenXml },

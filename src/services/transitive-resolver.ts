@@ -66,6 +66,35 @@ function stripNonReferenceContent(policyXml: string): string {
 }
 
 /**
+ * Replace each `{{reference}}` in policy XML the way APIM substitutes named
+ * values: any `{{ name }}` outside Liquid bodies, and inside a
+ * `<set-body template="liquid">` body only a bare `{{name}}`
+ * (scanLiquidNamedValueCandidates); the rest there is Liquid output. `replace`
+ * gets the trimmed name and the whole match, and returns the text to put in
+ * its place.
+ */
+export function replaceNamedValueReferences(policyXml: string, replace: (name: string, match: string) => string): string {
+  const replaceIn = (text: string, pattern: RegExp) =>
+    text.replace(pattern, (match: string, name: string) => replace(name.trim(), match));
+  // Liquid bodies are found as the scanner finds them, ignoring XML comments:
+  // on a copy with each comment blanked out, so offsets still match.
+  const uncommented = policyXml.replace(XML_COMMENT_PATTERN, (comment) => ' '.repeat(comment.length));
+  let result = '';
+  let last = 0;
+  for (const body of uncommented.matchAll(LIQUID_BODY_PATTERN)) {
+    const start = body.index ?? 0;
+    const [, open = '', , content = ''] = body;
+    const contentStart = start + open.length;
+    const end = start + body[0].length;
+    result += replaceIn(policyXml.slice(last, contentStart), NAMED_VALUE_PATTERN);
+    result += replaceIn(policyXml.slice(contentStart, contentStart + content.length), LIQUID_NAMED_VALUE_PATTERN);
+    result += policyXml.slice(contentStart + content.length, end);
+    last = end;
+  }
+  return result + replaceIn(policyXml.slice(last), NAMED_VALUE_PATTERN);
+}
+
+/**
  * The names a `<set-body template="liquid">` body may reference named values
  * by: each `{{name}}` there whose name a named value could have. APIM
  * substitutes a named value inside a Liquid body when one has that display

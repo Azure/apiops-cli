@@ -5,6 +5,7 @@
  * ExtractConfig, FilterConfig, PublishConfig, OverrideConfig, InitConfig
  */
 
+import type { ResourceType } from './resource-types.js';
 import { ApimServiceContext } from './types.js';
 import { LogLevel } from '../lib/logger.js';
 import type { EnvMapping } from '../services/env-mapper.js';
@@ -74,16 +75,21 @@ export interface FilterConfig {
 }
 
 /**
- * Sets of canonical artifact names used to gate policy XML reference rewriting.
- * Populated once per publish from the full artifact descriptor list.
+ * What publish knows about the source to rewrite references from canonical to
+ * deployed names. Built once per publish from every artifact in the source,
+ * whatever the filter selects.
  */
 export interface KnownArtifactSets {
-  /** Canonical NamedValue resource names */
-  namedValues: ReadonlySet<string>;
-  /** Canonical PolicyFragment resource names */
-  fragments: ReadonlySet<string>;
-  /** Canonical Backend resource names */
-  backends: ReadonlySet<string>;
+  /** Whether the source has a resource of `type` named `name` (any case) in `workspace`. */
+  has(type: ResourceType, name: string, workspace?: string): boolean;
+  /**
+   * The display name the named value a `{{reference}}` in `workspace` names
+   * (NamedValueNames) is deployed with: an explicit displayName override as
+   * written, otherwise with the environment's affix when it applies to named
+   * values. Undefined when no named value in the source has the reference as
+   * its display name.
+   */
+  deployedNamedValueReference(reference: string, workspace?: string): string | undefined;
 }
 
 export interface PublishConfig {
