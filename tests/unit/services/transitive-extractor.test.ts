@@ -106,6 +106,22 @@ describe('transitive-extractor', () => {
       expect(store.writeResource).not.toHaveBeenCalled();
     });
 
+    it('should extract a {{displayName}} reference whose display name is the name of an excluded named value', async () => {
+      const client = createMockClient();
+      client.listResources = namedValueList({ name: 'one', displayName: 'two' }, { name: 'two', displayName: 'other' });
+      client.getResource.mockResolvedValue({ name: 'one', properties: { displayName: 'two' } });
+      const store = createMockStore();
+
+      const result = await extractTransitiveDependencies(
+        client, store, testContext, '/output', policiesWith('two'), new Map(), [], [],
+        { skip: (dep) => dep.nameParts[0] === 'two' }
+      );
+
+      expect(result.extractedDescriptors).toEqual([
+        expect.objectContaining({ type: ResourceType.NamedValue, nameParts: ['one'] }),
+      ]);
+    });
+
     it('should fall back to the reference as resource name when no displayName matches', async () => {
       const client = createMockClient();
       client.listResources = namedValueList({ name: 'other', displayName: 'other' });

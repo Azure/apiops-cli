@@ -210,6 +210,8 @@ export async function extractTransitiveDependencies(
   const extractedDescriptors: ResourceDescriptor[] = [];
   const failedDescriptors: ResourceDescriptor[] = [];
   const namedValueIndex: NamedValueNameIndex = new Map();
+  const contextFor = (dep: ResourceDescriptor): ApimServiceContext =>
+    serviceContext && dep.workspace !== workspace ? serviceContext : context;
   let errorCount = 0;
   let foundDependencies = false;
 
@@ -222,11 +224,23 @@ export async function extractTransitiveDependencies(
     for (; resourcesScanned < resources.length; resourcesScanned++) {
       fragmentLiquidCandidates(resources[resourcesScanned]).forEach((name) => liquidCandidates.add(name));
     }
-    const newDeps = [
+    const found = [
       ...findTransitiveDependencies(policies, apis, workspace, resources),
       ...linkedDependencies,
       ...await liquidNamedValueDependencies(client, context, liquidCandidates, workspace, namedValueIndex),
-    ].filter((dep) => !attempted.has(getResourceDescriptorKey(dep)) && !skip(dep));
+    ].filter((dep) => !attempted.has(getResourceDescriptorKey(dep)));
+    const newDeps: ResourceDescriptor[] = [];
+    for (const dep of found) {
+      // A {{reference}} can be a display name, so a named value is checked
+      // under the resource name it resolves to, which is what an exclusion
+      // names.
+      const checked = dep.type === ResourceType.NamedValue
+        ? await resolveNamedValueDescriptor(client, contextFor(dep), dep, namedValueIndex)
+        : dep;
+      if (!skip(checked)) {
+        newDeps.push(dep);
+      }
+    }
 
     if (newDeps.length === 0) {
       if (!foundDependencies) {
@@ -243,17 +257,11 @@ export async function extractTransitiveDependencies(
 
     const tasks = newDeps.map((dep) => async (): Promise<TransitiveTaskResult> => {
       try {
-        const dependencyContext =
-          serviceContext && dep.workspace !== workspace ? serviceContext : context;
+        const dependencyContext = contextFor(dep);
         let target = dep;
         if (dep.type === ResourceType.NamedValue) {
           target = await resolveNamedValueDescriptor(client, dependencyContext, dep, namedValueIndex);
           const targetKey = getResourceDescriptorKey(target);
-          // A {{displayName}} reference is checked again under the resource
-          // name it resolves to, which is what an exclusion names.
-          if (target !== dep && skip(target)) {
-            return { dep: target, skipped: true };
-          }
           if (claimedNamedValues.has(targetKey)) {
             return { dep: target, skipped: true };
           }
