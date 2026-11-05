@@ -121,6 +121,21 @@ describe('stale-dependency-finder', () => {
     expect(await findStaleDependencies(store, outputDir, stagingDir, backendFilter)).toEqual([]);
   });
 
+  it('should keep a named value only a Liquid body still uses, and report it once nothing does', async () => {
+    const policy: ResourceDescriptor = { type: ResourceType.ApiPolicy, nameParts: ['orders'] };
+    const liquid = '<policies><inbound><set-body template="liquid">nv=[{{Backend_Id}}] liquid=[{{body.id}}]</set-body></inbound></policies>';
+    await write(outputDir, orders);
+    await store.writeContent(outputDir, policy, liquid, 'policy', 'xml');
+    await write(outputDir, { type: ResourceType.NamedValue, nameParts: ['backend-id'] }, { displayName: 'Backend_Id', value: 'x' });
+    await write(stagingDir, orders);
+    await store.writeContent(stagingDir, policy, liquid, 'policy', 'xml');
+
+    expect(await findStaleDependencies(store, outputDir, stagingDir, filter)).toEqual([]);
+
+    await store.writeContent(stagingDir, policy, '<policies><inbound /></policies>', 'policy', 'xml');
+    expect(names(await findStaleDependencies(store, outputDir, stagingDir, filter))).toEqual(['NamedValue:backend-id']);
+  });
+
   it("should keep a dependency's own dependency that another artifact still uses", async () => {
     const diagnostic: ResourceDescriptor = { type: ResourceType.ApiDiagnostic, nameParts: ['orders', 'applicationinsights'] };
     await write(outputDir, orders);

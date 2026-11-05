@@ -634,6 +634,71 @@ describe('publish-service', () => {
       expect(puts).toEqual(['Backend:new-backend', 'NamedValue:backend-id']);
     });
 
+    it("should include a named value a selected fragment's Liquid body references", async () => {
+      const resources = [
+        { type: ResourceType.PolicyFragment, nameParts: ['route'] },
+        { type: ResourceType.NamedValue, nameParts: ['frag-nv'] },
+        { type: ResourceType.NamedValue, nameParts: ['unused'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      store.readResource.mockImplementation(async (_sourceDir, descriptor) => {
+        if (descriptor.type === ResourceType.PolicyFragment) {
+          return { properties: { value: '<fragment><set-body template="liquid">{{Frag_NV}} {{body.id}}</set-body></fragment>' } };
+        }
+        return { properties: { displayName: descriptor.nameParts[0] === 'frag-nv' ? 'Frag_NV' : 'unused', value: 'x' } };
+      });
+
+      await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { policyFragments: ['route'], namedValues: [] },
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      const namedValuePuts = client.putResource.mock.calls
+        .filter((call) => call[1].type === ResourceType.NamedValue)
+        .map((call) => call[1].nameParts[0]);
+      expect(namedValuePuts).toEqual(['frag-nv']);
+    });
+
+    it('should include a named value a Liquid body references, and nothing for Liquid output', async () => {
+      const resources = [
+        { type: ResourceType.Api, nameParts: ['orders'] },
+        { type: ResourceType.ApiPolicy, nameParts: ['orders'] },
+        { type: ResourceType.NamedValue, nameParts: ['backend-id'] },
+        { type: ResourceType.NamedValue, nameParts: ['unused'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      store.readContent.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) =>
+        descriptor.type === ResourceType.ApiPolicy
+          ? { content: '<policies><inbound><set-body template="liquid">nv=[{{Backend_Id}}] liquid=[{{body.id}}]</set-body></inbound></policies>' }
+          : undefined
+      );
+      store.readResource.mockImplementation(async (_sourceDir, descriptor) =>
+        descriptor.type === ResourceType.NamedValue
+          ? { properties: { displayName: descriptor.nameParts[0] === 'backend-id' ? 'Backend_Id' : 'unused', value: 'x' } }
+          : { properties: {} }
+      );
+
+      await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { apis: ['orders'], namedValues: [] },
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      const namedValuePuts = client.putResource.mock.calls
+        .filter((call) => call[1].type === ResourceType.NamedValue)
+        .map((call) => call[1].nameParts[0]);
+      expect(namedValuePuts).toEqual(['backend-id']);
+    });
+
     describe('a named value a policy outside the filter uses as a resource name', () => {
       const setUp = (extra: ResourceDescriptor[] = [{ type: ResourceType.Backend, nameParts: ['billing-backend'] }]) => {
         const resources = [

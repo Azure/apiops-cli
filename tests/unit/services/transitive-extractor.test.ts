@@ -320,3 +320,84 @@ describe('transitive-extractor', () => {
     });
   });
 });
+
+describe('extractTransitiveDependencies with Liquid bodies', () => {
+  it('should extract a named value a Liquid body references and skip Liquid output without an error', async () => {
+    const client = createMockClient();
+    client.listResources = namedValueList({ name: 'backend-id', displayName: 'demo-backend-id' });
+    client.getResource.mockImplementation(async (_ctx: ApimServiceContext, descriptor: ResourceDescriptor) =>
+      descriptor.type === ResourceType.NamedValue && descriptor.nameParts[0] === 'backend-id'
+        ? { name: 'backend-id', properties: { displayName: 'demo-backend-id', value: 'function-backend' } }
+        : undefined
+    );
+    const store = createMockStore();
+    const policies = new Map([[
+      'api:liquid-test:policy:0',
+      '<policies><inbound><return-response><set-body template="liquid">nv=[{{demo-backend-id}}] liquid=[{{body.id}}] spaced=[{{ context.Request.Url }}]</set-body></return-response></inbound></policies>',
+    ]]);
+
+    const result = await extractTransitiveDependencies(client, store, testContext, '/out', policies, new Map(), [], []);
+
+    const fetched = client.getResource.mock.calls.map((call) => `${call[1].type}:${call[1].nameParts.join('/')}`);
+    expect(fetched).toEqual(['NamedValue:backend-id']);
+    expect(result.errorCount).toBe(0);
+    expect(result.extractedDescriptors.map((d) => d.nameParts[0])).toEqual(['backend-id']);
+  });
+
+  it("should follow a Liquid {{name}} in a fragment extracted in a later round", async () => {
+    const client = createMockClient();
+    client.listResources = namedValueList({ name: 'frag-nv', displayName: 'frag-nv' });
+    client.getResource.mockImplementation(async (_ctx: ApimServiceContext, descriptor: ResourceDescriptor) =>
+      descriptor.type === ResourceType.PolicyFragment
+        ? { properties: { value: '<fragment><set-body template="liquid">{{frag-nv}} {{body.id}}</set-body></fragment>' } }
+        : { properties: { value: 'x' } }
+    );
+    const policies = new Map([['api:orders:policy:0', '<policies><inbound><include-fragment fragment-id="route" /></inbound></policies>']]);
+
+    const result = await extractTransitiveDependencies(client, createMockStore(), testContext, '/out', policies, new Map(), [], []);
+
+    expect(client.getResource.mock.calls.map((call) => `${call[1].type}:${call[1].nameParts.join('/')}`)).toEqual([
+      'PolicyFragment:route',
+      'NamedValue:frag-nv',
+    ]);
+    expect(result.errorCount).toBe(0);
+  });
+
+  it('should look a Liquid {{name}} up in the workspace being extracted', async () => {
+    const client = createMockClient();
+    const workspaceContext = { ...testContext, baseUrl: `${testContext.baseUrl}/workspaces/team-a` };
+    client.listResources = vi.fn(async function* (ctx: ApimServiceContext, type: ResourceType) {
+      if (type === ResourceType.NamedValue && ctx.baseUrl === workspaceContext.baseUrl) {
+        yield { name: 'ws-key', properties: { displayName: 'ws-key' } };
+      }
+    });
+    client.getResource.mockResolvedValue({ properties: { value: 'x' } });
+    const policies = new Map([['api:orders:policy:0', '<set-body template="liquid">{{ws-key}}</set-body>']]);
+
+    await extractTransitiveDependencies(client, createMockStore(), workspaceContext, '/out', policies, new Map(), [], [], {
+      workspace: 'team-a',
+      serviceContext: testContext,
+    });
+
+    expect(client.getResource.mock.calls.map((call) => call[1])).toEqual([
+      { type: ResourceType.NamedValue, nameParts: ['ws-key'], workspace: 'team-a' },
+    ]);
+  });
+});
+
+describe('extractTransitiveDependencies named value lookup', () => {
+  it("should resolve a reference that matches no display name to the resource name's spelling, and check exclusions under it", async () => {
+    const client = createMockClient();
+    client.listResources = namedValueList({ name: 'foo', displayName: 'Something' });
+    client.getResource.mockResolvedValue({ properties: { value: 'x' } });
+
+    await extractTransitiveDependencies(client, createMockStore(), testContext, '/out', policiesWith('FOO'), new Map(), [], []);
+    expect(client.getResource.mock.calls.map((call) => call[1].nameParts)).toEqual([['foo']]);
+
+    client.getResource.mockClear();
+    await extractTransitiveDependencies(client, createMockStore(), testContext, '/out', policiesWith('FOO'), new Map(), [], [], {
+      skip: (dep) => dep.nameParts[0] === 'foo',
+    });
+    expect(client.getResource).not.toHaveBeenCalled();
+  });
+});

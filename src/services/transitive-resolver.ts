@@ -111,15 +111,22 @@ const REFERENCING_TYPES = new Set<ResourceType>([
 const XML_COMMENT_PATTERN = /<!--[\s\S]*?-->/g;
 
 /**
- * The body of a `<set-body template="liquid">` element: its `{{ ... }}` are
- * Liquid output expressions, not named value references. A self-closing
- * set-body has no body and is not matched.
+ * The body of a `<set-body template="liquid">` element (capture group 3): its
+ * `{{ ... }}` are mostly Liquid output expressions, not named value
+ * references; see scanLiquidNamedValueCandidates. A self-closing set-body has
+ * no body and is not matched.
  */
 const LIQUID_BODY_PATTERN = new RegExp(
   `(<set-body(?:${XML_ATTRIBUTE})*?\\s+template\\s*=\\s*(["'])liquid\\2(?:${XML_ATTRIBUTE})*\\s*>)` +
-    `[\\s\\S]*?(<\\/set-body\\s*>)`,
+    `([\\s\\S]*?)(<\\/set-body\\s*>)`,
   'gi'
 );
+
+/**
+ * A `{{name}}` whose name has only the characters a named value's name can:
+ * letters, digits, '.', '-' and '_'. Spaces or a filter (`|`) make it Liquid.
+ */
+const LIQUID_NAMED_VALUE_PATTERN = /\{\{([A-Za-z0-9._-]+)\}\}/g;
 
 /**
  * Policy XML with the parts that cannot reference other resources removed:
@@ -128,7 +135,28 @@ const LIQUID_BODY_PATTERN = new RegExp(
 function stripNonReferenceContent(policyXml: string): string {
   return policyXml
     .replace(XML_COMMENT_PATTERN, '')
-    .replace(LIQUID_BODY_PATTERN, (_match, open: string, _quote: string, close: string) => `${open}${close}`);
+    .replace(LIQUID_BODY_PATTERN, (_match, open: string, _quote: string, _body: string, close: string) => `${open}${close}`);
+}
+
+/**
+ * The names a `<set-body template="liquid">` body may reference named values
+ * by: each `{{name}}` there whose name a named value could have. APIM
+ * substitutes a named value inside a Liquid body when one has that name, and
+ * leaves every other `{{ ... }}` (with spaces, a filter, or no such named
+ * value, like `{{body.id}}`) to Liquid. So each is a reference only when a
+ * named value with that name exists; callers check before following one, and
+ * skip the rest without an error. XML comments are ignored.
+ */
+export function scanLiquidNamedValueCandidates(policyXml: string): string[] {
+  const names = new Set<string>();
+  for (const body of policyXml.replace(XML_COMMENT_PATTERN, '').matchAll(LIQUID_BODY_PATTERN)) {
+    for (const match of (body[3] ?? '').matchAll(LIQUID_NAMED_VALUE_PATTERN)) {
+      if (match[1]) {
+        names.add(match[1]);
+      }
+    }
+  }
+  return [...names];
 }
 
 /**
@@ -158,8 +186,10 @@ function scanNamedValueReferences(text: string): TransitiveDependency[] {
  * A value that is a policy expression (`@...`) or a named value reference
  * (`{{...}}`, found by the named value scan) does not name a resource.
  * References inside XML comments, and `{{ ... }}` inside a
- * `<set-body template="liquid">` body (Liquid output, not named values), are
- * ignored.
+ * `<set-body template="liquid">` body, are ignored: most of those are Liquid
+ * output. The bare `{{name}}`s there that APIM substitutes when a named value
+ * has that name are found by scanLiquidNamedValueCandidates, for callers to
+ * check.
  */
 export function scanPolicyReferences(policyXml: string): TransitiveDependency[] {
   const scannable = stripNonReferenceContent(policyXml);
@@ -600,6 +630,23 @@ export async function scanArtifactReferences(
   }
 
   references.push(...findTransitiveDependencies(policies, apis, descriptor.workspace, resources));
+
+  // A {{name}} in a Liquid body is a reference only when such a named value
+  // exists; one that resolves to no artifact is simply not followed.
+  const fragmentProperties = descriptor.type === ResourceType.PolicyFragment
+    ? (json?.properties as Record<string, unknown> | undefined)
+    : undefined;
+  for (const text of [...policies.values(), fragmentProperties?.value, fragmentProperties?.policyContent]) {
+    if (typeof text === 'string') {
+      references.push(
+        ...scanLiquidNamedValueCandidates(text).map((name) => ({
+          type: ResourceType.NamedValue,
+          nameParts: [name],
+          workspace: descriptor.workspace,
+        }))
+      );
+    }
+  }
 
   if (descriptor.type === ResourceType.Product) {
     references.push(...await readProductLinkDependencies(store, sourceDir, descriptor));

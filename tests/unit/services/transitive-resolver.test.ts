@@ -15,6 +15,7 @@ import {
   findAssociationDependencies,
   scanNamedValueTargets,
   createNamedValueReader,
+  scanLiquidNamedValueCandidates,
 } from '../../../src/services/transitive-resolver.js';
 
 describe('transitive-resolver', () => {
@@ -342,6 +343,16 @@ describe('transitive-resolver', () => {
       );
 
       expect(refs).toEqual([{ type: ResourceType.Backend, name: 'content-safety' }]);
+    });
+
+    it('should give the {{name}}s in Liquid bodies that a named value could have, for callers to check', () => {
+      const policy = `<policies><inbound>
+        <set-body template="liquid">nv=[{{demo-backend-id}}] dotted=[{{body.id}}] spaced=[{{ context.Request.Url }}] filtered=[{{x | upcase}}]</set-body>
+        <!-- <set-body template="liquid">{{commented}}</set-body> -->
+        <set-header name="h"><value>{{outside-liquid}}</value></set-header>
+      </inbound></policies>`;
+
+      expect(scanLiquidNamedValueCandidates(policy)).toEqual(['demo-backend-id', 'body.id']);
     });
 
     it('should ignore Liquid output in set-body templates but keep named values elsewhere (#276)', () => {
