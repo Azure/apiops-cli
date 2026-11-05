@@ -2261,6 +2261,39 @@ describe('publish-service', () => {
       expect(order.indexOf('frag')).toBeGreaterThan(order.indexOf('route'));
     });
 
+    it('should order a chain of named values and the backends using them in their credentials', async () => {
+      const { order, client, store } = recordOrder([
+        { type: ResourceType.NamedValue, nameParts: ['route-a'] },
+        { type: ResourceType.NamedValue, nameParts: ['route-b'] },
+        { type: ResourceType.Backend, nameParts: ['new-a'] },
+        { type: ResourceType.Backend, nameParts: ['new-b'] },
+        { type: ResourceType.PolicyFragment, nameParts: ['frag'] },
+      ]);
+      vi.mocked(store.readResource).mockImplementation(async (_sourceDir, descriptor) => {
+        if (descriptor.type === ResourceType.NamedValue) {
+          const name = descriptor.nameParts[0];
+          return { properties: { displayName: name, value: name === 'route-a' ? 'new-a' : 'new-b' } };
+        }
+        if (descriptor.type === ResourceType.PolicyFragment) {
+          return {
+            properties: {
+              value: '<fragment><set-backend-service backend-id="{{route-a}}" /><set-backend-service backend-id="{{route-b}}" /></fragment>',
+            },
+          };
+        }
+        return descriptor.nameParts[0] === 'new-a'
+          ? { properties: { url: 'https://example.test', credentials: { header: { 'x-route': ['{{route-b}}'] } } } }
+          : { properties: { url: 'https://example.test' } };
+      });
+
+      await publishAll(client, store);
+
+      expect(order.indexOf('route-b')).toBeGreaterThan(order.indexOf('new-b'));
+      expect(order.indexOf('new-a')).toBeGreaterThan(order.indexOf('route-b'));
+      expect(order.indexOf('route-a')).toBeGreaterThan(order.indexOf('new-a'));
+      expect(order.indexOf('frag')).toBeGreaterThan(order.indexOf('route-a'));
+    });
+
     it('should keep a named value first when a pool member uses it in its credentials', async () => {
       const { order, client, store } = recordOrder([
         { type: ResourceType.NamedValue, nameParts: ['route'] },
