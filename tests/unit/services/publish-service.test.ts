@@ -557,6 +557,36 @@ describe('publish-service', () => {
       expect(backendPuts).toEqual(['prod-backend']);
     });
 
+    it("should pull in the named values a backend's overridden credentials use", async () => {
+      const resources = [
+        { type: ResourceType.Backend, nameParts: ['api-backend'] },
+        { type: ResourceType.NamedValue, nameParts: ['dev-key'] },
+        { type: ResourceType.NamedValue, nameParts: ['prod-key'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      store.readResource.mockImplementation(async (_sourceDir, descriptor) =>
+        descriptor.type === ResourceType.Backend
+          ? { properties: { url: 'https://example.test', credentials: { header: { 'x-key': ['{{dev-key}}'] } } } }
+          : { properties: { displayName: descriptor.nameParts[0], value: 'secret' } }
+      );
+
+      await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { backends: ['api-backend'], namedValues: [] },
+        overrides: { backends: { 'api-backend': { properties: { credentials: { header: { 'x-key': ['{{prod-key}}'] } } } } } },
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      const namedValuePuts = client.putResource.mock.calls
+        .filter((call) => call[1].type === ResourceType.NamedValue)
+        .map((call) => call[1].nameParts[0]);
+      expect(namedValuePuts).toEqual(['prod-key']);
+    });
+
     it('should include the backend a changed named value now names when only the named value changed', async () => {
       const namedValue = { type: ResourceType.NamedValue, nameParts: ['backend-id'] };
       const resources = [

@@ -454,7 +454,12 @@ async function expandTransitivePublishTargets(
   for (let index = 0; index < scanQueue.length; index++) {
     let references: ResourceDescriptor[];
     try {
-      references = await scanArtifactReferences(store, sourceDir, scanQueue[index], readNamedValue);
+      // As published: an override can change what a backend's or logger's
+      // credentials or a diagnostic's logger reference.
+      references = await scanArtifactReferences(
+        store, sourceDir, scanQueue[index], readNamedValue,
+        (descriptor, json) => applyOverrides(descriptor, json, overrides)
+      );
       if (scanQueue[index].type === ResourceType.NamedValue) {
         references.push(...await findNamedValueTargets(scanQueue[index]));
       }

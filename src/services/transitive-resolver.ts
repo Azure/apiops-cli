@@ -580,12 +580,15 @@ export type NamedValueReader = (
  * @param readNamedValue - Reads the named value a `{{reference}}` resolves to,
  *   so a policy attribute set to one (backend-id="{{backend-name}}") also
  *   gives the resource its value names. Without it, only the named value is.
+ * @param prepareJson - Turns the artifact's JSON into what is scanned, such
+ *   as the payload publish sends with overrides applied
  */
 export async function scanArtifactReferences(
   store: IArtifactStore,
   sourceDir: string,
   descriptor: ResourceDescriptor,
-  readNamedValue?: NamedValueReader
+  readNamedValue?: NamedValueReader,
+  prepareJson?: (descriptor: ResourceDescriptor, json: Record<string, unknown>) => Record<string, unknown>
 ): Promise<ResourceDescriptor[]> {
   if (!REFERENCING_TYPES.has(descriptor.type)) {
     return [];
@@ -602,9 +605,10 @@ export async function scanArtifactReferences(
   }
 
   const infoFile = RESOURCE_TYPE_METADATA[descriptor.type]?.infoFile;
-  const json = POLICY_RESOURCE_TYPES.has(descriptor.type) || !infoFile?.endsWith('.json')
+  const stored = POLICY_RESOURCE_TYPES.has(descriptor.type) || !infoFile?.endsWith('.json')
     ? undefined
     : await store.readResource(sourceDir, descriptor);
+  const json = stored && prepareJson ? prepareJson(descriptor, stored) : stored;
   if (json && descriptor.type === ResourceType.Api) {
     apis.set(descriptor.nameParts.join('/'), json);
   }
