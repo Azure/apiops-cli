@@ -15,6 +15,7 @@ import type { ApimServiceContext, ResourceDescriptor } from '../../../src/models
 import type { PublishConfig } from '../../../src/models/config.js';
 import type { EnvMapping } from '../../../src/services/env-mapper.js';
 import { LogLevel } from '../../../src/lib/logger.js';
+import { getCloudConfig } from '../../../src/lib/cloud-config.js';
 
 // ── Mock helpers ──────────────────────────────────────────────────────────────
 
@@ -61,6 +62,7 @@ const testContext: ApimServiceContext = {
 
 /** Config with NO envMapping — exercises original code path. */
 const baseConfig: PublishConfig = {
+  cloud: getCloudConfig('public'),
   service: testContext,
   sourceDir: '/source',
   dryRun: false,

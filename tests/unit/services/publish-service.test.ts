@@ -123,6 +123,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -171,6 +172,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -798,6 +800,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -821,6 +824,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -842,6 +846,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -882,6 +887,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -916,6 +922,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -956,6 +963,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -986,6 +994,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1017,6 +1026,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: true,
@@ -1079,6 +1089,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1108,6 +1119,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: true,
@@ -1136,6 +1148,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1163,6 +1176,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1293,6 +1307,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1331,6 +1346,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: true,
@@ -1364,6 +1380,7 @@ describe('publish-service', () => {
       ]);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1388,6 +1405,7 @@ describe('publish-service', () => {
       const client = createMockClient();
       const store = createMockStore([]);
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1422,6 +1440,7 @@ describe('publish-service', () => {
       ]);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1456,6 +1475,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1480,6 +1500,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1521,6 +1542,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1543,6 +1565,7 @@ describe('publish-service', () => {
       const store = createMockStore([{ type: ResourceType.Tag, nameParts: ['tag1'] }]);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1563,6 +1586,7 @@ describe('publish-service', () => {
       const store = createMockStore([]);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1584,6 +1608,7 @@ describe('publish-service', () => {
       const store = createMockStore([]);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1605,6 +1630,7 @@ describe('publish-service', () => {
       const store = createMockStore([{ type: ResourceType.Tag, nameParts: ['tag1'] }]);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1621,6 +1647,7 @@ describe('publish-service', () => {
       const rgUrl = 'https://management.azure.com/subscriptions/sub-1/resourceGroups/rg-1?api-version=2021-04-01';
       const serviceUrl = `${testContext.baseUrl}?api-version=${testContext.apiVersion}`;
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1699,6 +1726,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1752,6 +1780,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1814,6 +1843,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1848,6 +1878,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1887,6 +1918,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1922,6 +1954,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1946,6 +1979,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -2081,6 +2115,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -2121,6 +2156,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -2159,6 +2195,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,

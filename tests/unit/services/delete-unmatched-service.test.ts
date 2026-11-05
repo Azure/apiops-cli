@@ -14,6 +14,7 @@ import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/type
 import { PublishConfig } from '../../../src/models/config.js';
 import { LogLevel } from '../../../src/lib/logger.js';
 import { buildEnvMapping } from '../../../src/services/env-mapper.js';
+import { getCloudConfig } from '../../../src/lib/cloud-config.js';
 
 function createMockClient(apimResources: Map<ResourceType, Record<string, unknown>[]> = new Map()) {
   return {
@@ -55,6 +56,7 @@ const testContext: ApimServiceContext = {
 };
 
 const testConfig: PublishConfig = {
+  cloud: getCloudConfig('public'),
   service: testContext,
   sourceDir: '/source',
   dryRun: false,
