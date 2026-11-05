@@ -8,6 +8,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { FilterConfig } from '../../../src/models/config.js';
 import {
+  scanLiquidNamedValueCandidates,
   scanPolicyReferences,
   scanApiVersionSetReference,
   resolveTransitiveDependencies,
@@ -81,6 +82,47 @@ describe('transitive-resolver', () => {
       const policy = '<value>{{ my-secret }}</value>';
       const refs = scanPolicyReferences(policy);
       expect(refs[0]?.name).toBe('my-secret');
+    });
+
+    it('should ignore references inside XML comments (#305)', () => {
+      const refs = scanPolicyReferences(
+        '<!-- <set-backend-service backend-id="old-backend" /> {{old-secret}} -->' +
+        '<set-backend-service backend-id="live-backend" />'
+      );
+
+      expect(refs).toEqual([{ type: ResourceType.Backend, name: 'live-backend' }]);
+    });
+    it('should not let a stray "<!--" in a policy expression hide later references', () => {
+      const refs = scanPolicyReferences(
+        '<set-variable name="marker" value="@(&quot;<!--&quot;)" />' +
+        '<set-backend-service backend-id="orders-backend" />'
+      );
+
+      expect(refs).toContainEqual({ type: ResourceType.Backend, name: 'orders-backend' });
+    });
+    it('should give the {{name}}s in Liquid bodies that a named value could have, for callers to check', () => {
+      const policy = `<policies><inbound>
+        <set-body template="liquid">nv=[{{demo-backend-id}}] dotted=[{{body.id}}] spaced=[{{ context.Request.Url }}] filtered=[{{x | upcase}}]</set-body>
+        <!-- <set-body template="liquid">{{commented}}</set-body> -->
+        <set-header name="h"><value>{{outside-liquid}}</value></set-header>
+      </inbound></policies>`;
+
+      expect(scanLiquidNamedValueCandidates(policy)).toEqual(['demo-backend-id', 'body.id']);
+    });
+    it('should ignore Liquid output in set-body templates but keep named values elsewhere (#276)', () => {
+      const refs = scanPolicyReferences(`
+        <set-header name="Auth"><value>{{real-value}}</value></set-header>
+        <set-body template="liquid">{{context.Request.MatchedParameters["id"]}}</set-body>
+        <set-body x="1" template='liquid'>{{body.envelope.body.fault.faultcode}}</set-body>
+        <set-body template="liquid" />
+        <set-body>{{after-liquid}}</set-body>
+        <set-body template="none">{{not-liquid}}</set-body>`);
+
+      expect(refs).toEqual([
+        { type: ResourceType.NamedValue, name: 'real-value' },
+        { type: ResourceType.NamedValue, name: 'after-liquid' },
+        { type: ResourceType.NamedValue, name: 'not-liquid' },
+      ]);
     });
   });
 

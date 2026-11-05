@@ -10,7 +10,7 @@ import { buildResourceLabel } from '../lib/resource-uri.js';
 import { logger } from '../lib/logger.js';
 import { runParallel } from '../lib/parallel-runner.js';
 import { redactSecrets } from './secret-redactor.js';
-import { findTransitiveDependencies } from './transitive-resolver.js';
+import { findTransitiveDependencies, scanLiquidNamedValueCandidates } from './transitive-resolver.js';
 import { NamedValueNames, type NamedValueEntry } from './named-value-names.js';
 
 const DEFAULT_CONCURRENCY = 5;
@@ -108,6 +108,42 @@ async function resolveNamedValueDescriptor(
   return { ...dep, nameParts: [name] };
 }
 
+/** The `{{name}}`s in a policy fragment's Liquid bodies (scanLiquidNamedValueCandidates). */
+function fragmentLiquidCandidates({ descriptor, json }: TransitiveResourceArtifact): string[] {
+  if (descriptor.type !== ResourceType.PolicyFragment) {
+    return [];
+  }
+  const properties = json.properties as Record<string, unknown> | undefined;
+  return [properties?.value, properties?.policyContent]
+    .filter((text): text is string => typeof text === 'string')
+    .flatMap(scanLiquidNamedValueCandidates);
+}
+
+/**
+ * The named values Liquid bodies reference: each `{{name}}` candidate that a
+ * named value in this scope has as its display name. The others are Liquid,
+ * skipped without a warning. `listed` is false when the named values couldn't
+ * be listed, so a candidate that is one may be missed.
+ */
+async function liquidNamedValueDependencies(
+  client: IApimClient,
+  context: ApimServiceContext,
+  candidates: ReadonlySet<string>,
+  workspace: string | undefined,
+  index: NamedValueNameIndex
+): Promise<{ dependencies: ResourceDescriptor[]; listed: boolean }> {
+  if (candidates.size === 0) {
+    return { dependencies: [], listed: true };
+  }
+  const { names, listed } = await namedValueNames(client, context, index);
+  return {
+    dependencies: [...candidates]
+      .filter((candidate) => names.resolve(candidate) !== undefined)
+      .map((candidate) => ({ type: ResourceType.NamedValue, nameParts: [candidate], workspace })),
+    listed,
+  };
+}
+
 export async function extractTransitiveDependencies(
   client: IApimClient,
   store: IArtifactStore,
@@ -133,14 +169,39 @@ export async function extractTransitiveDependencies(
     serviceContext && dep.workspace !== workspace ? serviceContext : context;
   let errorCount = 0;
   let foundDependencies = false;
+  let reportedUnlisted = false;
+
+  // The {{name}}s in Liquid bodies: the policies' found once, and each
+  // fragment's as it is extracted.
+  const liquidCandidates = new Set([...policies.values()].flatMap(scanLiquidNamedValueCandidates));
+  let resourcesScanned = 0;
 
   while (true) {
-    const found = findTransitiveDependencies(
-      policies,
-      apis,
-      workspace,
-      resources
-    ).filter((dep) => !attempted.has(getResourceDescriptorKey(dep)));
+    for (; resourcesScanned < resources.length; resourcesScanned++) {
+      fragmentLiquidCandidates(resources[resourcesScanned]).forEach((name) => liquidCandidates.add(name));
+    }
+    const liquid = await liquidNamedValueDependencies(client, context, liquidCandidates, workspace, namedValueIndex);
+    if (!liquid.listed && !reportedUnlisted) {
+      // A named value used only in a Liquid body may be missing from the
+      // output, so the extract is incomplete.
+      reportedUnlisted = true;
+      errorCount++;
+      logger.warn('Unable to tell which {{...}} in Liquid bodies are named values, since the named values could not be listed');
+    }
+    // Each once: a policy can reference a named value inside and outside a
+    // Liquid body.
+    const seen = new Set<string>();
+    const found = [
+      ...findTransitiveDependencies(policies, apis, workspace, resources),
+      ...liquid.dependencies,
+    ].filter((dep) => {
+      const key = getResourceDescriptorKey(dep);
+      if (attempted.has(key) || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
     const newDeps: ResourceDescriptor[] = [];
     for (const dep of found) {
       if (dep.type !== ResourceType.NamedValue) {

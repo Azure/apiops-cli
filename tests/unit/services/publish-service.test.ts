@@ -295,6 +295,41 @@ describe('publish-service', () => {
       });
     });
 
+    it('should include a named value a Liquid body references, and nothing for Liquid output', async () => {
+      const resources = [
+        { type: ResourceType.Api, nameParts: ['orders'] },
+        { type: ResourceType.ApiPolicy, nameParts: ['orders'] },
+        { type: ResourceType.NamedValue, nameParts: ['backend-id'] },
+        { type: ResourceType.NamedValue, nameParts: ['unused'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      store.readContent.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) =>
+        descriptor.type === ResourceType.ApiPolicy
+          ? { content: '<policies><inbound><set-body template="liquid">nv=[{{Backend_Id}}] liquid=[{{body.id}}]</set-body></inbound></policies>' }
+          : undefined
+      );
+      store.readResource.mockImplementation(async (_sourceDir, descriptor) =>
+        descriptor.type === ResourceType.NamedValue
+          ? { properties: { displayName: descriptor.nameParts[0] === 'backend-id' ? 'Backend_Id' : 'unused', value: 'x' } }
+          : { properties: {} }
+      );
+
+      await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { apis: ['orders'], namedValues: [] },
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      const namedValuePuts = client.putResource.mock.calls
+        .filter((call) => call[1].type === ResourceType.NamedValue)
+        .map((call) => call[1].nameParts[0]);
+      expect(namedValuePuts).toEqual(['backend-id']);
+    });
+
     it('should include every dependency type supported by extract', async () => {
       const resources: ResourceDescriptor[] = [
         { type: ResourceType.Api, nameParts: ['orders'] },
