@@ -435,6 +435,24 @@ export function namedValueTargetName(json: Record<string, unknown>): string | un
 }
 
 /**
+ * Turns an artifact's JSON into the payload that is scanned, such as the one
+ * publish sends with overrides applied.
+ */
+export type PrepareJson = (descriptor: ResourceDescriptor, json: Record<string, unknown>) => Record<string, unknown>;
+
+/**
+ * A policy's XML as `prepareJson` leaves it: the payload publish sends is
+ * `{ properties: { value, format: 'rawxml' } }`, which overrides can change.
+ */
+function preparePolicyContent(descriptor: ResourceDescriptor, content: string, prepareJson?: PrepareJson): unknown {
+  if (!prepareJson) {
+    return content;
+  }
+  const payload = prepareJson(descriptor, { properties: { value: content, format: 'rawxml' } });
+  return (payload.properties as Record<string, unknown> | undefined)?.value;
+}
+
+/**
  * The resource types each named value is the whole value of a reference
  * attribute for (backend-id="{{name}}"), keyed by the named value's
  * descriptor key. It reads the policies and policy fragments among
@@ -444,13 +462,16 @@ export function namedValueTargetName(json: Record<string, unknown>): string | un
  * needs the resource its value now names.
  *
  * @param resolve - Resolves a `{{reference}}` to the named value artifact
+ * @param prepareJson - Turns each policy and fragment into what is scanned,
+ *   such as the payload publish sends with overrides applied
  */
 export async function indexNamedValueTargetTypes(
   store: Pick<IArtifactStore, 'readContent' | 'readResource'>,
   sourceDir: string,
   selected: ReadonlyArray<ResourceDescriptor>,
   available: ReadonlyArray<ResourceDescriptor>,
-  resolve: (reference: ResourceDescriptor) => Promise<ResourceDescriptor | undefined>
+  resolve: (reference: ResourceDescriptor) => Promise<ResourceDescriptor | undefined>,
+  prepareJson?: PrepareJson
 ): Promise<Map<string, Set<ResourceType>>> {
   const isPolicy = (descriptor: ResourceDescriptor) =>
     POLICY_RESOURCE_TYPES.has(descriptor.type) || descriptor.type === ResourceType.PolicyFragment;
@@ -468,9 +489,12 @@ export async function indexNamedValueTargetTypes(
     const results = await runParallel(
       policies.map((descriptor) => async (): Promise<unknown[]> => {
         if (POLICY_RESOURCE_TYPES.has(descriptor.type)) {
-          return [(await store.readContent(sourceDir, descriptor, 'policy'))?.content];
+          const content = (await store.readContent(sourceDir, descriptor, 'policy'))?.content;
+          return [content === undefined ? undefined : preparePolicyContent(descriptor, content, prepareJson)];
         }
-        const properties = (await store.readResource(sourceDir, descriptor))?.properties as Record<string, unknown> | undefined;
+        const json = await store.readResource(sourceDir, descriptor);
+        const properties = (json && prepareJson ? prepareJson(descriptor, json) : json)?.properties as
+          Record<string, unknown> | undefined;
         return [properties?.value, properties?.policyContent];
       }),
       REFERENCE_SCAN_CONCURRENCY
@@ -588,7 +612,7 @@ export async function scanArtifactReferences(
   sourceDir: string,
   descriptor: ResourceDescriptor,
   readNamedValue?: NamedValueReader,
-  prepareJson?: (descriptor: ResourceDescriptor, json: Record<string, unknown>) => Record<string, unknown>
+  prepareJson?: PrepareJson
 ): Promise<ResourceDescriptor[]> {
   if (!REFERENCING_TYPES.has(descriptor.type)) {
     return [];
@@ -599,8 +623,9 @@ export async function scanArtifactReferences(
 
   if (POLICY_RESOURCE_TYPES.has(descriptor.type)) {
     const content = await store.readContent(sourceDir, descriptor, 'policy');
-    if (content) {
-      policies.set(descriptor.nameParts.join('/'), content.content);
+    const text = content ? preparePolicyContent(descriptor, content.content, prepareJson) : undefined;
+    if (typeof text === 'string') {
+      policies.set(descriptor.nameParts.join('/'), text);
     }
   }
 

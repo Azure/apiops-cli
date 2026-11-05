@@ -624,6 +624,54 @@ describe('publish-service', () => {
       expect(puts).toEqual(['Backend:new-backend', 'NamedValue:backend-id']);
     });
 
+    describe('with a policy whose XML an override replaces', () => {
+      const servicePolicy: ResourceDescriptor = { type: ResourceType.ServicePolicy, nameParts: [] };
+      const namedValue: ResourceDescriptor = { type: ResourceType.NamedValue, nameParts: ['backend-id'] };
+      const overrides = {
+        policies: { policy: { properties: { value: '<policies><inbound><set-backend-service backend-id="{{Backend_Id}}" /></inbound></policies>' } } },
+      };
+      const publishWith = async (filter: FilterConfig, commitId?: string) => {
+        const client = createMockClient();
+        const store = createMockStore([servicePolicy, namedValue, { type: ResourceType.Backend, nameParts: ['new-backend'] }]);
+        store.readContent.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) =>
+          descriptor.type === ResourceType.ServicePolicy ? { content: '<policies />' } : undefined
+        );
+        store.readResource.mockImplementation(async (_sourceDir, descriptor) =>
+          descriptor.type === ResourceType.NamedValue
+            ? { properties: { displayName: 'Backend_Id', value: 'new-backend' } }
+            : { properties: {} }
+        );
+        await runPublish(client, store, {
+          service: testContext,
+          sourceDir: '/source',
+          filter,
+          overrides,
+          commitId,
+          dryRun: false,
+          deleteUnmatched: false,
+          logLevel: LogLevel.INFO,
+        });
+        return client.putResource.mock.calls.map((call) => `${call[1].type}:${call[1].nameParts.join('/')}`).sort();
+      };
+
+      it('should follow the overridden XML of a published policy', async () => {
+        expect(await publishWith({ namedValues: [], backends: [] })).toEqual([
+          'Backend:new-backend',
+          'NamedValue:backend-id',
+          'ServicePolicy:',
+        ]);
+      });
+
+      it('should include the backend a changed named value names in the overridden XML', async () => {
+        vi.mocked(computeGitDiff).mockResolvedValue({ changedDescriptors: [namedValue], deletedDescriptors: [] });
+
+        expect(await publishWith({ namedValues: ['backend-id'], backends: [] }, 'abc123')).toEqual([
+          'Backend:new-backend',
+          'NamedValue:backend-id',
+        ]);
+      });
+    });
+
     it('should include the backend a changed named value names in a fragment a selected policy includes', async () => {
       const namedValue = { type: ResourceType.NamedValue, nameParts: ['backend-id'] };
       const resources = [

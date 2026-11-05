@@ -351,7 +351,9 @@ function createNamedValueTargetIndex(store: IArtifactStore, config: PublishConfi
         config.sourceDir,
         available,
         available,
-        createArtifactReferenceResolver(available, (descriptor) => store.readResource(config.sourceDir, descriptor))
+        createArtifactReferenceResolver(available, (descriptor) => store.readResource(config.sourceDir, descriptor)),
+        // As published: an override can replace a policy's or fragment's XML.
+        (descriptor, json) => applyOverrides(descriptor, json, config.overrides)
       )
     );
     return index;
@@ -456,7 +458,7 @@ async function expandTransitivePublishTargets(
     let references: ResourceDescriptor[];
     try {
       // As published: an override can change what a backend's or logger's
-      // credentials or a diagnostic's logger reference.
+      // credentials, a diagnostic's logger or a policy's XML reference.
       references = await scanArtifactReferences(
         store, sourceDir, scanQueue[index], readNamedValue,
         (descriptor, json) => applyOverrides(descriptor, json, overrides)
