@@ -420,6 +420,14 @@ describe('maskSasSignature', () => {
     expect(maskSasSignature(text, url)).toBe(expected);
   });
 
+  it('should mask a signature with HTML character references in a sig= parameter', () => {
+    const startsWithLetter = 'QUJD++++QUJD++++QUJD++++QUJD++++QUJD++++++8=';
+    const sasUrl = `https://blob.example.net/a?sv=1&sig=${encodeURIComponent(startsWithLetter)}&se=2`;
+    const text = `href="/a?sv=1&amp;sig=${startsWithLetter.replace(/\+/g, '&#43;')}&amp;se=2"`;
+
+    expect(maskSasSignature(text, sasUrl)).toBe('href="/a?sv=1&amp;sig=***&amp;se=2"');
+  });
+
   it("should mask a signature sent with an unencoded '+'", () => {
     const unencoded = `https://blob.example.net/a?sv=1&sig=${signature}&se=2`;
 

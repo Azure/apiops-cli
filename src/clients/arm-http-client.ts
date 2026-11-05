@@ -188,7 +188,7 @@ function signaturePattern(signature: string): RegExp {
  * the download failed.
  */
 export function maskSasSignature(text: string, url: string): string {
-  let masked = text.replace(SIG_PARAMETER, `$1$2${MASKED_SIGNATURE}`);
+  let masked = text;
   // Read the value as sent and decode only its %XX escapes: URLSearchParams
   // would turn an unencoded '+' into a space.
   const raw = /[?&]sig=([^&#]*)/i.exec(url)?.[1];
@@ -200,10 +200,13 @@ export function maskSasSignature(text: string, url: string): string {
       // A malformed escape: compare the value as sent.
     }
   }
+  // The request's own signature goes first: the parameter rule stops at an
+  // escape it doesn't know (an HTML character reference), and masking only
+  // the start of the signature would leave the rest for this to miss.
   if (signature && /^[A-Za-z0-9+/]+={0,2}$/.test(signature) && Buffer.from(signature, 'base64').length === 32) {
     masked = masked.replace(signaturePattern(signature), MASKED_SIGNATURE);
   }
-  return masked;
+  return masked.replace(SIG_PARAMETER, `$1$2${MASKED_SIGNATURE}`);
 }
 
 /**
