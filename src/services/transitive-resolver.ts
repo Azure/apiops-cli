@@ -665,10 +665,13 @@ export async function scanArtifactReferences(
  *
  * @param available - The artifacts references can resolve to
  * @param readResource - Reads an artifact's JSON
+ * @param onUnreadable - Called for a named value artifact that can't be read,
+ *   so a {{reference}} to its display name may resolve to nothing
  */
 export function createArtifactReferenceResolver(
   available: ReadonlyArray<ResourceDescriptor>,
-  readResource: (descriptor: ResourceDescriptor) => Promise<Record<string, unknown> | undefined>
+  readResource: (descriptor: ResourceDescriptor) => Promise<Record<string, unknown> | undefined>,
+  onUnreadable?: (descriptor: ResourceDescriptor) => void
 ): (reference: ResourceDescriptor) => Promise<ResourceDescriptor | undefined> {
   const byKey = new Map(available.map((descriptor) => [getResourceDescriptorKey(descriptor), descriptor]));
   let byDisplayName: Promise<Map<string, ResourceDescriptor>> | undefined;
@@ -677,7 +680,7 @@ export function createArtifactReferenceResolver(
     if (reference.type !== ResourceType.NamedValue) {
       return byKey.get(key);
     }
-    byDisplayName ??= indexNamedValuesByDisplayName(available, readResource);
+    byDisplayName ??= indexNamedValuesByDisplayName(available, readResource, onUnreadable);
     return (await byDisplayName).get(key) ?? byKey.get(key);
   };
 }
@@ -713,7 +716,8 @@ export function createNamedValueReader(
  */
 async function indexNamedValuesByDisplayName(
   available: ReadonlyArray<ResourceDescriptor>,
-  readResource: (descriptor: ResourceDescriptor) => Promise<Record<string, unknown> | undefined>
+  readResource: (descriptor: ResourceDescriptor) => Promise<Record<string, unknown> | undefined>,
+  onUnreadable?: (descriptor: ResourceDescriptor) => void
 ): Promise<Map<string, ResourceDescriptor>> {
   const index = new Map<string, ResourceDescriptor>();
   for (const descriptor of available.filter((d) => d.type === ResourceType.NamedValue)) {
@@ -722,6 +726,7 @@ async function indexNamedValuesByDisplayName(
       json = await readResource(descriptor);
     } catch (error) {
       logger.warn(`Unable to read ${buildResourceLabel(descriptor)} to match {{references}} by display name: ${String(error)}`);
+      onUnreadable?.(descriptor);
       continue;
     }
     const displayName = (json?.properties as Record<string, unknown> | undefined)?.displayName;

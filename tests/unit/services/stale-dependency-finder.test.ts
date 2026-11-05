@@ -225,6 +225,34 @@ describe('stale-dependency-finder', () => {
     }
   });
 
+  it('should report nothing when a named value left in the output cannot be read to match display names', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const policy = (api: string): ResourceDescriptor => ({ type: ResourceType.ApiPolicy, nameParts: [api] });
+    const namedValue: ResourceDescriptor = { type: ResourceType.NamedValue, nameParts: ['backend-id'] };
+    await write(outputDir, orders);
+    await store.writeContent(outputDir, policy('orders'), '<policies><inbound><set-backend-service backend-id="function-backend" /></inbound></policies>', 'policy', 'xml');
+    await write(outputDir, { type: ResourceType.Backend, nameParts: ['function-backend'] });
+    // billing reaches the backend through the named value's display name.
+    await write(outputDir, billing);
+    await store.writeContent(outputDir, policy('billing'), '<policies><inbound><set-backend-service backend-id="{{Backend_Id}}" /></inbound></policies>', 'policy', 'xml');
+    await write(outputDir, namedValue, { displayName: 'Backend_Id', value: 'function-backend' });
+    await write(stagingDir, orders);
+    const failingStore: IArtifactStore = Object.create(store);
+    failingStore.readResource = async (dir, descriptor) => {
+      if (descriptor.type === ResourceType.NamedValue) {
+        throw new Error('Unexpected token in JSON');
+      }
+      return store.readResource(dir, descriptor);
+    };
+
+    try {
+      expect(await findStaleDependencies(failingStore, outputDir, stagingDir, { ...filter, backends: [] })).toEqual([]);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Keeping every pulled-in dependency'));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('should report an excluded tag that only an old link from the selected API referenced', async () => {
     await write(outputDir, orders);
     await write(outputDir, apiTag('orders', 'internal'));

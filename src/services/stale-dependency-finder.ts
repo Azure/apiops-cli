@@ -67,8 +67,9 @@ async function scanAll(
  *
  * Artifacts left in the output are scanned, in parallel, until every
  * candidate is known to be needed; this only runs when there is a candidate.
- * If an artifact left in the output can't be scanned, nothing is reported
- * stale, since it could reference any candidate.
+ * If an artifact left in the output can't be scanned, or a named value left
+ * there can't be read to match {{references}} by display name, nothing is
+ * reported stale, since it could reference any candidate.
  *
  * @param outputDir - The existing output
  * @param stagingDir - This extract's staged output
@@ -122,7 +123,12 @@ export async function findStaleDependencies(
   // is still needed, and so is whatever that candidate references.
   const readRemaining = (descriptor: ResourceDescriptor) =>
     store.readResource(stagedKeys.has(key(descriptor)) ? stagingDir : outputDir, descriptor);
-  const resolveRemaining = createArtifactReferenceResolver([...staged, ...kept], readRemaining);
+  // A named value that can't be read may be what a {{reference}} left in
+  // the output names, so its candidates can't be known to be unused.
+  const unreadable: ResourceDescriptor[] = [];
+  const resolveRemaining = createArtifactReferenceResolver([...staged, ...kept], readRemaining, (descriptor) => {
+    unreadable.push(descriptor);
+  });
   const readRemainingNamedValue = createNamedValueReader(resolveRemaining, readRemaining);
   const stale = new Map(candidates);
   const referrers: ArtifactLocation[] = [
@@ -138,7 +144,7 @@ export async function findStaleDependencies(
     const failed: ResourceDescriptor[] = [];
     await runParallel(
       round.map(({ descriptor, dir }) => async () => {
-        if (stale.size === 0 || failed.length > 0) {
+        if (stale.size === 0 || failed.length > 0 || unreadable.length > 0) {
           return;
         }
         let references: ResourceDescriptor[];
@@ -158,7 +164,7 @@ export async function findStaleDependencies(
       }),
       REFERENCE_SCAN_CONCURRENCY
     );
-    if (failed.length > 0) {
+    if (failed.length > 0 || unreadable.length > 0) {
       logger.warn('Keeping every pulled-in dependency, since not every artifact could be checked for references');
       return [];
     }
