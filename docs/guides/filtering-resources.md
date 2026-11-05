@@ -338,6 +338,16 @@ And `petstore-api` is assigned to:
 
 The extract output includes all of these, even though only `apiNames` was specified in the filter.
 
+### Named value references
+
+A `{{...}}` reference in a policy names the named value with that display name, ignoring case, as APIM does. On publish, that is the display name with your `--overrides` applied, or its display name in the source when an override changes it. APIM doesn't accept a reference to a named value's resource name, so extract doesn't follow one (it warns instead), and publish stops before making any change when a policy, fragment, or logger's or backend's credentials hold one, naming the display name to use. If extract can't list the named values, it tries each reference as a resource name instead, which it usually also is.
+
+Named values referenced in logger and backend credentials are pulled in too.
+
+A policy attribute set to a named value (`backend-id="{{backend-name}}"`, and likewise `logger-id` and `schema-id`) pulls in the named value and the resource its value names, in the same scope (except `<include-fragment fragment-id>`, where APIM doesn't substitute named values). Publish reads the value with your `--overrides` applied, so each environment gets the resource its own value names. A named value that is published also brings the resource its value names whenever any policy or fragment in the source uses it that way, even one the filter leaves out: APIM checks every policy on the target that uses a named value when its value changes. A resource that isn't in the source isn't published, so it has to exist on the target already. When a policy uses a named value to name a backend, logger or schema that is published in the same run, publish creates that resource before it updates the named value, and publishes policy fragments, and any backend or logger using the named value in its credentials, after it, since APIM rejects a named value change that would leave a policy using it pointing at a resource that doesn't exist. A secret or Key Vault named value's value isn't known, so the resource it names isn't pulled in; add that resource to the filter.
+
+References inside XML comments are ignored. Inside a `<set-body template="liquid">` body, a `{{name}}` is followed only when a named value has that display name: APIM substitutes those there and leaves every other `{{ ... }}` (`{{body.id}}`, `{{ name }}`, `{{x | upcase}}`) to Liquid, so those are skipped without an error. If extract can't list the named values, it reports an error, since it can't tell the two apart.
+
 ### Why Transitive Matters
 
 Without transitive resolution, publishing the extracted artifacts to a new APIM instance would fail — the API references a backend that doesn't exist, a named value that's missing, or a policy fragment that can't be found.
