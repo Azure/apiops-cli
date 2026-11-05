@@ -2177,6 +2177,35 @@ describe('resource-publisher', () => {
       expect(creds.instrumentationKey).toBe('{{Logger-Credentials--abc123}}');
     });
 
+    it("should keep a reference that is another named value's display name pointing at that named value", async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      const namedValue = (name: string): ResourceDescriptor => ({ type: ResourceType.NamedValue, nameParts: [name] });
+      store.listResources.mockResolvedValue([namedValue('one'), namedValue('two')]);
+      store.readResource.mockImplementation(async (_dir: string, desc: ResourceDescriptor) => {
+        if (desc.type === ResourceType.Logger) {
+          return { name: 'my-logger', properties: { loggerType: 'applicationInsights', credentials: { instrumentationKey: '{{two}}' } } };
+        }
+        if (desc.type === ResourceType.NamedValue) {
+          return { name: desc.nameParts[0], properties: { displayName: desc.nameParts[0] === 'one' ? 'two' : 'three' } };
+        }
+        return null;
+      });
+
+      const loggerDescriptor: ResourceDescriptor = { type: ResourceType.Logger, nameParts: ['my-logger'] };
+      const sentKey = () =>
+        (client.putResource.mock.calls.at(-1)?.[2] as { properties: { credentials: Record<string, unknown> } })
+          .properties.credentials.instrumentationKey;
+
+      await publishResource(client, store, testContext, loggerDescriptor, testConfig);
+      expect(sentKey()).toBe('{{two}}');
+
+      // With a prefix, the reference follows that named value's deployed display name.
+      const envMapping = { prefix: 'dev-', suffix: '', appliesTo: new Set([ResourceType.NamedValue]) };
+      await publishResource(client, store, testContext, loggerDescriptor, { ...testConfig, envMapping });
+      expect(sentKey()).toBe('{{dev-two}}');
+    });
+
     it('should keep an explicit workspace named-value displayName unprefixed in logger credentials', async () => {
       const client = createMockClient();
       const store = createMockStore();
