@@ -765,6 +765,9 @@ describe('extract-service', () => {
             },
           },
         ],
+        [ResourceType.NamedValue]: [
+          { name: 'shared-secret', properties: { displayName: 'shared-secret', secret: true } },
+        ],
       });
       client.getResource = vi.fn().mockImplementation(async (_ctx, descriptor) => {
         if (descriptor.type === ResourceType.Backend && descriptor.nameParts[0] === 'member') {

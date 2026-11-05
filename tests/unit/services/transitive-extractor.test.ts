@@ -8,6 +8,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
 import { extractTransitiveDependencies } from '../../../src/services/transitive-extractor.js';
+import { logger } from '../../../src/lib/logger.js';
 
 const testContext: ApimServiceContext = {
   subscriptionId: 'sub-1',
@@ -90,24 +91,47 @@ describe('transitive-extractor', () => {
       );
     });
 
-    it('should fall back to the reference as resource name when no displayName matches', async () => {
+    it('should not follow a reference that is only a resource name, as APIM does not', async () => {
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
       const client = createMockClient();
-      client.listResources = namedValueList({ name: 'other', displayName: 'other' });
-      client.getResource.mockImplementation(async (_ctx, descriptor: ResourceDescriptor) => {
-        if (descriptor.type === ResourceType.NamedValue && descriptor.nameParts[0] === 'plain-ref') {
-          return { name: 'plain-ref', properties: { displayName: 'plain-ref' } };
-        }
-        return undefined;
-      });
-      const store = createMockStore();
+      client.listResources = namedValueList({ name: 'plain-ref', displayName: 'Plain_Ref' });
+      client.getResource.mockResolvedValue({ name: 'plain-ref', properties: { displayName: 'Plain_Ref' } });
 
       const result = await extractTransitiveDependencies(
-        client, store, testContext, '/output', policiesWith('plain-ref'), new Map(), [], []
+        client, createMockStore(), testContext, '/output', policiesWith('plain-ref'), new Map(), [], []
       );
 
       expect(result.errorCount).toBe(0);
+      expect(result.extractedDescriptors).toEqual([]);
+      expect(client.getResource).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('{{plain-ref}}'));
+      warn.mockRestore();
+    });
+
+    it('should match a display name ignoring case', async () => {
+      const client = createMockClient();
+      client.listResources = namedValueList({ name: 'foo', displayName: 'Something' });
+      client.getResource.mockResolvedValue({ properties: { value: 'x' } });
+
+      await extractTransitiveDependencies(client, createMockStore(), testContext, '/out', policiesWith('SOMETHING'), new Map(), [], []);
+
+      expect(client.getResource.mock.calls.map((call) => call[1].nameParts)).toEqual([['foo']]);
+    });
+
+    it("should extract a named value whose display name is an extracted named value's name", async () => {
+      // `one` has the display name `two`, so {{two}} is `one`, not the
+      // selected `two`.
+      const client = createMockClient();
+      client.listResources = namedValueList({ name: 'one', displayName: 'two' }, { name: 'two', displayName: 'three' });
+      client.getResource.mockResolvedValue({ name: 'one', properties: { displayName: 'two' } });
+      const two = { type: ResourceType.NamedValue, nameParts: ['two'] };
+
+      const result = await extractTransitiveDependencies(
+        client, createMockStore(), testContext, '/output', policiesWith('two'), new Map(), [], [two]
+      );
+
       expect(result.extractedDescriptors).toEqual([
-        expect.objectContaining({ type: ResourceType.NamedValue, nameParts: ['plain-ref'] }),
+        expect.objectContaining({ type: ResourceType.NamedValue, nameParts: ['one'] }),
       ]);
     });
 
@@ -234,6 +258,7 @@ describe('transitive-extractor', () => {
 
     it('should count a missing dependency as an error', async () => {
       const client = createMockClient();
+      client.listResources = namedValueList({ name: 'missing', displayName: 'missing' });
       const store = createMockStore();
 
       const result = await extractTransitiveDependencies(

@@ -485,6 +485,9 @@ describe('workspace-extractor', () => {
             },
           };
         }
+        if (type === ResourceType.NamedValue) {
+          yield { name: 'workspace-secret', properties: { displayName: 'workspace-secret', secret: true } };
+        }
         if (type === ResourceType.Backend) {
           yield {
             name: 'workspace-pool',

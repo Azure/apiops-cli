@@ -13,6 +13,8 @@ import { ResourceDescriptor } from '../models/types.js';
 import type { IArtifactStore } from '../clients/iartifact-store.js';
 import { logger } from '../lib/logger.js';
 import { getResourceDescriptorKey } from '../lib/resource-path.js';
+import { buildResourceLabel } from '../lib/resource-uri.js';
+import { type NamedValueEntry, NamedValueNames, namedValueNamesByScope } from './named-value-names.js';
 
 /**
  * Reference detection patterns for policy XML content.
@@ -309,6 +311,76 @@ export async function scanArtifactReferences(
   );
 
   return deduplicateDescriptors(references);
+}
+
+/**
+ * Turns an artifact's JSON into the payload that is published, such as with
+ * overrides applied.
+ */
+export type PrepareJson = (descriptor: ResourceDescriptor, json: Record<string, unknown>) => Record<string, unknown>;
+
+/**
+ * Resolve the references scanArtifactReferences returns to the artifacts
+ * they name. Policies reference named values as {{displayName}}, which can
+ * differ from the resource name the artifact is stored under; as in APIM, a
+ * reference matches display names only (NamedValueNames). Named value
+ * artifacts are read once, on the first named value reference.
+ *
+ * @param available - The artifacts references can resolve to
+ * @param readResource - Reads an artifact's JSON
+ * @param onUnreadable - Called for a named value artifact that can't be read,
+ *   so a {{reference}} to its display name may resolve to nothing
+ * @param prepareJson - Turns a named value's JSON into what is published,
+ *   such as with overrides applied; a reference then matches the display name
+ *   it is published with, or the one in the source (NamedValueEntry)
+ */
+export function createArtifactReferenceResolver(
+  available: ReadonlyArray<ResourceDescriptor>,
+  readResource: (descriptor: ResourceDescriptor) => Promise<Record<string, unknown> | undefined>,
+  onUnreadable?: (descriptor: ResourceDescriptor) => void,
+  prepareJson?: PrepareJson
+): (reference: ResourceDescriptor) => Promise<ResourceDescriptor | undefined> {
+  const byKey = new Map(available.map((descriptor) => [getResourceDescriptorKey(descriptor), descriptor]));
+  let names: Promise<(workspace: string | undefined) => NamedValueNames> | undefined;
+  return async (reference) => {
+    if (reference.type !== ResourceType.NamedValue) {
+      return byKey.get(getResourceDescriptorKey(reference));
+    }
+    names ??= readNamedValueNames(available, readResource, onUnreadable, prepareJson);
+    const name = (await names)(reference.workspace).resolve(reference.nameParts[0] ?? '');
+    return name === undefined ? undefined : byKey.get(getResourceDescriptorKey({ ...reference, nameParts: [name] }));
+  };
+}
+
+/**
+ * The NamedValueNames of the named value artifacts among `available`. One that
+ * can't be read can't be matched.
+ */
+async function readNamedValueNames(
+  available: ReadonlyArray<ResourceDescriptor>,
+  readResource: (descriptor: ResourceDescriptor) => Promise<Record<string, unknown> | undefined>,
+  onUnreadable?: (descriptor: ResourceDescriptor) => void,
+  prepareJson?: PrepareJson
+): Promise<(workspace: string | undefined) => NamedValueNames> {
+  const displayNameOf = (json: Record<string, unknown> | undefined) =>
+    (json?.properties as Record<string, unknown> | undefined)?.displayName;
+  const entries: Array<NamedValueEntry & { workspace?: string }> = [];
+  for (const descriptor of available.filter((d) => d.type === ResourceType.NamedValue)) {
+    let json: Record<string, unknown> | undefined;
+    try {
+      json = await readResource(descriptor);
+    } catch (error) {
+      logger.warn(`Unable to read ${buildResourceLabel(descriptor)} to match {{references}} by display name: ${String(error)}`);
+      onUnreadable?.(descriptor);
+    }
+    entries.push({
+      name: descriptor.nameParts[0] ?? '',
+      displayName: displayNameOf(json && prepareJson ? prepareJson(descriptor, json) : json),
+      sourceDisplayName: prepareJson ? displayNameOf(json) : undefined,
+      workspace: descriptor.workspace,
+    });
+  }
+  return namedValueNamesByScope(entries);
 }
 
 /**

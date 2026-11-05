@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ResourceDescriptor, ApimServiceContext } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
-import { LogLevel } from '../../../src/lib/logger.js';
+import { LogLevel, logger } from '../../../src/lib/logger.js';
 import { recordRetry, withRetryResource } from '../../../src/lib/retry-tracker.js';
 import { getResourceDescriptorKey } from '../../../src/lib/resource-path.js';
 
@@ -231,6 +231,70 @@ describe('publish-service', () => {
       )).toBe(true);
     });
 
+    describe('with a {{reference}} in a policy fragment the filter selects', () => {
+      // `one` has the display name `two`; `two` has `three`.
+      const publishFragment = async (
+        fragment: string,
+        overrides?: PublishConfig['overrides'],
+        readNamedValue?: (name: string) => Record<string, unknown>
+      ) => {
+        const client = createMockClient();
+        const store = createMockStore([
+          { type: ResourceType.PolicyFragment, nameParts: ['auth'] },
+          { type: ResourceType.NamedValue, nameParts: ['one'] },
+          { type: ResourceType.NamedValue, nameParts: ['two'] },
+        ]);
+        store.readResource.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) => {
+          if (descriptor.type === ResourceType.PolicyFragment) {
+            return { properties: { value: fragment } };
+          }
+          const name = descriptor.nameParts[0] ?? '';
+          return readNamedValue?.(name) ?? { properties: { displayName: name === 'one' ? 'two' : 'three', value: 'x' } };
+        });
+        await runPublish(client, store, {
+          service: testContext,
+          sourceDir: '/source',
+          filter: { policyFragments: ['auth'], namedValues: [] },
+          overrides,
+          dryRun: false,
+          deleteUnmatched: false,
+          logLevel: LogLevel.INFO,
+        });
+        return client.putResource.mock.calls
+          .filter((call) => call[1].type === ResourceType.NamedValue)
+          .map((call) => call[1].nameParts[0]);
+      };
+
+      it('should include the named value with that display name, in any case, not one with that resource name', async () => {
+        expect(await publishFragment('<fragment><set-header name="k"><value>{{TWO}}</value></set-header></fragment>')).toEqual(['one']);
+      });
+
+      it('should not include a named value a reference names only by its resource name', async () => {
+        expect(await publishFragment('<fragment><set-header name="k"><value>{{one}}</value></set-header></fragment>')).toEqual([]);
+      });
+
+      it('should match the display name an override gives a named value, and the one in the source', async () => {
+        const overrides = { namedValues: { one: { properties: { displayName: 'Prod_Two' } } } };
+        expect(await publishFragment('<fragment>{{prod_two}}</fragment>', overrides)).toEqual(['one']);
+        expect(await publishFragment('<fragment>{{two}}</fragment>', overrides)).toEqual(['one']);
+      });
+
+      it('should warn and still match the other named values when one cannot be read', async () => {
+        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+        let reads = 0;
+        const puts = await publishFragment('<fragment>{{three}}</fragment>', undefined, (name) => {
+          if (name === 'one' && ++reads === 1) {
+            throw new Error('Unexpected token in JSON');
+          }
+          return { properties: { displayName: name === 'one' ? 'two' : 'three', value: 'x' } };
+        });
+
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('to match {{references}} by display name'));
+        expect(puts).toEqual(['two']);
+        warn.mockRestore();
+      });
+    });
+
     it('should include every dependency type supported by extract', async () => {
       const resources: ResourceDescriptor[] = [
         { type: ResourceType.Api, nameParts: ['orders'] },
@@ -251,7 +315,9 @@ describe('publish-service', () => {
                   '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a/apiVersionSets/orders-v1',
               },
             }
-          : { name: descriptor.nameParts[0] ?? '', properties: {} }
+          : descriptor.type === ResourceType.NamedValue
+            ? { name: descriptor.nameParts[0] ?? '', properties: { displayName: descriptor.nameParts[0] } }
+            : { name: descriptor.nameParts[0] ?? '', properties: {} }
       );
       store.readContent.mockImplementation(async (_sourceDir, descriptor) =>
         descriptor.type === ResourceType.ApiPolicy

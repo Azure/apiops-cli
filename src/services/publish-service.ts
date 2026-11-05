@@ -50,9 +50,9 @@ import {
 } from './delete-unmatched-service.js';
 import { computeGitDiff } from './git-diff-service.js';
 import { scanForRedactionMarkers } from './secret-redaction-guard.js';
-import { hasNamedValueOverride } from './override-merger.js';
+import { applyOverrides, hasNamedValueOverride } from './override-merger.js';
 import { REDACTION_MARKER } from './secret-redactor.js';
-import { scanArtifactReferences } from './transitive-resolver.js';
+import { createArtifactReferenceResolver, scanArtifactReferences } from './transitive-resolver.js';
 import { validateAndBuildEnvMapping } from './env-mapping-validator.js';
 import { mapDescriptor } from './env-mapper.js';
 
@@ -124,10 +124,15 @@ async function runPublishPipeline(
     // Step 0: Pre-flight validation — ensure the resource group and APIM service exist
     await client.validatePreFlight(config.service);
 
+    // What the source's references resolve to, read once for this run when
+    // first needed.
+    const sourceReferences = createSourceReferences(store, config);
+
     // Step 1: Determine target descriptors based on incremental mode
     const { targetDescriptors, deletedDescriptors } = await determinePublishTargets(
       store,
-      config
+      config,
+      sourceReferences
     );
 
     // Step 1a: For env-mapping validation and policy ref rewriting we need
@@ -279,7 +284,8 @@ async function runPublishPipeline(
  */
 async function determinePublishTargets(
   store: IArtifactStore,
-  config: PublishConfig
+  config: PublishConfig,
+  sourceReferences: SourceReferences
 ): Promise<PublishTargets> {
   let targetDescriptors: ResourceDescriptor[];
   let deletedDescriptors: ResourceDescriptor[];
@@ -303,29 +309,73 @@ async function determinePublishTargets(
   deletedDescriptors = filterPublishDescriptors(deletedDescriptors, config.filter);
 
   if (config.filter && config.includeTransitive !== false) {
-    const availableDescriptors = await store.listResources(config.sourceDir);
     targetDescriptors = await expandTransitivePublishTargets(
       store,
       config.sourceDir,
       targetDescriptors,
-      availableDescriptors,
-      config.filter
+      config.filter,
+      sourceReferences
     );
   }
 
   return { targetDescriptors, deletedDescriptors };
 }
 
+/**
+ * The source's artifacts and what references to them resolve to, as
+ * published: each read on first use and then shared, so a publish run lists
+ * the source and reads its named values once.
+ */
+interface SourceReferences {
+  /** Every artifact in the source. */
+  readonly available: () => Promise<ResourceDescriptor[]>;
+  /**
+   * The artifact a reference resolves to: a `{{reference}}` by the display
+   * names named values are published with (NamedValueNames).
+   */
+  readonly resolve: (reference: ResourceDescriptor) => Promise<ResourceDescriptor | undefined>;
+  /** A named value's artifact as stored, read once per run. */
+  readonly readNamedValue: (descriptor: ResourceDescriptor) => Promise<Record<string, unknown> | undefined>;
+}
+
+function createSourceReferences(store: IArtifactStore, config: PublishConfig): SourceReferences {
+  let available: Promise<ResourceDescriptor[]> | undefined;
+  let resolver: Promise<(reference: ResourceDescriptor) => Promise<ResourceDescriptor | undefined>> | undefined;
+  const namedValues = new Map<string, Promise<Record<string, unknown> | undefined>>();
+  const references: SourceReferences = {
+    readNamedValue: (descriptor) => {
+      const key = getResourceDescriptorKey(descriptor);
+      let json = namedValues.get(key);
+      if (!json) {
+        json = store.readResource(config.sourceDir, descriptor);
+        namedValues.set(key, json);
+      }
+      return json;
+    },
+    available: () => (available ??= store.listResources(config.sourceDir)),
+    resolve: async (reference) => {
+      resolver ??= references.available().then((descriptors) =>
+        createArtifactReferenceResolver(
+          descriptors,
+          references.readNamedValue,
+          undefined,
+          (descriptor, json) => applyOverrides(descriptor, json, config.overrides)
+        )
+      );
+      return (await resolver)(reference);
+    },
+  };
+  return references;
+}
+
 async function expandTransitivePublishTargets(
   store: IArtifactStore,
   sourceDir: string,
   initialDescriptors: ResourceDescriptor[],
-  availableDescriptors: ResourceDescriptor[],
-  filter: FilterConfig
+  filter: FilterConfig,
+  sourceReferences: SourceReferences
 ): Promise<ResourceDescriptor[]> {
-  const availableByKey = new Map(
-    availableDescriptors.map((descriptor) => [getResourceDescriptorKey(descriptor), descriptor])
-  );
+  const availableDescriptors = await sourceReferences.available();
   const expanded = [...initialDescriptors];
   const included = new Set(expanded.map(getResourceDescriptorKey));
   const scanQueue = [...initialDescriptors];
@@ -385,7 +435,9 @@ async function expandTransitivePublishTargets(
       continue;
     }
     for (const reference of references) {
-      const available = availableByKey.get(getResourceDescriptorKey(reference));
+      // A {{reference}} names a named value by its display name, which can
+      // differ from the name its artifact is stored under.
+      const available = await sourceReferences.resolve(reference);
       if (available && !included.has(getResourceDescriptorKey(available))) {
         included.add(getResourceDescriptorKey(available));
         expanded.push(available);
