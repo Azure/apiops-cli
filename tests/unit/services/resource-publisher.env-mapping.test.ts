@@ -404,7 +404,9 @@ describe('resource-publisher env-mapping', () => {
         type: ResourceType.Logger,
         nameParts: ['my-logger'],
       };
-      const config = makeConfig({ envMapping: DEV_MAPPING, knownArtifactSets: EMPTY_KNOWN });
+      store.listResources.mockResolvedValue([{ type: ResourceType.NamedValue, nameParts: ['myNv'] }]);
+      // Built from the source, as for a resource published outside a publish run.
+      const config = makeConfig({ envMapping: DEV_MAPPING });
       await publishResource(client, store, testContext, descriptor, config);
       const [, , payload] = client.putResource.mock.calls[0] as [unknown, unknown, Record<string, unknown>];
       const creds = (payload.properties as Record<string, unknown>).credentials as Record<string, unknown>;
@@ -445,6 +447,40 @@ describe('resource-publisher env-mapping', () => {
         makeConfig({ overrides: { namedValues: { 'key-id': { properties: { displayName: 'Prod_Key' } } } } })
       );
       expect(value).toBe('{{Prod_Key}}{{prod_key}}');
+    });
+
+    it("keeps a reference to an auto-generated logger key publish skips, and affixes one an override provides", async () => {
+      const id = '66f48e1226dab62c0823e4f8';
+      const publishLogger = async (overrides?: PublishConfig['overrides']) => {
+        client.putResource.mockClear();
+        store.listResources.mockResolvedValue([{ type: ResourceType.NamedValue, nameParts: [id] }]);
+        store.readResource.mockImplementation(async (_dir: string, d: ResourceDescriptor) =>
+          d.type === ResourceType.NamedValue
+            ? { name: id, properties: { displayName: `Logger-Credentials--${id}`, secret: true } }
+            : { name: 'ai', properties: { loggerType: 'applicationInsights', credentials: { instrumentationKey: `{{Logger-Credentials--${id}}}` } } }
+        );
+        await publishResource(client, store, testContext, { type: ResourceType.Logger, nameParts: ['ai'] }, makeConfig({ envMapping: DEV_MAPPING, overrides }));
+        const [, , payload] = client.putResource.mock.calls[0] as [unknown, unknown, Record<string, unknown>];
+        return ((payload.properties as Record<string, unknown>).credentials as Record<string, unknown>).instrumentationKey;
+      };
+
+      // Publish skips it, so the logger keeps the key the target already has.
+      expect(await publishLogger()).toBe(`{{Logger-Credentials--${id}}}`);
+      expect(await publishLogger({ namedValues: { [id]: { properties: { value: 'key' } } } })).toBe(`{{dev-Logger-Credentials--${id}}}`);
+    });
+
+    it('rewrites the tokens in backend credentials', async () => {
+      store.listResources.mockResolvedValue(namedValues);
+      store.readResource.mockImplementation(async (_dir: string, d: ResourceDescriptor) =>
+        d.type === ResourceType.NamedValue
+          ? { name: d.nameParts[0], properties: { displayName: 'Backend_Id' } }
+          : { name: 'b', properties: { url: 'https://example.test', credentials: { header: { 'x-key': ['{{Backend_Id}}'], 'x-spaced': ['{{ Backend_Id }}'] } } } }
+      );
+      await publishResource(client, store, testContext, { type: ResourceType.Backend, nameParts: ['b'] }, makeConfig({ envMapping: DEV_MAPPING }));
+      const [, , payload] = client.putResource.mock.calls[0] as [unknown, unknown, Record<string, unknown>];
+      expect((payload.properties as Record<string, unknown>).credentials).toEqual({
+        header: { 'x-key': ['{{dev-Backend_Id}}'], 'x-spaced': ['{{dev-Backend_Id}}'] },
+      });
     });
 
     it("matches a workspace policy's tokens against the workspace's named values", async () => {
