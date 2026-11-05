@@ -638,7 +638,7 @@ describe('workspace-extractor', () => {
       );
     });
 
-    it('should fall back to the extracted tags when listing the workspace tags fails', async () => {
+    it('should fall back to the extracted tags, and report an error, when listing the workspace tags fails', async () => {
       const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
       const client = createMockClient();
       let tagListings = 0;
@@ -655,6 +655,7 @@ describe('workspace-extractor', () => {
       const results = await extractWorkspaces(client, createAssociationStore(), testContext, '/output', filter, true);
 
       expect(results).toHaveLength(1);
+      expect(results[0].errorCount).toBe(1);
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('Failed to list tags in workspace "team-a"'));
       warn.mockRestore();
     });

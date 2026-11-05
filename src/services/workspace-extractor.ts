@@ -277,14 +277,21 @@ async function extractWorkspace(
   // are found and pulled in below; otherwise the extracted tags are all
   // there is to check.
   const hasLinkOwners = extractedApiNames.size > 0 || extractedProducts.length > 0;
-  const linkTagNames = transitive && hasLinkOwners && leavesOutUnnamed(filter?.tags)
-    ? (await listWorkspaceTagNames(client, wsContext, workspaceName, extractedTagNames)).filter(
+  let linkTagNames = extractedTagNames;
+  if (transitive && hasLinkOwners && leavesOutUnnamed(filter?.tags)) {
+    const listed = await listWorkspaceTagNames(client, wsContext, workspaceName);
+    if (listed) {
+      linkTagNames = listed.filter(
         (name) => !isExplicitlyExcluded(
           { type: ResourceType.Tag, nameParts: [name], workspace: workspaceName },
           serviceFilter
         )
-      )
-    : extractedTagNames;
+      );
+    } else {
+      // Links on the other tags may be missed, so --remove-stale must not run.
+      errorCount++;
+    }
+  }
 
   // Extract workspace API tags using the tag-centric apiLinks endpoint.
   // This must happen after both Tags and APIs are extracted since the
@@ -373,14 +380,13 @@ function leavesOutUnnamed(list: string[] | undefined): boolean {
 }
 
 /**
- * Every tag in the workspace, or the extracted ones if the list fails.
+ * Every tag in the workspace, or undefined if the list fails.
  */
 async function listWorkspaceTagNames(
   client: IApimClient,
   wsContext: ApimServiceContext,
-  workspaceName: string,
-  extractedTagNames: string[]
-): Promise<string[]> {
+  workspaceName: string
+): Promise<string[] | undefined> {
   const names: string[] = [];
   try {
     for await (const json of client.listResources(wsContext, ResourceType.Tag)) {
@@ -394,7 +400,7 @@ async function listWorkspaceTagNames(
       `Failed to list tags in workspace "${workspaceName}"; only links to extracted tags are included: ` +
       `${(error as Error).message}`
     );
-    return extractedTagNames;
+    return undefined;
   }
 }
 
