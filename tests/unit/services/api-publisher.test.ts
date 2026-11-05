@@ -12,6 +12,7 @@ import { PublishConfig } from '../../../src/models/config.js';
 import { LogLevel } from '../../../src/lib/logger.js';
 import { applyOverrides } from '../../../src/services/override-merger.js';
 import { DEFAULT_APPLIES_TO, EnvMapping } from '../../../src/services/env-mapper.js';
+import { getCloudConfig } from '../../../src/lib/cloud-config.js';
 
 // Mock resource-publisher so we can verify call sequence
 const mockPublishResource = vi.fn();
@@ -81,6 +82,7 @@ const testContext: ApimServiceContext = {
 };
 
 const testConfig: PublishConfig = {
+  cloud: getCloudConfig('public'),
   service: testContext,
   sourceDir: '/source',
   dryRun: false,

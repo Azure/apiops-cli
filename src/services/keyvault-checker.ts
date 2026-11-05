@@ -9,15 +9,18 @@
  *   2. Locate the Key Vault resource in the subscription
  *   3. Check RBAC role assignments or access policies
  *
- * This check is best-effort when infrastructure queries fail (ARM token,
- * vault in another subscription, etc.) — a warning is logged and the check
- * is skipped. Hard errors are raised only for definitive misconfigurations
- * such as "APIM has no managed identity" or "no matching RBAC / access policy".
+ * ARM calls go through the shared ArmHttpClient (retry on 429/5xx/network
+ * errors). This check is best-effort when infrastructure queries fail (ARM
+ * token, vault in another subscription, etc.) — a warning is logged and the
+ * check is skipped. Hard errors are raised only for definitive
+ * misconfigurations such as "APIM has no managed identity" or "no matching
+ * RBAC / access policy".
  */
 
-import { DefaultAzureCredential } from '@azure/identity';
 import { logger } from '../lib/logger.js';
-import { USER_AGENT } from '../lib/user-agent.js';
+import { errorMessage } from '../lib/error-message.js';
+import { ArmHttpClient, HttpError, discardBody } from '../clients/arm-http-client.js';
+import type { IArmHttpClient } from '../clients/iarm-http-client.js';
 
 /* ------------------------------------------------------------------ */
 /*  ARM API versions                                                  */
@@ -26,9 +29,6 @@ const APIM_API_VERSION = '2024-05-01';
 const RESOURCES_API_VERSION = '2021-04-01';
 const KEYVAULT_API_VERSION = '2023-07-01';
 const AUTHZ_API_VERSION = '2022-04-01';
-
-/** ARM management scope */
-const ARM_SCOPE = 'https://management.azure.com/.default';
 
 /**
  * Well-known Azure RBAC role-definition GUIDs that grant
@@ -63,43 +63,69 @@ export interface KeyVaultCheckContext {
   subscriptionId: string;
   resourceGroup: string;
   serviceName: string;
+  /**
+   * ARM base URL of the target cloud, without a trailing slash
+   * (e.g. `https://management.usgovcloudapi.net`).
+   */
+  armBaseUrl: string;
+  /** OAuth2 scope for ARM token requests in the target cloud. */
+  authScope: string;
 }
 
+/** Creates the ARM client for the target cloud's auth scope (injectable for testing). */
+export type KeyVaultArmClientFactory = (authScope: string) => IArmHttpClient;
+
 /** Minimal response shape from an ARM HTTP call. */
-export interface ArmResponse {
+interface ArmResponse {
   status: number;
   json(): Promise<unknown>;
 }
-
-/** Injectable ARM HTTP call — production uses `fetch`, tests supply a stub. */
-export type ArmRequestFn = (url: string, token: string) => Promise<ArmResponse>;
-
-/** Provides ARM bearer tokens. */
-export interface TokenProvider {
-  getToken(scopes: string | string[]): Promise<{ token: string }>;
-}
-
-/** Factory for creating token providers (injectable for testing). */
-export type TokenProviderFactory = () => TokenProvider;
 
 /* ------------------------------------------------------------------ */
 /*  Default production implementations                                */
 /* ------------------------------------------------------------------ */
 
-function defaultTokenProviderFactory(): TokenProvider {
-  return new DefaultAzureCredential();
+/**
+ * ARM clients created by the default factory, one per auth scope, so every
+ * Key Vault check in a run shares a credential and its cached token.
+ */
+const defaultArmClients = new Map<string, IArmHttpClient>();
+
+function defaultArmClientFactory(authScope: string): IArmHttpClient {
+  let client = defaultArmClients.get(authScope);
+  if (!client) {
+    client = new ArmHttpClient({ authScope });
+    defaultArmClients.set(authScope, client);
+  }
+  return client;
 }
 
-async function defaultArmRequest(url: string, token: string): Promise<ArmResponse> {
-  const headers = new Headers();
-  headers.set('Authorization', `Bearer ${token}`);
-  headers.set('Accept', 'application/json');
-  headers.set('User-Agent', USER_AGENT);
-  const response = await fetch(url, { headers });
-  return {
-    status: response.status,
-    json: () => response.json() as Promise<unknown>,
-  };
+/**
+ * GET an ARM URL. Non-OK responses (thrown by the client as `HttpError`
+ * once retries are exhausted) are returned as their status so callers can
+ * warn and skip; other errors (e.g. network failures) are thrown. Callers
+ * read the body only of a 200, so any other returned response (e.g. the 404
+ * the client passes through for GET) has its body released here.
+ */
+async function armGet(armClient: IArmHttpClient, url: string): Promise<ArmResponse> {
+  try {
+    const response = await armClient.request(url, { headers: { Accept: 'application/json' } });
+    if (response.status !== 200) {
+      await discardBody(response);
+      return withoutBody(response.status);
+    }
+    return { status: response.status, json: () => response.json() as Promise<unknown> };
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return withoutBody(error.status);
+    }
+    throw error;
+  }
+}
+
+/** A non-200 result: callers read the body only of a 200, so it has none. */
+function withoutBody(status: number): ArmResponse {
+  return { status, json: () => Promise.resolve(undefined) };
 }
 
 /* ------------------------------------------------------------------ */
@@ -111,20 +137,21 @@ async function defaultArmRequest(url: string, token: string): Promise<ArmRespons
  * specified Key Vault secret via ARM RBAC or access policies.
  *
  * @param secretIdentifier  Full Key Vault secret URI, e.g.
- *   `https://myvault.vault.azure.net/secrets/my-secret[/version]`
+ *   `https://myvault.vault.azure.net/secrets/my-secret[/version]`.
+ *   Only the first host label (the vault name) is used, so sovereign-cloud
+ *   vault suffixes (e.g. `vault.usgovcloudapi.net`) are accepted.
  * @param identityClientId  Client ID of the user-assigned managed identity
  *   that APIM will use. Omit for system-assigned identity.
  * @param apimContext  Subscription / resource-group / service-name of the
- *   APIM instance.
- * @param tokenProviderFactory  (testing) Override the ARM credential.
- * @param armRequest  (testing) Override the HTTP call.
+ *   APIM instance, plus the ARM base URL and auth scope of its cloud.
+ * @param armClientFactory  (testing) Override the ARM client, created with
+ *   `apimContext.authScope`. The default reuses one client per auth scope.
  */
 export async function checkKeyVaultSecretAccess(
   secretIdentifier: string,
   identityClientId: string | undefined,
   apimContext: KeyVaultCheckContext,
-  tokenProviderFactory: TokenProviderFactory = defaultTokenProviderFactory,
-  armRequest: ArmRequestFn = defaultArmRequest,
+  armClientFactory: KeyVaultArmClientFactory = defaultArmClientFactory,
 ): Promise<void> {
   /* ---- 1. Parse vault name & secret name from the URI ---- */
   let vaultName: string;
@@ -145,14 +172,17 @@ export async function checkKeyVaultSecretAccess(
   }
 
   /* ---- 2. Acquire ARM token ---- */
-  const credential = tokenProviderFactory();
-  let token: string;
+  let armClient: IArmHttpClient;
   try {
-    token = (await credential.getToken(ARM_SCOPE)).token;
+    // Created and fetched up front so a missing or misconfigured credential
+    // skips the check with one clear warning; the client caches the token
+    // for the requests below.
+    armClient = armClientFactory(apimContext.authScope);
+    await armClient.getToken();
   } catch (error) {
     logger.warn(
       `Unable to acquire ARM token — skipping Key Vault pre-flight check. ` +
-      `(Error: ${(error as Error).message})`,
+      `(Error: ${errorMessage(error)})`,
     );
     return;
   }
@@ -161,8 +191,7 @@ export async function checkKeyVaultSecretAccess(
   const { principalId, identityLabel } = await resolveApimPrincipal(
     apimContext,
     identityClientId,
-    token,
-    armRequest,
+    armClient,
   );
   if (!principalId) return; // soft-skip — warning already logged
 
@@ -172,10 +201,10 @@ export async function checkKeyVaultSecretAccess(
 
   /* ---- 4. Locate the vault in the same subscription ---- */
   const vault = await findVaultInSubscription(
+    apimContext.armBaseUrl,
     apimContext.subscriptionId,
     vaultName,
-    token,
-    armRequest,
+    armClient,
   );
   if (!vault) return; // soft-skip — warning already logged
 
@@ -184,15 +213,16 @@ export async function checkKeyVaultSecretAccess(
     .properties as Record<string, unknown>;
 
   if (vaultProps?.enableRbacAuthorization === true) {
-    await checkRbacAccess(
+    const confirmed = await checkRbacAccess(
+      apimContext.armBaseUrl,
       vault.resourceId,
       principalId,
       identityLabel,
       vaultName,
       secretName,
-      token,
-      armRequest,
+      armClient,
     );
+    if (!confirmed) return; // soft-skip — warning already logged
   } else {
     checkAccessPolicies(
       vaultProps,
@@ -225,22 +255,21 @@ export async function checkKeyVaultSecretAccess(
 async function resolveApimPrincipal(
   ctx: KeyVaultCheckContext,
   identityClientId: string | undefined,
-  token: string,
-  armRequest: ArmRequestFn,
+  armClient: IArmHttpClient,
 ): Promise<{ principalId: string | undefined; identityLabel: string }> {
   const identityLabel = identityClientId
     ? `user-assigned identity '${identityClientId}'`
     : 'system-assigned identity';
 
   const apimUrl =
-    `https://management.azure.com/subscriptions/${ctx.subscriptionId}` +
+    `${ctx.armBaseUrl}/subscriptions/${ctx.subscriptionId}` +
     `/resourceGroups/${ctx.resourceGroup}` +
     `/providers/Microsoft.ApiManagement/service/${ctx.serviceName}` +
     `?api-version=${APIM_API_VERSION}`;
 
   let apimJson: Record<string, unknown>;
   try {
-    const resp = await armRequest(apimUrl, token);
+    const resp = await armGet(armClient, apimUrl);
     if (resp.status !== 200) {
       logger.warn(
         `Failed to fetch APIM service (HTTP ${resp.status}) — ` +
@@ -252,7 +281,7 @@ async function resolveApimPrincipal(
   } catch (error) {
     logger.warn(
       `Failed to fetch APIM service — skipping Key Vault pre-flight check. ` +
-      `(Error: ${(error as Error).message})`,
+      `(Error: ${errorMessage(error)})`,
     );
     return { principalId: undefined, identityLabel };
   }
@@ -306,21 +335,21 @@ async function resolveApimPrincipal(
  * vault is not found (e.g. it lives in a different subscription).
  */
 async function findVaultInSubscription(
+  armBaseUrl: string,
   subscriptionId: string,
   vaultName: string,
-  token: string,
-  armRequest: ArmRequestFn,
+  armClient: IArmHttpClient,
 ): Promise<{ resourceId: string; json: unknown } | undefined> {
   const filter = encodeURIComponent(
     `resourceType eq 'Microsoft.KeyVault/vaults' and name eq '${vaultName}'`,
   );
   const listUrl =
-    `https://management.azure.com/subscriptions/${subscriptionId}` +
+    `${armBaseUrl}/subscriptions/${subscriptionId}` +
     `/resources?$filter=${filter}&api-version=${RESOURCES_API_VERSION}`;
 
   let vaultResourceId: string | undefined;
   try {
-    const resp = await armRequest(listUrl, token);
+    const resp = await armGet(armClient, listUrl);
     if (resp.status !== 200) {
       logger.warn(
         `Failed to search for Key Vault '${vaultName}' (HTTP ${resp.status}) — ` +
@@ -333,7 +362,7 @@ async function findVaultInSubscription(
   } catch (error) {
     logger.warn(
       `Failed to search for Key Vault '${vaultName}' — skipping pre-flight check. ` +
-      `(Error: ${(error as Error).message})`,
+      `(Error: ${errorMessage(error)})`,
     );
     return undefined;
   }
@@ -348,11 +377,11 @@ async function findVaultInSubscription(
 
   // GET the vault resource to read properties (RBAC mode, access policies)
   const vaultUrl =
-    `https://management.azure.com${vaultResourceId}` +
+    `${armBaseUrl}${vaultResourceId}` +
     `?api-version=${KEYVAULT_API_VERSION}`;
 
   try {
-    const resp = await armRequest(vaultUrl, token);
+    const resp = await armGet(armClient, vaultUrl);
     if (resp.status !== 200) {
       logger.warn(
         `Failed to read Key Vault '${vaultName}' (HTTP ${resp.status}) — ` +
@@ -365,7 +394,7 @@ async function findVaultInSubscription(
   } catch (error) {
     logger.warn(
       `Failed to read Key Vault '${vaultName}' — skipping pre-flight check. ` +
-      `(Error: ${(error as Error).message})`,
+      `(Error: ${errorMessage(error)})`,
     );
     return undefined;
   }
@@ -387,6 +416,9 @@ const SECRET_GET_WILDCARDS = [
  * Throws `KeyVaultAccessError` when no assignments exist at all, or when
  * none of the assigned roles grant the secret-get data-action.
  *
+ * Returns true when access is confirmed, false when the role assignments
+ * could not be listed and the check was skipped (a warning has been logged).
+ *
  * Strategy (fast-path first):
  *   1. Check if any assignment matches a well-known role GUID — skip role
  *      definition resolution if so.
@@ -394,29 +426,29 @@ const SECRET_GET_WILDCARDS = [
  *      for the `Microsoft.KeyVault/vaults/secrets/getSecret/action` data-action.
  */
 async function checkRbacAccess(
+  armBaseUrl: string,
   vaultResourceId: string,
   principalId: string,
   identityLabel: string,
   vaultName: string,
   secretName: string,
-  token: string,
-  armRequest: ArmRequestFn,
-): Promise<void> {
+  armClient: IArmHttpClient,
+): Promise<boolean> {
   const filter = encodeURIComponent(`principalId eq '${principalId}'`);
   const url =
-    `https://management.azure.com${vaultResourceId}` +
+    `${armBaseUrl}${vaultResourceId}` +
     `/providers/Microsoft.Authorization/roleAssignments` +
     `?$filter=${filter}&api-version=${AUTHZ_API_VERSION}`;
 
   let assignments: Array<Record<string, unknown>>;
   try {
-    const resp = await armRequest(url, token);
+    const resp = await armGet(armClient, url);
     if (resp.status !== 200) {
       logger.warn(
         `Failed to list role assignments (HTTP ${resp.status}) — ` +
         `skipping RBAC pre-flight check for '${vaultName}'.`,
       );
-      return;
+      return false;
     }
     const body = (await resp.json()) as {
       value?: Array<Record<string, unknown>>;
@@ -425,9 +457,9 @@ async function checkRbacAccess(
   } catch (error) {
     logger.warn(
       `Failed to list role assignments — skipping RBAC pre-flight check. ` +
-      `(Error: ${(error as Error).message})`,
+      `(Error: ${errorMessage(error)})`,
     );
-    return;
+    return false;
   }
 
   if (assignments.length === 0) {
@@ -449,7 +481,7 @@ async function checkRbacAccess(
   });
 
   if (hasKnownRole) {
-    return; // confirmed — no need to resolve definitions
+    return true; // confirmed — no need to resolve definitions
   }
 
   // --- Slow path: resolve each role definition and check dataActions ---
@@ -465,9 +497,9 @@ async function checkRbacAccess(
     if (!roleDefId) continue;
 
     const hasAccess = await roleDefinitionGrantsSecretGet(
-      roleDefId, token, armRequest,
+      armBaseUrl, roleDefId, armClient,
     );
-    if (hasAccess) return; // confirmed via dataActions
+    if (hasAccess) return true; // confirmed via dataActions
   }
 
   throw new KeyVaultAccessError(
@@ -487,17 +519,17 @@ async function checkRbacAccess(
  * fetched — the caller should treat this as inconclusive and keep checking.
  */
 async function roleDefinitionGrantsSecretGet(
+  armBaseUrl: string,
   roleDefinitionId: string,
-  token: string,
-  armRequest: ArmRequestFn,
+  armClient: IArmHttpClient,
 ): Promise<boolean | undefined> {
   const url =
-    `https://management.azure.com${roleDefinitionId}` +
+    `${armBaseUrl}${roleDefinitionId}` +
     `?api-version=${AUTHZ_API_VERSION}`;
 
   let json: Record<string, unknown>;
   try {
-    const resp = await armRequest(url, token);
+    const resp = await armGet(armClient, url);
     if (resp.status !== 200) {
       logger.debug(
         `Failed to fetch role definition (HTTP ${resp.status}): ${roleDefinitionId}`,

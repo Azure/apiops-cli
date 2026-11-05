@@ -46,7 +46,7 @@ Helpful documentation:
 
 For each environment, use the **Azure portal** to grant:
 
-- **Reader** on the resource group that contains the APIM instance
+- **Reader** on the resource group that contains the APIM instance (optional: `apiops publish` doesn't need it, but with it a missing resource group is reported clearly; without it, publish skips that check and checks the APIM service directly)
 - **API Management Service Contributor** on the APIM service itself
 
 Use **Access control (IAM)** on each resource group and APIM instance to create the assignments.

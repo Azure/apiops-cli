@@ -151,6 +151,7 @@ async function executePublish(
   // Build publish config
   const publishConfig: PublishConfig = {
     service: context,
+    cloud: cloudConfig,
     sourceDir: options.source,
     filter: filterConfig,
     includeTransitive: options.transitive,

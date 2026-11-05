@@ -10,11 +10,14 @@ const exec = promisify(execFile);
 const cliPath = path.resolve('src/cli/index.ts');
 
 /** Run CLI via node --import tsx and capture stdout/stderr. */
-async function runCli(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+async function runCli(
+  args: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   try {
     const result = await exec(process.execPath, ['--import', 'tsx', cliPath, ...args], {
       timeout: 15000,
-      env: { ...process.env, NODE_ENV: 'test' },
+      env: { ...env, NODE_ENV: 'test' },
     });
     return { stdout: result.stdout, stderr: result.stderr, exitCode: 0 };
   } catch (error) {
@@ -106,5 +109,27 @@ describe('CLI entry point', () => {
       expect(result.stdout).toContain('--tenant-id');
       expect(result.exitCode).toBe(0);
     });
+  });
+
+  describe('proxy setup', () => {
+    /** process.env without proxy or subscription variables, so extract stops before any request. */
+    function cleanEnv(): NodeJS.ProcessEnv {
+      const env = { ...process.env };
+      for (const name of Object.keys(env)) {
+        if (/^(https?_proxy|all_proxy|no_proxy|node_use_env_proxy|azure_subscription_id)$/i.test(name)) {
+          delete env[name];
+        }
+      }
+      return env;
+    }
+    const extractArgs = ['extract', '--log-level', 'debug', '--resource-group', 'rg', '--service-name', 'svc'];
+    it('should apply HTTPS_PROXY before the command runs', async () => {
+      const result = await runCli(extractArgs, { ...cleanEnv(), HTTPS_PROXY: 'http://user:secret@127.0.0.1:9' });
+      const output = result.stdout + result.stderr;
+
+      expect(output).toContain('Sending requests through the proxy set in HTTPS_PROXY');
+      expect(output).toContain('Subscription ID required');
+      expect(output).not.toContain('secret');
+    }, 15_000);
   });
 });

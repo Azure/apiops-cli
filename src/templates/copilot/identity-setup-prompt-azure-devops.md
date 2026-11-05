@@ -219,7 +219,7 @@ No client secret is required in this flow.
 
 ## Step 6: Assign RBAC Roles Per Environment
 
-Grant the service principal **Reader** on each resource group and **API Management Service Contributor** on each APIM instance.
+Grant the service principal **API Management Service Contributor** on each APIM instance. **Reader** on each resource group is optional: `apiops publish` doesn't need it, but with it a missing resource group is reported clearly; without it, publish skips that check and checks the APIM service directly. Leave out the `Reader` commands below to skip it.
 
 ### PowerShell
 ```powershell

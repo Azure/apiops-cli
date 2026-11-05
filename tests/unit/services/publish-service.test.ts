@@ -4,13 +4,24 @@
  * Unit tests for Publish orchestration service
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ResourceDescriptor, ApimServiceContext } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
 import { LogLevel } from '../../../src/lib/logger.js';
+import { getCloudConfig } from '../../../src/lib/cloud-config.js';
 import { recordRetry, withRetryResource } from '../../../src/lib/retry-tracker.js';
 import { getResourceDescriptorKey } from '../../../src/lib/resource-path.js';
+import { ApimClient } from '../../../src/clients/apim-client.js';
+
+// The Key Vault pre-flight check creates its own ARM client with DefaultAzureCredential.
+vi.mock('@azure/identity', async (importOriginal) => ({
+  // Keep the real getBearerTokenProvider (the SDK token cycler) around the mocked credential.
+  ...(await importOriginal<typeof import('@azure/identity')>()),
+  DefaultAzureCredential: class {
+    getToken = async () => ({ token: 'fake-token', expiresOnTimestamp: Date.now() + 60 * 60 * 1000 });
+  },
+}));
 
 // Mock service dependencies
 vi.mock('../../../src/services/git-diff-service.js');
@@ -112,6 +123,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -160,6 +172,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -787,6 +800,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -810,6 +824,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -831,6 +846,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -871,6 +887,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -905,6 +922,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -945,6 +963,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -975,6 +994,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1006,6 +1026,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: true,
@@ -1068,6 +1089,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1097,6 +1119,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: true,
@@ -1125,6 +1148,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1152,6 +1176,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1282,6 +1307,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1320,6 +1346,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: true,
@@ -1353,6 +1380,7 @@ describe('publish-service', () => {
       ]);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1377,6 +1405,7 @@ describe('publish-service', () => {
       const client = createMockClient();
       const store = createMockStore([]);
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1411,6 +1440,7 @@ describe('publish-service', () => {
       ]);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1445,6 +1475,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1469,6 +1500,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1510,6 +1542,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1532,6 +1565,7 @@ describe('publish-service', () => {
       const store = createMockStore([{ type: ResourceType.Tag, nameParts: ['tag1'] }]);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1552,6 +1586,7 @@ describe('publish-service', () => {
       const store = createMockStore([]);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1573,6 +1608,7 @@ describe('publish-service', () => {
       const store = createMockStore([]);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1594,6 +1630,7 @@ describe('publish-service', () => {
       const store = createMockStore([{ type: ResourceType.Tag, nameParts: ['tag1'] }]);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1604,6 +1641,64 @@ describe('publish-service', () => {
       await runPublish(client, store, config);
 
       expect(client.putResource).not.toHaveBeenCalled();
+    });
+
+    describe('without Reader on the resource group', () => {
+      const rgUrl = 'https://management.azure.com/subscriptions/sub-1/resourceGroups/rg-1?api-version=2021-04-01';
+      const serviceUrl = `${testContext.baseUrl}?api-version=${testContext.apiVersion}`;
+      const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      /**
+       * Real ApimClient whose pre-flight GETs hit a stubbed fetch: the resource
+       * group read is forbidden and the APIM service read returns `serviceStatus`.
+       * Resource writes are stubbed on the instance so only pre-flight goes through fetch.
+       */
+      function createClientWithForbiddenResourceGroup(serviceStatus: number) {
+        const client = new ApimClient(undefined, {
+          credential: { getToken: async () => ({ token: 'fake-token', expiresOnTimestamp: Date.now() + 60 * 60 * 1000 }) },
+        });
+        vi.spyOn(client, 'getResource').mockResolvedValue(undefined);
+        vi.spyOn(client, 'putResource').mockResolvedValue(undefined);
+        vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+          if (url === rgUrl) {
+            return Promise.resolve(new Response(
+              JSON.stringify({ error: { code: 'AuthorizationFailed', message: 'resourceGroups/read' } }),
+              { status: 403, headers: { 'Content-Type': 'application/json' } },
+            ));
+          }
+          if (url === serviceUrl) {
+            return Promise.resolve(new Response('{}', { status: serviceStatus, headers: { 'Content-Type': 'application/json' } }));
+          }
+          return Promise.reject(new Error(`Unexpected URL: ${url}`));
+        }));
+        return client;
+      }
+
+      afterEach(() => {
+        vi.unstubAllGlobals();
+        vi.restoreAllMocks();
+      });
+
+      it('should publish when the resource group read is forbidden but the APIM service exists', async () => {
+        const client = createClientWithForbiddenResourceGroup(200);
+        const store = createMockStore([{ type: ResourceType.Tag, nameParts: ['tag1'] }]);
+
+        const result = await runPublish(client, store, config);
+
+        expect(result.exitCode).toBe(0);
+        expect(client.putResource).toHaveBeenCalledWith(
+          testContext,
+          expect.objectContaining({ type: ResourceType.Tag, nameParts: ['tag1'] }),
+          expect.anything(),
+        );
+      });
     });
   });
 
@@ -1631,6 +1726,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1684,6 +1780,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1746,6 +1843,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1780,6 +1878,7 @@ describe('publish-service', () => {
       });
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1819,6 +1918,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1854,6 +1954,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -1878,6 +1979,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -2013,6 +2115,7 @@ describe('publish-service', () => {
       const store = createMockStore(resources);
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -2053,6 +2156,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -2091,6 +2195,7 @@ describe('publish-service', () => {
       );
 
       const config: PublishConfig = {
+        cloud: getCloudConfig('public'),
         service: testContext,
         sourceDir: '/source',
         dryRun: false,
@@ -2199,6 +2304,7 @@ describe('publish-service', () => {
   describe('publish output readability', () => {
     const baseConfig: PublishConfig = {
       service: testContext,
+      cloud: getCloudConfig('public'),
       sourceDir: '/source',
       dryRun: false,
       deleteUnmatched: false,
@@ -2264,6 +2370,36 @@ describe('publish-service', () => {
         expect(result.elapsedMs).toBeGreaterThanOrEqual(0);
       } finally {
         stdout.restore();
+      }
+    });
+
+    it('should count Key Vault pre-flight check retries toward the named value', async () => {
+      const resources = [{ type: ResourceType.NamedValue, nameParts: ['kv-nv'] }];
+      const store = createMockStore(resources);
+      store.readResource.mockResolvedValue({
+        name: 'kv-nv',
+        properties: {
+          displayName: 'kv-nv',
+          secret: true,
+          keyVault: { secretIdentifier: 'https://myvault.vault.azure.net/secrets/my-secret' },
+        },
+      });
+      // The check's APIM service GET is rate limited once, then not found
+      // (the check warns and skips); the named value itself is published.
+      vi.stubGlobal('fetch', vi.fn()
+        .mockResolvedValueOnce(new Response('', { status: 429, headers: { 'Retry-After': '0' } }))
+        .mockResolvedValueOnce(new Response('{}', { status: 404 })));
+      const stdout = captureStdout();
+
+      try {
+        const result = await runPublish(createMockClient(), store, baseConfig);
+
+        expect(stdout.lines()).toContain('PUT namedvalue/kv-nv (1 retry)\n');
+        expect(result.totalRetries).toBe(1);
+        expect(result.actions.find((a) => a.descriptor.nameParts[0] === 'kv-nv')?.retries).toBe(1);
+      } finally {
+        stdout.restore();
+        vi.unstubAllGlobals();
       }
     });
 

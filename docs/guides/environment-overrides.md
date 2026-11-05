@@ -551,6 +551,8 @@ If you add a new backend in dev but forget to add it to your override files, pub
 
 When using Key Vault references, the APIM managed identity needs access to the Key Vault. A common failure mode: overrides reference a Key Vault but APIM lacks the `Key Vault Secrets User` role on that vault.
 
+`apiops publish` checks this before publishing the named value. The check reads the vault and its role assignments with the CLI's own identity (Reader on the subscription covers every read it makes); if it can't read the APIM service, find or read the vault, or list the vault's role assignments, it logs a warning and is skipped. It fails the named value when no role assignment (on an RBAC vault) or access policy (on a vault that uses access policies) it can see grants the APIM identity secret read access, including when the identity has none; a custom role definition it can't read is skipped, which can lead to that failure. Known limitation: it sees only grants made to the APIM identity itself, not through a group it belongs to, so access granted only through a group fails the check. See [Key Vault pre-flight check](../ci-cd/authentication-patterns.md#key-vault-pre-flight-check).
+
 ### Gotcha: Auto-generated named values for loggers
 
 When you create a logger in APIM (e.g., for Application Insights), APIM auto-generates a named value to store the credential. These have 24-character hex names (e.g., `<24-char-hex-id>`). During extract, these are captured as artifacts. During publish:

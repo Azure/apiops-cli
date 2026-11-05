@@ -11,6 +11,7 @@ import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/type
 import { PublishConfig } from '../../../src/models/config.js';
 import { LogLevel } from '../../../src/lib/logger.js';
 import { REDACTION_MARKER } from '../../../src/services/secret-redactor.js';
+import { getCloudConfig } from '../../../src/lib/cloud-config.js';
 
 function createMockStore() {
   return {
@@ -35,6 +36,7 @@ const testContext: ApimServiceContext = {
 };
 
 const testConfig: PublishConfig = {
+  cloud: getCloudConfig('public'),
   service: testContext,
   sourceDir: '/source',
   dryRun: false,

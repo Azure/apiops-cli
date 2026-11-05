@@ -141,12 +141,12 @@ Write-Host "Tenant ID: $(az account show --query tenantId -o tsv)"
 ## Step 3 — Assign RBAC Roles
 
 Grant the service principal the required permissions:
-1. **Reader** role on each resource group (to read resource groups and resources)
+1. **Reader** role on each resource group (optional: `apiops publish` doesn't need it, but with it a missing resource group is reported clearly; without it, publish skips that check and checks the APIM service directly)
 2. **API Management Service Contributor** on each APIM instance (to manage APIM resources)
 
 > **Note:** Each environment can be in a different Azure subscription. The service principal will be granted access to all environments.
 
-### Grant Reader role on each resource group
+### Grant Reader role on each resource group (optional)
 
 {{ENV_READER_ROLE_SNIPPETS}}
 

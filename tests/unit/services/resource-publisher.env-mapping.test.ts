@@ -13,6 +13,7 @@ import type { PublishConfig, KnownArtifactSets } from '../../../src/models/confi
 import type { EnvMapping } from '../../../src/services/env-mapper.js';
 import { DEFAULT_APPLIES_TO } from '../../../src/services/env-mapper.js';
 import { LogLevel } from '../../../src/lib/logger.js';
+import { getCloudConfig } from '../../../src/lib/cloud-config.js';
 
 // Mock keyvault-checker
 vi.mock('../../../src/services/keyvault-checker.js', () => ({
@@ -63,6 +64,7 @@ const testContext: ApimServiceContext = {
 };
 
 const baseConfig: PublishConfig = {
+  cloud: getCloudConfig('public'),
   service: testContext,
   sourceDir: '/source',
   dryRun: false,

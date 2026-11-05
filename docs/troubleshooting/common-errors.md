@@ -190,7 +190,7 @@ See [Pipeline Recovery](pipeline-recovery.md) for CI/CD-specific recovery steps.
 
 **Solution:**
 
-- The CLI automatically retries on 429 responses with the delay specified in the `Retry-After` header
+- The CLI automatically retries a 429 response up to 3 times. Like the Azure SDK, it waits for the `retry-after-ms`, `x-ms-retry-after-ms` or `Retry-After` header (seconds or an HTTP date); `0` or a date already passed retries at once. When none of these headers is present or readable, it waits 1, 2 and then 4 seconds instead. A 503 that sends one of these headers is retried after that wait too
 - If retries are exhausted, reduce the number of resources being processed (use filters for extract or incremental publish)
 - Wait a few minutes and re-run
 
@@ -208,7 +208,9 @@ See [Pipeline Recovery](pipeline-recovery.md) for CI/CD-specific recovery steps.
 **Solution:**
 
 1. Test connectivity: `curl -I https://management.azure.com`
-2. If behind a proxy, set `HTTPS_PROXY` environment variable
+2. If behind a proxy, set the `HTTPS_PROXY` environment variable. The CLI reads the proxy settings the way `@azure/identity` reads them for its sign-in requests: every request uses the first of `HTTPS_PROXY`, `ALL_PROXY` and `HTTP_PROXY` that is set (each name in upper case before lower case), and a user name and password in the proxy URL are sent to the proxy
+   - For hosts that must bypass the proxy, set `NO_PROXY` to a comma-separated list of exact host names (`management.azure.com`) or domains with a leading dot (`.azure.com`, which also matches `azure.com`). Other forms, such as `*` or `azure.com` for its subdomains, are not supported
+   - When you sign in with the Azure CLI, Azure Developer CLI or Azure PowerShell, that tool requests the token itself, using its own proxy settings
 3. If using private endpoints, ensure you're on the correct network
 
 ---

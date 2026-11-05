@@ -5,8 +5,9 @@
  * HTTP errors when a resource type is not available on the service tier.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { ApimClient, HttpError, describeRequestTarget } from '../../../src/clients/apim-client.js';
+import { describe, it, expect, vi, beforeEach, afterEach, type Mock } from 'vitest';
+import { ApimClient, HttpError } from '../../../src/clients/apim-client.js';
+import { ArmTokenCredential } from '../../../src/clients/arm-http-client.js';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext } from '../../../src/models/types.js';
 import { buildArmBaseUrl } from '../../../src/lib/cloud-config.js';
@@ -22,6 +23,14 @@ const testContext: ApimServiceContext = {
   baseUrl:
     'https://management.azure.com/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1',
 };
+
+/** Credential stub so the client never acquires a real Azure token. */
+const fakeCredential: ArmTokenCredential = {
+  getToken: async () => ({ token: 'fake-token', expiresOnTimestamp: Date.now() + 60 * 60 * 1000 }),
+};
+
+/** Wait stub so retry back-off and polling delays take no time. */
+const noDelay = async (): Promise<void> => undefined;
 
 function makeResponse(
   status: number,
@@ -47,9 +56,7 @@ describe('ApimClient.validatePreFlight', () => {
     ['china', 'https://management.chinacloudapi.cn'],
     ['germany', 'https://management.microsoftazure.de'],
   ])('should use the %s endpoint for both pre-flight checks', async (cloud, endpoint) => {
-    const client = new ApimClient();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
+    const client = new ApimClient(undefined, { credential: fakeCredential });
     const fetchSpy = vi.fn().mockImplementation(() => Promise.resolve(makeResponse(200, {})));
     vi.stubGlobal('fetch', fetchSpy);
     const context: ApimServiceContext = {
@@ -72,6 +79,66 @@ describe('ApimClient.validatePreFlight', () => {
       expect.objectContaining({ method: 'GET' }),
     );
   });
+
+  describe('resource group check', () => {
+    const rgUrl = 'https://management.azure.com/subscriptions/sub-1/resourceGroups/rg-1?api-version=2021-04-01';
+    const serviceUrl = `${testContext.baseUrl}?api-version=${testContext.apiVersion}`;
+    const rgForbidden = {
+      error: {
+        code: 'AuthorizationFailed',
+        message:
+          "The client does not have authorization to perform action 'Microsoft.Resources/subscriptions/resourceGroups/read' " +
+          "over scope '/subscriptions/sub-1/resourceGroups/rg-1'",
+      },
+    };
+
+    let client: ApimClient;
+    let fetchSpy: ReturnType<typeof vi.fn>;
+
+    /** Stub fetch with separate responses for the resource group and APIM service GETs. */
+    function stubResponses(rg: () => Response, service: () => Response): void {
+      fetchSpy.mockImplementation((url: string) => {
+        if (url === rgUrl) return Promise.resolve(rg());
+        if (url === serviceUrl) return Promise.resolve(service());
+        return Promise.reject(new Error(`Unexpected URL: ${url}`));
+      });
+    }
+
+    beforeEach(() => {
+      client = new ApimClient(undefined, { credential: fakeCredential });
+      fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+    });
+
+    it('should report a possibly wrong resource group when the resource group read is forbidden and the APIM service is not found', async () => {
+      stubResponses(() => makeResponse(403, rgForbidden), () => makeResponse(404, { error: { code: 'ResourceNotFound' } }));
+
+      const error = await client.validatePreFlight(testContext).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe(
+        "APIM service 'apim-1' not found in resource group 'rg-1' of subscription 'sub-1'. " +
+        'Ensure the subscription, resource group and APIM service name are correct and that the APIM instance exists before publishing.',
+      );
+    });
+
+    it('should keep the permission error when the resource group read is forbidden and the APIM service read is forbidden', async () => {
+      stubResponses(() => makeResponse(403, rgForbidden), () => makeResponse(403, { error: { code: 'AuthorizationFailed' } }));
+
+      await expect(client.validatePreFlight(testContext)).rejects.toThrow(
+        "Insufficient permissions to read APIM service 'apim-1'. " +
+        'Ensure the service principal has at least Reader role on the APIM resource.',
+      );
+    });
+
+    it('should report a missing APIM service when the resource group exists', async () => {
+      stubResponses(() => makeResponse(200, {}), () => makeResponse(404, { error: { code: 'ResourceNotFound' } }));
+
+      await expect(client.validatePreFlight(testContext)).rejects.toThrow(
+        "APIM service 'apim-1' not found in resource group 'rg-1'. Ensure the APIM instance exists before publishing.",
+      );
+    });
+  });
 });
 
 describe('ApimClient.listResources', () => {
@@ -79,13 +146,9 @@ describe('ApimClient.listResources', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    client = new ApimClient();
+    client = new ApimClient(undefined, { credential: fakeCredential });
     fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
-
-    // @azure/identity is mocked via credential; stub getToken on the instance
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
   });
 
   afterEach(() => {
@@ -334,12 +397,9 @@ describe('ApimClient.getResource', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    client = new ApimClient();
+    client = new ApimClient(undefined, { credential: fakeCredential });
     fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
   });
 
   afterEach(() => {
@@ -443,6 +503,19 @@ describe('ApimClient.getResource', () => {
     expect(result).toBeUndefined();
   });
 
+  it.each([
+    ['a 404', ResourceType.ServicePolicy, 404],
+    ['a wiki 500', ResourceType.ApiWiki, 500],
+  ])('should cancel the unread body of %s it treats as not found', async (_label, type, status) => {
+    const cancel = vi.fn();
+    fetchSpy.mockResolvedValueOnce(new Response(new ReadableStream({ cancel }), { status }));
+
+    const descriptor = { type, nameParts: type === ResourceType.ApiWiki ? ['echo'] : [] };
+
+    await expect(client.getResource(testContext, descriptor)).resolves.toBeUndefined();
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
   it('should return undefined on 405 (association endpoints that do not support GET)', async () => {
     fetchSpy.mockResolvedValueOnce(
       new Response(
@@ -459,6 +532,32 @@ describe('ApimClient.getResource', () => {
     const result = await client.getResource(testContext, descriptor);
 
     expect(result).toBeUndefined();
+  });
+
+  it('should return undefined when a GET-capable resource returns 405', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ Message: "The requested resource does not support http method 'GET'." }), {
+        status: 405,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
+
+    await expect(
+      client.getResource(testContext, { type: ResourceType.Api, nameParts: ['petstore'] })
+    ).resolves.toBeUndefined();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('should log and rethrow any other error', async () => {
+    const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+    fetchSpy.mockResolvedValueOnce(
+      makeResponse(403, { error: { code: 'AuthorizationFailed', message: 'no access' } })
+    );
+
+    await expect(
+      client.getResource(testContext, { type: ResourceType.Api, nameParts: ['petstore'] })
+    ).rejects.toMatchObject({ status: 403, code: 'AuthorizationFailed' });
+    expect(error).toHaveBeenCalledWith('Failed to get resource: HTTP 403: [AuthorizationFailed] no access');
   });
 
   it('should return undefined on HTTP 500 for ApiWiki without retrying', async () => {
@@ -531,15 +630,10 @@ describe('ApimClient.putResource provisioning polling', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    client = new ApimClient();
+    // Suppress polling delay to keep tests fast
+    client = new ApimClient(undefined, { credential: fakeCredential, delay: noDelay });
     fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
-
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
-    // Suppress polling delay to keep tests fast
-    vi.spyOn(client as any, 'delay').mockResolvedValue(undefined);
-    /* eslint-enable @typescript-eslint/no-explicit-any */
   });
 
   afterEach(() => {
@@ -549,6 +643,43 @@ describe('ApimClient.putResource provisioning polling', () => {
 
   const descriptor = { type: ResourceType.NamedValue, nameParts: ['my-nv'] };
   const succeededResource = { name: 'my-nv', properties: { provisioningState: 'Succeeded' } };
+
+  it('should cancel the unread PUT body when it polls an async operation', async () => {
+    const cancel = vi.fn();
+    fetchSpy
+      .mockResolvedValueOnce(new Response(new ReadableStream({ cancel }), {
+        status: 201,
+        headers: { 'Azure-AsyncOperation': 'https://management.azure.com/operations/op-1' },
+      }))
+      .mockResolvedValueOnce(makeResponse(200, { status: 'Succeeded' }))
+      .mockResolvedValueOnce(makeResponse(200, succeededResource));
+
+    await expect(client.putResource(testContext, descriptor, {})).resolves.toEqual(succeededResource);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('should return an empty object when the resource is gone once the async operation completes', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(new Response('{}', {
+        status: 201,
+        headers: { 'Azure-AsyncOperation': 'https://management.azure.com/operations/op-1' },
+      }))
+      .mockResolvedValueOnce(makeResponse(200, { status: 'Succeeded' }))
+      .mockResolvedValueOnce(makeResponse(404, { error: { code: 'ResourceNotFound' } }));
+
+    await expect(client.putResource(testContext, descriptor, {})).resolves.toEqual({});
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('should cancel the unread body of a headerless 202 PUT before polling its provisioning state', async () => {
+    const cancel = vi.fn();
+    fetchSpy
+      .mockResolvedValueOnce(new Response(new ReadableStream({ cancel }), { status: 202 }))
+      .mockResolvedValueOnce(makeResponse(200, succeededResource));
+
+    await expect(client.putResource(testContext, descriptor, {})).resolves.toEqual(succeededResource);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
 
   it('should strip the top-level source ARM id from the PUT body', async () => {
     fetchSpy.mockResolvedValueOnce(makeResponse(200, succeededResource));
@@ -610,6 +741,25 @@ describe('ApimClient.putResource provisioning polling', () => {
     expect(result).toEqual(succeededResource);
     expect(fetchSpy).toHaveBeenCalledTimes(3);
     expect(fetchSpy.mock.calls[1]?.[0]).toBe(operationUrl);
+  });
+
+  it('should retry a PessimisticConcurrencyConflict while polling an async operation', async () => {
+    const operationUrl = 'https://management.azure.com/operations/update-named-value';
+    fetchSpy
+      .mockResolvedValueOnce(new Response('', { status: 202, headers: { 'Azure-AsyncOperation': operationUrl } }))
+      .mockResolvedValueOnce(
+        makeResponse(409, { error: { code: 'PessimisticConcurrencyConflict', message: 'Operation in progress' } })
+      )
+      .mockResolvedValueOnce(makeResponse(200, { status: 'Succeeded' }))
+      .mockResolvedValueOnce(makeResponse(200, succeededResource));
+
+    await expect(client.putResource(testContext, descriptor, { name: 'my-nv' })).resolves.toEqual(succeededResource);
+    expect(fetchSpy.mock.calls.map((call) => call[0])).toEqual([
+      expect.any(String),
+      operationUrl,
+      operationUrl,
+      expect.any(String),
+    ]);
   });
 
   it('should surface a failed Azure-AsyncOperation when an update returns 200', async () => {
@@ -676,6 +826,44 @@ describe('ApimClient.putResource provisioning polling', () => {
     await expect(client.putResource(testContext, association, {})).resolves.toEqual({});
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
+
+  it('should accept a Succeeded provisioningState case-insensitively after a 201', async () => {
+    const settled = { name: 'my-nv', properties: { provisioningState: 'succeeded' } };
+    fetchSpy
+      .mockResolvedValueOnce(makeResponse(201, { name: 'my-nv' }))
+      .mockResolvedValueOnce(makeResponse(200, { name: 'my-nv', properties: { provisioningState: 'Creating' } }))
+      .mockResolvedValueOnce(makeResponse(200, settled));
+
+    await expect(client.putResource(testContext, descriptor, {})).resolves.toEqual(settled);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('should give up on a PUT after 30 provisioning polls', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(makeResponse(201, { name: 'my-nv' }))
+      .mockImplementation(async () =>
+        makeResponse(200, { name: 'my-nv', properties: { provisioningState: 'Creating' } })
+      );
+
+    await expect(client.putResource(testContext, descriptor, {})).rejects.toThrow(
+      'Provisioning state polling timed out'
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(31);
+  });
+
+  it.each(['Canceled', 'Cancelled', 'FAILED'])(
+    'should fail when provisioning after a 201 reports %s',
+    async (state) => {
+      fetchSpy
+        .mockResolvedValueOnce(makeResponse(201, { name: 'my-nv' }))
+        .mockResolvedValueOnce(makeResponse(200, { name: 'my-nv', properties: { provisioningState: state } }));
+
+      await expect(client.putResource(testContext, descriptor, {})).rejects.toThrow(
+        `Resource provisioning ${state.toLowerCase()}:`
+      );
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    }
+  );
 
   it('should poll when PUT returns 201 and eventually return the resource', async () => {
     fetchSpy
@@ -807,22 +995,28 @@ describe('ApimClient.deleteResource provisioning polling', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    client = new ApimClient();
+    client = new ApimClient(undefined, { credential: fakeCredential, delay: noDelay });
     fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
-
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
-    vi.spyOn(client as any, 'delay').mockResolvedValue(undefined);
-    /* eslint-enable @typescript-eslint/no-explicit-any */
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
   const descriptor = { type: ResourceType.Api, nameParts: ['delay'] };
+
+  it.each([200, 202])('should cancel the unread body of a %i DELETE response', async (status) => {
+    const cancel = vi.fn();
+    fetchSpy
+      .mockResolvedValueOnce(new Response(new ReadableStream({ cancel }), { status }))
+      .mockResolvedValueOnce(new Response('', { status: 404 }));
+
+    await expect(client.deleteResource(testContext, descriptor)).resolves.toBe(true);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
 
   it('should treat 404 during delete polling as successful completion', async () => {
     fetchSpy
@@ -855,6 +1049,75 @@ describe('ApimClient.deleteResource provisioning polling', () => {
     expect(deleted).toBe(true);
     expect(fetchSpy).toHaveBeenCalledTimes(3);
   });
+
+  it('should keep polling while the resource is still returned without a provisioningState', async () => {
+    const body = { name: 'delay', properties: {} };
+    fetchSpy
+      .mockResolvedValueOnce(new Response('', { status: 202 }))
+      .mockResolvedValueOnce(makeResponse(200, body))
+      .mockResolvedValueOnce(makeResponse(200, body))
+      .mockResolvedValueOnce(new Response('', { status: 404 }));
+
+    const deleted = await client.deleteResource(testContext, descriptor);
+
+    expect(deleted).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
+  });
+
+  /** Client whose delays advance the (fake) clock instead of waiting. */
+  function clockClient(): ApimClient {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+    return new ApimClient(undefined, {
+      credential: fakeCredential,
+      delay: async (ms) => {
+        vi.setSystemTime(Date.now() + ms);
+      },
+    });
+  }
+
+  it('should wait 2 seconds before each GET', async () => {
+    const delays: number[] = [];
+    const recording = new ApimClient(undefined, {
+      credential: fakeCredential,
+      delay: async (ms) => {
+        delays.push(ms);
+      },
+    });
+    fetchSpy.mockResolvedValueOnce(new Response('', { status: 202 }));
+    for (let i = 0; i < 3; i++) {
+      fetchSpy.mockResolvedValueOnce(makeResponse(200, { name: 'delay', properties: {} }));
+    }
+    fetchSpy.mockResolvedValueOnce(new Response('', { status: 404 }));
+
+    await expect(recording.deleteResource(testContext, descriptor)).resolves.toBe(true);
+    expect(delays).toEqual([2000, 2000, 2000, 2000]);
+  });
+
+  it('should time out after 30 checks 2 seconds apart when the resource never disappears', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(new Response('', { status: 202 }))
+      .mockImplementation(async () => makeResponse(200, { name: 'delay', properties: {} }));
+    const clocked = clockClient();
+    const start = Date.now();
+
+    await expect(clocked.deleteResource(testContext, descriptor)).rejects.toThrow(
+      'apis/delay was not deleted within 1m 0.0s: the DELETE was accepted but the resource is still present.'
+    );
+    expect(Date.now() - start).toBeGreaterThanOrEqual(60 * 1000);
+    // The DELETE plus a GET every 2s for 60s, the provisioning-state poll's limit.
+    expect(fetchSpy).toHaveBeenCalledTimes(31);
+  });
+
+  it('should keep polling a resource that reports Canceled until it is gone', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(new Response('', { status: 202 }))
+      .mockResolvedValueOnce(makeResponse(200, { name: 'delay', properties: { provisioningState: 'Canceled' } }))
+      .mockResolvedValueOnce(new Response('', { status: 404 }));
+
+    await expect(client.deleteResource(testContext, descriptor)).resolves.toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+  });
 });
 
 describe('ApimClient.deleteResource revision and reference handling', () => {
@@ -862,14 +1125,9 @@ describe('ApimClient.deleteResource revision and reference handling', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    client = new ApimClient();
+    client = new ApimClient(undefined, { credential: fakeCredential, delay: noDelay });
     fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
-
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
-    vi.spyOn(client as any, 'delay').mockResolvedValue(undefined);
-    /* eslint-enable @typescript-eslint/no-explicit-any */
   });
 
   afterEach(() => {
@@ -1006,15 +1264,10 @@ describe('ApimClient HTTP 429 rate limiting', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    client = new ApimClient();
+    // Suppress delay to keep tests fast
+    client = new ApimClient(undefined, { credential: fakeCredential, delay: noDelay });
     fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
-
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
-    // Suppress delay to keep tests fast
-    vi.spyOn(client as any, 'delay').mockResolvedValue(undefined);
-    /* eslint-enable @typescript-eslint/no-explicit-any */
   });
 
   afterEach(() => {
@@ -1043,41 +1296,6 @@ describe('ApimClient HTTP 429 rate limiting', () => {
 
     expect(results).toHaveLength(1);
     expect(fetchSpy).toHaveBeenCalledTimes(2);
-  });
-
-  it('should retry on HTTP 429 without Retry-After header using exponential backoff', async () => {
-    fetchSpy
-      .mockResolvedValueOnce(
-        new Response('', { status: 429 })
-      )
-      .mockResolvedValueOnce(
-        makeResponse(200, { name: 'nv-1', properties: { value: 'test' } })
-      );
-
-    const descriptor = {
-      type: ResourceType.NamedValue,
-      nameParts: ['nv-1'],
-    };
-
-    const result = await client.getResource(testContext, descriptor);
-
-    expect(result).toEqual({ name: 'nv-1', properties: { value: 'test' } });
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
-  });
-
-  it('should fail after max retries on repeated 429 responses', async () => {
-    fetchSpy.mockResolvedValue(
-      new Response('', { status: 429, headers: { 'Retry-After': '1' } })
-    );
-
-    const descriptor = {
-      type: ResourceType.NamedValue,
-      nameParts: ['nv-1'],
-    };
-
-    await expect(client.getResource(testContext, descriptor)).rejects.toThrow();
-    // MAX_RETRIES is 3, so we expect 4 attempts (initial + 3 retries)
-    expect(fetchSpy).toHaveBeenCalledTimes(4);
   });
 
   it('should retry 429 on PUT operations', async () => {
@@ -1109,14 +1327,9 @@ describe('ApimClient HTTP 409 conflict handling', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    client = new ApimClient();
+    client = new ApimClient(undefined, { credential: fakeCredential, delay: noDelay });
     fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
-
-    /* eslint-disable @typescript-eslint/no-explicit-any */
-    vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
-    vi.spyOn(client as any, 'delay').mockResolvedValue(undefined);
-    /* eslint-enable @typescript-eslint/no-explicit-any */
   });
 
   afterEach(() => {
@@ -1175,15 +1388,10 @@ describe('ApimClient.getApiSpecification', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    client = new ApimClient();
+    // Suppress delays to keep tests fast
+    client = new ApimClient(undefined, { credential: fakeCredential, delay: noDelay });
     fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
-    // Suppress delays to keep tests fast
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    vi.spyOn(client as any, 'delay').mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -1383,6 +1591,47 @@ describe('ApimClient.getApiSpecification', () => {
 
     expect(result).toBeUndefined();
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('should cancel the unread body of a 404 export response', async () => {
+    const cancel = vi.fn();
+    fetchSpy.mockResolvedValueOnce(new Response(new ReadableStream({ cancel }), { status: 404 }));
+
+    await expect(client.getApiSpecification(testContext, 'nonexistent-api')).resolves.toBeUndefined();
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('should warn, skip the spec and release the body when the spec blob returns 404', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const cancel = vi.fn();
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ format: 'openapi-link', link: 'https://blob.storage.example.com/specs/pet-store.yaml?sig=abc' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      )
+      .mockResolvedValueOnce(new Response(new ReadableStream({ cancel }), { status: 404 }));
+
+    await expect(client.getApiSpecification(testContext, 'pet-store')).resolves.toBeUndefined();
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith('Failed to fetch specification blob for pet-store: HTTP 404');
+  });
+
+  it('should skip the spec and release the body when the inline wsdl export returns 404', async () => {
+    const cancel = vi.fn();
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { code: 'InternalServerError' } }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+      .mockResolvedValueOnce(new Response(new ReadableStream({ cancel }), { status: 404 }));
+
+    await expect(client.getApiSpecification(testContext, 'soap-api', 'soap')).resolves.toBeUndefined();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(cancel).toHaveBeenCalledTimes(1);
   });
 
   it('should return undefined (without throwing) when GraphQL export returns 406', async () => {
@@ -1621,12 +1870,9 @@ describe('User-Agent header', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    client = new ApimClient();
+    client = new ApimClient(undefined, { credential: fakeCredential });
     fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
   });
 
   afterEach(() => {
@@ -1674,38 +1920,16 @@ describe('User-Agent header', () => {
   });
 });
 
-describe('describeRequestTarget', () => {
-  it('reduces ARM URLs to the path below the APIM service', () => {
-    expect(
-      describeRequestTarget(`${testContext.baseUrl}/namedValues/nv%201?api-version=2024-05-01`)
-    ).toBe('namedValues/nv 1');
-  });
-
-  it('describes the service itself when no sub-path is present', () => {
-    expect(describeRequestTarget(`${testContext.baseUrl}?api-version=2024-05-01`)).toBe('service');
-  });
-
-  it('keeps host and path for non-ARM URLs and drops the query string', () => {
-    expect(describeRequestTarget('https://blob.example.net/container/spec.json?sig=secret')).toBe(
-      'blob.example.net/container/spec.json'
-    );
-  });
-});
-
 describe('ApimClient retry logging', () => {
   let client: ApimClient;
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    client = new ApimClient();
+    client = new ApimClient(undefined, { credential: fakeCredential, delay: noDelay });
     fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    vi.spyOn(client as any, 'getToken').mockResolvedValue('fake-token');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    vi.spyOn(client as any, 'delay').mockResolvedValue(undefined);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    vi.spyOn(client as any, 'exponentialBackoffWithJitter').mockReturnValue(1175.1730686888397);
+    // Back-off of 1000 ms plus 20% jitter
+    vi.spyOn(Math, 'random').mockReturnValue(2 / 3);
   });
 
   afterEach(() => {
@@ -1758,5 +1982,52 @@ describe('ApimClient retry logging', () => {
     expect(debugSpy).toHaveBeenCalledWith(
       'Server error 503 on GET namedValues/nv-1 (attempt 1/4), retrying in 1.2s'
     );
+  });
+});
+
+describe('ApimClient shared ARM client behaviour', () => {
+  let client: ApimClient;
+  let fetchSpy: ReturnType<typeof vi.fn>;
+  let delaySpy: Mock<(ms: number) => Promise<void>>;
+
+  beforeEach(() => {
+    delaySpy = vi.fn<(ms: number) => Promise<void>>().mockResolvedValue(undefined);
+    client = new ApimClient(undefined, { credential: fakeCredential, delay: delaySpy });
+    fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  const descriptor = { type: ResourceType.NamedValue, nameParts: ['my-nv'] };
+  const operationUrl = 'https://management.azure.com/operations/op-1';
+
+  it('should treat a 404 from a DELETE async operation as completion', async () => {
+    fetchSpy
+      .mockResolvedValueOnce(new Response('', { status: 202, headers: { 'Azure-AsyncOperation': operationUrl } }))
+      .mockResolvedValueOnce(makeResponse(404, { error: { code: 'NotFound' } }));
+
+    await expect(client.deleteResource(testContext, descriptor)).resolves.toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('should refuse to follow a nextLink to a non-ARM host', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      makeResponse(200, { value: [{ name: 'gw-1' }], nextLink: 'https://attacker.example.com/gateways?page=2' })
+    );
+
+    const results: unknown[] = [];
+    await expect(async () => {
+      for await (const item of client.listResources(testContext, ResourceType.Gateway)) {
+        results.push(item);
+      }
+    }).rejects.toThrow(/Refusing to follow nextLink/);
+    expect(results).toHaveLength(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

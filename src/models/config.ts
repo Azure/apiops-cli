@@ -7,6 +7,7 @@
 
 import { ApimServiceContext } from './types.js';
 import { LogLevel } from '../lib/logger.js';
+import type { CloudConfig } from '../lib/cloud-config.js';
 import type { EnvMapping } from '../services/env-mapper.js';
 
 export interface ExtractConfig {
@@ -88,6 +89,12 @@ export interface KnownArtifactSets {
 
 export interface PublishConfig {
   service: ApimServiceContext;
+  /**
+   * ARM endpoint and token scope of the target cloud, as resolved from
+   * `--cloud`. Used for ARM calls made outside the APIM client (the Key
+   * Vault pre-flight check).
+   */
+  cloud: CloudConfig;
   sourceDir: string;
   filter?: FilterConfig;
   includeTransitive?: boolean;

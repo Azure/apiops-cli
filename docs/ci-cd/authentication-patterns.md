@@ -305,7 +305,31 @@ apiops-cli needs these Azure RBAC roles on the APIM service instance:
 | Role | Scope | Purpose |
 |------|-------|---------|
 | **API Management Service Contributor** | APIM service resource | Read and write APIM resources (APIs, products, policies, etc.) |
-| **Reader** | Resource group | List resources in the resource group |
+
+**Reader** on the resource group is not required. Before publishing, `apiops publish` checks that the resource group exists so it can report a missing resource group clearly. If the identity cannot read the resource group (HTTP 403), the CLI skips that check and checks the APIM service directly.
+
+### Key Vault pre-flight check
+
+When a named value references a Key Vault secret (`keyVault.secretIdentifier`), `apiops publish` first checks that the APIM managed identity can read that secret. It uses the CLI's identity to make these ARM reads:
+
+| Read | Why | Permission | Covered by |
+|------|-----|------------|------------|
+| The APIM service | Find its managed identity | `Microsoft.ApiManagement/service/read` | API Management Service Contributor on the APIM service |
+| Resources in the APIM service's subscription, filtered to Key Vaults with the vault's name | Find the vault | Read on the vault; the [Resources - List](https://learn.microsoft.com/rest/api/resources/resources/list) API documents no specific permission, or what it returns when access is narrower than the subscription | Reader on the subscription |
+| The Key Vault | See whether it uses RBAC or access policies | `Microsoft.KeyVault/vaults/read` | Reader on the vault |
+| RBAC vaults: role assignments for the APIM identity on the vault | Find its roles | `Microsoft.Authorization/roleAssignments/read` on the vault | Reader on the vault |
+| RBAC vaults with custom roles: the role definitions | Check their data actions | `Microsoft.Authorization/roleDefinitions/read` on the role definition's scope, usually the subscription | Reader on the subscription |
+
+Reader on the subscription that contains the APIM service and the vault covers all of these reads. With narrower access, a failed read (for example HTTP 403) of the APIM service, the vault search, the vault or its role assignments, or a vault that isn't found, makes the CLI log a warning and skip the check; the named value is still published. The reads go to the ARM endpoint of the cloud selected with `--cloud`.
+
+The check fails the named value when:
+
+- the secret identifier is not a valid Key Vault secret URI;
+- the APIM service has no managed identity (or not the user-assigned identity named by `keyVault.identityClientId`);
+- on an RBAC vault, no role assignment it can see grants the identity secret read access: the identity has no role assignments on the vault, or none of its roles includes the `Microsoft.KeyVault/vaults/secrets/getSecret/action` data action (or a wildcard that covers it). A custom role definition that can't be read is skipped, so when no other role grants the data action, the check fails;
+- on a vault that uses access policies, no access policy it can see grants the identity `get` (or `all`) on secrets, including when the identity has no access policy.
+
+Known limitation: the check sees only role assignments and access policies made to the APIM identity itself, not those made to a group it belongs to (an access policy can name a group, see [Assign a Key Vault access policy](https://learn.microsoft.com/azure/key-vault/general/assign-access-policy)). An identity whose access comes only through a group fails the check.
 
 ### Assign RBAC
 
@@ -315,11 +339,6 @@ az role assignment create \
   --assignee {principal-id} \
   --role "API Management Service Contributor" \
   --scope "/subscriptions/{sub-id}/resourceGroups/{rg}/providers/Microsoft.ApiManagement/service/{apim-name}"
-
-az role assignment create \
-  --assignee {principal-id} \
-  --role "Reader" \
-  --scope "/subscriptions/{sub-id}/resourceGroups/{rg}"
 ```
 
 > **Principle of least privilege:** Scope the Contributor role to the specific APIM instance, not the entire resource group or subscription.

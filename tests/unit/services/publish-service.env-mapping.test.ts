@@ -11,6 +11,7 @@ import type { ResourceDescriptor } from '../../../src/models/types.js';
 import type { OverrideConfig, PublishConfig } from '../../../src/models/config.js';
 import { LogLevel, logger } from '../../../src/lib/logger.js';
 import type { ApimServiceContext } from '../../../src/models/types.js';
+import { getCloudConfig } from '../../../src/lib/cloud-config.js';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,7 @@ const testContext: ApimServiceContext = {
 
 function makeConfig(overrides?: OverrideConfig): PublishConfig {
   return {
+    cloud: getCloudConfig('public'),
     service: testContext,
     sourceDir: '/source',
     dryRun: false,

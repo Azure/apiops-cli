@@ -17,10 +17,11 @@ import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
 import { KeyVaultAccessError } from '../../../src/services/keyvault-checker.js';
-import { LogLevel } from '../../../src/lib/logger.js';
+import { LogLevel, logger } from '../../../src/lib/logger.js';
 import { REDACTION_MARKER } from '../../../src/services/secret-redactor.js';
 import { buildEnvMapping } from '../../../src/services/env-mapper.js';
 import { HttpError } from '../../../src/clients/apim-client.js';
+import { getCloudConfig } from '../../../src/lib/cloud-config.js';
 
 // Mock keyvault-checker so resource-publisher tests don't need an Azure environment
 const mockCheckKeyVaultSecretAccess = vi.fn().mockResolvedValue(undefined);
@@ -70,6 +71,7 @@ const testContext: ApimServiceContext = {
 
 const testConfig: PublishConfig = {
   service: testContext,
+  cloud: getCloudConfig('public'),
   sourceDir: '/source',
   dryRun: false,
   deleteUnmatched: false,
@@ -996,8 +998,92 @@ describe('resource-publisher', () => {
       expect(mockCheckKeyVaultSecretAccess).toHaveBeenCalledWith(
         'https://myvault.vault.azure.net/secrets/my-secret',
         'my-mi-client-id',
-        { subscriptionId: 'sub-1', resourceGroup: 'rg-1', serviceName: 'apim-1' }
+        {
+          subscriptionId: 'sub-1',
+          resourceGroup: 'rg-1',
+          serviceName: 'apim-1',
+          armBaseUrl: 'https://management.azure.com',
+          authScope: 'https://management.azure.com/.default',
+        }
       );
+    });
+
+    it('should pass the sovereign-cloud ARM endpoint and scope from the publish config', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({
+        name: 'kv-nv',
+        properties: {
+          secret: true,
+          keyVault: {
+            secretIdentifier: 'https://myvault.vault.usgovcloudapi.net/secrets/my-secret',
+          },
+        },
+      });
+      const usGovContext: ApimServiceContext = {
+        ...testContext,
+        baseUrl: 'https://management.usgovcloudapi.net/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1',
+      };
+
+      const descriptor: ResourceDescriptor = {
+        type: ResourceType.NamedValue,
+        nameParts: ['kv-nv'],
+      };
+
+      await publishResource(client, store, usGovContext, descriptor, {
+        ...testConfig,
+        service: usGovContext,
+        cloud: getCloudConfig('usgov'),
+      });
+
+      expect(mockCheckKeyVaultSecretAccess).toHaveBeenCalledWith(
+        'https://myvault.vault.usgovcloudapi.net/secrets/my-secret',
+        undefined,
+        expect.objectContaining({
+          armBaseUrl: 'https://management.usgovcloudapi.net',
+          authScope: 'https://management.usgovcloudapi.net/.default',
+        })
+      );
+    });
+
+    it.each([
+      ['a host that is no known cloud\'s', 'https://arm.example.test'],
+      ['another cloud\'s ARM endpoint', 'https://management.azure.com'],
+    ])('should use the cloud from the publish config when baseUrl is on %s', async (_label, host) => {
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+      const client = createMockClient();
+      const store = createMockStore();
+      store.readResource.mockResolvedValue({
+        name: 'kv-nv',
+        properties: {
+          secret: true,
+          keyVault: { secretIdentifier: 'https://myvault.vault.usgovcloudapi.net/secrets/my-secret' },
+        },
+      });
+      const context: ApimServiceContext = {
+        ...testContext,
+        baseUrl: `${host}/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1`,
+      };
+      const usGov = {
+        armBaseUrl: 'https://management.usgovcloudapi.net',
+        authScope: 'https://management.usgovcloudapi.net/.default',
+      };
+      const descriptor: ResourceDescriptor = { type: ResourceType.NamedValue, nameParts: ['kv-nv'] };
+
+      await publishResource(client, store, context, descriptor, { ...testConfig, service: context, cloud: usGov });
+
+      expect(mockCheckKeyVaultSecretAccess).toHaveBeenCalledWith(
+        'https://myvault.vault.usgovcloudapi.net/secrets/my-secret',
+        undefined,
+        {
+          subscriptionId: 'sub-1',
+          resourceGroup: 'rg-1',
+          serviceName: 'apim-1',
+          ...usGov,
+        }
+      );
+      expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockRestore();
     });
 
     it('should pass undefined identityClientId for system-assigned identity', async () => {
@@ -1024,7 +1110,13 @@ describe('resource-publisher', () => {
       expect(mockCheckKeyVaultSecretAccess).toHaveBeenCalledWith(
         'https://myvault.vault.azure.net/secrets/my-secret',
         undefined,
-        { subscriptionId: 'sub-1', resourceGroup: 'rg-1', serviceName: 'apim-1' }
+        {
+          subscriptionId: 'sub-1',
+          resourceGroup: 'rg-1',
+          serviceName: 'apim-1',
+          armBaseUrl: 'https://management.azure.com',
+          authScope: 'https://management.azure.com/.default',
+        }
       );
     });
 

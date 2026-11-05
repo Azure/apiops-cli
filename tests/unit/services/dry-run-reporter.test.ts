@@ -11,6 +11,7 @@ import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
 import { LogLevel, logger } from '../../../src/lib/logger.js';
+import { getCloudConfig } from '../../../src/lib/cloud-config.js';
 
 type MockApimClient = IApimClient & {
   getResource: ReturnType<typeof vi.fn>;
@@ -63,6 +64,7 @@ const testContext: ApimServiceContext = {
 };
 
 const testConfig: PublishConfig = {
+  cloud: getCloudConfig('public'),
   service: testContext,
   sourceDir: '/source',
   dryRun: true,

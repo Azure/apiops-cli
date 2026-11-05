@@ -78,6 +78,28 @@ export function getCloudConfig(cloudName: string): CloudConfig {
 }
 
 /**
+ * Host names of the ARM endpoints of all known clouds
+ * (e.g. `management.azure.com`). Used to check that a URL returned by ARM
+ * (async-operation, `nextLink`) points at ARM before a bearer token is sent to it.
+ */
+export function getArmHosts(): string[] {
+  return Object.values(CLOUD_CONFIGS).map((config) => new URL(config.armBaseUrl).hostname);
+}
+
+/**
+ * Host name of the ARM endpoint of the cloud whose auth scope is `authScope`
+ * (matched case-insensitively), e.g. `['management.usgovcloudapi.net']`.
+ * Falls back to {@link getArmHosts} (every known cloud) when the scope does
+ * not belong to a known cloud.
+ */
+export function getArmHostsForAuthScope(authScope: string): string[] {
+  const config = Object.values(CLOUD_CONFIGS).find(
+    (candidate) => candidate.authScope.toLowerCase() === authScope.toLowerCase(),
+  );
+  return config ? [new URL(config.armBaseUrl).hostname] : getArmHosts();
+}
+
+/**
  * Build the APIM ARM base URL for a given cloud, subscription, resource group,
  * and service name. Replaces the hardcoded buildBaseUrl functions in command files.
  */

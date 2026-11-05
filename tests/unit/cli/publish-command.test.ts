@@ -5,12 +5,24 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
+import { Command } from 'commander';
 import {
   createPublishCommand,
   hasMutuallyExclusivePublishOptions,
   outputText,
 } from '../../../src/cli/publish-command.js';
 import { PublishResult } from '../../../src/services/publish-service.js';
+import type { PublishConfig } from '../../../src/models/config.js';
+
+const runPublishMock = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../src/services/publish-service.js', () => ({
+  runPublish: runPublishMock,
+}));
+
+vi.mock('../../../src/clients/apim-client.js', () => ({
+  ApimClient: class {},
+}));
 
 describe('publish-command', () => {
   describe('createPublishCommand', () => {
@@ -98,6 +110,34 @@ describe('publish-command', () => {
       // Subscription ID is a global option, not on this command
       // Just verify the command exists
       expect(cmd).toBeDefined();
+    });
+  });
+
+  describe('cloud resolution', () => {
+    it('should pass the --cloud ARM endpoint and auth scope to the publish config', async () => {
+      // Stop after the config is built, before output and process.exit.
+      runPublishMock.mockRejectedValueOnce(new Error('stop after runPublish'));
+      const program = new Command()
+        .option('--subscription-id <id>')
+        .option('--cloud <name>', 'cloud', 'public')
+        .addCommand(createPublishCommand());
+
+      await expect(
+        program.parseAsync(
+          [
+            '--subscription-id', 'sub-1', '--cloud', 'usgov',
+            'publish', '--resource-group', 'rg-1', '--service-name', 'apim-1',
+          ],
+          { from: 'user' }
+        )
+      ).rejects.toThrow('stop after runPublish');
+
+      const config = runPublishMock.mock.calls[0]?.[2] as PublishConfig;
+      expect(config.cloud).toEqual({
+        armBaseUrl: 'https://management.usgovcloudapi.net',
+        authScope: 'https://management.usgovcloudapi.net/.default',
+      });
+      expect(config.service.baseUrl).toMatch(/^https:\/\/management\.usgovcloudapi\.net\//);
     });
   });
 

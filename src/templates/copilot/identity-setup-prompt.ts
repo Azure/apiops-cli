@@ -85,7 +85,7 @@ gh api --method PUT "repos/\${GITHUB_ORG}/\${GITHUB_REPO}/environments/${env}"`
 
   const envReaderRoleSnippets = config.environments.map((env) =>
     `\`\`\`bash
-# Reader role for ${env} resource group
+# Optional: Reader role for ${env} resource group (a clearer message when it is missing)
 az role assignment create \\
   --assignee "$APP_ID" \\
   --role "Reader" \\

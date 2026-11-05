@@ -9,6 +9,7 @@
 
 import { Command, Option } from 'commander';
 import { logger, parseLogLevel } from '../lib/logger.js';
+import { applyProxyFromEnv } from '../lib/proxy.js';
 import { createExtractCommand } from './extract-command.js';
 import { createPublishCommand } from './publish-command.js';
 import { createInitCommand } from './init-command.js';
@@ -51,6 +52,9 @@ program.hook('preAction', (thisCommand) => {
   }>();
 
   logger.configure({ level: parseLogLevel(opts.logLevel ?? 'info') });
+
+  // Send ARM requests through HTTPS_PROXY / HTTP_PROXY when set.
+  applyProxyFromEnv();
 
   // Set DefaultAzureCredential env vars from explicit auth flags.
   // This ensures the ServicePrincipal credential is tried first,

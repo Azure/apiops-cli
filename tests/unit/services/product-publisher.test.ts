@@ -14,6 +14,7 @@ import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/type
 import { PublishConfig } from '../../../src/models/config.js';
 import { LogLevel } from '../../../src/lib/logger.js';
 import { DEFAULT_APPLIES_TO } from '../../../src/services/env-mapper.js';
+import { getCloudConfig } from '../../../src/lib/cloud-config.js';
 
 // Mock resource-publisher so product-publisher tests don't run full resource-publisher logic
 const mockPublishResource = vi.fn();
@@ -57,6 +58,7 @@ const testContext: ApimServiceContext = {
 };
 
 const testConfig: PublishConfig = {
+  cloud: getCloudConfig('public'),
   service: testContext,
   sourceDir: '/source',
   dryRun: false,
