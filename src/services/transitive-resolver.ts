@@ -461,6 +461,64 @@ export async function scanArtifactReferences(
  */
 export type PrepareJson = (descriptor: ResourceDescriptor, json: Record<string, unknown>) => Record<string, unknown>;
 
+/** Artifact files read at once while scanning references. */
+export const REFERENCE_SCAN_CONCURRENCY = 5;
+
+/**
+ * A policy's XML as `prepareJson` leaves it: the payload publish sends is
+ * `{ properties: { value, format: 'rawxml' } }`, which overrides can change.
+ */
+function preparePolicyContent(descriptor: ResourceDescriptor, content: string, prepareJson?: PrepareJson): unknown {
+  if (!prepareJson) {
+    return content;
+  }
+  const payload = prepareJson(descriptor, { properties: { value: content, format: 'rawxml' } });
+  return (payload.properties as Record<string, unknown> | undefined)?.value;
+}
+
+/**
+ * The `{{references}}` to named values that APIM checks when an artifact is
+ * saved: in a policy's or policy fragment's XML (outside Liquid bodies and XML
+ * comments), and in a logger's or backend's credentials, as prepareJson leaves
+ * them. Other artifacts hold none.
+ */
+export async function scanArtifactNamedValueReferences(
+  store: Pick<IArtifactStore, 'readContent' | 'readResource'>,
+  sourceDir: string,
+  descriptor: ResourceDescriptor,
+  prepareJson?: PrepareJson
+): Promise<ResourceDescriptor[]> {
+  const names: string[] = [];
+  const policyNames = (text: unknown) =>
+    typeof text === 'string'
+      ? scanPolicyReferences(text).filter((dep) => dep.type === ResourceType.NamedValue).map((dep) => dep.name)
+      : [];
+  if (POLICY_RESOURCE_TYPES.has(descriptor.type)) {
+    const content = await store.readContent(sourceDir, descriptor, 'policy');
+    names.push(...policyNames(content ? preparePolicyContent(descriptor, content.content, prepareJson) : undefined));
+  } else if (
+    descriptor.type === ResourceType.PolicyFragment ||
+    descriptor.type === ResourceType.Logger ||
+    descriptor.type === ResourceType.Backend
+  ) {
+    const stored = await store.readResource(sourceDir, descriptor);
+    const json = stored && prepareJson ? prepareJson(descriptor, stored) : stored;
+    const properties = json?.properties as Record<string, unknown> | undefined;
+    if (descriptor.type === ResourceType.PolicyFragment) {
+      names.push(...policyNames(properties?.value), ...policyNames(properties?.policyContent));
+    } else if (properties?.credentials !== undefined) {
+      for (const match of JSON.stringify(properties.credentials).matchAll(NAMED_VALUE_PATTERN)) {
+        if (match[1]) {
+          names.push(match[1].trim());
+        }
+      }
+    }
+  }
+  return deduplicateDescriptors(
+    names.map((name) => ({ type: ResourceType.NamedValue, nameParts: [name], workspace: descriptor.workspace }))
+  );
+}
+
 /**
  * Resolve the references scanArtifactReferences returns to the artifacts
  * they name. Policies reference named values as {{displayName}}, which can

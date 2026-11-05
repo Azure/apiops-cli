@@ -1214,6 +1214,86 @@ describe('publish-service', () => {
       expect(client.putResource).not.toHaveBeenCalled();
     });
 
+    describe('with a {{reference}} to a named value', () => {
+      // The named value backend-id has the display name Backend_Id; an
+      // auto-generated logger key has Logger-Credentials--<id>.
+      const hex = 'abc123def456abc123def456';
+      const publishWith = async (fragment: string, extra: Partial<PublishConfig> = {}, loggerKey?: string) => {
+        const resources: ResourceDescriptor[] = [
+          { type: ResourceType.NamedValue, nameParts: ['backend-id'] },
+          { type: ResourceType.NamedValue, nameParts: [hex] },
+          { type: ResourceType.PolicyFragment, nameParts: ['frag'] },
+          ...(loggerKey ? [{ type: ResourceType.Logger, nameParts: ['my-logger'] }] : []),
+        ];
+        const client = createMockClient();
+        const store = createMockStore(resources);
+        vi.mocked(store.readResource).mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) => {
+          if (descriptor.type === ResourceType.NamedValue) {
+            return descriptor.nameParts[0] === hex
+              ? { properties: { displayName: `Logger-Credentials--${hex}`, secret: true } }
+              : { properties: { displayName: 'Backend_Id', value: 'x' } };
+          }
+          if (descriptor.type === ResourceType.Logger) {
+            return { properties: { loggerType: 'applicationInsights', credentials: { instrumentationKey: loggerKey } } };
+          }
+          return { properties: { format: 'rawxml', value: fragment } };
+        });
+        const result = await runPublish(client, store, {
+          service: testContext,
+          sourceDir: '/source',
+          dryRun: false,
+          deleteUnmatched: false,
+          logLevel: LogLevel.INFO,
+          overrides: { namedValues: { [hex]: { properties: { value: 'key' } } } },
+          ...extra,
+        });
+        return { result, client };
+      };
+
+      it("should abort before any PUT when a policy references a named value's resource name", async () => {
+        const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const { result, client } = await publishWith('<fragment><set-header name="k"><value>{{backend-id}}</value></set-header></fragment>');
+
+        expect(result.exitCode).toBe(2);
+        expect(client.putResource).not.toHaveBeenCalled();
+        expect(result.actions.map((action) => action.error?.message)).toEqual([
+          'policyFragments/frag references {{backend-id}}, the resource name of named value \'backend-id\'; use its display name, {{Backend_Id}}',
+        ]);
+        error.mockRestore();
+      });
+
+      it("should abort when logger credentials reference an auto-generated named value's resource name", async () => {
+        const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const { result, client } = await publishWith('<fragment />', {}, `{{${hex}}}`);
+
+        expect(result.exitCode).toBe(2);
+        expect(client.putResource).not.toHaveBeenCalled();
+        expect(result.actions[0]?.error?.message).toContain(`use its display name, {{Logger-Credentials--${hex}}}`);
+        error.mockRestore();
+      });
+
+      it('should fail dry-run too', async () => {
+        const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const { result } = await publishWith('<fragment>{{backend-id}}</fragment>', { dryRun: true });
+
+        expect(result.exitCode).toBe(2);
+        expect(generateDryRunReport).not.toHaveBeenCalled();
+        error.mockRestore();
+      });
+
+      it.each([
+        ['a display name, in any case', '<fragment>{{BACKEND_ID}}</fragment>'],
+        ['a resource name in a Liquid body, which APIM leaves to Liquid', '<fragment><set-body template="liquid">{{backend-id}}</set-body></fragment>'],
+        ['a resource name in an XML comment', '<fragment><!-- {{backend-id}} --></fragment>'],
+        ['no named value in the source', '<fragment>{{on-target-only}}</fragment>'],
+      ])('should publish a reference to %s', async (_kind, fragment) => {
+        const { result, client } = await publishWith(fragment, {}, `{{Logger-Credentials--${hex}}}`);
+
+        expect(result.exitCode).toBe(0);
+        expect(client.putResource).toHaveBeenCalled();
+      });
+    });
+
     it('should use computeGitDiff when commitId is set (incremental mode)', async () => {
       const client = createMockClient();
       const store = createMockStore([]);
