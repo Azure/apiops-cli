@@ -51,6 +51,7 @@ import {
 } from './delete-unmatched-service.js';
 import { computeGitDiff } from './git-diff-service.js';
 import { scanForRedactionMarkers } from './secret-redaction-guard.js';
+import { armNameAfter } from '../lib/arm-id.js';
 import { applyOverrides, hasNamedValueOverride } from './override-merger.js';
 import { REDACTION_MARKER } from './secret-redactor.js';
 import {
@@ -600,8 +601,8 @@ async function executePuts(
       //   named value). Publishing named values first ensures they exist
       //   before any resource that references them.
       //
-      // Wave 2 — The remaining Tier 1 resources except pool backends (and
-      //   except policy fragments when wave 4 has named values).
+      // Wave 2 — The remaining Tier 1 resources except pool backends and
+      //   wave 5 (and except policy fragments when wave 4 has named values).
       //
       // Wave 3 — Pool backends.
       //   Pool backends reference individual Backend resources and must be
@@ -614,9 +615,12 @@ async function executePuts(
       //   value when it changes, so that resource must exist first (see
       //   splitNamedValuesNamingResources).
       //
-      // Wave 5 — Policy fragments, when wave 4 has named values: a fragment
+      // Wave 5 — Backends and loggers whose credentials use a wave 4 named
+      //   value, when they don't have to go before one.
+      //
+      // Wave 6 — Policy fragments, when wave 4 has named values: a fragment
       //   can use them, and APIM rejects a policy that uses a missing one.
-      const { early: earlyNamedValues, late: lateNamedValues } = await splitNamedValuesNamingResources(
+      const { early: earlyNamedValues, late: lateNamedValues, after: afterLateNamedValues } = await splitNamedValuesNamingResources(
         store,
         config,
         namedValues,
@@ -631,7 +635,7 @@ async function executePuts(
       const { poolBackends, regularTier1 } = await splitPoolBackends(
         store,
         config.sourceDir,
-        otherTier1
+        otherTier1.filter((descriptor) => !afterLateNamedValues.includes(descriptor))
       );
       const fragments = lateNamedValues.length > 0
         ? regularTier1.filter((descriptor) => descriptor.type === ResourceType.PolicyFragment)
@@ -664,6 +668,9 @@ async function executePuts(
           `Publishing ${lateNamedValues.length} named value(s) after the resources their values name`
         );
         await publishAndOutput(client, store, context, config, lateNamedValues, targetDescriptors, results);
+      }
+      if (afterLateNamedValues.length > 0) {
+        await publishAndOutput(client, store, context, config, afterLateNamedValues, targetDescriptors, results);
       }
       if (fragments.length > 0) {
         await publishAndOutput(client, store, context, config, fragments, targetDescriptors, results);
@@ -887,11 +894,13 @@ function splitNamedValues(
  * value (with overrides) names a resource of that type published in this
  * tier. APIM checks the policies that use a named value when the named value
  * changes, rejecting the change ("its value breaks policies") while the
- * resource it now names doesn't exist. One that a backend or logger published
- * here uses in its credentials stays first, since that resource needs it. The
- * policies are read (once) only when a named value's value matches the name of
- * such a resource here; a named value that can't be read goes first, and
- * publishing it reports the error.
+ * resource it now names doesn't exist. A backend or logger published here
+ * that uses one of those in its credentials is published after it (`after`);
+ * when that resource has to go before a later named value too (it is what one
+ * names, or a member of a pool here), the named value stays first instead.
+ * The policies are read (once) only when a named value's value matches the
+ * name of such a resource here; a named value that can't be read goes first,
+ * and publishing it reports the error.
  */
 async function splitNamedValuesNamingResources(
   store: IArtifactStore,
@@ -899,7 +908,7 @@ async function splitNamedValuesNamingResources(
   namedValues: ResourceDescriptor[],
   otherTier1: ResourceDescriptor[],
   namedValueTargets: NamedValueTargetIndex
-): Promise<{ early: ResourceDescriptor[]; late: ResourceDescriptor[] }> {
+): Promise<{ early: ResourceDescriptor[]; late: ResourceDescriptor[]; after: ResourceDescriptor[] }> {
   const resourceKey = (type: ResourceType, name: string, workspace: string | undefined) =>
     `${type}/${workspace ?? ''}/${name.toLowerCase()}`;
   const named = new Set(
@@ -910,8 +919,10 @@ async function splitNamedValuesNamingResources(
   const early: ResourceDescriptor[] = [];
   const late: ResourceDescriptor[] = [];
   if (named.size === 0) {
-    return { early: namedValues, late };
+    return { early: namedValues, late, after: [] };
   }
+  // The resources the late named values name, which go before them.
+  const lateTargets = new Set<string>();
   // The named values policies use as resource names, and as which types.
   // Every policy in the source counts, not only the ones the filter selects:
   // APIM checks every policy on the target that uses the named value, and
@@ -924,8 +935,11 @@ async function splitNamedValuesNamingResources(
       const json = await store.readResource(config.sourceDir, descriptor);
       const name = json ? namedValueTargetName(applyOverrides(descriptor, json, config.overrides)) : undefined;
       if (name && [...NAMED_THROUGH_NAMED_VALUE_TYPES].some((type) => named.has(resourceKey(type, name, descriptor.workspace)))) {
-        const types = await typesFor(descriptor);
-        isLate = [...(types ?? [])].some((type) => named.has(resourceKey(type, name, descriptor.workspace)));
+        const targets = [...(await typesFor(descriptor) ?? [])]
+          .map((type) => resourceKey(type, name, descriptor.workspace))
+          .filter((target) => named.has(target));
+        targets.forEach((target) => lateTargets.add(target));
+        isLate = targets.length > 0;
       }
     } catch {
       isLate = false;
@@ -933,15 +947,18 @@ async function splitNamedValuesNamingResources(
     (isLate ? late : early).push(descriptor);
   }
   if (late.length === 0) {
-    return { early, late };
+    return { early, late, after: [] };
   }
 
   // A backend or logger published here whose own configuration (its
-  // credentials) uses one of those named values needs it first, so that one
-  // stays early.
+  // credentials) uses one of those named values needs it first: it is
+  // published after the late named values, unless it has to go before them,
+  // in which case the named value it uses stays early.
   const available = await store.listResources(config.sourceDir);
   const resolve = createArtifactReferenceResolver(available, (descriptor) => store.readResource(config.sourceDir, descriptor));
-  const neededFirst = new Set<string>();
+  const lateKeys = new Set(late.map(getResourceDescriptorKey));
+  const users: Array<{ descriptor: ResourceDescriptor; uses: string[] }> = [];
+  const poolMembers = new Set<string>();
   for (const descriptor of otherTier1) {
     if (descriptor.type !== ResourceType.Backend && descriptor.type !== ResourceType.Logger) {
       continue;
@@ -956,16 +973,36 @@ async function splitNamedValuesNamingResources(
       continue;
     }
     const resource = { descriptor, json: applyOverrides(descriptor, json, config.overrides) };
+    const uses: string[] = [];
     for (const dependency of findTransitiveDependencies(new Map(), new Map(), descriptor.workspace, [resource])) {
       const target = dependency.type === ResourceType.NamedValue ? await resolve(dependency) : undefined;
-      if (target) {
-        neededFirst.add(getResourceDescriptorKey(target));
+      if (target && lateKeys.has(getResourceDescriptorKey(target))) {
+        uses.push(getResourceDescriptorKey(target));
+      }
+    }
+    if (uses.length > 0) {
+      users.push({ descriptor, uses });
+    }
+    const pool = (resource.json.properties as Record<string, unknown> | undefined)?.pool as Record<string, unknown> | undefined;
+    for (const service of Array.isArray(pool?.services) ? pool.services : []) {
+      const id = (service as Record<string, unknown> | undefined)?.id;
+      const member = typeof id === 'string' ? armNameAfter(id, 'backends') : undefined;
+      if (member) {
+        poolMembers.add(resourceKey(ResourceType.Backend, member, descriptor.workspace));
       }
     }
   }
+  const mustGoFirst = users.filter(({ descriptor }) => {
+    const key = resourceKey(descriptor.type, getNamePart(descriptor.nameParts, 0), descriptor.workspace);
+    return lateTargets.has(key) || poolMembers.has(key);
+  });
+  const neededFirst = new Set(mustGoFirst.flatMap(({ uses }) => uses));
   return {
     early: [...early, ...late.filter((descriptor) => neededFirst.has(getResourceDescriptorKey(descriptor)))],
     late: late.filter((descriptor) => !neededFirst.has(getResourceDescriptorKey(descriptor))),
+    after: users
+      .filter((user) => !mustGoFirst.includes(user) && user.uses.some((use) => !neededFirst.has(use)))
+      .map(({ descriptor }) => descriptor),
   };
 }
 
