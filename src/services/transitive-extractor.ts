@@ -73,12 +73,18 @@ interface TransitiveTaskResult {
  * compared everywhere else) → resource name.
  * Stored as promises so concurrent tasks share a single LIST call.
  */
-type NamedValueNameIndex = Map<string, Promise<Map<string, string>>>;
+type NamedValueNameIndex = Map<string, Promise<NamedValueNames>>;
+
+interface NamedValueNames {
+  names: Map<string, string>;
+  /** False when the named values couldn't be listed, so `names` is incomplete. */
+  listed: boolean;
+}
 
 async function loadNamedValueNames(
   client: IApimClient,
   context: ApimServiceContext
-): Promise<Map<string, string>> {
+): Promise<NamedValueNames> {
   const byDisplayName = new Map<string, string>();
   const resourceNames: string[] = [];
   try {
@@ -104,8 +110,9 @@ async function loadNamedValueNames(
       `Failed to list named values for display name resolution; ` +
       `falling back to resolving {{references}} as resource names: ${message}`
     );
+    return { names: byDisplayName, listed: false };
   }
-  return byDisplayName;
+  return { names: byDisplayName, listed: true };
 }
 
 /** The named value name index for a context, listed once and shared. */
@@ -113,7 +120,7 @@ function namedValueNames(
   client: IApimClient,
   context: ApimServiceContext,
   index: NamedValueNameIndex
-): Promise<Map<string, string>> {
+): Promise<NamedValueNames> {
   let names = index.get(context.baseUrl);
   if (!names) {
     names = loadNamedValueNames(client, context);
@@ -134,7 +141,7 @@ async function resolveNamedValueDescriptor(
   index: NamedValueNameIndex
 ): Promise<ResourceDescriptor> {
   const ref = dep.nameParts[0] ?? '';
-  const name = (await namedValueNames(client, context, index)).get(ref.toLowerCase());
+  const name = (await namedValueNames(client, context, index)).names.get(ref.toLowerCase());
   if (!name || name === ref) {
     return dep;
   }
@@ -157,7 +164,8 @@ function fragmentLiquidCandidates({ descriptor, json }: TransitiveResourceArtifa
 /**
  * The named values Liquid bodies reference: each `{{name}}` candidate that a
  * named value in this scope has as its display or resource name. The others
- * are Liquid, skipped without a warning.
+ * are Liquid, skipped without a warning. `listed` is false when the named
+ * values couldn't be listed, so a candidate that is one may be missed.
  */
 async function liquidNamedValueDependencies(
   client: IApimClient,
@@ -165,14 +173,17 @@ async function liquidNamedValueDependencies(
   candidates: ReadonlySet<string>,
   workspace: string | undefined,
   index: NamedValueNameIndex
-): Promise<ResourceDescriptor[]> {
+): Promise<{ dependencies: ResourceDescriptor[]; listed: boolean }> {
   if (candidates.size === 0) {
-    return [];
+    return { dependencies: [], listed: true };
   }
-  const names = await namedValueNames(client, context, index);
-  return [...candidates]
-    .filter((candidate) => names.has(candidate.toLowerCase()))
-    .map((candidate) => ({ type: ResourceType.NamedValue, nameParts: [candidate], workspace }));
+  const { names, listed } = await namedValueNames(client, context, index);
+  return {
+    dependencies: [...candidates]
+      .filter((candidate) => names.has(candidate.toLowerCase()))
+      .map((candidate) => ({ type: ResourceType.NamedValue, nameParts: [candidate], workspace })),
+    listed,
+  };
 }
 
 export interface TransitiveExtractionOptions {
@@ -219,6 +230,7 @@ export async function extractTransitiveDependencies(
     serviceContext && dep.workspace !== workspace ? serviceContext : context;
   let errorCount = 0;
   let foundDependencies = false;
+  let reportedUnlisted = false;
 
   // The {{name}}s in Liquid bodies: the policies' found once, and each
   // fragment's as it is extracted.
@@ -229,10 +241,18 @@ export async function extractTransitiveDependencies(
     for (; resourcesScanned < resources.length; resourcesScanned++) {
       fragmentLiquidCandidates(resources[resourcesScanned]).forEach((name) => liquidCandidates.add(name));
     }
+    const liquid = await liquidNamedValueDependencies(client, context, liquidCandidates, workspace, namedValueIndex);
+    if (!liquid.listed && !reportedUnlisted) {
+      // A named value used only in a Liquid body may be missing from the
+      // output, so the extract is incomplete (and --remove-stale won't run).
+      reportedUnlisted = true;
+      errorCount++;
+      logger.warn('Unable to tell which {{...}} in Liquid bodies are named values, since the named values could not be listed');
+    }
     const found = [
       ...findTransitiveDependencies(policies, apis, workspace, resources),
       ...linkedDependencies,
-      ...await liquidNamedValueDependencies(client, context, liquidCandidates, workspace, namedValueIndex),
+      ...liquid.dependencies,
     ].filter((dep) => !attempted.has(getResourceDescriptorKey(dep)));
     const newDeps: ResourceDescriptor[] = [];
     for (const dep of found) {

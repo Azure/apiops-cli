@@ -8,6 +8,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
 import { extractTransitiveDependencies } from '../../../src/services/transitive-extractor.js';
+import { logger } from '../../../src/lib/logger.js';
 
 const testContext: ApimServiceContext = {
   subscriptionId: 'sub-1',
@@ -374,6 +375,25 @@ describe('extractTransitiveDependencies with Liquid bodies', () => {
     expect(fetched).toEqual(['NamedValue:backend-id']);
     expect(result.errorCount).toBe(0);
     expect(result.extractedDescriptors.map((d) => d.nameParts[0])).toEqual(['backend-id']);
+  });
+
+  it('should report an error when the named values for a Liquid body cannot be listed', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const client = createMockClient();
+    // eslint-disable-next-line require-yield
+    client.listResources = async function* () {
+      throw new Error('HTTP 503');
+    };
+    const policies = new Map([['api:orders:policy:0', '<set-body template="liquid">{{demo-backend-id}}</set-body>']]);
+
+    try {
+      const result = await extractTransitiveDependencies(client, createMockStore(), testContext, '/out', policies, new Map(), [], []);
+
+      expect(result.errorCount).toBe(1);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Unable to tell which {{...}} in Liquid bodies are named values'));
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("should follow a Liquid {{name}} in a fragment extracted in a later round", async () => {
