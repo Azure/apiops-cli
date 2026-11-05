@@ -27,22 +27,28 @@ const BASE: Names = {
   namedValues: ['myNv', 'apiUrl'],
   fragments: ['myFrag', 'authFrag'],
   backends: ['myBackend'],
+  loggers: ['myLogger'],
+  schemas: ['mySchema'],
 };
 
 interface Names {
   namedValues: string[];
   fragments: string[];
   backends: string[];
+  loggers?: string[];
+  schemas?: string[];
 }
 
 /** KnownArtifactSets for `names`, with named values deployed as `mapping` affixes them. */
 function knownSets(mapping: EnvMapping | undefined, names = BASE): KnownArtifactSets {
   const find = (candidates: string[], name: string) =>
     candidates.find((candidate) => candidate.toLowerCase() === name.toLowerCase());
-  const byType: Partial<Record<ResourceType, string[]>> = {
+  const byType: Partial<Record<ResourceType, string[] | undefined>> = {
     [ResourceType.NamedValue]: names.namedValues,
     [ResourceType.PolicyFragment]: names.fragments,
     [ResourceType.Backend]: names.backends,
+    [ResourceType.Logger]: names.loggers,
+    [ResourceType.GlobalSchema]: names.schemas,
   };
   return {
     has: (type, name, workspace) => !workspace && find(byType[type] ?? [], name) !== undefined,
@@ -194,6 +200,31 @@ describe('rewritePolicyRefs', () => {
     const xml = '<set-backend-service backend-id="myBackend" />';
     const mapping = devPrefixMapping([ResourceType.Backend]);
     expect(rewritePolicyRefs(xml, mapping, knownSets(mapping), 'team-a')).toBe(xml);
+  });
+
+  it.each([
+    ['llm-content-safety backend-id', '<llm-content-safety backend-id="myBackend" />', '<llm-content-safety backend-id="dev-myBackend" />'],
+    [
+      'semantic cache embeddings-backend-id',
+      '<llm-semantic-cache-lookup score-threshold="0.8" embeddings-backend-id=\'myBackend\' />',
+      '<llm-semantic-cache-lookup score-threshold="0.8" embeddings-backend-id=\'dev-myBackend\' />',
+    ],
+    ['an attribute before backend-id', '<set-backend-service id="apim-generated-policy" backend-id="myBackend" />', '<set-backend-service id="apim-generated-policy" backend-id="dev-myBackend" />'],
+    ['log-to-eventhub logger-id', '<log-to-eventhub logger-id="myLogger">x</log-to-eventhub>', '<log-to-eventhub logger-id="dev-myLogger">x</log-to-eventhub>'],
+    ['content schema-id', '<content type="application/json" schema-id="mySchema" />', '<content type="application/json" schema-id="dev-mySchema" />'],
+  ])('rewrites %s', (_kind, xml, expected) => {
+    const mapping = devPrefixMapping([ResourceType.Backend, ResourceType.Logger, ResourceType.GlobalSchema]);
+    expect(rewrite(xml, mapping)).toBe(expected);
+  });
+
+  it('leaves a logger-id unchanged when Logger is not in appliesTo', () => {
+    const xml = '<log-to-eventhub logger-id="myLogger">x</log-to-eventhub>';
+    expect(rewrite(xml, devPrefixMapping([ResourceType.Backend]))).toBe(xml);
+  });
+
+  it('leaves an attribute set to a policy expression or a named value', () => {
+    const xml = '<set-backend-service backend-id="@(context.Variables[&quot;b&quot;])" /><set-backend-service backend-id="{{unknown}}" />';
+    expect(rewrite(xml, devPrefixMapping(ALL_TYPES))).toBe(xml);
   });
 
   it.each([

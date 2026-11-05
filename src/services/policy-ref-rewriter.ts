@@ -21,29 +21,10 @@
  *   {{context.request.headers.foo}}, which no named value has as its name.
  */
 
-import { ResourceType } from '../models/resource-types.js';
 import type { EnvMapping } from './env-mapper.js';
 import { toDeployedName } from './env-mapper.js';
 import type { KnownArtifactSets } from '../models/config.js';
-import { replaceNamedValueReferences } from './transitive-resolver.js';
-
-// ---------------------------------------------------------------------------
-// Regex patterns
-// ---------------------------------------------------------------------------
-
-/**
- * Matches the fragment-id attribute on an <include-fragment> element.
- * Groups: 1 = tag prefix through `=`, 2 = opening quote, 3 = id value,
- *          4 = closing quote (backreference to group 2).
- */
-const FRAGMENT_PATTERN = /(<include-fragment\b[^>]*\bfragment-id\s*=\s*)(["'])([^"'>]+)(\2)/gi;
-
-/**
- * Matches the backend-id attribute on a <set-backend-service> element.
- * Groups: 1 = tag prefix through `=`, 2 = opening quote, 3 = id value,
- *          4 = closing quote (backreference to group 2).
- */
-const BACKEND_PATTERN = /(<set-backend-service\b[^>]*\bbackend-id\s*=\s*)(["'])([^"'>]+)(\2)/gi;
+import { POLICY_REFERENCE_PATTERNS, replaceNamedValueReferences } from './transitive-resolver.js';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -63,12 +44,10 @@ export type { KnownArtifactSets } from '../models/config.js';
  *      display name that named value is deployed with
  *      (KnownArtifactSets.deployedNamedValueReference). Rewritten even without
  *      a mapping when an explicit displayName override changes it.
- *   2. `fragment-id="name"` on <include-fragment>. Only rewritten when the
- *      source has that fragment in the policy's scope AND
- *      ResourceType.PolicyFragment ∈ mapping.appliesTo.
- *   3. `backend-id="name"` on <set-backend-service>. Only rewritten when the
- *      source has that backend in the policy's scope AND
- *      ResourceType.Backend ∈ mapping.appliesTo.
+ *   2. An attribute that names a resource (POLICY_REFERENCE_PATTERNS:
+ *      backend-id, embeddings-backend-id, fragment-id, logger-id, schema-id).
+ *      Rewritten when its type ∈ mapping.appliesTo and the source has that
+ *      resource in the policy's scope.
  *
  * @param workspace - The policy's workspace, if any: references name
  *   resources in its own scope
@@ -90,17 +69,14 @@ export function rewritePolicyRefs(
 
   if (mapping === undefined) return result;
 
-  if (mapping.appliesTo.has(ResourceType.PolicyFragment)) {
-    result = result.replace(FRAGMENT_PATTERN, (match, prefix: string, quote: string, id: string) => {
-      if (!known.has(ResourceType.PolicyFragment, id, workspace)) return match;
-      return `${prefix}${quote}${toDeployedName(id, ResourceType.PolicyFragment, mapping)}${quote}`;
-    });
-  }
-
-  if (mapping.appliesTo.has(ResourceType.Backend)) {
-    result = result.replace(BACKEND_PATTERN, (match, prefix: string, quote: string, id: string) => {
-      if (!known.has(ResourceType.Backend, id, workspace)) return match;
-      return `${prefix}${quote}${toDeployedName(id, ResourceType.Backend, mapping)}${quote}`;
+  // An attribute that names a resource (backend-id, fragment-id, logger-id,
+  // schema-id ...) names one in the policy's scope. A policy expression or a
+  // named value (rewritten above) names none here.
+  for (const { type, pattern } of POLICY_REFERENCE_PATTERNS) {
+    if (!mapping.appliesTo.has(type)) continue;
+    result = result.replace(pattern, (match: string, quote: string, value: string) => {
+      if (value.startsWith('@') || value.includes('{{') || !known.has(type, value, workspace)) return match;
+      return `${match.slice(0, match.length - value.length - quote.length)}${toDeployedName(value, type, mapping)}${quote}`;
     });
   }
 

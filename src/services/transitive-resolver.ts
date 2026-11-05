@@ -31,6 +31,32 @@ const FRAGMENT_PATTERN = /<include-fragment\s+fragment-id="([^"]+)"/g;
 const XML_ATTRIBUTE = String.raw`\s+[\w:.-]+\s*=\s*(?:"[^"]*"|'[^']*')`;
 
 /**
+ * Build a pattern matching `attribute="value"` (either quote) anywhere on an
+ * `element` start tag; the value is capture group 2.
+ */
+function attributePattern(element: string, attribute: string): RegExp {
+  return new RegExp(`<${element}(?:${XML_ATTRIBUTE})*?\\s+${attribute}\\s*=\\s*(["'])(.*?)\\1`, 'g');
+}
+
+/**
+ * Policy attributes that name another resource, by the type they name: what
+ * publish rewrites to deployed names. Each pattern's capture group 2 is the
+ * attribute's value.
+ */
+export const POLICY_REFERENCE_PATTERNS: ReadonlyArray<{ type: ResourceType; pattern: RegExp }> = [
+  { type: ResourceType.Backend, pattern: attributePattern('set-backend-service', 'backend-id') },
+  { type: ResourceType.Backend, pattern: attributePattern('llm-content-safety', 'backend-id') },
+  {
+    type: ResourceType.Backend,
+    pattern: attributePattern('(?:azure-openai|llm)-semantic-cache-lookup', 'embeddings-backend-id'),
+  },
+  { type: ResourceType.PolicyFragment, pattern: attributePattern('include-fragment', 'fragment-id') },
+  { type: ResourceType.Logger, pattern: attributePattern('log-to-eventhub', 'logger-id') },
+  // validate-content's <content schema-id="..."> names a schema added to the service.
+  { type: ResourceType.GlobalSchema, pattern: attributePattern('content', 'schema-id') },
+];
+
+/**
  * XML comments: references inside them are not in effect. Only a closed
  * comment is removed, so a stray `<!--` (for example in a policy expression
  * string) cannot hide the rest of the policy.
