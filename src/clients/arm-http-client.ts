@@ -149,10 +149,36 @@ function escapeRegExp(text: string): string {
 }
 
 /**
+ * The ways a signature's `+`, `/` and `=` can be written in text: as they
+ * are, percent-encoded once or twice, JSON-escaped, or as an HTML character
+ * reference. Matched ignoring case, as the escapes can be written either way.
+ */
+const SIGNATURE_CHARACTER_FORMS: Readonly<Record<string, readonly string[]>> = {
+  '+': ['+', '%2B', '%252B', '\\u002B', '&#43;', '&#x2B;'],
+  '/': ['/', '%2F', '%252F', '\\/', '\\u002F', '&#47;', '&#x2F;'],
+  '=': ['=', '%3D', '%253D', '\\u003D', '&#61;', '&#x3D;'],
+};
+
+/**
+ * A pattern matching `signature` with each `+`, `/` and `=` written in any of
+ * its forms, in any mix: a page can escape some characters and not others.
+ */
+function signaturePattern(signature: string): RegExp {
+  const source = [...signature]
+    .map((character) => {
+      const forms = SIGNATURE_CHARACTER_FORMS[character];
+      return forms ? `(?:${forms.map(escapeRegExp).join('|')})` : escapeRegExp(character);
+    })
+    .join('');
+  return new RegExp(source, 'gi');
+}
+
+/**
  * `text` with the SAS signature masked: the value of any `sig` parameter,
  * also in a percent-encoded URL, and the request's own signature wherever
- * else it appears (as sent, decoded, encoded once or twice, or JSON-escaped
- * with `\/` and `\u002B`), for example in a proxy's or firewall's page that
+ * else it appears, with its `+`, `/` and `=` as they are, percent-encoded once
+ * or twice, JSON-escaped or written as HTML character references, in any mix;
+ * for example in a proxy's or firewall's page that
  * quotes or links to the URL. Azure Storage's own authentication errors (for
  * example 'Signature did not match') don't quote it, but the body is text
  * this client doesn't control. The request's signature is masked on its own
@@ -175,21 +201,7 @@ export function maskSasSignature(text: string, url: string): string {
     }
   }
   if (signature && /^[A-Za-z0-9+/]+={0,2}$/.test(signature) && Buffer.from(signature, 'base64').length === 32) {
-    const forms = new Set([
-      signature,
-      encodeURIComponent(signature),
-      encodeURIComponent(encodeURIComponent(signature)),
-      raw ?? signature,
-      encodeURIComponent(raw ?? signature),
-      // JSON-escaped: '/' as \/ and '+' as \u002B ('gi' below also matches \u002b).
-      signature.replace(/\//g, '\\/'),
-      signature.replace(/\+/g, '\\u002B'),
-      signature.replace(/\//g, '\\/').replace(/\+/g, '\\u002B'),
-    ]);
-    // Longest first, so an encoded form is masked whole.
-    for (const form of [...forms].sort((x, y) => y.length - x.length)) {
-      masked = masked.replace(new RegExp(escapeRegExp(form), 'gi'), MASKED_SIGNATURE);
-    }
+    masked = masked.replace(signaturePattern(signature), MASKED_SIGNATURE);
   }
   return masked;
 }

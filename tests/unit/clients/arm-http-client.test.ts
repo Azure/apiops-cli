@@ -383,6 +383,8 @@ describe('maskSasSignature', () => {
     ['as sent', `x ${encoded} y`, 'x *** y'],
     ['as sent, with lower-case escapes', `x ${encoded.toLowerCase()} y`, 'x *** y'],
     ['decoded', `blocked (${signature})`, 'blocked (***)'],
+    ['with HTML character references', `<p>${signature.replace(/\+/g, '&#43;').replace('=', '&#x3d;')}</p>`, '<p>***</p>'],
+    ['with only some characters escaped', `{"sig":"${signature.replace('+', '\\u002B').replace('=', '%3D')}"}`, '{"sig":"***"}'],
     [
       'in a link to the percent-encoded URL',
       `href="https%3A%2F%2Fblob.example.net%2Fa%3Fsv%3D1%26sig%3D${encodeURIComponent(encoded)}%26se%3D2"`,
