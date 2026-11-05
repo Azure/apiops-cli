@@ -36,6 +36,8 @@ describe('arm-id', () => {
     [`${SERVICE}/apis/orders`, 'products', undefined],
     ['/subscriptions/s/resourceGroups/products/providers/Microsoft.ApiManagement/service/apim/apis/orders', 'products', undefined],
     ['/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/loggers/loggers/l', 'loggers', 'l'],
+    [`${SERVICE}/workspaces/backends/backends/member`, 'backends', 'member'],
+    ['/workspaces/products/products/gold', 'products', 'gold'],
   ])('should read the name after a segment in %s', (id, segment, expected) => {
     expect(armNameAfter(id, segment)).toBe(expected);
   });

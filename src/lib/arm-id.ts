@@ -35,12 +35,19 @@ function pathBelowService(id: string): string {
 }
 
 /**
- * The decoded name that follows `{segment}/` in an ARM ID (case-insensitive),
- * for example `armNameAfter(id, 'loggers')`.
+ * The decoded name of the `{segment}` collection's resource in an ARM ID
+ * (case-insensitive), for example `armNameAfter(id, 'loggers')`. The path
+ * below the service is read as collection/name pairs, so a resource named
+ * like a collection (a workspace named `backends`) is not read as one.
  */
 export function armNameAfter(id: string, segment: string): string | undefined {
-  const match = pathBelowService(id).match(new RegExp(`(?:^|/)${segment}/([^/]+)(?:/|$)`, 'i'));
-  return match?.[1] ? decodeArmSegment(match[1]) : undefined;
+  const parts = pathBelowService(id).split('/').filter(Boolean);
+  for (let index = 0; index + 1 < parts.length; index += 2) {
+    if (parts[index].toLowerCase() === segment.toLowerCase()) {
+      return decodeArmSegment(parts[index + 1]);
+    }
+  }
+  return undefined;
 }
 
 /** The decoded last segment of an ARM ID, or undefined when it has none. */
