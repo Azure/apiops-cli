@@ -22,7 +22,7 @@ import {
   ArmHttpClient,
   ArmHttpClientOptions,
   HttpError,
-  ArmRequestOptions,
+  ArmClientRequestOptions,
   AsyncOperation,
   discardBody,
   extractAsyncOperation,
@@ -105,7 +105,7 @@ export class ApimClient implements IApimClient {
    * APIM reports operations blocked by an API's in-progress async operation
    * as a transient 409 PessimisticConcurrencyConflict, which is retried.
    */
-  private static readonly REQUEST_OPTIONS: ArmRequestOptions = {
+  private static readonly REQUEST_OPTIONS: ArmClientRequestOptions = {
     isRetryableError: (error) =>
       error.status === 409 && error.code === 'PessimisticConcurrencyConflict',
   };
@@ -117,21 +117,7 @@ export class ApimClient implements IApimClient {
    *   client. Default to `DefaultAzureCredential` and a `setTimeout` wait.
    */
   constructor(authScope?: string, httpOptions: Omit<ArmHttpClientOptions, 'authScope'> = {}) {
-    this.http = new ArmHttpClient({ ...httpOptions, authScope });
-  }
-
-  /**
-   * Execute an HTTP request through the shared ARM client. APIM reports
-   * operations blocked by an API's in-progress async operation as a
-   * transient 409 PessimisticConcurrencyConflict, which is retried; other
-   * client errors are deterministic.
-   */
-  private request(
-    url: string,
-    init: RequestInit = {},
-    options: ArmRequestOptions = {}
-  ): Promise<Response> {
-    return this.http.request(url, init, { ...ApimClient.REQUEST_OPTIONS, ...options });
+    this.http = new ArmHttpClient({ ...httpOptions, authScope, requestOptions: ApimClient.REQUEST_OPTIONS });
   }
 
   async *listResources(
@@ -175,7 +161,6 @@ export class ApimClient implements IApimClient {
 
     // Handle pagination with nextLink
     yield* paginateArm(this.http, url, {
-      requestOptions: ApimClient.REQUEST_OPTIONS,
       shouldStopOnError: (error) => {
         // HTTP 400 with MethodNotAllowedInPricingTier means the resource type is not
         // supported by this APIM pricing tier. Skip it — do not treat as a failure.
@@ -226,7 +211,7 @@ export class ApimClient implements IApimClient {
     const suppress500 = isWiki;
 
     try {
-      const response = await this.request(url, { method: 'GET' }, { noRetryOn5xx: suppress500 });
+      const response = await this.http.request(url, { method: 'GET' }, { noRetryOn5xx: suppress500 });
 
       if (response.status === 404 || (suppress500 && response.status >= 500 && response.status < 600)) {
         await discardBody(response);
@@ -273,7 +258,7 @@ export class ApimClient implements IApimClient {
   ): Promise<Record<string, unknown>> {
     const url = buildArmUri(context, descriptor);
 
-    const response = await this.request(url, {
+    const response = await this.http.request(url, {
       method: 'PUT',
       body: JSON.stringify(stripSourceArmId(payload)),
     });
@@ -339,7 +324,7 @@ export class ApimClient implements IApimClient {
   ): Promise<Record<string, unknown>> {
     const url = buildArmUri(context, descriptor);
 
-    const response = await this.request(url, {
+    const response = await this.http.request(url, {
       method: 'PATCH',
       body: JSON.stringify(stripSourceArmId(payload)),
     });
@@ -383,7 +368,7 @@ export class ApimClient implements IApimClient {
 
     for (let attempt = 1; ; attempt++) {
       try {
-        const response = await this.request(url, { method: 'DELETE' });
+        const response = await this.http.request(url, { method: 'DELETE' });
         // Only the status and headers of a DELETE response are used.
         await discardBody(response);
 
@@ -432,7 +417,7 @@ export class ApimClient implements IApimClient {
   ): AsyncIterable<Record<string, unknown>> {
     const url = `${context.baseUrl}/apis/${encodeURIComponent(apiName)}/revisions?api-version=${context.apiVersion}`;
     
-    const response = await this.request(url);
+    const response = await this.http.request(url);
     const data = await response.json() as { value?: unknown[] };
 
     if (data.value && Array.isArray(data.value)) {
@@ -475,7 +460,7 @@ export class ApimClient implements IApimClient {
     try {
       // Suppress the default 5xx retry loop for XML exports so we can fall
       // back to the inline export instead of burning retries on a broken path.
-      const response = await this.request(
+      const response = await this.http.request(
         buildExportUrl(exportFormat),
         {},
         { noRetryOn5xx: isXmlExport, allowedNonOkStatuses }
@@ -513,7 +498,7 @@ export class ApimClient implements IApimClient {
       }
 
       // Fetch the actual spec content from the blob SAS URL (no auth header needed — SAS token is self-authenticating)
-      const blobResponse = await this.request(blobLink, {}, { skipAuth: true });
+      const blobResponse = await this.http.request(blobLink, {}, { skipAuth: true });
       if (!blobResponse.ok) {
         await discardBody(blobResponse);
         logger.warn(`Failed to fetch specification blob for ${apiName}: HTTP ${blobResponse.status}`);
@@ -548,7 +533,7 @@ export class ApimClient implements IApimClient {
     apiName: string
   ): Promise<{ content: string; format: 'wsdl' | 'wadl' } | undefined> {
     try {
-      const response = await this.request(url);
+      const response = await this.http.request(url);
       if (response.status === 404) {
         await discardBody(response);
         return undefined;
@@ -645,7 +630,7 @@ export class ApimClient implements IApimClient {
 
   async validatePreFlight(context: ApimServiceContext): Promise<void> {
     await validateServicePreFlight(context, APIM_PREFLIGHT_KIND, (url) =>
-      this.request(url, { method: 'GET' })
+      this.http.request(url, { method: 'GET' })
     );
   }
 

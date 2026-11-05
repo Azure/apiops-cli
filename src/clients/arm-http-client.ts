@@ -355,6 +355,13 @@ export interface ArmHttpClientOptions {
   credential?: ArmTokenCredential;
   /** Wait used for retry back-off and LRO polling. Defaults to a `setTimeout` wait. */
   delay?: (ms: number) => Promise<void>;
+  /**
+   * The service's request options, used by every request this client makes,
+   * including pagination and LRO polling; a request's own options override
+   * them. Only options that keep other errors thrown, which pagination and
+   * polling rely on.
+   */
+  requestOptions?: ArmClientRequestOptions;
 }
 
 /** Per-request behaviour for {@link ArmHttpClient.request}. */
@@ -374,6 +381,9 @@ export interface ArmRequestOptions {
   /** Return true for a 4xx error that is transient and should be retried. */
   isRetryableError?: (error: HttpError) => boolean;
 }
+
+/** The request options a client can set for all its requests. */
+export type ArmClientRequestOptions = Pick<ArmRequestOptions, 'passthrough404Methods' | 'isRetryableError'>;
 
 /**
  * Log an intermediate retry. When the retry is attributed to an active
@@ -440,6 +450,7 @@ export class ArmHttpClient implements IArmHttpClient {
   readonly armHosts: readonly string[];
   private readonly tokenProvider: () => Promise<string>;
   private readonly wait: (ms: number) => Promise<void>;
+  private readonly defaultRequestOptions: ArmRequestOptions;
 
   constructor(options: ArmHttpClientOptions = {}) {
     this.authScope = options.authScope ?? getCloudConfig('public').authScope;
@@ -449,6 +460,7 @@ export class ArmHttpClient implements IArmHttpClient {
       this.authScope,
     );
     this.wait = options.delay ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+    this.defaultRequestOptions = options.requestOptions ?? {};
   }
 
   /**
@@ -503,7 +515,7 @@ export class ArmHttpClient implements IArmHttpClient {
       allowedNonOkStatuses = [],
       passthrough404Methods = ['GET'],
       isRetryableError,
-    } = options;
+    } = { ...this.defaultRequestOptions, ...options };
 
     const headers = new Headers(init.headers);
     if (!skipAuth) {
@@ -638,12 +650,6 @@ export class ArmHttpClient implements IArmHttpClient {
 
 export interface PaginateArmOptions {
   /**
-   * Request options applied to every page request. Options that would return
-   * an error response instead of throwing it are not accepted, so every
-   * response other than a 404 is a page.
-   */
-  requestOptions?: Omit<ArmRequestOptions, 'allowedNonOkStatuses' | 'noRetryOn5xx'>;
-  /**
    * Called when a page request throws. Return true to end the listing
    * quietly (items already yielded stand); otherwise the error is rethrown.
    */
@@ -667,7 +673,7 @@ export async function* paginateArm(
   while (next) {
     let response: Response;
     try {
-      response = await http.request(next, {}, options.requestOptions);
+      response = await http.request(next);
     } catch (error) {
       if (options.shouldStopOnError?.(error)) {
         return;
@@ -681,8 +687,7 @@ export async function* paginateArm(
       return;
     }
 
-    // Other non-OK statuses were thrown by the request (requestOptions cannot
-    // allow them), so this is a page.
+    // Other non-OK statuses were thrown by the request, so this is a page.
 
     const data = (await response.json()) as { value?: unknown[]; nextLink?: string };
     if (Array.isArray(data.value)) {

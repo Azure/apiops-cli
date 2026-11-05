@@ -743,6 +743,25 @@ describe('ApimClient.putResource provisioning polling', () => {
     expect(fetchSpy.mock.calls[1]?.[0]).toBe(operationUrl);
   });
 
+  it('should retry a PessimisticConcurrencyConflict while polling an async operation', async () => {
+    const operationUrl = 'https://management.azure.com/operations/update-named-value';
+    fetchSpy
+      .mockResolvedValueOnce(new Response('', { status: 202, headers: { 'Azure-AsyncOperation': operationUrl } }))
+      .mockResolvedValueOnce(
+        makeResponse(409, { error: { code: 'PessimisticConcurrencyConflict', message: 'Operation in progress' } })
+      )
+      .mockResolvedValueOnce(makeResponse(200, { status: 'Succeeded' }))
+      .mockResolvedValueOnce(makeResponse(200, succeededResource));
+
+    await expect(client.putResource(testContext, descriptor, { name: 'my-nv' })).resolves.toEqual(succeededResource);
+    expect(fetchSpy.mock.calls.map((call) => call[0])).toEqual([
+      expect.any(String),
+      operationUrl,
+      operationUrl,
+      expect.any(String),
+    ]);
+  });
+
   it('should surface a failed Azure-AsyncOperation when an update returns 200', async () => {
     const operationUrl = 'https://management.azure.com/operations/update-named-value';
     fetchSpy

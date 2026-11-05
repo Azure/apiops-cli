@@ -24,7 +24,7 @@ import {
   ArmHttpClient,
   ArmHttpClientOptions,
   HttpError,
-  ArmRequestOptions,
+  ArmClientRequestOptions,
   discardBody,
   AsyncOperation,
   extractAsyncOperation,
@@ -55,7 +55,7 @@ export class ApicClient implements IApicClient {
   /** Default interval between LRO polls when no Retry-After header is present. */
   private static readonly ASYNC_POLL_INTERVAL_MS = 5000;
   /** API Center returns (rather than throws) a 404 for GET and DELETE. */
-  private static readonly REQUEST_OPTIONS: ArmRequestOptions = {
+  private static readonly REQUEST_OPTIONS: ArmClientRequestOptions = {
     passthrough404Methods: ['GET', 'DELETE'],
   };
 
@@ -66,16 +66,7 @@ export class ApicClient implements IApicClient {
    *   client. Default to `DefaultAzureCredential` and a `setTimeout` wait.
    */
   constructor(authScope?: string, httpOptions: Omit<ArmHttpClientOptions, 'authScope'> = {}) {
-    this.http = new ArmHttpClient({ ...httpOptions, authScope });
-  }
-
-  /** Execute an HTTP request through the shared ARM client. */
-  private request(
-    url: string,
-    init: RequestInit = {},
-    options: ArmRequestOptions = {},
-  ): Promise<Response> {
-    return this.http.request(url, init, { ...ApicClient.REQUEST_OPTIONS, ...options });
+    this.http = new ArmHttpClient({ ...httpOptions, authScope, requestOptions: ApicClient.REQUEST_OPTIONS });
   }
 
   async *listResources(
@@ -85,9 +76,7 @@ export class ApicClient implements IApicClient {
     workspace?: string,
   ): AsyncIterable<Record<string, unknown>> {
     // A missing collection (404) is an empty list, not a failure.
-    yield* paginateArm(this.http, buildApicListUri(context, type, parentNameParts, workspace), {
-      requestOptions: ApicClient.REQUEST_OPTIONS,
-    });
+    yield* paginateArm(this.http, buildApicListUri(context, type, parentNameParts, workspace));
   }
 
   async getResource(
@@ -95,7 +84,7 @@ export class ApicClient implements IApicClient {
     descriptor: ApicResourceDescriptor,
   ): Promise<Record<string, unknown> | undefined> {
     const url = buildApicArmUri(context, descriptor);
-    const response = await this.request(url, { method: 'GET' });
+    const response = await this.http.request(url, { method: 'GET' });
     if (response.status === 404) {
       await discardBody(response);
       return undefined;
@@ -110,7 +99,7 @@ export class ApicClient implements IApicClient {
     payload: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
     const url = buildApicArmUri(context, descriptor);
-    const response = await this.request(url, {
+    const response = await this.http.request(url, {
       method: 'PUT',
       body: JSON.stringify(payload),
     });
@@ -138,7 +127,7 @@ export class ApicClient implements IApicClient {
     descriptor: ApicResourceDescriptor,
   ): Promise<boolean> {
     const url = buildApicArmUri(context, descriptor);
-    const response = await this.request(url, { method: 'DELETE' });
+    const response = await this.http.request(url, { method: 'DELETE' });
     // Only the status and headers of a DELETE response are used.
     await discardBody(response);
     if (response.status === 404) {
@@ -169,7 +158,7 @@ export class ApicClient implements IApicClient {
     const actionUrl = this.actionUrl(context, descriptor, 'exportSpecification');
     let response: Response;
     try {
-      response = await this.request(actionUrl, { method: 'POST' });
+      response = await this.http.request(actionUrl, { method: 'POST' });
     } catch (error) {
       if (error instanceof HttpError && error.status === 404) {
         return undefined;
@@ -193,7 +182,7 @@ export class ApicClient implements IApicClient {
     // returns the content directly.
     let content = body.value;
     if (body.format === 'link') {
-      const blob = await this.request(body.value, {}, { skipAuth: true });
+      const blob = await this.http.request(body.value, {}, { skipAuth: true });
       if (!blob.ok) {
         await discardBody(blob);
         logger.warn(`Failed to fetch specification link for ${buildApicLabel(descriptor)}`);
@@ -212,7 +201,7 @@ export class ApicClient implements IApicClient {
     spec: ApicSpecification,
   ): Promise<void> {
     const actionUrl = this.actionUrl(context, descriptor, 'importSpecification');
-    const response = await this.request(actionUrl, {
+    const response = await this.http.request(actionUrl, {
       method: 'POST',
       body: JSON.stringify({
         value: spec.content,
@@ -233,7 +222,7 @@ export class ApicClient implements IApicClient {
 
   async validatePreFlight(context: ApicServiceContext): Promise<void> {
     await validateServicePreFlight(context, APIC_PREFLIGHT_KIND, (url) =>
-      this.request(url, { method: 'GET' }),
+      this.http.request(url, { method: 'GET' }),
     );
   }
 
@@ -265,7 +254,7 @@ export class ApicClient implements IApicClient {
     context: ApicServiceContext,
     descriptor: ApicResourceDescriptor,
   ): Promise<boolean> {
-    const response = await this.request(buildApicArmUri(context, descriptor), { method: 'GET' });
+    const response = await this.http.request(buildApicArmUri(context, descriptor), { method: 'GET' });
     await discardBody(response);
     return response.status !== 404;
   }

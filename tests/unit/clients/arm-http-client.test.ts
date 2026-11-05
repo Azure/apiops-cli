@@ -840,16 +840,17 @@ describe('paginateArm', () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it('should pass request options to every page request', async () => {
+  it("should apply the client's request options to every page request", async () => {
     fetchSpy.mockResolvedValueOnce(json(409, { error: { code: 'Busy' } })).mockResolvedValueOnce(
       json(200, { value: [] }),
     );
+    const http = new ArmHttpClient({
+      credential: cred,
+      delay: async () => undefined,
+      requestOptions: { isRetryableError: (e) => e.code === 'Busy' },
+    });
 
-    await collect(
-      paginateArm(client(), URL_1, {
-        requestOptions: { isRetryableError: (e) => e.code === 'Busy' },
-      }),
-    );
+    await collect(paginateArm(http, URL_1));
 
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
