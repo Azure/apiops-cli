@@ -205,7 +205,12 @@ export async function extractTransitiveDependencies(
     skip = () => false,
   }: TransitiveExtractionOptions = {}
 ): Promise<TransitiveExtractionResult> {
-  const attempted = new Set(alreadyExtracted.map(getResourceDescriptorKey));
+  // A {{reference}} to an extracted named value's name can be another named
+  // value's display name, so named value references are only compared with
+  // what is extracted once resolved (claimedNamedValues).
+  const attempted = new Set(
+    alreadyExtracted.filter((descriptor) => descriptor.type !== ResourceType.NamedValue).map(getResourceDescriptorKey)
+  );
   const claimedNamedValues = new Set(alreadyExtracted.map(getResourceDescriptorKey));
   const extractedDescriptors: ResourceDescriptor[] = [];
   const failedDescriptors: ResourceDescriptor[] = [];
@@ -237,7 +242,7 @@ export async function extractTransitiveDependencies(
       const checked = dep.type === ResourceType.NamedValue
         ? await resolveNamedValueDescriptor(client, contextFor(dep), dep, namedValueIndex)
         : dep;
-      if (!skip(checked)) {
+      if (!skip(checked) && !claimedNamedValues.has(getResourceDescriptorKey(checked))) {
         newDeps.push(dep);
       }
     }
