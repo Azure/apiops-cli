@@ -67,16 +67,19 @@ function parseFilterArrayWithNested(
       names.push(name);
 
       const subConfig = item[name];
-      if (isPlainObject(subConfig)) {
+      // An entry with no sub-resource lists (`- orders: {}`, `- orders:`) is
+      // kept as an empty sub-filter: it includes everything, and as an entry
+      // keyed by the name it takes precedence over a wildcard pattern's.
+      if (subConfig === undefined || subConfig === null) {
+        subFilters[name] = {};
+      } else if (isPlainObject(subConfig)) {
         const subFilter: Record<string, string[]> = {};
         for (const [subKey, subValue] of Object.entries(subConfig)) {
           if (subValue === undefined || subValue === null) continue;
           subFilter[subKey] = assertStringArray(subValue, `${fieldName}[${i}].${name}.${subKey}`);
         }
-        if (Object.keys(subFilter).length > 0) {
-          subFilters[name] = subFilter;
-        }
-      } else if (subConfig !== undefined && subConfig !== null) {
+        subFilters[name] = subFilter;
+      } else {
         logger.warn(
           `${fieldName}[${i}]: nested value for '${name}' should be an object with sub-resource arrays; ignoring.`
         );

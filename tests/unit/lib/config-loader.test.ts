@@ -3,6 +3,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { loadFilterConfig, loadOverrideConfig } from '../../../src/lib/config-loader.js';
 import { logger } from '../../../src/lib/logger.js';
+import { resolveWorkspaceFilter, shouldIncludeResource } from '../../../src/services/filter-service.js';
+import { ResourceType } from '../../../src/models/resource-types.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -218,6 +220,33 @@ apis:
       expect(config!.apiSubFilters).toEqual({
         '*': { operations: [], schemas: [], tagDescriptions: [] },
       });
+    });
+
+    it('should keep an empty entry keyed by a name, so it takes precedence over a pattern', async () => {
+      const content = `
+apis:
+  - '*':
+      operations: []
+  - orders: {}
+  - billing:
+workspaces:
+  - '*':
+      apis: []
+  - team-a: {}
+`;
+      const filePath = path.join(tmpDir, 'empty-override-filter.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+
+      expect(config!.apiSubFilters).toEqual({ '*': { operations: [] }, orders: {}, billing: {} });
+      const operation = (api: string) => ({ type: ResourceType.ApiOperation, nameParts: [api, 'get'] });
+      expect(shouldIncludeResource(operation('orders'), config)).toBe(true);
+      expect(shouldIncludeResource(operation('billing'), config)).toBe(true);
+      expect(shouldIncludeResource(operation('petstore'), config)).toBe(false);
+      const workspaceApi = { type: ResourceType.Api, nameParts: ['ws-orders'] };
+      expect(shouldIncludeResource(workspaceApi, resolveWorkspaceFilter('team-a', config))).toBe(true);
+      expect(shouldIncludeResource(workspaceApi, resolveWorkspaceFilter('team-b', config))).toBe(false);
     });
 
     it('should ignore, with a warning, sub-filters keyed by an exclusion', async () => {

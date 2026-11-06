@@ -262,7 +262,7 @@ apis:
       tagDescriptions: []
 ```
 
-An entry keyed by an API's name takes precedence over a pattern; otherwise the first matching pattern applies. Quote patterns that start with `*` so YAML reads them as strings.
+An entry keyed by an API's name takes precedence over a pattern, even one with no sub-resource lists (`- orders: {}` keeps all of `orders`' operations); otherwise the first matching pattern applies. Quote patterns that start with `*` so YAML reads them as strings.
 
 During extraction, the `operations` filter also applies to the API's OpenAPI specification
 (`specification.yaml` or `specification.json`, including Swagger 2.0). Excluded operations
