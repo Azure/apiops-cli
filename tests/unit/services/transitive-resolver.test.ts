@@ -252,6 +252,35 @@ describe('transitive-resolver', () => {
       expect(deps).toHaveLength(0);
     });
 
+    it('should follow named values in logger and backend credentials', () => {
+      const deps = findTransitiveDependencies(new Map(), new Map(), undefined, [
+        {
+          descriptor: { type: ResourceType.Logger, nameParts: ['app-insights'] },
+          json: { properties: { loggerType: 'applicationInsights', credentials: { instrumentationKey: '{{Logger-Credentials--abc}}' } } },
+        },
+        {
+          descriptor: { type: ResourceType.Backend, nameParts: ['orders'], workspace: 'team-a' },
+          json: {
+            properties: {
+              url: 'https://orders.example.com',
+              credentials: {
+                header: { 'x-api-key': ['{{orders-key}}'] },
+                query: { code: ['{{orders-code}}'] },
+                authorization: { scheme: 'Bearer', parameter: '{{orders-token}}' },
+              },
+            },
+          },
+        },
+      ]);
+
+      expect(deps).toEqual([
+        { type: ResourceType.NamedValue, nameParts: ['Logger-Credentials--abc'], workspace: undefined },
+        { type: ResourceType.NamedValue, nameParts: ['orders-key'], workspace: 'team-a' },
+        { type: ResourceType.NamedValue, nameParts: ['orders-code'], workspace: 'team-a' },
+        { type: ResourceType.NamedValue, nameParts: ['orders-token'], workspace: 'team-a' },
+      ]);
+    });
+
     describe('scanArtifactReferences', () => {
       it('scans policy references without parsing policy XML as JSON', async () => {
         const store = {

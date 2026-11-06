@@ -355,6 +355,19 @@ export function findTransitiveDependencies(
   for (const { descriptor, json } of resources) {
     const properties = json.properties as Record<string, unknown> | undefined;
 
+    // Logger and backend credentials can hold named value references (for
+    // example the Application Insights key APIM stores as a named value).
+    if (
+      (descriptor.type === ResourceType.Logger || descriptor.type === ResourceType.Backend) &&
+      properties?.credentials !== undefined
+    ) {
+      for (const match of JSON.stringify(properties.credentials).matchAll(NAMED_VALUE_PATTERN)) {
+        if (match[1]) {
+          dependencies.push({ type: ResourceType.NamedValue, nameParts: [match[1].trim()], workspace: descriptor.workspace });
+        }
+      }
+    }
+
     if (descriptor.type === ResourceType.Backend) {
       const pool = isRecord(properties?.pool) ? properties.pool : undefined;
       const services = pool?.services;
@@ -398,11 +411,15 @@ export function findTransitiveDependencies(
  *
  * Association and subscription targets are links to independently selected
  * composite resources, not transitive dependencies.
+ *
+ * @param prepareJson - Turns the artifact's JSON into what is scanned, such
+ *   as the payload publish sends with overrides applied
  */
 export async function scanArtifactReferences(
   store: IArtifactStore,
   sourceDir: string,
-  descriptor: ResourceDescriptor
+  descriptor: ResourceDescriptor,
+  prepareJson?: PrepareJson
 ): Promise<ResourceDescriptor[]> {
   const references: ResourceDescriptor[] = [];
   const policies = new Map<string, string>();
@@ -410,20 +427,19 @@ export async function scanArtifactReferences(
 
   if (POLICY_RESOURCE_TYPES.has(descriptor.type)) {
     const content = await store.readContent(sourceDir, descriptor, 'policy');
-    if (content) {
-      policies.set(descriptor.nameParts.join('/'), content.content);
+    const text = content ? preparePolicyContent(descriptor, content.content, prepareJson) : undefined;
+    if (typeof text === 'string') {
+      policies.set(descriptor.nameParts.join('/'), text);
     }
   }
 
   const infoFile = RESOURCE_TYPE_METADATA[descriptor.type]?.infoFile;
-  const json = POLICY_RESOURCE_TYPES.has(descriptor.type) || !infoFile?.endsWith('.json')
+  const stored = POLICY_RESOURCE_TYPES.has(descriptor.type) || !infoFile?.endsWith('.json')
     ? undefined
     : await store.readResource(sourceDir, descriptor);
-  if (json) {
-    if (descriptor.type === ResourceType.Api) {
-      apis.set(descriptor.nameParts.join('/'), json);
-    }
-
+  const json = stored && prepareJson ? prepareJson(descriptor, stored) : stored;
+  if (json && descriptor.type === ResourceType.Api) {
+    apis.set(descriptor.nameParts.join('/'), json);
   }
 
   references.push(
@@ -506,12 +522,13 @@ export async function scanArtifactNamedValueReferences(
     const properties = json?.properties as Record<string, unknown> | undefined;
     if (descriptor.type === ResourceType.PolicyFragment) {
       names.push(...policyNames(properties?.value), ...policyNames(properties?.policyContent));
-    } else if (properties?.credentials !== undefined) {
-      for (const match of JSON.stringify(properties.credentials).matchAll(NAMED_VALUE_PATTERN)) {
-        if (match[1]) {
-          names.push(match[1].trim());
-        }
-      }
+    } else if (json) {
+      // The credentials' named values, as dependencies find them.
+      names.push(
+        ...findTransitiveDependencies(new Map(), new Map(), descriptor.workspace, [{ descriptor, json }])
+          .filter((dependency) => dependency.type === ResourceType.NamedValue)
+          .map((dependency) => dependency.nameParts[0] ?? '')
+      );
     }
   }
   return deduplicateDescriptors(

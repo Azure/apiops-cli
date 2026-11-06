@@ -355,6 +355,7 @@ async function determinePublishTargets(
       config.sourceDir,
       targetDescriptors,
       config.filter,
+      config.overrides,
       sourceReferences
     );
   }
@@ -468,6 +469,7 @@ async function expandTransitivePublishTargets(
   sourceDir: string,
   initialDescriptors: ResourceDescriptor[],
   filter: FilterConfig,
+  overrides: OverrideConfig | undefined,
   sourceReferences: SourceReferences
 ): Promise<ResourceDescriptor[]> {
   const availableDescriptors = await sourceReferences.available();
@@ -522,7 +524,11 @@ async function expandTransitivePublishTargets(
   for (let index = 0; index < scanQueue.length; index++) {
     let references: ResourceDescriptor[];
     try {
-      references = await scanArtifactReferences(store, sourceDir, scanQueue[index]);
+      // As published: an override can change what a backend's or logger's
+      // credentials or a policy's XML reference.
+      references = await scanArtifactReferences(
+        store, sourceDir, scanQueue[index], (descriptor, json) => applyOverrides(descriptor, json, overrides)
+      );
     } catch (error) {
       logger.warn(
         `Unable to scan transitive references for ${scanQueue[index].type} "${scanQueue[index].nameParts.join('/')}": ${String(error)}`
