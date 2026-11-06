@@ -9,6 +9,7 @@ import { ResourceType } from '../../../src/models/resource-types.js';
 import { ResourceDescriptor, ApimServiceContext } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
 import { LogLevel, logger } from '../../../src/lib/logger.js';
+import { HttpError } from '../../../src/clients/apim-client.js';
 import { recordRetry, withRetryResource } from '../../../src/lib/retry-tracker.js';
 import { getResourceDescriptorKey } from '../../../src/lib/resource-path.js';
 
@@ -1160,6 +1161,63 @@ describe('publish-service', () => {
       await runPublish(client, store, { ...base, deleteUnmatched: true, commitId: 'abc123' });
       expect(client.deleteResource).not.toHaveBeenCalled();
       warn.mockRestore();
+    });
+
+    describe('deleting resources that use each other', () => {
+      const inUse = (name: string, user: string) => new HttpError(
+        400,
+        `HTTP 400: {"error":{"code":"ValidationError","message":"The Api Management Property '${name}' is used by the following entities: /${user}"}}`,
+        'ValidationError'
+      );
+      const descriptor = (type: ResourceType, name: string): ResourceDescriptor => ({ type, nameParts: [name] });
+      const run = async (deleted: ResourceDescriptor[], deleteResource: (name: string) => Promise<boolean>) => {
+        const client = createMockClient();
+        client.deleteResource.mockImplementation(async (_context: ApimServiceContext, d: ResourceDescriptor) => deleteResource(d.nameParts[0] ?? ''));
+        vi.mocked(computeGitDiff).mockResolvedValue({ changedDescriptors: [], deletedDescriptors: deleted });
+        const result = await runPublish(client, createMockStore([]), {
+          service: testContext,
+          sourceDir: '/source',
+          dryRun: false,
+          deleteUnmatched: true,
+          commitId: 'abc123',
+          logLevel: LogLevel.INFO,
+        });
+        const calls = client.deleteResource.mock.calls.map(([, d]) => (d as ResourceDescriptor).nameParts[0]);
+        return { result, calls };
+      };
+
+      it('should delete a pool and its member, and a logger and the named value in its credentials, in one run', async () => {
+        const existing = new Set(['pool', 'member', 'key', 'ai']);
+        const { result, calls } = await run(
+          [descriptor(ResourceType.Backend, 'member'), descriptor(ResourceType.NamedValue, 'key'),
+            descriptor(ResourceType.Backend, 'pool'), descriptor(ResourceType.Logger, 'ai')],
+          async (name) => {
+            if (name === 'member' && existing.has('pool')) throw inUse('member', 'backends/pool');
+            if (name === 'key' && existing.has('ai')) throw inUse('key', 'loggers/ai');
+            existing.delete(name);
+            return true;
+          }
+        );
+
+        expect(existing.size).toBe(0);
+        expect(result.exitCode).toBe(0);
+        expect(calls.filter((name) => name === 'member')).toHaveLength(2);
+      });
+
+      it('should not try again a delete that failed for another reason, or one nothing in the run frees', async () => {
+        const { result, calls } = await run(
+          [descriptor(ResourceType.Tag, 'broken'), descriptor(ResourceType.Tag, 'busy'), descriptor(ResourceType.Tag, 'free')],
+          async (name) => {
+            if (name === 'broken') throw new HttpError(500, 'HTTP 500: boom');
+            if (name === 'busy') throw inUse('busy', 'apis/elsewhere');
+            return true;
+          }
+        );
+
+        expect(calls.filter((name) => name === 'broken')).toHaveLength(1);
+        expect(calls.filter((name) => name === 'busy')).toHaveLength(2);
+        expect(result.exitCode).toBe(1);
+      });
     });
 
     it('should delete descriptors removed in the commit when explicitly enabled', async () => {

@@ -44,6 +44,22 @@ export function isLinkAlreadyExistsError(error: unknown): boolean {
   return error instanceof HttpError && error.status === 409;
 }
 
+/**
+ * Returns true when APIM rejects a DELETE because another resource still uses
+ * the one being deleted, for example "The Api Management Property 'x' is used
+ * by the following entities: /backends/y", "Backend Entity 'x' is referenced
+ * in Backend 'pool'" or "The Policy Fragment 'x' is used by the following
+ * entities". The message can be the error's own or one of its details, so the
+ * whole response text is matched.
+ */
+export function isResourceInUseError(error: unknown): boolean {
+  return (
+    error instanceof HttpError &&
+    error.status === 400 &&
+    /is used by the following entities|is referenced in/i.test(error.message)
+  );
+}
+
 /** Returns true when APIM reports that an association's referenced API/group is absent. */
 export function isAssociationReferenceNotFoundError(error: unknown): boolean {
   if (

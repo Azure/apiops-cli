@@ -203,6 +203,8 @@ The output lists each resource and the planned action (create, update, or delete
 
 For a full publish, `--delete-unmatched` deletes APIM resources that are **not** present in the source artifacts. With `--commit-id`, it deletes only resources and Product associations removed by the selected commit.
 
+Deletes run from the most dependent resources to the least (tier 4 to tier 1). Within a tier, resources can use each other — a backend pool its members, a backend or logger the named value in its credentials, a policy fragment a named value — and APIM rejects deleting one that something still uses. Such a delete is tried again once the rest of the tier is deleted, so one run removes them all. APIM's built-in resources (the built-in groups, the `unlimited` and `starter` products, `echo-api`, and the `master` subscription) are never deleted.
+
 > **Warning:** Use with caution. Resources created manually in the Azure portal that are not in your artifact directory will be removed.
 
 ## Exit codes
