@@ -3,6 +3,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { loadFilterConfig, loadOverrideConfig } from '../../../src/lib/config-loader.js';
 import { logger } from '../../../src/lib/logger.js';
+import { resolveWorkspaceFilter, shouldIncludeResource } from '../../../src/services/filter-service.js';
+import { ResourceType } from '../../../src/models/resource-types.js';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
@@ -199,6 +201,76 @@ apis:
           diagnostics: [],
         },
       });
+    });
+
+    it('should load a wildcard API sub-filter with tagDescriptions (#316, #307)', async () => {
+      const content = `
+apis:
+  - '*':
+      operations: []
+      schemas: []
+      tagDescriptions: []
+`;
+      const filePath = path.join(tmpDir, 'wildcard-api-filter.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+
+      expect(config!.apis).toEqual(['*']);
+      expect(config!.apiSubFilters).toEqual({
+        '*': { operations: [], schemas: [], tagDescriptions: [] },
+      });
+    });
+
+    it('should keep an empty entry keyed by a name, so it takes precedence over a pattern', async () => {
+      const content = `
+apis:
+  - '*':
+      operations: []
+  - orders: {}
+  - billing:
+workspaces:
+  - '*':
+      apis: []
+  - team-a: {}
+`;
+      const filePath = path.join(tmpDir, 'empty-override-filter.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+
+      expect(config!.apiSubFilters).toEqual({ '*': { operations: [] }, orders: {}, billing: {} });
+      const operation = (api: string) => ({ type: ResourceType.ApiOperation, nameParts: [api, 'get'] });
+      expect(shouldIncludeResource(operation('orders'), config)).toBe(true);
+      expect(shouldIncludeResource(operation('billing'), config)).toBe(true);
+      expect(shouldIncludeResource(operation('petstore'), config)).toBe(false);
+      const workspaceApi = { type: ResourceType.Api, nameParts: ['ws-orders'] };
+      expect(shouldIncludeResource(workspaceApi, resolveWorkspaceFilter('team-a', config))).toBe(true);
+      expect(shouldIncludeResource(workspaceApi, resolveWorkspaceFilter('team-b', config))).toBe(false);
+    });
+
+    it('should ignore, with a warning, sub-filters keyed by an exclusion', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const content = `
+apis:
+  - '*'
+  - '!legacy':
+      operations: []
+workspaces:
+  - '!team-c':
+      apis: []
+`;
+      const filePath = path.join(tmpDir, 'exclusion-sub-filter.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+
+      expect(config!.apis).toEqual(['*', '!legacy']);
+      expect(config!.apiSubFilters).toEqual({});
+      expect(config!.workspaceSubFilters).toEqual({});
+      expect(warnSpy).toHaveBeenCalledWith("Sub-filter for exclusion '!legacy' in 'apis' has no effect; ignoring.");
+      expect(warnSpy).toHaveBeenCalledWith("Sub-filter for exclusion '!team-c' in 'workspaces' has no effect; ignoring.");
+      warnSpy.mockRestore();
     });
 
     it('should load nested workspace filter entries', async () => {

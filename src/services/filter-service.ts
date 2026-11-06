@@ -68,6 +68,7 @@ const API_SUB_FILTER_KEY_MAP: Partial<Record<ResourceType, keyof ApiSubFilter>> 
   [ResourceType.ApiDiagnostic]: 'diagnostics',
   [ResourceType.ApiSchema]: 'schemas',
   [ResourceType.ApiRelease]: 'releases',
+  [ResourceType.ApiTagDescription]: 'tagDescriptions',
 };
 
 /**
@@ -139,37 +140,7 @@ export function shouldReconcileResource(
     return false;
   }
 
-  const workspaceFilter = getWorkspaceFilter(descriptor.workspace, filter);
-  return shouldIncludeResource(descriptor, workspaceFilter);
-}
-
-function getWorkspaceFilter(
-  workspaceName: string,
-  filter?: FilterConfig
-): FilterConfig | undefined {
-  const matchingKey = Object.keys(filter?.workspaceSubFilters ?? {}).find(
-    key => key.toLowerCase() === workspaceName.toLowerCase()
-  );
-  if (!matchingKey) {
-    return undefined;
-  }
-
-  const subFilter = filter?.workspaceSubFilters?.[matchingKey];
-  return subFilter ? {
-    apis: subFilter.apis,
-    apiSubFilters: subFilter.apiSubFilters,
-    backends: subFilter.backends,
-    diagnostics: subFilter.diagnostics,
-    groups: subFilter.groups,
-    loggers: subFilter.loggers,
-    namedValues: subFilter.namedValues,
-    policyFragments: subFilter.policyFragments,
-    products: subFilter.products,
-    schemas: subFilter.schemas,
-    subscriptions: subFilter.subscriptions,
-    tags: subFilter.tags,
-    versionSets: subFilter.versionSets,
-  } : undefined;
+  return shouldIncludeResource(descriptor, resolveWorkspaceFilter(descriptor.workspace, filter));
 }
 
 /**
@@ -180,11 +151,9 @@ export function resolveWorkspaceFilter(
   workspaceName: string,
   filter?: FilterConfig
 ): FilterConfig | undefined {
-  const lowerName = workspaceName.toLowerCase();
-  const matchingKey = Object.keys(filter?.workspaceSubFilters ?? {}).find(
-    (key) => key.toLowerCase() === lowerName
-  );
-  const subFilter = matchingKey ? filter?.workspaceSubFilters?.[matchingKey] : undefined;
+  // A sub-filter keyed by a pattern (for example `team-*`) applies to every
+  // workspace it matches; one keyed by the workspace's name takes precedence.
+  const subFilter = findSubFilter(workspaceName, filter?.workspaceSubFilters);
   return subFilter ? workspaceSubFilterToFilterConfig(subFilter) : undefined;
 }
 
@@ -225,18 +194,12 @@ function matchesApiSubFilter(
   parentApiName: string,
   apiSubFilters: Record<string, ApiSubFilter>
 ): boolean {
-  // Find matching sub-filter using case-insensitive API name
-  const lowerParent = parentApiName.toLowerCase();
-  const matchingKey = Object.keys(apiSubFilters).find(
-    (k) => k.toLowerCase() === lowerParent
-  );
-
-  if (!matchingKey) {
+  const subFilter = findApiSubFilter(parentApiName, apiSubFilters);
+  if (!subFilter) {
     // No sub-filter for this API — include all children
     return true;
   }
 
-  const subFilter = apiSubFilters[matchingKey];
   const subFilterKey = API_SUB_FILTER_KEY_MAP[descriptor.type];
 
   if (!subFilterKey) {
@@ -293,6 +256,32 @@ export function hasExplicitTypeFilter(type: ResourceType, filter?: FilterConfig)
 export function extractRootApiName(name: string): string {
   const semiIndex = name.indexOf(';');
   return semiIndex >= 0 ? name.substring(0, semiIndex) : name;
+}
+
+/**
+ * The sub-filter that applies to a named API or workspace: the one keyed by
+ * its name (case-insensitive), otherwise the first one keyed by a wildcard
+ * pattern that matches it (for example `*`). Exclusion keys (`!name`) never
+ * apply.
+ */
+function findSubFilter<T>(name: string, subFilters: Record<string, T> | undefined): T | undefined {
+  if (!subFilters) {
+    return undefined;
+  }
+  const lowerName = name.toLowerCase();
+  const keys = Object.keys(subFilters).filter((key) => !key.startsWith('!'));
+  const key =
+    keys.find((k) => k.toLowerCase() === lowerName) ??
+    keys.find((k) => isWildcardPattern(k) && matchesFilter(name, [k]));
+  return key === undefined ? undefined : subFilters[key];
+}
+
+/** The sub-filter that applies to an API (see {@link findSubFilter}). */
+export function findApiSubFilter(
+  apiName: string,
+  apiSubFilters: Record<string, ApiSubFilter> | undefined
+): ApiSubFilter | undefined {
+  return findSubFilter(apiName, apiSubFilters);
 }
 
 /**
