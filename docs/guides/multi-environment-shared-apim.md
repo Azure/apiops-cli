@@ -436,7 +436,7 @@ Publish each with its respective `--service-name` (shared APIM for dev/qa, dedic
 
 ## Limitations
 
-- **Policy XML rewriting is regex-based.** The rewriter uses targeted regular expressions for `{{token}}`, `fragment-id="..."`, and `backend-id="..."` patterns. Tokens or attributes inside CDATA sections or XML comments may not be rewritten correctly. Avoid placing canonical resource name references inside CDATA blocks or comments in policy XML.
+- **Policy XML rewriting is regex-based.** The rewriter uses targeted regular expressions for `{{token}}`, `fragment-id="..."`, and `backend-id="..."` patterns. XML comments are left as written, since APIM doesn't substitute named values inside them. Tokens or attributes inside CDATA sections may not be rewritten correctly. Avoid placing canonical resource name references inside CDATA blocks in policy XML.
 - **Workspace container is not affixed.** The Workspace resource name itself is never prefixed/suffixed, even if `Workspace` is in `appliesTo`. Resources *inside* a workspace are affixed normally via their parent workspace's name.
 - **`ServicePolicy` and singleton types are never affixed.** The service-level policy, API policies, product policies, and operation policies derive their identity from their parent resource and are handled transitively — see [Types that are never affixed](#types-that-are-never-affixed).
 - **No `--strip-prefix` for extraction.** There is no built-in flag to strip environment prefixes when extracting from a shared APIM. Always extract from a dedicated source-of-truth APIM with canonical names.

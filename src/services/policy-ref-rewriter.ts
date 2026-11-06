@@ -7,12 +7,11 @@
  *
  * Design trade-off — regex, not XML parsing:
  *   Aligns with the repo's opaque-payload philosophy (FR-009). XML comments
- *   (<!--...-->) and CDATA sections are NOT explicitly excluded; a token like
- *   {{name}} inside a comment would technically be rewritten. This risk is
- *   acceptable because the known-set filter is the primary safety guard —
- *   only names present in the canonical artifact set are rewritten, so a
- *   false positive requires an artifact to be named exactly like a comment
- *   token, which is extremely unlikely in practice.
+ *   (<!--...-->) are left as written: APIM doesn't substitute named values
+ *   inside them, and a rewritten name could put `--` in one, which XML
+ *   doesn't allow. CDATA sections are NOT explicitly excluded; the
+ *   known-set filter is the primary safety guard there — only names present
+ *   in the canonical artifact set are rewritten.
  *
  * Known-set filter safety:
  *   Only tokens that are the display name of a named value in the source, and
@@ -24,7 +23,12 @@
 import type { EnvMapping } from './env-mapper.js';
 import { toDeployedName } from './env-mapper.js';
 import type { KnownArtifactSets } from '../models/config.js';
-import { blankPolicyExpressions, POLICY_REFERENCE_PATTERNS, replaceNamedValueReferences } from './transitive-resolver.js';
+import {
+  blankPolicyExpressions,
+  blankXmlComments,
+  POLICY_REFERENCE_PATTERNS,
+  replaceNamedValueReferences,
+} from './transitive-resolver.js';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -72,14 +76,15 @@ export function rewritePolicyRefs(
   // An attribute that names a resource (backend-id, fragment-id, logger-id,
   // schema-id ...) names one in the policy's scope. A policy expression or a
   // named value (rewritten above) names none here.
-  // Matched on a copy with policy expressions blanked (same offsets), so a
-  // quote inside one doesn't hide the attributes after it.
+  // Matched on a copy with XML comments and policy expressions blanked (same
+  // offsets): comments are left as written, and a quote inside an expression
+  // doesn't hide the attributes after it.
   for (const { type, pattern } of POLICY_REFERENCE_PATTERNS) {
     if (!mapping.appliesTo.has(type)) continue;
     const current = result;
     let rewritten = '';
     let last = 0;
-    for (const match of blankPolicyExpressions(current).matchAll(pattern)) {
+    for (const match of blankPolicyExpressions(blankXmlComments(current)).matchAll(pattern)) {
       const [whole, quote = '', value = ''] = match;
       const start = match.index ?? 0;
       const end = start + whole.length;

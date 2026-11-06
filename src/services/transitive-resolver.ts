@@ -140,11 +140,11 @@ export function blankPolicyExpressions(xml: string): string {
 
 /**
  * Policy XML with each XML comment replaced by spaces, the same length:
- * references inside comments are not in effect. Comments are found the way
- * policySpans finds them, so a `<!--` in a policy expression string hides
- * nothing.
+ * references inside comments are not in effect (APIM doesn't substitute named
+ * values there). Comments are found the way policySpans finds them, so a
+ * `<!--` in a policy expression string hides nothing.
  */
-function blankXmlComments(xml: string): string {
+export function blankXmlComments(xml: string): string {
   return blankSpans(xml, 'comment', { start: 0, end: 0 });
 }
 
@@ -225,29 +225,39 @@ function stripNonReferenceContent(policyXml: string): string {
  * Replace each `{{reference}}` in policy XML the way APIM substitutes named
  * values: any `{{ name }}` outside Liquid bodies, and inside a
  * `<set-body template="liquid">` body only a bare `{{name}}`
- * (scanLiquidNamedValueCandidates); the rest there is Liquid output. `replace`
- * gets the trimmed name and the whole match, and returns the text to put in
- * its place.
+ * (scanLiquidNamedValueCandidates); the rest there is Liquid output. XML
+ * comments are left as written, since APIM doesn't substitute named values
+ * there. `replace` gets the trimmed name and the whole match, and returns the
+ * text to put in its place.
  */
 export function replaceNamedValueReferences(policyXml: string, replace: (name: string, match: string) => string): string {
-  const replaceIn = (text: string, pattern: RegExp) =>
-    text.replace(pattern, (match: string, name: string) => replace(name.trim(), match));
-  // Liquid bodies are found as the scanner finds them, ignoring XML comments:
-  // on a copy with each comment blanked out, so offsets still match.
+  // Matched on a copy with each XML comment blanked out, so offsets still
+  // match and nothing inside a comment is found.
   const uncommented = blankXmlComments(policyXml);
+  const replaceBetween = (from: number, to: number, pattern: RegExp) => {
+    let text = '';
+    let last = from;
+    for (const match of uncommented.slice(from, to).matchAll(pattern)) {
+      const start = from + (match.index ?? 0);
+      const end = start + match[0].length;
+      text += policyXml.slice(last, start) + replace((match[1] ?? '').trim(), policyXml.slice(start, end));
+      last = end;
+    }
+    return text + policyXml.slice(last, to);
+  };
   let result = '';
   let last = 0;
   for (const body of uncommented.matchAll(LIQUID_BODY_PATTERN)) {
     const start = body.index ?? 0;
     const [, open = '', , content = ''] = body;
     const contentStart = start + open.length;
-    const end = start + body[0].length;
-    result += replaceIn(policyXml.slice(last, contentStart), NAMED_VALUE_PATTERN);
-    result += replaceIn(policyXml.slice(contentStart, contentStart + content.length), LIQUID_NAMED_VALUE_PATTERN);
-    result += policyXml.slice(contentStart + content.length, end);
-    last = end;
+    const contentEnd = contentStart + content.length;
+    result += replaceBetween(last, contentStart, NAMED_VALUE_PATTERN);
+    result += replaceBetween(contentStart, contentEnd, LIQUID_NAMED_VALUE_PATTERN);
+    last = start + body[0].length;
+    result += policyXml.slice(contentEnd, last);
   }
-  return result + replaceIn(policyXml.slice(last), NAMED_VALUE_PATTERN);
+  return result + replaceBetween(last, policyXml.length, NAMED_VALUE_PATTERN);
 }
 
 /**

@@ -263,6 +263,18 @@ describe('rewritePolicyRefs', () => {
     expect(rewrite(xml, devPrefixMapping([ResourceType.NamedValue]))).toBe(expected);
   });
 
+  it('leaves XML comments as written, since APIM substitutes nothing there', () => {
+    const xml =
+      '<!-- uses {{myNv}} and <set-backend-service backend-id="myBackend" /> -->' +
+      '<value>{{myNv}}</value><set-backend-service backend-id="myBackend" />' +
+      '<set-variable name="v" value="@("<!--")" /><value>{{myNv}}</value>';
+    expect(rewrite(xml, devPrefixMapping(ALL_TYPES))).toBe(
+      '<!-- uses {{myNv}} and <set-backend-service backend-id="myBackend" /> -->' +
+      '<value>{{dev-myNv}}</value><set-backend-service backend-id="dev-myBackend" />' +
+      '<set-variable name="v" value="@("<!--")" /><value>{{dev-myNv}}</value>'
+    );
+  });
+
   it('rewrites only a bare {{name}} inside a Liquid body, leaving Liquid output', () => {
     const xml = '<set-body template="liquid">{{myNv}} {{ myNv }} {{myNv | upcase}} {{body.id}}</set-body><value>{{ myNv }}</value>';
     expect(rewrite(xml, devPrefixMapping([ResourceType.NamedValue]))).toBe(
