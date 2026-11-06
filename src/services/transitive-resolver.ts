@@ -63,13 +63,6 @@ export const POLICY_REFERENCE_PATTERNS: ReadonlyArray<{ type: ResourceType; patt
 ];
 
 /**
- * XML comments: references inside them are not in effect. Only a closed
- * comment is removed, so a stray `<!--` (for example in a policy expression
- * string) cannot hide the rest of the policy.
- */
-const XML_COMMENT_PATTERN = /<!--[\s\S]*?-->/g;
-
-/**
  * The body of a `<set-body template="liquid">` element (capture group 3): its
  * `{{ ... }}` are mostly Liquid output expressions, not named value
  * references; see scanLiquidNamedValueCandidates. A self-closing set-body has
@@ -88,6 +81,49 @@ const LIQUID_BODY_PATTERN = new RegExp(
 const LIQUID_NAMED_VALUE_PATTERN = /\{\{([A-Za-z0-9._-]+)\}\}/g;
 
 /**
+ * The XML comments and policy expressions (`@(...)`, `@{...}`) in policy XML,
+ * in order, found in one pass: a `<!--` inside an expression (in a string,
+ * say) starts no comment, and an `@(` inside a comment starts no expression.
+ * `end` is the index after the span. A comment or expression that doesn't
+ * close is no span, so it can't hide the rest of the policy.
+ */
+function policySpans(xml: string): Array<{ kind: 'comment' | 'expression'; start: number; end: number }> {
+  const spans: Array<{ kind: 'comment' | 'expression'; start: number; end: number }> = [];
+  for (let i = 0; i < xml.length; i++) {
+    const close = xml.startsWith('<!--', i)
+      ? xml.indexOf('-->', i + 4)
+      : xml[i] === '@' && (xml[i + 1] === '(' || xml[i + 1] === '{')
+        ? policyExpressionEnd(xml, i + 1)
+        : -1;
+    if (close !== -1) {
+      const comment = xml[i] === '<';
+      const end = comment ? close + 3 : close + 1;
+      spans.push({ kind: comment ? 'comment' : 'expression', start: i, end });
+      i = end - 1;
+    }
+  }
+  return spans;
+}
+
+/**
+ * `xml` with each span of `kind` replaced by spaces, the same length, except
+ * `keep` characters at its start and end.
+ */
+function blankSpans(xml: string, kind: 'comment' | 'expression', keep: { start: number; end: number }): string {
+  let result = '';
+  let last = 0;
+  for (const span of policySpans(xml)) {
+    if (span.kind === kind) {
+      const from = span.start + keep.start;
+      const to = span.end - keep.end;
+      result += xml.slice(last, from) + ' '.repeat(to - from);
+      last = to;
+    }
+  }
+  return result + xml.slice(last);
+}
+
+/**
  * Policy XML with the inside of each policy expression (`@(...)`, `@{...}`)
  * replaced by spaces, the same length. APIM's raw XML keeps an expression's
  * string literals as written, so an attribute value can hold double quotes
@@ -95,30 +131,27 @@ const LIQUID_NAMED_VALUE_PATTERN = /\{\{([A-Za-z0-9._-]+)\}\}/g;
  * attribute pattern's value early and hide the attributes after it. The `@`
  * and the outer brackets are kept, so a value that is an expression still
  * starts with `@`; offsets are unchanged, so matches found in the result
- * apply to the original. An expression whose end can't be found is left as
- * it is.
+ * apply to the original. An expression whose end can't be found, or that is
+ * inside an XML comment, is left as it is.
  */
 export function blankPolicyExpressions(xml: string): string {
-  let result = '';
-  let last = 0;
-  let index = xml.indexOf('@');
-  while (index !== -1) {
-    const open = xml[index + 1];
-    const end = open === '(' || open === '{' ? policyExpressionEnd(xml, index + 1) : -1;
-    if (end === -1) {
-      index = xml.indexOf('@', index + 1);
-      continue;
-    }
-    result += xml.slice(last, index + 2) + ' '.repeat(end - index - 2);
-    last = end;
-    index = xml.indexOf('@', end);
-  }
-  return result + xml.slice(last);
+  return blankSpans(xml, 'expression', { start: 2, end: 1 });
+}
+
+/**
+ * Policy XML with each XML comment replaced by spaces, the same length:
+ * references inside comments are not in effect. Comments are found the way
+ * policySpans finds them, so a `<!--` in a policy expression string hides
+ * nothing.
+ */
+function blankXmlComments(xml: string): string {
+  return blankSpans(xml, 'comment', { start: 0, end: 0 });
 }
 
 /**
  * The index of the bracket closing the one at `start` (`(` or `{`), skipping
- * C# string and character literals, or -1 when the expression doesn't close.
+ * C# comments and string and character literals, or -1 when the expression
+ * doesn't close.
  */
 function policyExpressionEnd(xml: string, start: number): number {
   const opening = xml[start];
@@ -126,7 +159,14 @@ function policyExpressionEnd(xml: string, start: number): number {
   let depth = 0;
   for (let i = start; i < xml.length; i++) {
     const char = xml[i];
-    if (char === '"' || char === "'") {
+    if (char === '/' && (xml[i + 1] === '/' || xml[i + 1] === '*')) {
+      // A comment can hold quotes and brackets (`/* don't */`).
+      const commentEnd = xml[i + 1] === '/' ? xml.indexOf('\n', i) : xml.indexOf('*/', i + 2) + 1;
+      if (commentEnd <= 0) {
+        return -1;
+      }
+      i = commentEnd;
+    } else if (char === '"' || char === "'") {
       // A verbatim string (@"...") doubles its quotes; others escape with '\'.
       const verbatim = char === '"' && xml[i - 1] === '@';
       for (i++; i < xml.length; i++) {
@@ -147,11 +187,10 @@ function policyExpressionEnd(xml: string, start: number): number {
 
 /**
  * Policy XML with the parts that cannot reference other resources removed:
- * XML comments, and the bodies of Liquid templates.
+ * XML comments (blanked), and the bodies of Liquid templates.
  */
 function stripNonReferenceContent(policyXml: string): string {
-  return policyXml
-    .replace(XML_COMMENT_PATTERN, '')
+  return blankXmlComments(policyXml)
     .replace(LIQUID_BODY_PATTERN, (_match, open: string, _quote: string, _body: string, close: string) => `${open}${close}`);
 }
 
@@ -168,7 +207,7 @@ export function replaceNamedValueReferences(policyXml: string, replace: (name: s
     text.replace(pattern, (match: string, name: string) => replace(name.trim(), match));
   // Liquid bodies are found as the scanner finds them, ignoring XML comments:
   // on a copy with each comment blanked out, so offsets still match.
-  const uncommented = policyXml.replace(XML_COMMENT_PATTERN, (comment) => ' '.repeat(comment.length));
+  const uncommented = blankXmlComments(policyXml);
   let result = '';
   let last = 0;
   for (const body of uncommented.matchAll(LIQUID_BODY_PATTERN)) {
@@ -195,7 +234,7 @@ export function replaceNamedValueReferences(policyXml: string, replace: (name: s
  */
 export function scanLiquidNamedValueCandidates(policyXml: string): string[] {
   const names = new Set<string>();
-  for (const body of policyXml.replace(XML_COMMENT_PATTERN, '').matchAll(LIQUID_BODY_PATTERN)) {
+  for (const body of blankXmlComments(policyXml).matchAll(LIQUID_BODY_PATTERN)) {
     for (const match of (body[3] ?? '').matchAll(LIQUID_NAMED_VALUE_PATTERN)) {
       if (match[1]) {
         names.add(match[1]);

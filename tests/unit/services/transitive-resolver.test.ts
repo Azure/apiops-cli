@@ -126,6 +126,28 @@ describe('transitive-resolver', () => {
 
       expect(refs).toContainEqual({ type: ResourceType.Backend, name: 'orders-backend' });
     });
+    it('should not let a "<!--" in a policy expression string hide references before a later comment', () => {
+      const refs = scanPolicyReferences(
+        '<set-body>@("<!--")</set-body>' +
+        '<set-backend-service backend-id="orders-backend" />' +
+        '<set-header name="k"><value>{{Api_Key}}</value></set-header>' +
+        '<!-- <set-backend-service backend-id="old-backend" /> -->'
+      );
+
+      expect(refs).toEqual([
+        { type: ResourceType.NamedValue, name: 'Api_Key' },
+        { type: ResourceType.Backend, name: 'orders-backend' },
+      ]);
+    });
+    it('should not take an @( inside an XML comment for a policy expression', () => {
+      const refs = scanPolicyReferences(
+        '<!-- was @{ return "x"; -->' +
+        '<set-backend-service backend-id="orders-backend" />' +
+        '<set-variable name="v" value="@{ return "y"; }" />'
+      );
+
+      expect(refs).toEqual([{ type: ResourceType.Backend, name: 'orders-backend' }]);
+    });
     it('should give the {{name}}s in Liquid bodies that a named value could have, for callers to check', () => {
       const policy = `<policies><inbound>
         <set-body template="liquid">nv=[{{demo-backend-id}}] dotted=[{{body.id}}] spaced=[{{ context.Request.Url }}] filtered=[{{x | upcase}}]</set-body>
@@ -578,6 +600,9 @@ describe('blankPolicyExpressions', () => {
     ['a verbatim string with doubled quotes', 'v="@(@"a""b)c")" x', 'v="@(         )" x'],
     ['an escaped quote', 'v="@("a\\"b")" x', 'v="@(      )" x'],
     ['a block with nested braces', 'v="@{ if (a) { return "}"; } }" x', 'v="@{                        }" x'],
+    ['a block comment with a quote', 'v="@{ /* don\'t */ return "a"; }" x', 'v="@{                         }" x'],
+    ['a line comment with a bracket', 'v="@{ // a ) or "\nreturn 1; }" x', 'v="@{                       }" x'],
+    ['an expression inside an XML comment', '<!-- @{ x" --> v="@(a)"', '<!-- @{ x" --> v="@( )"'],
     ['an unclosed expression', 'v="@(ctx.Get("a")" x', 'v="@(ctx.Get("a")" x'],
     ['an @ that starts no expression', 'mail="a@example.com"', 'mail="a@example.com"'],
   ])('should blank %s, keeping its length', (_label, xml, expected) => {
