@@ -10,7 +10,7 @@ import type { IApimClient } from '../clients/iapim-client.js';
 import type { IArtifactStore } from '../clients/iartifact-store.js';
 import type { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import type { PublishConfig } from '../models/config.js';
-import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
+import { isBuiltInSubscription, ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { getTopologicalOrder } from '../lib/dependency-graph.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
 import { getResourceDescriptorKey } from '../lib/resource-path.js';
@@ -167,6 +167,10 @@ export async function generateDryRunReport(
         const deployedDescriptor = config.envMapping
           ? mapDescriptor(descriptor, config.envMapping)
           : descriptor;
+        // As publish: never the built-in `master` subscription, by its name on the instance.
+        if (isBuiltInSubscription(deployedDescriptor)) {
+          continue;
+        }
         const resolvedDescriptor = await resolveAssociationDeleteDescriptor(
           client,
           context,

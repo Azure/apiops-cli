@@ -27,7 +27,7 @@ import type { IApimClient } from '../clients/iapim-client.js';
 import type { IArtifactStore } from '../clients/iartifact-store.js';
 import type { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import type { PublishConfig } from '../models/config.js';
-import { ResourceType } from '../models/resource-types.js';
+import { isBuiltInSubscription, ResourceType } from '../models/resource-types.js';
 import { getTopologicalOrder } from '../lib/dependency-graph.js';
 import {
   getNameFromNameParts,
@@ -86,7 +86,6 @@ const BUILT_IN_GROUPS = ['administrators', 'developers', 'guests'];
  * System resources that should never be deleted
  */
 const SYSTEM_RESOURCES = new Set<string>([
-  'master', // Master product
   'unlimited', // Unlimited product
   'starter', // Starter product
   'echo-api', // Echo API (system test API)
@@ -135,7 +134,11 @@ export async function computeDeleteActions(
       for await (const resource of apimResources) {
         const deployedDescriptor = parseResourceDescriptor(resource, resourceType);
 
-        if (!deployedDescriptor) {
+        // APIM's built-in `master` subscription can't be recreated once deleted.
+        // It is checked under its name on the instance: with an environment
+        // affix, a source name can deploy as `master`, and `master` can read as
+        // another source name.
+        if (!deployedDescriptor || isBuiltInSubscription(deployedDescriptor)) {
           continue;
         }
 

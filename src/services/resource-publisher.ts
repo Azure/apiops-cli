@@ -417,9 +417,8 @@ export async function publishResource(
     // but the PUT endpoint requires a relative APIM path (e.g. "/apis" or
     // "/apis/{apiId}" or "/products/{productId}").  Strip the service base path
     // prefix when it is present so that the publish round-trip works correctly.
-    // HOWEVER: Skip publishing subscriptions with root-level scope (e.g. the built-in
-    // "master" subscription), as APIM treats these as read-only system resources
-    // and returns ValidationError when attempting to update them.
+    // The built-in root-scoped `master` subscription never gets here: publish
+    // leaves it out (isBuiltInSubscription).
     if (descriptor.type === ResourceType.Subscription) {
       const subscriptionName = getNamePart(descriptor.nameParts, 0);
       const eligibility = await evaluateResourceEligibility(
@@ -919,15 +918,6 @@ export async function evaluateResourceEligibility(
 
   if (descriptor.type !== ResourceType.Subscription || !json) {
     return { eligible: true };
-  }
-
-  const properties = json.properties as Record<string, unknown> | undefined;
-  const scope = properties?.scope as string | undefined;
-  if (
-    scope &&
-    (scope.endsWith('/') || (!scope.includes('/apis') && !scope.includes('/products')))
-  ) {
-    return { eligible: false, reason: 'root-scoped subscriptions are managed by APIM' };
   }
 
   for (const target of findSubscriptionTargets(json, descriptor.workspace)) {

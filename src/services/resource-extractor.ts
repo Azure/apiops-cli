@@ -9,7 +9,7 @@
 import { IApimClient } from '../clients/iapim-client.js';
 import { IArtifactStore } from '../clients/iartifact-store.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
-import { ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
+import { isBuiltInSubscription, ResourceType, RESOURCE_TYPE_METADATA } from '../models/resource-types.js';
 import { redactSecrets } from './secret-redactor.js';
 import { shouldIncludeResource } from './filter-service.js';
 import { FilterConfig } from '../models/config.js';
@@ -102,6 +102,10 @@ export async function extractResourceType(
         // Apply filter
         if (!shouldIncludeResource(descriptor, filter)) {
           logger.debug(`Filtered out ${buildResourceLabel(descriptor)}`);
+          continue;
+        }
+        if (isBuiltInSubscription(descriptor)) {
+          logger.debug(`Skipping ${buildResourceLabel(descriptor)}: APIM manages the built-in subscription`);
           continue;
         }
 

@@ -107,6 +107,17 @@ describe('resource-extractor', () => {
       expect(result.extracted[0]?.descriptor.nameParts[0]).toBe('nv-1');
     });
 
+    it("should leave out APIM's built-in master subscription", async () => {
+      const client = createMockClient([
+        { name: 'master', properties: { scope: '/subscriptions/s/resourceGroups/rg/providers/Microsoft.ApiManagement/service/apim-1' } },
+        { name: 'orders-sub', properties: { scope: '/apis/orders' } },
+      ]);
+
+      const result = await extractResourceType(client, createMockStore(), testContext, ResourceType.Subscription, '/output');
+
+      expect(result.extracted.map((extracted) => extracted.descriptor.nameParts[0])).toEqual(['orders-sub']);
+    });
+
     it('should redact secret named values', async () => {
       const client = createMockClient([
         { name: 'secret-nv', properties: { secret: true, value: 'hidden' } },

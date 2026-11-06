@@ -1366,37 +1366,6 @@ describe('resource-publisher', () => {
       expect(client.putResource).toHaveBeenCalledOnce();
     });
 
-    it('should skip subscription with root scope (master subscription)', async () => {
-      // The master subscription has scope as the service root, which results in
-      // "/" after ARM path stripping. This is invalid and the subscription should be skipped.
-      const client = createMockClient();
-      const store = createMockStore();
-
-      const armScopePrefix =
-        '/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1';
-
-      const subscriptionJson = {
-        name: 'master',
-        properties: {
-          displayName: 'Master subscription',
-          scope: armScopePrefix, // service root, results in "/" after stripping
-          state: 'active',
-        },
-      };
-      store.readResource.mockResolvedValue(subscriptionJson);
-
-      const descriptor: ResourceDescriptor = {
-        type: ResourceType.Subscription,
-        nameParts: ['master'],
-      };
-
-      const result = await publishResource(client, store, testContext, descriptor, testConfig);
-
-      expect(result.status).toBe('skipped');
-      expect(result.action).toBe('noop');
-      expect(client.putResource).not.toHaveBeenCalled();
-    });
-
     it('should publish 24-hex product subscription with empty displayName', async () => {
       const client = createMockClient();
       const store = createMockStore();

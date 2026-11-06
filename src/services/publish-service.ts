@@ -7,10 +7,11 @@
  */
 
 import { IApimClient } from '../clients/iapim-client.js';
+import { isResourceInUseError } from '../clients/apim-client.js';
 import { IArtifactStore } from '../clients/iartifact-store.js';
 import { FilterConfig, PublishConfig, OverrideConfig } from '../models/config.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
-import { ResourceType } from '../models/resource-types.js';
+import { isBuiltInSubscription, ResourceType } from '../models/resource-types.js';
 import { getResourceTier, TIER_LABELS } from '../lib/dependency-graph.js';
 import { runParallel } from '../lib/parallel-runner.js';
 import { logger } from '../lib/logger.js';
@@ -125,7 +126,7 @@ async function runPublishPipeline(
     await client.validatePreFlight(config.service);
 
     // Step 1: Determine target descriptors based on incremental mode
-    const { targetDescriptors, deletedDescriptors } = await determinePublishTargets(
+    const { targetDescriptors: selectedDescriptors, deletedDescriptors } = await determinePublishTargets(
       store,
       config
     );
@@ -139,10 +140,13 @@ async function runPublishPipeline(
     // every unchanged artifact in incremental runs.
     const allDescriptors = config.commitId
       ? await store.listResources(config.sourceDir)
-      : targetDescriptors;
+      : selectedDescriptors;
 
     // Step 1b: Validate env mapping and store it on config for downstream use
     validateAndBuildEnvMapping(config.overrides, allDescriptors, config);
+    const targetDescriptors = selectedDescriptors.filter(
+      (descriptor) => !deploysAsBuiltInSubscription(descriptor, config)
+    );
 
     // Step 1c: Build known artifact sets for policy ref rewriting
     config.knownArtifactSets = buildKnownArtifactSets(allDescriptors);
@@ -299,6 +303,8 @@ async function determinePublishTargets(
     deletedDescriptors = [];
   }
 
+  // APIM's built-in `master` subscription can't be published (isBuiltInSubscription).
+  targetDescriptors = targetDescriptors.filter((descriptor) => !isBuiltInSubscription(descriptor));
   targetDescriptors = filterPublishDescriptors(targetDescriptors, config.filter);
   deletedDescriptors = filterPublishDescriptors(deletedDescriptors, config.filter);
 
@@ -314,6 +320,22 @@ async function determinePublishTargets(
   }
 
   return { targetDescriptors, deletedDescriptors };
+}
+
+/**
+ * Whether an environment affix makes a subscription's name on the instance
+ * `master`: publishing it would write to APIM's built-in subscription
+ * (isBuiltInSubscription), so it is left out with a warning. The source's
+ * own `master` is left out quietly when choosing what to publish.
+ */
+function deploysAsBuiltInSubscription(descriptor: ResourceDescriptor, config: PublishConfig): boolean {
+  if (!config.envMapping || !isBuiltInSubscription(mapDescriptor(descriptor, config.envMapping))) {
+    return false;
+  }
+  logger.warn(
+    `Skipping subscription "${descriptor.nameParts.join('/')}": the environment affix would publish it as APIM's built-in "master" subscription`
+  );
+  return true;
 }
 
 async function expandTransitivePublishTargets(
@@ -988,7 +1010,13 @@ async function executeDeletesForDescriptors(
   // removes all of its revisions in one call. Drop individual ;rev=N deletes
   // whose base API is also in the delete set to avoid redundant/racy deletes and
   // the "Cannot delete the current revision of an API" error.
-  const effectiveDescriptors = filterRevisionDeletesHandledByBaseApi(deleteDescriptors);
+  // APIM's built-in `master` subscription is never deleted: one that is can't
+  // be recreated (isBuiltInSubscription). It is checked under the name on the
+  // instance, which an environment affix can make `master`.
+  const effectiveDescriptors = filterRevisionDeletesHandledByBaseApi(deleteDescriptors)
+    .filter((descriptor) => !isBuiltInSubscription(
+      config.envMapping && !descriptorsAreDeployed ? mapDescriptor(descriptor, config.envMapping) : descriptor
+    ));
 
   // Group by tier
   const tierGroups = new Map<number, ResourceDescriptor[]>();
@@ -1064,10 +1092,6 @@ async function deleteTier(
         status: deleted ? ('success' as const) : ('skipped' as const),
       };
     } catch (error) {
-      logger.error(
-        `Failed to delete ${buildResourceLabel(descriptor)}:`,
-        error
-      );
       return {
         descriptor,
         action: 'delete' as const,
@@ -1077,18 +1101,17 @@ async function deleteTier(
     }
   };
 
-  const tasks = descriptors.map((descriptor) => async () => {
-    const { value, retries } = await trackRetries(() => deleteDescriptor(descriptor));
-    return attachRetries([value], retries)[0] ?? value;
-  });
-
-  const taskResults = await runParallel(tasks, 5);
-
-  return taskResults.map((tr, index) => {
-    if (tr.status === 'fulfilled' && tr.value) {
-      return tr.value;
-    } else {
-      const descriptor = descriptors[index];
+  const deleteAll = async (pending: ResourceDescriptor[]): Promise<PublishActionResult[]> => {
+    const tasks = pending.map((descriptor) => async () => {
+      const { value, retries } = await trackRetries(() => deleteDescriptor(descriptor));
+      return attachRetries([value], retries)[0] ?? value;
+    });
+    const taskResults = await runParallel(tasks, 5);
+    return taskResults.map((tr, index) => {
+      if (tr.status === 'fulfilled' && tr.value) {
+        return tr.value;
+      }
+      const descriptor = pending[index];
       if (!descriptor) {
         throw new Error('No descriptor found for failed task');
       }
@@ -1098,7 +1121,47 @@ async function deleteTier(
         status: 'failed' as const,
         error: tr.reason || new Error('Unknown error'),
       };
+    });
+  };
+
+  // Resources in one tier can use each other (a backend pool its members, a
+  // backend or logger the named value in its credentials, a fragment a named
+  // value), and APIM rejects deleting one that something still uses. Such a
+  // delete is tried again once the rest of the tier is gone, for as long as
+  // each round deletes something.
+  const finalResults = new Map<ResourceDescriptor, PublishActionResult>();
+  // HTTP retries add up across rounds: a delete can be retried before APIM
+  // rejects it as in use, then succeed in a later round.
+  const retries = new Map<ResourceDescriptor, number>();
+  let pending = descriptors;
+  while (pending.length > 0) {
+    const roundResults = await deleteAll(pending);
+    for (const result of roundResults) {
+      retries.set(result.descriptor, (retries.get(result.descriptor) ?? 0) + (result.retries ?? 0));
     }
+    const inUse = roundResults.filter((result) => result.status === 'failed' && isResourceInUseError(result.error));
+    const progressed = roundResults.some((result) => result.status !== 'failed');
+    for (const result of roundResults) {
+      if (!inUse.includes(result) || !progressed) {
+        finalResults.set(result.descriptor, result);
+      }
+    }
+    if (!progressed) {
+      break;
+    }
+    pending = inUse.map((result) => result.descriptor);
+    if (pending.length > 0) {
+      logger.debug(`Deleting ${pending.length} resource(s) again that others being deleted were still using`);
+    }
+  }
+
+  return descriptors.map((descriptor) => {
+    const total = retries.get(descriptor) ?? 0;
+    const result = { ...finalResults.get(descriptor)!, ...(total > 0 ? { retries: total } : {}) };
+    if (result.status === 'failed') {
+      logger.error(`Failed to delete ${buildResourceLabel(descriptor)}:`, result.error);
+    }
+    return result;
   });
 }
 
