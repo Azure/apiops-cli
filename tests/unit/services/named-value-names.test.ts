@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { NamedValueNames, namedValueNamesByScope } from '../../../src/services/named-value-names.js';
+import { NamedValueNames, namedValueNamesByScope, namedValueTargetName } from '../../../src/services/named-value-names.js';
 
 describe('NamedValueNames', () => {
   it('should match a reference by display name, ignoring case', () => {
@@ -52,5 +52,18 @@ describe('namedValueNamesByScope', () => {
     expect(names(undefined).resolve('key')).toBe('service-nv');
     expect(names('team-a').resolve('key')).toBe('team-nv');
     expect(names('team-b').resolve('key')).toBeUndefined();
+  });
+});
+
+describe('namedValueTargetName', () => {
+  it.each([
+    [{ properties: { value: ' backend-a ' } }, 'backend-a'],
+    [{ properties: { value: 'backend-a', secret: true } }, undefined],
+    [{ properties: { value: '@(context.Variables["b"])' } }, undefined],
+    [{ properties: { value: '{{other}}' } }, undefined],
+    [{ properties: { value: '' } }, undefined],
+    [{ properties: {} }, undefined],
+  ])('should give the resource name a value names: %j', (json, expected) => {
+    expect(namedValueTargetName(json)).toBe(expected);
   });
 });

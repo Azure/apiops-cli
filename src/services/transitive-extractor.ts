@@ -165,8 +165,16 @@ export async function extractTransitiveDependencies(
   const claimedNamedValues = new Set(alreadyExtracted.map(getResourceDescriptorKey));
   const extractedDescriptors: ResourceDescriptor[] = [];
   const namedValueIndex: NamedValueNameIndex = new Map();
-  const contextFor = (dep: ResourceDescriptor): ApimServiceContext =>
+  const contextFor = (dep: { workspace?: string }): ApimServiceContext =>
     serviceContext && dep.workspace !== workspace ? serviceContext : context;
+  // The named values listed in each context, once a named value has been
+  // extracted there (only then can a policy attribute be followed through
+  // one), so the attribute follows the one its reference resolves to.
+  const listedNames = new Map<string, ListedNamedValues>();
+  const resolveNamedValueName = (reference: string, scope: string | undefined): string | undefined => {
+    const names = listedNames.get(contextFor({ workspace: scope }).baseUrl);
+    return names?.listed ? names.names.resolve(reference) : undefined;
+  };
   let errorCount = 0;
   let foundDependencies = false;
   let reportedUnlisted = false;
@@ -188,11 +196,17 @@ export async function extractTransitiveDependencies(
       errorCount++;
       logger.warn('Unable to tell which {{...}} in Liquid bodies are named values, since the named values could not be listed');
     }
+    for (const { descriptor } of resources) {
+      const scopeContext = contextFor(descriptor);
+      if (descriptor.type === ResourceType.NamedValue && !listedNames.has(scopeContext.baseUrl)) {
+        listedNames.set(scopeContext.baseUrl, await namedValueNames(client, scopeContext, namedValueIndex));
+      }
+    }
     // Each once: a policy can reference a named value inside and outside a
     // Liquid body.
     const seen = new Set<string>();
     const found = [
-      ...findTransitiveDependencies(policies, apis, workspace, resources),
+      ...findTransitiveDependencies(policies, apis, workspace, resources, resolveNamedValueName),
       ...liquid.dependencies,
     ].filter((dep) => {
       const key = getResourceDescriptorKey(dep);

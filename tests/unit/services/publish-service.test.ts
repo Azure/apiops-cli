@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ResourceDescriptor, ApimServiceContext } from '../../../src/models/types.js';
-import { PublishConfig } from '../../../src/models/config.js';
+import { FilterConfig, PublishConfig } from '../../../src/models/config.js';
 import { LogLevel, logger } from '../../../src/lib/logger.js';
 import { recordRetry, withRetryResource } from '../../../src/lib/retry-tracker.js';
 import { getResourceDescriptorKey } from '../../../src/lib/resource-path.js';
@@ -358,6 +358,256 @@ describe('publish-service', () => {
         .filter((call) => call[1].type === ResourceType.NamedValue)
         .map((call) => call[1].nameParts[0]);
       expect(namedValuePuts).toEqual(['prod-key']);
+    });
+
+    it("should include the backend a policy attribute names through a named value's value (#331)", async () => {
+      const resources = [
+        { type: ResourceType.PolicyFragment, nameParts: ['route'] },
+        { type: ResourceType.NamedValue, nameParts: ['backend-id'] },
+        { type: ResourceType.Backend, nameParts: ['function-backend'] },
+        { type: ResourceType.Backend, nameParts: ['unused'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      store.readResource.mockImplementation(async (_sourceDir, descriptor) => {
+        if (descriptor.type === ResourceType.PolicyFragment) {
+          return { properties: { value: '<fragment><set-backend-service backend-id="{{Backend_Id}}" /></fragment>' } };
+        }
+        if (descriptor.type === ResourceType.NamedValue) {
+          return { properties: { displayName: 'Backend_Id', value: 'function-backend' } };
+        }
+        return { properties: { url: 'https://example.test' } };
+      });
+
+      const publish = (filter: FilterConfig) => runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter,
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+      const backendPuts = () => client.putResource.mock.calls
+        .filter((call) => call[1].type === ResourceType.Backend)
+        .map((call) => call[1].nameParts[0]);
+
+      await publish({ policyFragments: ['route'], namedValues: [], backends: [] });
+      expect(backendPuts()).toEqual(['function-backend']);
+    });
+
+    it("should follow the overridden value of a named value a policy attribute is set to", async () => {
+      const resources = [
+        { type: ResourceType.PolicyFragment, nameParts: ['route'] },
+        { type: ResourceType.NamedValue, nameParts: ['backend-id'] },
+        { type: ResourceType.Backend, nameParts: ['dev-backend'] },
+        { type: ResourceType.Backend, nameParts: ['prod-backend'] },
+      ];
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      store.readResource.mockImplementation(async (_sourceDir, descriptor) => {
+        if (descriptor.type === ResourceType.PolicyFragment) {
+          return { properties: { value: '<fragment><set-backend-service backend-id="{{Backend_Id}}" /></fragment>' } };
+        }
+        if (descriptor.type === ResourceType.NamedValue) {
+          return { properties: { displayName: 'Backend_Id', value: 'dev-backend' } };
+        }
+        return { properties: { url: 'https://example.test' } };
+      });
+
+      await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { policyFragments: ['route'], namedValues: [], backends: [] },
+        overrides: { namedValues: { 'backend-id': { properties: { value: 'prod-backend' } } } },
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      const backendPuts = client.putResource.mock.calls
+        .filter((call) => call[1].type === ResourceType.Backend)
+        .map((call) => call[1].nameParts[0]);
+      expect(backendPuts).toEqual(['prod-backend']);
+    });
+
+    it('should include the backend a changed named value now names when only the named value changed', async () => {
+      const namedValue = { type: ResourceType.NamedValue, nameParts: ['backend-id'] };
+      const resources = [
+        { type: ResourceType.Api, nameParts: ['orders'] },
+        { type: ResourceType.ApiPolicy, nameParts: ['orders'] },
+        namedValue,
+        { type: ResourceType.Backend, nameParts: ['old-backend'] },
+        { type: ResourceType.Backend, nameParts: ['new-backend'] },
+      ];
+      vi.mocked(computeGitDiff).mockResolvedValue({ changedDescriptors: [namedValue], deletedDescriptors: [] });
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      store.readContent.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) =>
+        descriptor.type === ResourceType.ApiPolicy
+          ? { content: '<policies><inbound><set-backend-service backend-id="{{Backend_Id}}" /></inbound></policies>' }
+          : undefined
+      );
+      store.readResource.mockImplementation(async (_sourceDir, descriptor) =>
+        descriptor.type === ResourceType.NamedValue
+          ? { properties: { displayName: 'Backend_Id', value: 'new-backend' } }
+          : { properties: {} }
+      );
+
+      await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { apis: ['orders'], namedValues: ['backend-id'], backends: [] },
+        commitId: 'abc123',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      const puts = client.putResource.mock.calls.map((call) => `${call[1].type}:${call[1].nameParts.join('/')}`).sort();
+      expect(puts).toEqual(['Backend:new-backend', 'NamedValue:backend-id']);
+    });
+
+    describe('with a policy whose XML an override replaces', () => {
+      const servicePolicy: ResourceDescriptor = { type: ResourceType.ServicePolicy, nameParts: [] };
+      const namedValue: ResourceDescriptor = { type: ResourceType.NamedValue, nameParts: ['backend-id'] };
+      const overrides = {
+        policies: { policy: { properties: { value: '<policies><inbound><set-backend-service backend-id="{{Backend_Id}}" /></inbound></policies>' } } },
+      };
+      const publishWith = async (filter: FilterConfig, commitId?: string) => {
+        const client = createMockClient();
+        const store = createMockStore([servicePolicy, namedValue, { type: ResourceType.Backend, nameParts: ['new-backend'] }]);
+        store.readContent.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) =>
+          descriptor.type === ResourceType.ServicePolicy ? { content: '<policies />' } : undefined
+        );
+        store.readResource.mockImplementation(async (_sourceDir, descriptor) =>
+          descriptor.type === ResourceType.NamedValue
+            ? { properties: { displayName: 'Backend_Id', value: 'new-backend' } }
+            : { properties: {} }
+        );
+        await runPublish(client, store, {
+          service: testContext,
+          sourceDir: '/source',
+          filter,
+          overrides,
+          commitId,
+          dryRun: false,
+          deleteUnmatched: false,
+          logLevel: LogLevel.INFO,
+        });
+        return client.putResource.mock.calls.map((call) => `${call[1].type}:${call[1].nameParts.join('/')}`).sort();
+      };
+
+      it('should follow the overridden XML of a published policy', async () => {
+        expect(await publishWith({ namedValues: [], backends: [] })).toEqual([
+          'Backend:new-backend',
+          'NamedValue:backend-id',
+          'ServicePolicy:',
+        ]);
+      });
+
+      it('should include the backend a changed named value names in the overridden XML', async () => {
+        vi.mocked(computeGitDiff).mockResolvedValue({ changedDescriptors: [namedValue], deletedDescriptors: [] });
+
+        expect(await publishWith({ namedValues: ['backend-id'], backends: [] }, 'abc123')).toEqual([
+          'Backend:new-backend',
+          'NamedValue:backend-id',
+        ]);
+      });
+    });
+
+    it('should include the backend a changed named value names in a fragment a selected policy includes', async () => {
+      const namedValue = { type: ResourceType.NamedValue, nameParts: ['backend-id'] };
+      const resources = [
+        { type: ResourceType.Api, nameParts: ['orders'] },
+        { type: ResourceType.ApiPolicy, nameParts: ['orders'] },
+        { type: ResourceType.PolicyFragment, nameParts: ['route'] },
+        namedValue,
+        { type: ResourceType.Backend, nameParts: ['new-backend'] },
+      ];
+      vi.mocked(computeGitDiff).mockResolvedValue({ changedDescriptors: [namedValue], deletedDescriptors: [] });
+      const client = createMockClient();
+      const store = createMockStore(resources);
+      store.readContent.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) =>
+        descriptor.type === ResourceType.ApiPolicy
+          ? { content: '<policies><inbound><include-fragment fragment-id="route" /></inbound></policies>' }
+          : undefined
+      );
+      store.readResource.mockImplementation(async (_sourceDir, descriptor) => {
+        if (descriptor.type === ResourceType.PolicyFragment) {
+          return { properties: { value: '<fragment><set-backend-service backend-id="{{Backend_Id}}" /></fragment>' } };
+        }
+        return descriptor.type === ResourceType.NamedValue
+          ? { properties: { displayName: 'Backend_Id', value: 'new-backend' } }
+          : { properties: {} };
+      });
+
+      await runPublish(client, store, {
+        service: testContext,
+        sourceDir: '/source',
+        filter: { apis: ['orders'], namedValues: ['backend-id'], policyFragments: [], backends: [] },
+        commitId: 'abc123',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      });
+
+      const puts = client.putResource.mock.calls.map((call) => `${call[1].type}:${call[1].nameParts.join('/')}`).sort();
+      expect(puts).toEqual(['Backend:new-backend', 'NamedValue:backend-id']);
+    });
+
+    describe('a named value a policy outside the filter uses as a resource name', () => {
+      const setUp = (extra: ResourceDescriptor[] = [{ type: ResourceType.Backend, nameParts: ['billing-backend'] }]) => {
+        const resources = [
+          { type: ResourceType.Api, nameParts: ['orders'] },
+          { type: ResourceType.Api, nameParts: ['billing'] },
+          { type: ResourceType.ApiPolicy, nameParts: ['billing'] },
+          { type: ResourceType.NamedValue, nameParts: ['billing-id'] },
+          ...extra,
+        ];
+        const client = createMockClient();
+        const store = createMockStore(resources);
+        store.readContent.mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) =>
+          descriptor.type === ResourceType.ApiPolicy
+            ? { content: '<policies><inbound><set-backend-service backend-id="{{billing-id}}" /></inbound></policies>' }
+            : undefined
+        );
+        store.readResource.mockImplementation(async (_sourceDir, descriptor) =>
+          descriptor.type === ResourceType.NamedValue
+            ? { properties: { displayName: 'billing-id', value: 'billing-backend' } }
+            : { properties: {} }
+        );
+        const publish = (filter: FilterConfig) => runPublish(client, store, {
+          service: testContext,
+          sourceDir: '/source',
+          filter,
+          dryRun: false,
+          deleteUnmatched: false,
+          logLevel: LogLevel.INFO,
+        });
+        const puts = () => client.putResource.mock.calls.map((call) => `${call[1].type}:${call[1].nameParts.join('/')}`).sort();
+        return { publish, puts, store };
+      };
+
+      it('should include the resource its value names, as APIM checks that policy on the target', async () => {
+        const { publish, puts } = setUp();
+
+        // Every named value is selected (the key is left out); backends: [] still lets dependencies in.
+        await publish({ apis: ['orders'], backends: [] });
+
+        expect(puts()).toEqual(expect.arrayContaining(['Backend:billing-backend', 'NamedValue:billing-id']));
+        expect(puts()).not.toContain('Api:billing');
+      });
+
+      it.each([
+        ["it isn't in the source", { apis: ['orders'], backends: [] }, []],
+      ])('should not publish the resource when %s', async (_label, filter, extra) => {
+        const { publish, puts } = setUp(extra);
+
+        await publish(filter as FilterConfig);
+
+        expect(puts()).toContain('NamedValue:billing-id');
+        expect(puts()).not.toContain('Backend:billing-backend');
+      });
     });
 
     it('should include every dependency type supported by extract', async () => {

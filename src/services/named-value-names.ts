@@ -1,11 +1,15 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 /**
- * The rule for what a `{{reference}}` to a named value means, in one place
- * for extract and publish: it names the named value in its own scope (the
- * service, or one workspace) with that display name, ignoring case
- * (NamedValueNames). APIM matches display names only: it rejects a policy
- * whose reference is only a named value's resource name.
+ * The rules for what a `{{reference}}` to a named value means, in one place
+ * for extract and publish:
+ *
+ * - It names the named value in its own scope (the service, or one
+ *   workspace) with that display name, ignoring case (NamedValueNames). APIM
+ *   matches display names only: it rejects a policy whose reference is only a
+ *   named value's resource name.
+ * - A policy attribute set to one (backend-id="{{name}}") names the resource
+ *   its value gives, when the value is known (namedValueTargetName).
  *
  * Extract builds the names from the named values APIM lists; publish builds
  * them from the artifacts. On publish a reference can use either the display
@@ -75,4 +79,16 @@ export function namedValueNamesByScope(
     }
     return names;
   };
+}
+
+/**
+ * The resource name a named value's value gives a policy attribute set to it,
+ * or undefined when it gives none: a secret named value's value isn't known,
+ * nor is a Key Vault one's, and a value that is itself a policy expression or
+ * named value reference names no resource here.
+ */
+export function namedValueTargetName(json: Record<string, unknown>): string | undefined {
+  const properties = json.properties as Record<string, unknown> | undefined;
+  const value = typeof properties?.value === 'string' ? properties.value.trim() : '';
+  return properties?.secret === true || value.startsWith('@') || value.includes('{{') ? undefined : value || undefined;
 }

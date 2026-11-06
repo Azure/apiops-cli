@@ -355,3 +355,75 @@ describe('extractTransitiveDependencies with Liquid bodies', () => {
     ]);
   });
 });
+
+describe('policy attributes set to a named value (#331)', () => {
+  const policies = new Map([['api-1', '<policies><inbound><set-backend-service backend-id="{{Backend_Id}}" /></inbound></policies>']]);
+  const backendId = { type: ResourceType.NamedValue, nameParts: ['backend-id'] };
+
+  it("should extract the backend named by the named value's value", async () => {
+    const client = createMockClient();
+    client.listResources = namedValueList({ name: 'backend-id', displayName: 'Backend_Id' });
+    client.getResource.mockImplementation(async (_ctx, descriptor: ResourceDescriptor) => {
+      if (descriptor.type === ResourceType.NamedValue) {
+        return { name: 'backend-id', properties: { displayName: 'Backend_Id', value: 'function-backend' } };
+      }
+      return descriptor.type === ResourceType.Backend ? { name: descriptor.nameParts[0], properties: {} } : undefined;
+    });
+
+    const result = await extractTransitiveDependencies(
+      client, createMockStore(), testContext, '/output', policies, new Map(), [], []
+    );
+
+    expect(result.errorCount).toBe(0);
+    expect(result.extractedDescriptors).toEqual([
+      expect.objectContaining(backendId),
+      expect.objectContaining({ type: ResourceType.Backend, nameParts: ['function-backend'] }),
+    ]);
+  });
+
+  it('should follow the named value a reference resolves to, not one the selection extracted under that name', async () => {
+    // `one` has the display name `two`, so {{two}} is `one`, not the
+    // selected `two`.
+    const policy = new Map([['api-1', '<policies><inbound><set-backend-service backend-id="{{two}}" /></inbound></policies>']]);
+    const two = { type: ResourceType.NamedValue, nameParts: ['two'] };
+    const client = createMockClient();
+    client.listResources = namedValueList({ name: 'one', displayName: 'two' }, { name: 'two', displayName: 'three' });
+    client.getResource.mockImplementation(async (_ctx, descriptor: ResourceDescriptor) => {
+      if (descriptor.type === ResourceType.NamedValue && descriptor.nameParts[0] === 'one') {
+        return { name: 'one', properties: { displayName: 'two', value: 'real-backend' } };
+      }
+      return descriptor.type === ResourceType.Backend && descriptor.nameParts[0] === 'real-backend'
+        ? { name: 'real-backend', properties: {} }
+        : undefined;
+    });
+
+    const result = await extractTransitiveDependencies(
+      client, createMockStore(), testContext, '/output', policy, new Map(),
+      [{ descriptor: two, json: { properties: { displayName: 'three', value: 'not-a-backend' } } }],
+      [two]
+    );
+
+    expect(result.errorCount).toBe(0);
+    expect(result.extractedDescriptors).toEqual([
+      expect.objectContaining({ type: ResourceType.NamedValue, nameParts: ['one'] }),
+      expect.objectContaining({ type: ResourceType.Backend, nameParts: ['real-backend'] }),
+    ]);
+    expect(client.getResource.mock.calls.map((call) => call[1].nameParts[0])).not.toContain('not-a-backend');
+  });
+
+  it('should follow a named value the selection already extracted', async () => {
+    const client = createMockClient();
+    client.listResources = namedValueList({ name: 'backend-id', displayName: 'Backend_Id' });
+    client.getResource.mockResolvedValue({ name: 'function-backend', properties: {} });
+
+    const result = await extractTransitiveDependencies(
+      client, createMockStore(), testContext, '/output', policies, new Map(),
+      [{ descriptor: backendId, json: { properties: { displayName: 'Backend_Id', value: 'function-backend' } } }],
+      [backendId]
+    );
+
+    expect(result.extractedDescriptors).toEqual([
+      expect.objectContaining({ type: ResourceType.Backend, nameParts: ['function-backend'] }),
+    ]);
+  });
+});

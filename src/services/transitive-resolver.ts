@@ -14,7 +14,13 @@ import type { IArtifactStore } from '../clients/iartifact-store.js';
 import { logger } from '../lib/logger.js';
 import { getResourceDescriptorKey } from '../lib/resource-path.js';
 import { buildResourceLabel } from '../lib/resource-uri.js';
-import { type NamedValueEntry, NamedValueNames, namedValueNamesByScope } from './named-value-names.js';
+import {
+  type NamedValueEntry,
+  NamedValueNames,
+  namedValueNamesByScope,
+  namedValueTargetName,
+} from './named-value-names.js';
+import { runParallel } from '../lib/parallel-runner.js';
 
 /**
  * Reference detection patterns for policy XML content.
@@ -149,6 +155,20 @@ export interface TransitiveDependency {
   name: string;
 }
 
+/**
+ * A whole named value reference as the value of a policy attribute that names
+ * a resource, such as backend-id="{{backend-name}}": the attribute names the
+ * resource of `type` the named value's value names.
+ */
+export interface NamedValueTarget {
+  type: ResourceType;
+  /** The named value as the policy references it (normally its display name). */
+  namedValue: string;
+}
+
+/** An attribute value that is one named value reference and nothing else. */
+const WHOLE_NAMED_VALUE_PATTERN = /^\{\{([^{}]+)\}\}$/;
+
 const POLICY_RESOURCE_TYPES = new Set<ResourceType>([
   ResourceType.ServicePolicy,
   ResourceType.ApiPolicy,
@@ -185,9 +205,10 @@ export function scanPolicyReferences(policyXml: string): TransitiveDependency[] 
     }
   }
 
-  // Backend references
+  // Backend references. A value that is a policy expression or a named value
+  // reference names no resource here (see scanNamedValueTargets).
   for (const match of scannable.matchAll(BACKEND_PATTERN)) {
-    if (match[1]) {
+    if (match[1] && !match[1].startsWith('@') && !match[1].includes('{{')) {
       dependencies.push({
         type: ResourceType.Backend,
         name: match[1].trim(),
@@ -197,7 +218,7 @@ export function scanPolicyReferences(policyXml: string): TransitiveDependency[] 
 
   // Policy fragment references
   for (const match of scannable.matchAll(FRAGMENT_PATTERN)) {
-    if (match[1]) {
+    if (match[1] && !match[1].startsWith('@') && !match[1].includes('{{')) {
       dependencies.push({
         type: ResourceType.PolicyFragment,
         name: match[1].trim(),
@@ -206,6 +227,42 @@ export function scanPolicyReferences(policyXml: string): TransitiveDependency[] 
   }
 
   return dependencies;
+}
+
+/**
+ * Scan policy XML for attributes that name a resource through a named value,
+ * such as backend-id="{{backend-name}}". The named value itself is found by
+ * scanPolicyReferences; the resource its value names is found once the named
+ * value's value is known.
+ */
+export function scanNamedValueTargets(policyXml: string): NamedValueTarget[] {
+  const targets: NamedValueTarget[] = [];
+  for (const { type, value } of scanReferenceAttributes(stripNonReferenceContent(policyXml))) {
+    // APIM doesn't substitute a named value in include-fragment's fragment-id:
+    // it looks for a fragment with that literal ID and rejects the policy.
+    if (type === ResourceType.PolicyFragment) {
+      continue;
+    }
+    const namedValue = WHOLE_NAMED_VALUE_PATTERN.exec(value)?.[1]?.trim();
+    if (namedValue) {
+      targets.push({ type, namedValue });
+    }
+  }
+  return targets;
+}
+
+/** The non-empty values of the policy attributes that name a resource, trimmed. */
+function scanReferenceAttributes(scannable: string): Array<{ type: ResourceType; value: string }> {
+  const attributes: Array<{ type: ResourceType; value: string }> = [];
+  for (const { type, pattern } of POLICY_REFERENCE_PATTERNS) {
+    for (const match of scannable.matchAll(pattern)) {
+      const value = match[2]?.trim();
+      if (value) {
+        attributes.push({ type, value });
+      }
+    }
+  }
+  return attributes;
 }
 
 /**
@@ -325,8 +382,20 @@ function addToFilter(
 }
 
 /**
+ * The resource name of the named value a `{{reference}}` in `workspace`
+ * resolves to, from a complete list of the named values there, or undefined
+ * when that isn't known.
+ */
+export type NamedValueNameResolver = (reference: string, workspace: string | undefined) => string | undefined;
+
+/**
  * Build a set of descriptors from transitive dependency scanning.
  * Returns additional descriptors that should be extracted.
+ *
+ * @param resolveNamedValueName - Where given, a policy attribute set to a
+ *   named value is followed only through the named value the reference
+ *   resolves to, once it is among `resources`, rather than through another
+ *   one there that happens to have the reference as its name
  */
 export function findTransitiveDependencies(
   policies: Map<string, string>,
@@ -335,14 +404,17 @@ export function findTransitiveDependencies(
   resources: ReadonlyArray<{
     descriptor: ResourceDescriptor;
     json: Record<string, unknown>;
-  }> = []
+  }> = [],
+  resolveNamedValueName?: NamedValueNameResolver
 ): ResourceDescriptor[] {
   const dependencies: ResourceDescriptor[] = [];
+  const namedValueTargets: Array<NamedValueTarget & { workspace?: string }> = [];
 
   for (const [, policyXml] of policies) {
     for (const dep of scanPolicyReferences(policyXml)) {
       dependencies.push({ type: dep.type, nameParts: [dep.name], workspace });
     }
+    namedValueTargets.push(...scanNamedValueTargets(policyXml).map((target) => ({ ...target, workspace })));
   }
 
   for (const [, apiJson] of apis) {
@@ -399,12 +471,62 @@ export function findTransitiveDependencies(
             workspace: descriptor.workspace,
           });
         }
+        namedValueTargets.push(
+          ...scanNamedValueTargets(value).map((target) => ({ ...target, workspace: descriptor.workspace }))
+        );
       }
     }
   }
 
+  dependencies.push(...findNamedValueTargetDependencies(namedValueTargets, resources, resolveNamedValueName));
+
   return deduplicateDescriptors(dependencies);
 }
+
+/**
+ * The resources that policy attributes name through a named value
+ * (backend-id="{{backend-name}}"), for the named values among `resources`
+ * (NamedValueNames, namedValueTargetName).
+ */
+function findNamedValueTargetDependencies(
+  targets: ReadonlyArray<NamedValueTarget & { workspace?: string }>,
+  resources: ReadonlyArray<{ descriptor: ResourceDescriptor; json: Record<string, unknown> }>,
+  resolveNamedValueName?: NamedValueNameResolver
+): ResourceDescriptor[] {
+  if (targets.length === 0) {
+    return [];
+  }
+  const namedValueKey = (name: string, workspace: string | undefined): string =>
+    getResourceDescriptorKey({ type: ResourceType.NamedValue, nameParts: [name], workspace });
+  const namedValues = resources.filter(({ descriptor }) => descriptor.type === ResourceType.NamedValue);
+  // The name each named value's value gives, or undefined when it gives none.
+  const byName = new Map(
+    namedValues.map(({ descriptor, json }) => [
+      namedValueKey(descriptor.nameParts[0] ?? '', descriptor.workspace),
+      namedValueTargetName(json),
+    ])
+  );
+  const localNames = namedValueNamesByScope(
+    namedValues.map(({ descriptor, json }) => ({
+      name: descriptor.nameParts[0] ?? '',
+      displayName: (json.properties as Record<string, unknown> | undefined)?.displayName,
+      workspace: descriptor.workspace,
+    }))
+  );
+
+  const dependencies: ResourceDescriptor[] = [];
+  for (const { type, namedValue, workspace } of targets) {
+    // Known from the full list: the named value it resolves to, which may not
+    // be among `resources` yet. Otherwise only the ones here can tell.
+    const resolved = resolveNamedValueName?.(namedValue, workspace) ?? localNames(workspace).resolve(namedValue);
+    const name = resolved === undefined ? undefined : byName.get(namedValueKey(resolved, workspace));
+    if (name) {
+      dependencies.push({ type, nameParts: [name], workspace });
+    }
+  }
+  return dependencies;
+}
+
 
 /**
  * Read intrinsic dependencies from one on-disk artifact.
@@ -412,6 +534,9 @@ export function findTransitiveDependencies(
  * Association and subscription targets are links to independently selected
  * composite resources, not transitive dependencies.
  *
+ * @param readNamedValue - Reads the named value a `{{reference}}` resolves to,
+ *   so a policy attribute set to one (backend-id="{{backend-name}}") also
+ *   gives the resource its value names. Without it, only the named value is.
  * @param prepareJson - Turns the artifact's JSON into what is scanned, such
  *   as the payload publish sends with overrides applied
  */
@@ -419,6 +544,7 @@ export async function scanArtifactReferences(
   store: IArtifactStore,
   sourceDir: string,
   descriptor: ResourceDescriptor,
+  readNamedValue?: NamedValueReader,
   prepareJson?: PrepareJson
 ): Promise<ResourceDescriptor[]> {
   const references: ResourceDescriptor[] = [];
@@ -442,12 +568,34 @@ export async function scanArtifactReferences(
     apis.set(descriptor.nameParts.join('/'), json);
   }
 
+  const resources = json ? [{ descriptor, json }] : [];
+  const resolvedNames = new Map<string, string>();
+  if (readNamedValue) {
+    const fragment = descriptor.type === ResourceType.PolicyFragment
+      ? (json?.properties as Record<string, unknown> | undefined)
+      : undefined;
+    const policyTexts = [...policies.values(), fragment?.value, fragment?.policyContent]
+      .filter((text): text is string => typeof text === 'string');
+    const namedValues = new Set(policyTexts.flatMap(scanNamedValueTargets).map((target) => target.namedValue));
+    for (const namedValue of namedValues) {
+      const resolved = await readNamedValue({
+        type: ResourceType.NamedValue,
+        nameParts: [namedValue],
+        workspace: descriptor.workspace,
+      });
+      if (resolved) {
+        resources.push(resolved);
+        resolvedNames.set(namedValue.toLowerCase(), resolved.descriptor.nameParts[0] ?? '');
+      }
+    }
+  }
+
+  // An attribute follows the named value its reference resolved to above,
+  // matched as the reader matches it (a source display name an override
+  // changes included).
   references.push(
-    ...findTransitiveDependencies(
-      policies,
-      apis,
-      descriptor.workspace,
-      json ? [{ descriptor, json }] : []
+    ...findTransitiveDependencies(policies, apis, descriptor.workspace, resources, (reference, workspace) =>
+      workspace?.toLowerCase() === descriptor.workspace?.toLowerCase() ? resolvedNames.get(reference.toLowerCase()) : undefined
     )
   );
 
@@ -598,6 +746,121 @@ async function readNamedValueNames(
     });
   }
   return namedValueNamesByScope(entries);
+}
+
+/** A named value artifact, read to learn what a policy attribute set to it names. */
+export type NamedValueReader = (
+  reference: ResourceDescriptor
+) => Promise<{ descriptor: ResourceDescriptor; json: Record<string, unknown> } | undefined>;
+
+/**
+ * A NamedValueReader that resolves a `{{reference}}` with `resolve` (from
+ * createArtifactReferenceResolver) and reads the artifact it resolves to.
+ */
+export function createNamedValueReader(
+  resolve: (reference: ResourceDescriptor) => Promise<ResourceDescriptor | undefined>,
+  readResource: (descriptor: ResourceDescriptor) => Promise<Record<string, unknown> | undefined>
+): NamedValueReader {
+  // Many policies can set attributes to the same named value; read it once.
+  const read = new Map<string, ReturnType<NamedValueReader>>();
+  return (reference) => {
+    const key = getResourceDescriptorKey(reference);
+    let result = read.get(key);
+    if (!result) {
+      result = (async () => {
+        const descriptor = await resolve(reference);
+        const json = descriptor ? await readResource(descriptor) : undefined;
+        return descriptor && json ? { descriptor, json } : undefined;
+      })();
+      read.set(key, result);
+    }
+    return result;
+  };
+}
+
+/**
+ * The resource types each named value is the whole value of a reference
+ * attribute for (backend-id="{{name}}"), keyed by the named value's
+ * descriptor key. It reads the policies and policy fragments among
+ * `selected`, and the fragments among `available` that they include
+ * (<include-fragment>), directly or through another fragment. A named value
+ * published without the policies that use it (only its value changed, say)
+ * needs the resource its value now names.
+ *
+ * @param resolve - Resolves a `{{reference}}` to the named value artifact
+ * @param prepareJson - Turns each policy and fragment into what is scanned,
+ *   such as the payload publish sends with overrides applied
+ */
+export async function indexNamedValueTargetTypes(
+  store: Pick<IArtifactStore, 'readContent' | 'readResource'>,
+  sourceDir: string,
+  selected: ReadonlyArray<ResourceDescriptor>,
+  available: ReadonlyArray<ResourceDescriptor>,
+  resolve: (reference: ResourceDescriptor) => Promise<ResourceDescriptor | undefined>,
+  prepareJson?: PrepareJson
+): Promise<Map<string, Set<ResourceType>>> {
+  const isPolicy = (descriptor: ResourceDescriptor) =>
+    POLICY_RESOURCE_TYPES.has(descriptor.type) || descriptor.type === ResourceType.PolicyFragment;
+  const fragments = new Map(
+    available
+      .filter((descriptor) => descriptor.type === ResourceType.PolicyFragment)
+      .map((descriptor) => [getResourceDescriptorKey(descriptor), descriptor])
+  );
+  const index = new Map<string, Set<ResourceType>>();
+  const read = new Set<string>();
+  let wave = selected.filter(isPolicy);
+  while (wave.length > 0) {
+    wave.forEach((descriptor) => read.add(getResourceDescriptorKey(descriptor)));
+    const policies = wave;
+    const results = await runParallel(
+      policies.map((descriptor) => async (): Promise<unknown[]> => {
+        if (POLICY_RESOURCE_TYPES.has(descriptor.type)) {
+          const content = (await store.readContent(sourceDir, descriptor, 'policy'))?.content;
+          return [content === undefined ? undefined : preparePolicyContent(descriptor, content, prepareJson)];
+        }
+        const json = await store.readResource(sourceDir, descriptor);
+        const properties = (json && prepareJson ? prepareJson(descriptor, json) : json)?.properties as
+          Record<string, unknown> | undefined;
+        return [properties?.value, properties?.policyContent];
+      }),
+      REFERENCE_SCAN_CONCURRENCY
+    );
+    wave = [];
+    for (const [position, result] of results.entries()) {
+      const descriptor = policies[position];
+      if (result.status !== 'fulfilled') {
+        logger.warn(
+          `Unable to read ${buildResourceLabel(descriptor)} to find the named values its policy attributes are set to: ` +
+          String(result.reason)
+        );
+        continue;
+      }
+      for (const text of result.value ?? []) {
+        if (typeof text !== 'string') {
+          continue;
+        }
+        for (const { type, namedValue } of scanNamedValueTargets(text)) {
+          const target = await resolve({ type: ResourceType.NamedValue, nameParts: [namedValue], workspace: descriptor.workspace });
+          if (target) {
+            const key = getResourceDescriptorKey(target);
+            index.set(key, (index.get(key) ?? new Set<ResourceType>()).add(type));
+          }
+        }
+        for (const reference of scanPolicyReferences(text)) {
+          if (reference.type !== ResourceType.PolicyFragment) {
+            continue;
+          }
+          const key = getResourceDescriptorKey({ type: reference.type, nameParts: [reference.name], workspace: descriptor.workspace });
+          const fragment = fragments.get(key);
+          if (fragment && !read.has(key)) {
+            read.add(key);
+            wave.push(fragment);
+          }
+        }
+      }
+    }
+  }
+  return index;
 }
 
 /**
