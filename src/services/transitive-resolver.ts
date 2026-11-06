@@ -26,8 +26,8 @@ import { runParallel } from '../lib/parallel-runner.js';
  * Reference detection patterns for policy XML content.
  */
 const NAMED_VALUE_PATTERN = /\{\{([^}]+)\}\}/g;
-const BACKEND_PATTERN = /<set-backend-service\s+backend-id="([^"]+)"/g;
-const FRAGMENT_PATTERN = /<include-fragment\s+fragment-id="([^"]+)"/g;
+/** The resource types followed when a policy attribute names one by its name. */
+const FOLLOWED_ATTRIBUTE_TYPES: ReadonlySet<ResourceType> = new Set([ResourceType.Backend, ResourceType.PolicyFragment]);
 
 /**
  * One XML attribute (`name="value"` or `name='value'`) with its leading
@@ -180,10 +180,11 @@ const POLICY_RESOURCE_TYPES = new Set<ResourceType>([
 /**
  * Scan policy XML content for references to other resources.
  *
- * Detects:
+ * Detects, with the attribute anywhere on the element and in either quote:
  * - Named values: {{namedValueName}} syntax
- * - Backends: <set-backend-service backend-id="backendName">
- * - Policy fragments: <include-fragment fragment-id="fragmentName">
+ * - Backends: <set-backend-service backend-id>, <llm-content-safety backend-id>,
+ *   and embeddings-backend-id on the semantic cache lookup policies
+ * - Policy fragments: <include-fragment fragment-id>
  *
  * References inside XML comments, and `{{ ... }}` inside a
  * `<set-body template="liquid">` body, are ignored: most of those are Liquid
@@ -205,24 +206,12 @@ export function scanPolicyReferences(policyXml: string): TransitiveDependency[] 
     }
   }
 
-  // Backend references. A value that is a policy expression or a named value
-  // reference names no resource here (see scanNamedValueTargets).
-  for (const match of scannable.matchAll(BACKEND_PATTERN)) {
-    if (match[1] && !match[1].startsWith('@') && !match[1].includes('{{')) {
-      dependencies.push({
-        type: ResourceType.Backend,
-        name: match[1].trim(),
-      });
-    }
-  }
-
-  // Policy fragment references
-  for (const match of scannable.matchAll(FRAGMENT_PATTERN)) {
-    if (match[1] && !match[1].startsWith('@') && !match[1].includes('{{')) {
-      dependencies.push({
-        type: ResourceType.PolicyFragment,
-        name: match[1].trim(),
-      });
+  // Backends and fragments named by an attribute (POLICY_REFERENCE_PATTERNS).
+  // A value that is a policy expression or a named value reference names no
+  // resource here (see scanNamedValueTargets).
+  for (const { type, value } of scanReferenceAttributes(scannable)) {
+    if (FOLLOWED_ATTRIBUTE_TYPES.has(type) && !value.startsWith('@') && !value.includes('{{')) {
+      dependencies.push({ type, name: value });
     }
   }
 

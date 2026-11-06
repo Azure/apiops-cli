@@ -86,6 +86,17 @@ describe('transitive-resolver', () => {
       expect(refs[0]?.name).toBe('my-secret');
     });
 
+    it.each([
+      ['an attribute before backend-id', '<set-backend-service id="apim-generated-policy" backend-id="func-backend" />', ResourceType.Backend, 'func-backend'],
+      ['single quotes', "<set-backend-service backend-id='quoted-backend' />", ResourceType.Backend, 'quoted-backend'],
+      ['llm-content-safety', '<llm-content-safety backend-id="content-safety" shield-prompt="true" />', ResourceType.Backend, 'content-safety'],
+      ['azure-openai-semantic-cache-lookup', '<azure-openai-semantic-cache-lookup score-threshold="0.8" embeddings-backend-id="embeddings" />', ResourceType.Backend, 'embeddings'],
+      ['llm-semantic-cache-lookup', '<llm-semantic-cache-lookup embeddings-backend-id="llm-embeddings" />', ResourceType.Backend, 'llm-embeddings'],
+      ['include-fragment with another attribute first', '<include-fragment id="x" fragment-id="frag-a" />', ResourceType.PolicyFragment, 'frag-a'],
+    ])('should detect a reference written with %s', (_label, policy, type, name) => {
+      expect(scanPolicyReferences(policy)).toContainEqual({ type, name });
+    });
+
     it('should ignore references inside XML comments (#305)', () => {
       const refs = scanPolicyReferences(
         '<!-- <set-backend-service backend-id="old-backend" /> {{old-secret}} -->' +
