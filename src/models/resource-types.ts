@@ -97,6 +97,22 @@ export interface ResourceTypeMetadata {
   readonly workspaceLinkIdProperty?: string;
 }
 
+/**
+ * Whether a descriptor is APIM's built-in all-access subscription: `master`,
+ * scoped to the service root. APIM creates it and manages it: it can't be
+ * created or updated through the API (a subscription's scope has to be an API
+ * or a product), and one that is deleted can't be recreated. Extract, publish
+ * and deletes leave it alone.
+ */
+export function isBuiltInSubscription(descriptor: { type: ResourceType; nameParts: string[]; workspace?: string }): boolean {
+  return (
+    descriptor.type === ResourceType.Subscription &&
+    !descriptor.workspace &&
+    descriptor.nameParts.length === 1 &&
+    descriptor.nameParts[0]?.toLowerCase() === 'master'
+  );
+}
+
 export const RESOURCE_TYPE_METADATA: Record<ResourceType, ResourceTypeMetadata> = {
   [ResourceType.NamedValue]: {
     armPathSuffix: 'namedValues/{0}',

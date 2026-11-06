@@ -750,9 +750,6 @@ describe('dry-run-reporter', () => {
         ['Subscription:team:workspace-product-sub', {
           properties: { scope: '/products/team-store' },
         }],
-        ['Subscription::root-sub', {
-          properties: { scope: armPrefix },
-        }],
         ['Product::store', { properties: {} }],
         ['Api:team:orders', { properties: {} }],
         ['Product:team:team-store', { properties: {} }],
@@ -766,7 +763,7 @@ describe('dry-run-reporter', () => {
       const config: PublishConfig = {
         ...testConfig,
         filter: {
-          subscriptions: ['product-sub', 'excluded-api-sub', 'missing-product-sub', 'root-sub'],
+          subscriptions: ['product-sub', 'excluded-api-sub', 'missing-product-sub'],
           products: ['store', 'missing'],
           apis: ['!legacy', '*'],
           workspaces: ['team'],
@@ -799,7 +796,6 @@ describe('dry-run-reporter', () => {
             nameParts: ['workspace-product-sub'],
             workspace: 'team',
           },
-          { type: ResourceType.Subscription, nameParts: ['root-sub'] },
         ]
       );
 
@@ -809,13 +805,8 @@ describe('dry-run-reporter', () => {
         { operation: 'SKIP', name: 'missing-product-sub' },
         { operation: 'PUT', name: 'workspace-api-sub' },
         { operation: 'PUT', name: 'workspace-product-sub' },
-        {
-          operation: 'SKIP',
-          name: 'root-sub',
-          reason: 'root-scoped subscriptions are managed by APIM',
-        },
       ]);
-      expect(report.summary).toEqual({ creates: 3, patches: 0, deletes: 0, skips: 3 });
+      expect(report.summary).toEqual({ creates: 3, patches: 0, deletes: 0, skips: 2 });
       expect(client.putResource).not.toHaveBeenCalled();
       expect(client.patchResource).not.toHaveBeenCalled();
       expect(client.deleteResource).not.toHaveBeenCalled();

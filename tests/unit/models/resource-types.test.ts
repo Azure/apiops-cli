@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 import { describe, it, expect } from 'vitest';
-import { ResourceType, RESOURCE_TYPE_METADATA } from '../../../src/models/resource-types.js';
+import { ResourceType, RESOURCE_TYPE_METADATA, isBuiltInSubscription } from '../../../src/models/resource-types.js';
 
 describe('ResourceType enum', () => {
   it('should have exactly 35 resource types', () => {
@@ -144,5 +144,15 @@ describe('RESOURCE_TYPE_METADATA', () => {
         `${type} should not have workspaceSupported=true`
       ).not.toBe(true);
     }
+  });
+});
+
+describe('isBuiltInSubscription', () => {
+  it("should recognise only the service-level master subscription", () => {
+    expect(isBuiltInSubscription({ type: ResourceType.Subscription, nameParts: ['master'] })).toBe(true);
+    expect(isBuiltInSubscription({ type: ResourceType.Subscription, nameParts: ['MASTER'] })).toBe(true);
+    expect(isBuiltInSubscription({ type: ResourceType.Subscription, nameParts: ['master'], workspace: 'team-a' })).toBe(false);
+    expect(isBuiltInSubscription({ type: ResourceType.Subscription, nameParts: ['orders-sub'] })).toBe(false);
+    expect(isBuiltInSubscription({ type: ResourceType.Product, nameParts: ['master'] })).toBe(false);
   });
 });

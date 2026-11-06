@@ -10,7 +10,7 @@ import { IApimClient } from '../clients/iapim-client.js';
 import { IArtifactStore } from '../clients/iartifact-store.js';
 import { FilterConfig, PublishConfig, OverrideConfig } from '../models/config.js';
 import { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
-import { ResourceType } from '../models/resource-types.js';
+import { isBuiltInSubscription, ResourceType } from '../models/resource-types.js';
 import { getResourceTier, TIER_LABELS } from '../lib/dependency-graph.js';
 import { runParallel } from '../lib/parallel-runner.js';
 import { logger } from '../lib/logger.js';
@@ -299,6 +299,8 @@ async function determinePublishTargets(
     deletedDescriptors = [];
   }
 
+  // APIM's built-in `master` subscription can't be published (isBuiltInSubscription).
+  targetDescriptors = targetDescriptors.filter((descriptor) => !isBuiltInSubscription(descriptor));
   targetDescriptors = filterPublishDescriptors(targetDescriptors, config.filter);
   deletedDescriptors = filterPublishDescriptors(deletedDescriptors, config.filter);
 
@@ -988,7 +990,11 @@ async function executeDeletesForDescriptors(
   // removes all of its revisions in one call. Drop individual ;rev=N deletes
   // whose base API is also in the delete set to avoid redundant/racy deletes and
   // the "Cannot delete the current revision of an API" error.
-  const effectiveDescriptors = filterRevisionDeletesHandledByBaseApi(deleteDescriptors);
+  // APIM's built-in `master` subscription is never deleted: one that is can't
+  // be recreated (isBuiltInSubscription). An incremental publish lists it when
+  // its artifact is removed from the source.
+  const effectiveDescriptors = filterRevisionDeletesHandledByBaseApi(deleteDescriptors)
+    .filter((descriptor) => !isBuiltInSubscription(descriptor));
 
   // Group by tier
   const tierGroups = new Map<number, ResourceDescriptor[]>();

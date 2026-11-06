@@ -27,7 +27,7 @@ import type { IApimClient } from '../clients/iapim-client.js';
 import type { IArtifactStore } from '../clients/iartifact-store.js';
 import type { ApimServiceContext, ResourceDescriptor } from '../models/types.js';
 import type { PublishConfig } from '../models/config.js';
-import { ResourceType } from '../models/resource-types.js';
+import { isBuiltInSubscription, ResourceType } from '../models/resource-types.js';
 import { getTopologicalOrder } from '../lib/dependency-graph.js';
 import {
   getNameFromNameParts,
@@ -86,7 +86,6 @@ const BUILT_IN_GROUPS = ['administrators', 'developers', 'guests'];
  * System resources that should never be deleted
  */
 const SYSTEM_RESOURCES = new Set<string>([
-  'master', // Master product
   'unlimited', // Unlimited product
   'starter', // Starter product
   'echo-api', // Echo API (system test API)
@@ -396,6 +395,11 @@ function isSystemResource(descriptor: ResourceDescriptor): boolean {
     if (BUILT_IN_GROUPS.includes(ownName)) {
       return true;
     }
+  }
+
+  // APIM's built-in all-access subscription can't be recreated once deleted.
+  if (isBuiltInSubscription(descriptor)) {
+    return true;
   }
 
   // Check system products and APIs

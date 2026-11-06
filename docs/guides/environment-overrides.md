@@ -307,7 +307,10 @@ subscriptions:
       scope: "/apis/petstore-api"
 ```
 
-> **Note:** The built-in `master` subscription is automatically skipped during publish.
+> **Note:** APIM's built-in `master` subscription (the all-access one, scoped to the whole instance) is left alone:
+> extract doesn't write it, publish doesn't publish it, and neither `--delete-unmatched` nor an incremental publish
+> deletes it, since APIM can't recreate it. An artifact for it from an earlier extract is ignored, and
+> `--remove-stale` removes it when subscriptions are in its scope.
 > When publish creates a new product, the subscriptions APIM automatically creates for it are deleted,
 > so only the extracted product subscriptions (including ones with 24-character hex IDs) are published.
 > Deletion is best-effort: a failed delete is logged as a warning and does not fail the publish.

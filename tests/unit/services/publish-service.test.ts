@@ -8,7 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ResourceType } from '../../../src/models/resource-types.js';
 import { ResourceDescriptor, ApimServiceContext } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
-import { LogLevel } from '../../../src/lib/logger.js';
+import { LogLevel, logger } from '../../../src/lib/logger.js';
 import { recordRetry, withRetryResource } from '../../../src/lib/retry-tracker.js';
 import { getResourceDescriptorKey } from '../../../src/lib/resource-path.js';
 
@@ -1136,6 +1136,30 @@ describe('publish-service', () => {
       await runPublish(client, store, config);
 
       expect(computeGitDiff).toHaveBeenCalledWith('/source', 'abc123');
+    });
+
+    it("should neither publish nor delete APIM's built-in master subscription, without a warning", async () => {
+      const client = createMockClient();
+      const master = { type: ResourceType.Subscription, nameParts: ['master'] };
+      const store = createMockStore([master, { type: ResourceType.Subscription, nameParts: ['orders-sub'] }]);
+      const warn = vi.spyOn(logger, 'warn');
+      const base: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        logLevel: LogLevel.INFO,
+      };
+
+      await runPublish(client, store, base);
+      expect(client.putResource.mock.calls.map(([, descriptor]) => descriptor.nameParts[0])).toEqual(['orders-sub']);
+      expect(warn.mock.calls.map(([message]) => String(message)).filter((message) => message.includes('master'))).toEqual([]);
+
+      // An incremental publish lists it as deleted when its artifact is removed.
+      vi.mocked(computeGitDiff).mockResolvedValue({ changedDescriptors: [], deletedDescriptors: [master] });
+      await runPublish(client, store, { ...base, deleteUnmatched: true, commitId: 'abc123' });
+      expect(client.deleteResource).not.toHaveBeenCalled();
+      warn.mockRestore();
     });
 
     it('should delete descriptors removed in the commit when explicitly enabled', async () => {
