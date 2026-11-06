@@ -1139,6 +1139,26 @@ describe('publish-service', () => {
       expect(computeGitDiff).toHaveBeenCalledWith('/source', 'abc123');
     });
 
+    it("should not delete the built-in master subscription that an affixed source name deploys as", async () => {
+      const client = createMockClient();
+      vi.mocked(computeGitDiff).mockResolvedValue({
+        changedDescriptors: [],
+        deletedDescriptors: [{ type: ResourceType.Subscription, nameParts: ['aster'] }],
+      });
+
+      await runPublish(client, createMockStore([]), {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: true,
+        commitId: 'abc123',
+        overrides: { environment: { namePrefix: 'm' } },
+        logLevel: LogLevel.INFO,
+      });
+
+      expect(client.deleteResource).not.toHaveBeenCalled();
+    });
+
     it("should neither publish nor delete APIM's built-in master subscription, without a warning", async () => {
       const client = createMockClient();
       const master = { type: ResourceType.Subscription, nameParts: ['master'] };

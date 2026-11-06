@@ -992,10 +992,12 @@ async function executeDeletesForDescriptors(
   // whose base API is also in the delete set to avoid redundant/racy deletes and
   // the "Cannot delete the current revision of an API" error.
   // APIM's built-in `master` subscription is never deleted: one that is can't
-  // be recreated (isBuiltInSubscription). An incremental publish lists it when
-  // its artifact is removed from the source.
+  // be recreated (isBuiltInSubscription). It is checked under the name on the
+  // instance, which an environment affix can make `master`.
   const effectiveDescriptors = filterRevisionDeletesHandledByBaseApi(deleteDescriptors)
-    .filter((descriptor) => !isBuiltInSubscription(descriptor));
+    .filter((descriptor) => !isBuiltInSubscription(
+      config.envMapping && !descriptorsAreDeployed ? mapDescriptor(descriptor, config.envMapping) : descriptor
+    ));
 
   // Group by tier
   const tierGroups = new Map<number, ResourceDescriptor[]>();

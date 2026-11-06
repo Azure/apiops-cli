@@ -162,12 +162,15 @@ export async function generateDryRunReport(
   // Apply the same ;rev=N filtering as the real delete path so the preview
   // matches what publish would actually delete.
   if (incrementalDeletedDescriptors.length > 0) {
-    for (const descriptor of filterRevisionDeletesHandledByBaseApi(incrementalDeletedDescriptors)
-      .filter((deleted) => !isBuiltInSubscription(deleted))) {
+    for (const descriptor of filterRevisionDeletesHandledByBaseApi(incrementalDeletedDescriptors)) {
       try {
         const deployedDescriptor = config.envMapping
           ? mapDescriptor(descriptor, config.envMapping)
           : descriptor;
+        // As publish: never the built-in `master` subscription, by its name on the instance.
+        if (isBuiltInSubscription(deployedDescriptor)) {
+          continue;
+        }
         const resolvedDescriptor = await resolveAssociationDeleteDescriptor(
           client,
           context,

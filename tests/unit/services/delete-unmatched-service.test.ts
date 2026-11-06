@@ -160,6 +160,33 @@ describe('delete-unmatched-service', () => {
       expect(result.filter((d) => d.type === ResourceType.Subscription).map((d) => d.nameParts[0])).toEqual(['old-sub']);
     });
 
+    it("should decide master by its name on the instance when names are affixed", async () => {
+      const apimResources = new Map<ResourceType, Record<string, unknown>[]>([
+        [ResourceType.Subscription, [
+          { name: 'master', id: '/subscriptions/master', properties: { scope: '/' } },
+          { name: 'mold-sub', id: '/subscriptions/mold-sub', properties: { scope: '/apis/orders' } },
+        ]],
+      ]);
+      const subscriptions = async (namePrefix: string) => (await computeDeleteActions(
+        createMockClient(apimResources), createMockStore([]), testContext, { ...testConfig, envMapping: buildEnvMapping({ namePrefix }) }
+      )).filter((d) => d.type === ResourceType.Subscription).map((d) => d.nameParts[0]);
+
+      // With prefix `m`, master reads as source name `aster`; it is still never deleted.
+      expect(await subscriptions('m')).toEqual(['mold-sub']);
+    });
+
+    it("should delete a user subscription whose source name is master", async () => {
+      const apimResources = new Map<ResourceType, Record<string, unknown>[]>([
+        [ResourceType.Subscription, [{ name: 'dev-master', id: '/subscriptions/dev-master', properties: { scope: '/apis/orders' } }]],
+      ]);
+
+      const result = await computeDeleteActions(
+        createMockClient(apimResources), createMockStore([]), testContext, { ...testConfig, envMapping: buildEnvMapping({ namePrefix: 'dev-' }) }
+      );
+
+      expect(result.map((d) => d.nameParts[0])).toEqual(['dev-master']);
+    });
+
     it('should skip echo-api system API', async () => {
       const apimResources = new Map<ResourceType, Record<string, unknown>[]>([
         [ResourceType.Api, [

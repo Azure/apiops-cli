@@ -134,7 +134,11 @@ export async function computeDeleteActions(
       for await (const resource of apimResources) {
         const deployedDescriptor = parseResourceDescriptor(resource, resourceType);
 
-        if (!deployedDescriptor) {
+        // APIM's built-in `master` subscription can't be recreated once deleted.
+        // It is checked under its name on the instance: with an environment
+        // affix, a source name can deploy as `master`, and `master` can read as
+        // another source name.
+        if (!deployedDescriptor || isBuiltInSubscription(deployedDescriptor)) {
           continue;
         }
 
@@ -395,11 +399,6 @@ function isSystemResource(descriptor: ResourceDescriptor): boolean {
     if (BUILT_IN_GROUPS.includes(ownName)) {
       return true;
     }
-  }
-
-  // APIM's built-in all-access subscription can't be recreated once deleted.
-  if (isBuiltInSubscription(descriptor)) {
-    return true;
   }
 
   // Check system products and APIs
