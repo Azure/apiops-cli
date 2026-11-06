@@ -118,6 +118,13 @@ describe('rewritePolicyRefs', () => {
     expect(result).toBe('<set-backend-service sf-service-instance-name="@("fabric:/" + "app")" backend-id="dev-myBackend" />');
   });
 
+  it('rewrites backend-id after an interpolated string holding a literal with a bracket', () => {
+    const name = '@($"fabric:/{context.Variables.GetValueOrDefault("s)v")}")';
+    const xml = `<set-backend-service sf-service-instance-name="${name}" backend-id="myBackend" />`;
+    const result = rewrite(xml, devPrefixMapping(ALL_TYPES));
+    expect(result).toBe(`<set-backend-service sf-service-instance-name="${name}" backend-id="dev-myBackend" />`);
+  });
+
   it('rewrites backend-id after a policy expression whose comment holds an apostrophe', () => {
     const condition = '@{ /* don\'t retry here */ return context.Variables.GetValueOrDefault<bool>("resolve"); }';
     const xml = `<set-backend-service sf-resolve-condition="${condition}" backend-id="myBackend" />`;

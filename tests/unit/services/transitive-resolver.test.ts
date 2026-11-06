@@ -139,6 +139,13 @@ describe('transitive-resolver', () => {
         { type: ResourceType.Backend, name: 'orders-backend' },
       ]);
     });
+    it('should detect a backend after an interpolated string holding a literal with a bracket', () => {
+      const refs = scanPolicyReferences(
+        '<set-backend-service sf-service-instance-name="@($"fabric:/{context.Variables.GetValueOrDefault("s)v")}")" backend-id="sf-backend" />'
+      );
+
+      expect(refs).toEqual([{ type: ResourceType.Backend, name: 'sf-backend' }]);
+    });
     it('should not take an @( inside an XML comment for a policy expression', () => {
       const refs = scanPolicyReferences(
         '<!-- was @{ return "x"; -->' +
@@ -602,6 +609,9 @@ describe('blankPolicyExpressions', () => {
     ['a block with nested braces', 'v="@{ if (a) { return "}"; } }" x', 'v="@{                        }" x'],
     ['a block comment with a quote', 'v="@{ /* don\'t */ return "a"; }" x', 'v="@{                         }" x'],
     ['a line comment with a bracket', 'v="@{ // a ) or "\nreturn 1; }" x', 'v="@{                       }" x'],
+    ['an interpolated string holding a literal', 'v="@($"a{ctx.Get("s)v")}b")" x', 'v="@(                     )" x'],
+    ['a verbatim interpolated string', 'v="@($@"a""{ctx.Get("(")}")" x', 'v="@(                     )" x'],
+    ['an interpolated string with escaped braces', 'v="@($"{{(}}{x}")" x', 'v="@(           )" x'],
     ['an expression inside an XML comment', '<!-- @{ x" --> v="@(a)"', '<!-- @{ x" --> v="@( )"'],
     ['an unclosed expression', 'v="@(ctx.Get("a")" x', 'v="@(ctx.Get("a")" x'],
     ['an @ that starts no expression', 'mail="a@example.com"', 'mail="a@example.com"'],

@@ -167,18 +167,45 @@ function policyExpressionEnd(xml: string, start: number): number {
       }
       i = commentEnd;
     } else if (char === '"' || char === "'") {
-      // A verbatim string (@"...") doubles its quotes; others escape with '\'.
-      const verbatim = char === '"' && xml[i - 1] === '@';
-      for (i++; i < xml.length; i++) {
-        if (verbatim ? xml[i] === '"' && xml[i + 1] === '"' : xml[i] === '\\') {
-          i++;
-        } else if (xml[i] === char) {
-          break;
-        }
+      i = literalEnd(xml, i);
+      if (i === -1) {
+        return -1;
       }
     } else if (char === opening) {
       depth++;
     } else if (char === closing && --depth === 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * The index of the quote closing the C# string or character literal whose
+ * opening quote is at `start`, or -1 when it doesn't close. A verbatim string
+ * (`@"..."`) doubles its quotes; others escape with '\'. An interpolated
+ * string (`$"..."`) holds code in each `{...}` (`{{` is a literal brace),
+ * which can hold literals of its own (`$"{ctx.Get("a)b")}"`).
+ */
+function literalEnd(xml: string, start: number): number {
+  const quote = xml[start];
+  const prefix = quote === '"' ? xml.slice(Math.max(0, start - 2), start) : '';
+  const verbatim = prefix.endsWith('@') || prefix === '@$';
+  const interpolated = prefix.endsWith('$') || prefix === '$@';
+  for (let i = start + 1; i < xml.length; i++) {
+    const char = xml[i];
+    if (verbatim ? char === '"' && xml[i + 1] === '"' : char === '\\') {
+      i++;
+    } else if (interpolated && char === '{') {
+      if (xml[i + 1] === '{') {
+        i++;
+        continue;
+      }
+      i = policyExpressionEnd(xml, i);
+      if (i === -1) {
+        return -1;
+      }
+    } else if (char === quote) {
       return i;
     }
   }
