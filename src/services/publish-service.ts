@@ -126,7 +126,7 @@ async function runPublishPipeline(
     await client.validatePreFlight(config.service);
 
     // Step 1: Determine target descriptors based on incremental mode
-    const { targetDescriptors, deletedDescriptors } = await determinePublishTargets(
+    const { targetDescriptors: selectedDescriptors, deletedDescriptors } = await determinePublishTargets(
       store,
       config
     );
@@ -140,10 +140,13 @@ async function runPublishPipeline(
     // every unchanged artifact in incremental runs.
     const allDescriptors = config.commitId
       ? await store.listResources(config.sourceDir)
-      : targetDescriptors;
+      : selectedDescriptors;
 
     // Step 1b: Validate env mapping and store it on config for downstream use
     validateAndBuildEnvMapping(config.overrides, allDescriptors, config);
+    const targetDescriptors = selectedDescriptors.filter(
+      (descriptor) => !deploysAsBuiltInSubscription(descriptor, config)
+    );
 
     // Step 1c: Build known artifact sets for policy ref rewriting
     config.knownArtifactSets = buildKnownArtifactSets(allDescriptors);
@@ -317,6 +320,22 @@ async function determinePublishTargets(
   }
 
   return { targetDescriptors, deletedDescriptors };
+}
+
+/**
+ * Whether an environment affix makes a subscription's name on the instance
+ * `master`: publishing it would write to APIM's built-in subscription
+ * (isBuiltInSubscription), so it is left out with a warning. The source's
+ * own `master` is left out quietly when choosing what to publish.
+ */
+function deploysAsBuiltInSubscription(descriptor: ResourceDescriptor, config: PublishConfig): boolean {
+  if (!config.envMapping || !isBuiltInSubscription(mapDescriptor(descriptor, config.envMapping))) {
+    return false;
+  }
+  logger.warn(
+    `Skipping subscription "${descriptor.nameParts.join('/')}": the environment affix would publish it as APIM's built-in "master" subscription`
+  );
+  return true;
 }
 
 async function expandTransitivePublishTargets(

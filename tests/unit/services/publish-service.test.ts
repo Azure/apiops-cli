@@ -1159,6 +1159,33 @@ describe('publish-service', () => {
       expect(client.deleteResource).not.toHaveBeenCalled();
     });
 
+    it('should not publish, or plan in dry-run, a subscription that an affix deploys as the built-in master', async () => {
+      const store = createMockStore([
+        { type: ResourceType.Subscription, nameParts: ['aster'] },
+        { type: ResourceType.Subscription, nameParts: ['orders-sub'] },
+      ]);
+      const warn = vi.spyOn(logger, 'warn');
+      const base: PublishConfig = {
+        service: testContext,
+        sourceDir: '/source',
+        dryRun: false,
+        deleteUnmatched: false,
+        overrides: { environment: { namePrefix: 'm' } },
+        logLevel: LogLevel.INFO,
+      };
+
+      const client = createMockClient();
+      await runPublish(client, store, base);
+      expect(client.putResource.mock.calls.map(([, descriptor]) => descriptor.nameParts[0])).toEqual(['morders-sub']);
+      expect(warn.mock.calls.map(([message]) => String(message)).filter((message) => message.includes('"aster"'))).toHaveLength(1);
+
+      await runPublish(client, store, { ...base, dryRun: true });
+      expect(vi.mocked(generateDryRunReport).mock.calls.at(-1)?.[4]).toEqual([
+        { type: ResourceType.Subscription, nameParts: ['orders-sub'] },
+      ]);
+      warn.mockRestore();
+    });
+
     it("should neither publish nor delete APIM's built-in master subscription, without a warning", async () => {
       const client = createMockClient();
       const master = { type: ResourceType.Subscription, nameParts: ['master'] };
