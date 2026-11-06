@@ -1078,8 +1078,10 @@ async function splitNamedValuesNamingResources(
   otherTier1: ResourceDescriptor[],
   sourceReferences: SourceReferences
 ): Promise<{ early: ResourceDescriptor[]; ordered: ResourceDescriptor[][] }> {
+  // Names are case-insensitive, workspaces included: a pool member's ID can
+  // spell its workspace differently from the descriptor.
   const resourceKey = (type: ResourceType, name: string, workspace: string | undefined) =>
-    `${type}/${workspace ?? ''}/${name.toLowerCase()}`;
+    `${type}/${(workspace ?? '').toLowerCase()}/${name.toLowerCase()}`;
   const keyOf = (descriptor: ResourceDescriptor) =>
     resourceKey(descriptor.type, getNamePart(descriptor.nameParts, 0), descriptor.workspace);
   const byResourceKey = new Map(otherTier1.map((descriptor) => [keyOf(descriptor), descriptor]));

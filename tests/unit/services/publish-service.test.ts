@@ -2381,6 +2381,41 @@ describe('publish-service', () => {
       expect(order.indexOf('route')).toBeGreaterThan(order.indexOf('pool-id'));
     });
 
+    it('should publish a pool after a member deferred for a named value, whatever the case of its workspace', async () => {
+      const inWorkspace = (type: ResourceType, name: string): ResourceDescriptor =>
+        ({ type, nameParts: [name], workspace: 'team-a' });
+      const { order, client, store } = recordOrder([
+        inWorkspace(ResourceType.NamedValue, 'route'),
+        inWorkspace(ResourceType.Backend, 'new-backend'),
+        inWorkspace(ResourceType.Backend, 'caller'),
+        inWorkspace(ResourceType.Backend, 'my-pool'),
+        inWorkspace(ResourceType.PolicyFragment, 'frag'),
+      ]);
+      const memberId =
+        '/subscriptions/s/resourceGroups/r/providers/Microsoft.ApiManagement/service/a/workspaces/TEAM-A/backends/caller';
+      vi.mocked(store.readResource).mockImplementation(async (_sourceDir, descriptor) => {
+        if (descriptor.type === ResourceType.NamedValue) {
+          return { properties: { displayName: 'route', value: 'new-backend' } };
+        }
+        if (descriptor.type === ResourceType.PolicyFragment) {
+          return { properties: { value: '<fragment><set-backend-service backend-id="{{route}}" /></fragment>' } };
+        }
+        switch (descriptor.nameParts[0]) {
+          case 'caller':
+            return { properties: { url: 'https://example.test', credentials: { header: { 'x-route': ['{{route}}'] } } } };
+          case 'my-pool':
+            return { properties: { type: 'Pool', pool: { services: [{ id: memberId }] } } };
+          default:
+            return { properties: { url: 'https://example.test' } };
+        }
+      });
+
+      await publishAll(client, store);
+
+      expect(order.indexOf('caller')).toBeGreaterThan(order.indexOf('route'));
+      expect(order.indexOf('my-pool')).toBeGreaterThan(order.indexOf('caller'));
+    });
+
     it("should keep a named value first when a backend published with it uses it in its credentials", async () => {
       const { order, client, store } = recordOrder([
         { type: ResourceType.NamedValue, nameParts: ['shared'] },
