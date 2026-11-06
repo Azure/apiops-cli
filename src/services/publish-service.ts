@@ -1111,9 +1111,15 @@ async function deleteTier(
   // delete is tried again once the rest of the tier is gone, for as long as
   // each round deletes something.
   const finalResults = new Map<ResourceDescriptor, PublishActionResult>();
+  // HTTP retries add up across rounds: a delete can be retried before APIM
+  // rejects it as in use, then succeed in a later round.
+  const retries = new Map<ResourceDescriptor, number>();
   let pending = descriptors;
   while (pending.length > 0) {
     const roundResults = await deleteAll(pending);
+    for (const result of roundResults) {
+      retries.set(result.descriptor, (retries.get(result.descriptor) ?? 0) + (result.retries ?? 0));
+    }
     const inUse = roundResults.filter((result) => result.status === 'failed' && isResourceInUseError(result.error));
     const progressed = roundResults.some((result) => result.status !== 'failed');
     for (const result of roundResults) {
@@ -1131,7 +1137,8 @@ async function deleteTier(
   }
 
   return descriptors.map((descriptor) => {
-    const result = finalResults.get(descriptor)!;
+    const total = retries.get(descriptor) ?? 0;
+    const result = { ...finalResults.get(descriptor)!, ...(total > 0 ? { retries: total } : {}) };
     if (result.status === 'failed') {
       logger.error(`Failed to delete ${buildResourceLabel(descriptor)}:`, result.error);
     }

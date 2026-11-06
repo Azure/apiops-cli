@@ -1224,6 +1224,24 @@ describe('publish-service', () => {
         expect(calls.filter((name) => name === 'member')).toHaveLength(2);
       });
 
+      it('should report the HTTP retries a delete needed across rounds', async () => {
+        const existing = new Set(['pool', 'member']);
+        const { result } = await run(
+          [descriptor(ResourceType.Backend, 'member'), descriptor(ResourceType.Backend, 'pool')],
+          async (name) => {
+            if (name === 'member' && existing.has('pool')) {
+              recordRetry();
+              throw inUse('member', 'backends/pool');
+            }
+            existing.delete(name);
+            return true;
+          }
+        );
+
+        expect(result.actions.find((action) => action.descriptor.nameParts[0] === 'member')?.retries).toBe(1);
+        expect(result.totalRetries).toBe(1);
+      });
+
       it('should not try again a delete that failed for another reason, or one nothing in the run frees', async () => {
         const { result, calls } = await run(
           [descriptor(ResourceType.Tag, 'broken'), descriptor(ResourceType.Tag, 'busy'), descriptor(ResourceType.Tag, 'free')],
