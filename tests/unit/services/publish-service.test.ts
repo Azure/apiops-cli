@@ -32,6 +32,7 @@ import { runPublish } from '../../../src/services/publish-service.js';
 import { computeGitDiff } from '../../../src/services/git-diff-service.js';
 import { generateDryRunReport } from '../../../src/services/dry-run-reporter.js';
 import { computeDeleteActions } from '../../../src/services/delete-unmatched-service.js';
+import { planApiPublication } from '../../../src/services/api-publisher.js';
 import { publishApi } from '../../../src/services/api-publisher.js';
 import { publishProduct } from '../../../src/services/product-publisher.js';
 
@@ -91,6 +92,15 @@ describe('publish-service', () => {
       descriptor: { type: ResourceType.Api, nameParts: ['test-api'] },
       status: 'success',
       action: 'put',
+    });
+
+    vi.mocked(planApiPublication).mockResolvedValue({
+      importSpecification: false,
+      revisions: [],
+      alignActiveRevision: false,
+      childPuts: [],
+      operationDescriptionPuts: [],
+      operationPatches: [],
     });
 
     vi.mocked(publishProduct).mockResolvedValue({
@@ -1550,6 +1560,83 @@ describe('publish-service', () => {
         expect(result.actions.map((action) => action.error?.message)).toEqual([
           'policyFragments/frag references {{backend-id}}, the resource name of named value \'backend-id\'; use its display name, {{Backend_Id}}',
         ]);
+        error.mockRestore();
+      });
+
+      it("should abort before any PUT when an incremental publish republishes an unchanged API policy with a resource name reference", async () => {
+        const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const api: ResourceDescriptor = { type: ResourceType.Api, nameParts: ['orders'] };
+        const apiPolicy: ResourceDescriptor = { type: ResourceType.ApiPolicy, nameParts: ['orders'] };
+        const client = createMockClient();
+        const store = createMockStore([{ type: ResourceType.NamedValue, nameParts: ['backend-id'] }, api, apiPolicy]);
+        vi.mocked(store.readResource).mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) =>
+          descriptor.type === ResourceType.NamedValue ? { properties: { displayName: 'Backend_Id', value: 'x' } } : { properties: {} }
+        );
+        vi.mocked(store.readContent).mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) =>
+          descriptor.type === ResourceType.ApiPolicy
+            ? { content: '<policies><inbound><set-header name="k"><value>{{backend-id}}</value></set-header></inbound></policies>', format: 'xml' }
+            : undefined
+        );
+        // Only the API changed; publishApi republishes its policy with it.
+        vi.mocked(computeGitDiff).mockResolvedValue({ changedDescriptors: [api], deletedDescriptors: [] });
+        vi.mocked(planApiPublication).mockResolvedValue({
+          importSpecification: false,
+          revisions: [],
+          alignActiveRevision: false,
+          childPuts: [apiPolicy],
+          operationDescriptionPuts: [],
+          operationPatches: [],
+        });
+
+        const result = await runPublish(client, store, {
+          service: testContext,
+          sourceDir: '/source',
+          dryRun: false,
+          deleteUnmatched: false,
+          commitId: 'abc123',
+          logLevel: LogLevel.INFO,
+        });
+
+        expect(result.exitCode).toBe(2);
+        expect(vi.mocked(publishApi)).not.toHaveBeenCalled();
+        expect(result.actions.map((action) => action.error?.message)).toEqual([
+          expect.stringContaining('references {{backend-id}}, the resource name of named value \'backend-id\'; use its display name, {{Backend_Id}}'),
+        ]);
+        error.mockRestore();
+      });
+
+      it('should abort before any PUT when an incremental publish republishes an unchanged API policy holding the redaction marker', async () => {
+        const error = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const api: ResourceDescriptor = { type: ResourceType.Api, nameParts: ['orders'] };
+        const apiPolicy: ResourceDescriptor = { type: ResourceType.ApiPolicy, nameParts: ['orders'] };
+        const client = createMockClient();
+        const store = createMockStore([api, apiPolicy]);
+        vi.mocked(store.readContent).mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) =>
+          descriptor.type === ResourceType.ApiPolicy
+            ? { content: '<policies><inbound><set-header name="k"><value>*** REDACTED ***</value></set-header></inbound></policies>', format: 'xml' }
+            : undefined
+        );
+        vi.mocked(computeGitDiff).mockResolvedValue({ changedDescriptors: [api], deletedDescriptors: [] });
+        vi.mocked(planApiPublication).mockResolvedValue({
+          importSpecification: false,
+          revisions: [],
+          alignActiveRevision: false,
+          childPuts: [apiPolicy],
+          operationDescriptionPuts: [],
+          operationPatches: [],
+        });
+
+        const result = await runPublish(client, store, {
+          service: testContext,
+          sourceDir: '/source',
+          dryRun: false,
+          deleteUnmatched: false,
+          commitId: 'abc123',
+          logLevel: LogLevel.INFO,
+        });
+
+        expect(result.exitCode).toBe(2);
+        expect(vi.mocked(publishApi)).not.toHaveBeenCalled();
         error.mockRestore();
       });
 

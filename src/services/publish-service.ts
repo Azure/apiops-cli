@@ -40,8 +40,8 @@ import {
   ResourcePublishResult,
   buildKnownArtifactSets,
 } from './resource-publisher.js';
-import { publishApi } from './api-publisher.js';
-import { publishProduct } from './product-publisher.js';
+import { planApiPublication, publishApi } from './api-publisher.js';
+import { planProductPolicyPublication, publishProduct } from './product-publisher.js';
 import { generateDryRunReport, DryRunReport } from './dry-run-reporter.js';
 import {
   computeDeleteActions,
@@ -173,6 +173,10 @@ async function runPublishPipeline(
       `Publishing ${targetDescriptors.length} resources (dry-run: ${config.dryRun})`
     );
 
+    // The pre-flight checks below scan everything that will be published:
+    // the targets, and the policies published with them (withPlannedPolicies).
+    const published = await withPlannedPolicies(store, config, targetDescriptors);
+
     // Step 1c: Redaction pre-flight gate.
     // Scan every artifact that would be published for leftover redaction markers
     // ('*** REDACTED ***'). A single leftover marker aborts the ENTIRE publish
@@ -181,7 +185,7 @@ async function runPublishPipeline(
     const redactionFindings = await scanForRedactionMarkers(
       store,
       config,
-      targetDescriptors
+      published
     );
     if (redactionFindings.length > 0) {
       logger.error(
@@ -217,7 +221,7 @@ async function runPublishPipeline(
     // rejects a policy or credentials whose reference is a named value's
     // resource name instead. Stop before any PUT — and fail dry-run — rather
     // than partway through the publish.
-    const resourceNameReferences = await findResourceNameReferences(store, config, targetDescriptors, sourceReferences);
+    const resourceNameReferences = await findResourceNameReferences(store, config, published, sourceReferences);
     if (resourceNameReferences.length > 0) {
       logger.error(
         `Publish aborted: ${resourceNameReferences.length} reference(s) use a named value's resource name. ` +
@@ -368,6 +372,41 @@ async function determinePublishTargets(
   }
 
   return { targetDescriptors, deletedDescriptors };
+}
+
+/**
+ * The publish targets plus the policies the API and product publishers send
+ * with them in an incremental publish: an API's unchanged child policies
+ * (planApiPublication) and a product's policy (planProductPolicyPublication)
+ * are republished with a changed API or product without being targets
+ * themselves. In a full publish they are targets already.
+ */
+async function withPlannedPolicies(
+  store: IArtifactStore,
+  config: PublishConfig,
+  targets: ResourceDescriptor[]
+): Promise<ResourceDescriptor[]> {
+  if (config.commitId === undefined) {
+    return targets;
+  }
+  const allowed = config.filter ? targets : undefined;
+  const keys = new Set(targets.map(getResourceDescriptorKey));
+  const planned: ResourceDescriptor[] = [];
+  for (const descriptor of targets) {
+    const children = descriptor.type === ResourceType.Api && !isApiRevisionName(getNamePart(descriptor.nameParts, 0))
+      ? (await planApiPublication(store, descriptor, config, allowed)).childPuts
+      : descriptor.type === ResourceType.Product
+        ? [await planProductPolicyPublication(store, descriptor, config, allowed)]
+            .flatMap((policy) => (policy?.eligible ? [policy.descriptor] : []))
+        : [];
+    for (const child of children) {
+      if (!keys.has(getResourceDescriptorKey(child))) {
+        keys.add(getResourceDescriptorKey(child));
+        planned.push(child);
+      }
+    }
+  }
+  return [...targets, ...planned];
 }
 
 /**
