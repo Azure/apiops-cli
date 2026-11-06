@@ -44,7 +44,7 @@ The schema provides:
 
 ## Multi-environment on a single APIM instance
 
-Override files support an optional top-level `environment:` block that enables publishing multiple environments (dev, qa, prod) to a **single shared APIM instance**. When present, resource names are prefixed and/or suffixed at publish time so dev, qa, and prod resources coexist without colliding. Cross-references in policy XML — `{{namedValue}}` tokens, fragment IDs, backend IDs, subscription scopes — are rewritten automatically to use the affixed names.
+Override files support an optional top-level `environment:` block that enables publishing multiple environments (dev, qa, prod) to a **single shared APIM instance**. When present, resource names are prefixed and/or suffixed at publish time so dev, qa, and prod resources coexist without colliding. Cross-references — `{{namedValue}}` tokens in policies and credentials, the backend, fragment, logger and schema IDs policies name, named values used as those IDs, subscription scopes — are rewritten automatically to use the affixed names; see [Cross-reference rewrites](multi-environment-shared-apim.md#cross-reference-rewrites-automatic).
 
 Override entries always use **canonical (unprefixed) names** matching the artifact files on disk, regardless of whether an `environment:` block is present. The tool applies the affix at publish time; you never write prefixed names in override files or artifact files.
 
@@ -294,6 +294,8 @@ loggers:
         instrumentationKey: "prod-instrumentation-key-value"
       isBuffered: true
 ```
+
+Logger credentials reference the auto-generated named value by its display name, `{{Logger-Credentials--<id>}}`, as APIM requires. Artifacts extracted by `v0.1.7-alpha.0` and `v0.2.0-alpha.0` reference it by its ID (`{{66f48e1226dab62c0823e4f8}}`); publish stops on those and names the display name to use, so re-extract or change the reference.
 
 > **Tip:** You can also use [pipeline token substitution](token-substitution.md) for logger credentials. Replace the hardcoded value with a placeholder like `{#[APPINSIGHTS_KEY]#}`, and store the actual key in your pipeline's secret store. This keeps secrets out of your repository entirely.
 

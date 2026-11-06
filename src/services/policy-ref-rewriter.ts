@@ -7,48 +7,28 @@
  *
  * Design trade-off — regex, not XML parsing:
  *   Aligns with the repo's opaque-payload philosophy (FR-009). XML comments
- *   (<!--...-->) and CDATA sections are NOT explicitly excluded; a token like
- *   {{name}} inside a comment would technically be rewritten. This risk is
- *   acceptable because the known-set filter is the primary safety guard —
- *   only names present in the canonical artifact set are rewritten, so a
- *   false positive requires an artifact to be named exactly like a comment
- *   token, which is extremely unlikely in practice.
+ *   (<!--...-->) are left as written: APIM doesn't substitute named values
+ *   inside them, and a rewritten name could put `--` in one, which XML
+ *   doesn't allow. CDATA sections are NOT explicitly excluded; the
+ *   known-set filter is the primary safety guard there — only names present
+ *   in the canonical artifact set are rewritten.
  *
  * Known-set filter safety:
- *   Only tokens/attribute values whose exact text is present in the
- *   corresponding known set are rewritten. This naturally excludes APIM
- *   runtime context references such as {{context.request.headers.foo}}
- *   because those strings will never appear as artifact resource names.
+ *   Only tokens that are the display name of a named value in the source, and
+ *   attribute values that name a resource in the source, are rewritten. This
+ *   naturally excludes APIM runtime context references such as
+ *   {{context.request.headers.foo}}, which no named value has as its name.
  */
 
-import { ResourceType } from '../models/resource-types.js';
 import type { EnvMapping } from './env-mapper.js';
 import { toDeployedName } from './env-mapper.js';
 import type { KnownArtifactSets } from '../models/config.js';
-
-// ---------------------------------------------------------------------------
-// Regex patterns
-// ---------------------------------------------------------------------------
-
-/**
- * Matches {{token}} with optional whitespace inside the braces.
- * Group 1 = token name (no whitespace).
- */
-const NV_PATTERN = /\{\{\s*([A-Za-z0-9._-]+)\s*\}\}/g;
-
-/**
- * Matches the fragment-id attribute on an <include-fragment> element.
- * Groups: 1 = tag prefix through `=`, 2 = opening quote, 3 = id value,
- *          4 = closing quote (backreference to group 2).
- */
-const FRAGMENT_PATTERN = /(<include-fragment\b[^>]*\bfragment-id\s*=\s*)(["'])([^"'>]+)(\2)/gi;
-
-/**
- * Matches the backend-id attribute on a <set-backend-service> element.
- * Groups: 1 = tag prefix through `=`, 2 = opening quote, 3 = id value,
- *          4 = closing quote (backreference to group 2).
- */
-const BACKEND_PATTERN = /(<set-backend-service\b[^>]*\bbackend-id\s*=\s*)(["'])([^"'>]+)(\2)/gi;
+import {
+  blankPolicyExpressions,
+  blankXmlComments,
+  POLICY_REFERENCE_PATTERNS,
+  replaceNamedValueReferences,
+} from './transitive-resolver.js';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -61,46 +41,58 @@ export type { KnownArtifactSets } from '../models/config.js';
  * deployed names.
  *
  * Handled reference styles:
- *   1. `{{tokenName}}` — NamedValue reference. Only rewritten when
- *      tokenName ∈ knownArtifactSets.namedValues AND
- *      ResourceType.NamedValue ∈ mapping.appliesTo.
- *   2. `fragment-id="name"` on <include-fragment>. Only rewritten when
- *      name ∈ knownArtifactSets.fragments AND
- *      ResourceType.PolicyFragment ∈ mapping.appliesTo.
- *   3. `backend-id="name"` on <set-backend-service>. Only rewritten when
- *      name ∈ knownArtifactSets.backends AND
- *      ResourceType.Backend ∈ mapping.appliesTo.
+ *   1. `{{token}}` — a named value reference where APIM substitutes one
+ *      (replaceNamedValueReferences: inside a Liquid body, only a bare
+ *      `{{name}}`), resolved as APIM resolves it (by
+ *      display name, ignoring case, in the policy's scope) and rewritten to the
+ *      display name that named value is deployed with
+ *      (KnownArtifactSets.deployedNamedValueReference). Rewritten even without
+ *      a mapping when an explicit displayName override changes it.
+ *   2. An attribute that names a resource (POLICY_REFERENCE_PATTERNS:
+ *      backend-id, embeddings-backend-id, fragment-id, logger-id, schema-id).
+ *      Rewritten when its type ∈ mapping.appliesTo and the source has that
+ *      resource in the policy's scope.
  *
- * Returns the input unchanged if `mapping` is undefined or no matches apply.
+ * @param workspace - The policy's workspace, if any: references name
+ *   resources in its own scope
  */
 export function rewritePolicyRefs(
   xml: string,
   mapping: EnvMapping | undefined,
   known: KnownArtifactSets,
+  workspace?: string,
 ): string {
-  if (mapping === undefined) return xml;
+  // A token names the named value with that display name in the policy's
+  // scope, and becomes the display name it is deployed with: changed by an
+  // explicit displayName override even without a mapping. APIM matches
+  // display names ignoring case, so one that differs only in case is kept.
+  let result = replaceNamedValueReferences(xml, (name, match) => {
+    const deployed = known.deployedNamedValueReference(name, workspace);
+    return deployed === undefined || deployed.toLowerCase() === name.toLowerCase() ? match : `{{${deployed}}}`;
+  });
 
-  let result = xml;
+  if (mapping === undefined) return result;
 
-  if (mapping.appliesTo.has(ResourceType.NamedValue)) {
-    result = result.replace(NV_PATTERN, (match, name: string) => {
-      if (!known.namedValues.has(name)) return match;
-      return `{{${toDeployedName(name, ResourceType.NamedValue, mapping)}}}`;
-    });
-  }
-
-  if (mapping.appliesTo.has(ResourceType.PolicyFragment)) {
-    result = result.replace(FRAGMENT_PATTERN, (match, prefix: string, quote: string, id: string) => {
-      if (!known.fragments.has(id)) return match;
-      return `${prefix}${quote}${toDeployedName(id, ResourceType.PolicyFragment, mapping)}${quote}`;
-    });
-  }
-
-  if (mapping.appliesTo.has(ResourceType.Backend)) {
-    result = result.replace(BACKEND_PATTERN, (match, prefix: string, quote: string, id: string) => {
-      if (!known.backends.has(id)) return match;
-      return `${prefix}${quote}${toDeployedName(id, ResourceType.Backend, mapping)}${quote}`;
-    });
+  // An attribute that names a resource (backend-id, fragment-id, logger-id,
+  // schema-id ...) names one in the policy's scope. A policy expression or a
+  // named value (rewritten above) names none here.
+  // Matched on a copy with XML comments and policy expressions blanked (same
+  // offsets): comments are left as written, and a quote inside an expression
+  // doesn't hide the attributes after it.
+  for (const { type, pattern } of POLICY_REFERENCE_PATTERNS) {
+    if (!mapping.appliesTo.has(type)) continue;
+    const current = result;
+    let rewritten = '';
+    let last = 0;
+    for (const match of blankPolicyExpressions(blankXmlComments(current)).matchAll(pattern)) {
+      const [whole, quote = '', value = ''] = match;
+      const start = match.index ?? 0;
+      const end = start + whole.length;
+      if (value.startsWith('@') || value.includes('{{') || !known.has(type, value, workspace)) continue;
+      rewritten += current.slice(last, end - value.length - quote.length) + toDeployedName(value, type, mapping) + quote;
+      last = end;
+    }
+    result = rewritten + current.slice(last);
   }
 
   return result;

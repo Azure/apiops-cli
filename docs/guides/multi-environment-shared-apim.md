@@ -216,17 +216,18 @@ NamedValues have both a `name` (resource key) and a `displayName` (the `{{token}
 
 - Both the resource name **and** the displayName receive the affix.
 - This ensures `{{my-token}}` in a policy becomes `{{dev-my-token}}` for dev — cross-env policy isolation is maintained automatically.
-- If you set an explicit `displayName` in a NamedValue override entry, that value is used as-is (no affix applied to it).
+- If you set an explicit `displayName` in a NamedValue override entry, that value is used as-is (no affix applied to it), and references to the named value are rewritten to it.
+- APIM resolves a `{{token}}` by display name only (ignoring case), never by resource name, so a token is matched to the named value with that display name in the policy's own scope (service or workspace).
 
 ## Cross-reference rewrites (automatic)
 
-When `appliesTo` includes the relevant types, `apiops publish` rewrites the following references in artifacts before sending them to APIM. You do not need to update artifact files or override files manually.
+When `appliesTo` includes the relevant types, `apiops publish` rewrites the following references in artifacts before sending them to APIM. You do not need to update artifact files or override files manually. References are matched against every artifact in the source, so they are rewritten even when the filter or an incremental publish leaves out the resource they name.
 
 | Reference | Location | How it is rewritten |
 |---|---|---|
-| `{{namedValueToken}}` | Policy XML | Token rewritten to affixed displayName when `NamedValue ∈ appliesTo` and the named value artifact exists. Unknown tokens pass through unchanged. |
-| `fragment-id="..."` | Policy XML `<include-fragment>` | Fragment ID rewritten when `PolicyFragment ∈ appliesTo`. |
-| `backend-id="..."` | Policy XML `<set-backend-service>` | Backend ID rewritten when `Backend ∈ appliesTo`. |
+| `{{namedValueToken}}` | Policy and policy fragment XML; logger and backend `credentials` | Token matched to the named value with that display name (ignoring case, in the same scope) and rewritten to the display name it is deployed with: affixed when `NamedValue ∈ appliesTo`, or an explicit `displayName` override as written. Tokens no named value in the source has as its display name pass through unchanged. |
+| `backend-id`, `embeddings-backend-id`, `fragment-id`, `logger-id`, `schema-id` | Policy XML `<set-backend-service>`, `<llm-content-safety>`, `<llm-semantic-cache-lookup>` / `<azure-openai-semantic-cache-lookup>`, `<include-fragment>`, `<log-to-eventhub>`, validate-content's `<content>` | Rewritten when the resource's type (`Backend`, `PolicyFragment`, `Logger`, `GlobalSchema`) is in `appliesTo` and the source has that resource in the policy's scope. A policy expression (`@(...)`) is left as is. |
+| Named value `value` | ARM named value properties | When a policy uses the named value as a resource name (`backend-id="{{name}}"`, `logger-id`, `schema-id`) and its value names that resource in the source, the value is rewritten to the resource's deployed name. Secret, Key Vault and expression values are left as is. If the policies use it for types affixed differently, it is left as is with a warning. The value changes wherever the named value is used, including as plain text. |
 | Subscription `scope` | ARM subscription properties | Trailing segment rewritten when the referenced type (Api or Product) is in `appliesTo`. |
 | ApiRelease `apiId` | ARM release properties | Api ID segment rewritten when `Api ∈ appliesTo`. |
 | ProductApi association | ARM resource path | Both product and API name segments rewritten per `appliesTo`. |
@@ -435,7 +436,7 @@ Publish each with its respective `--service-name` (shared APIM for dev/qa, dedic
 
 ## Limitations
 
-- **Policy XML rewriting is regex-based.** The rewriter uses targeted regular expressions for `{{token}}`, `fragment-id="..."`, and `backend-id="..."` patterns. Tokens or attributes inside CDATA sections or XML comments may not be rewritten correctly. Avoid placing canonical resource name references inside CDATA blocks or comments in policy XML.
+- **Policy XML rewriting is regex-based.** The rewriter uses targeted regular expressions for `{{token}}`, `fragment-id="..."`, and `backend-id="..."` patterns. XML comments are left as written, since APIM doesn't substitute named values inside them. Tokens or attributes inside CDATA sections may not be rewritten correctly. Avoid placing canonical resource name references inside CDATA blocks in policy XML.
 - **Workspace container is not affixed.** The Workspace resource name itself is never prefixed/suffixed, even if `Workspace` is in `appliesTo`. Resources *inside* a workspace are affixed normally via their parent workspace's name.
 - **`ServicePolicy` and singleton types are never affixed.** The service-level policy, API policies, product policies, and operation policies derive their identity from their parent resource and are handled transitively — see [Types that are never affixed](#types-that-are-never-affixed).
 - **No `--strip-prefix` for extraction.** There is no built-in flag to strip environment prefixes when extracting from a shared APIM. Always extract from a dedicated source-of-truth APIM with canonical names.

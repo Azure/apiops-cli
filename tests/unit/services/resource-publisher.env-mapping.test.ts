@@ -11,7 +11,7 @@ import { ResourceType } from '../../../src/models/resource-types.js';
 import type { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
 import type { PublishConfig, KnownArtifactSets } from '../../../src/models/config.js';
 import type { EnvMapping } from '../../../src/services/env-mapper.js';
-import { DEFAULT_APPLIES_TO } from '../../../src/services/env-mapper.js';
+import { DEFAULT_APPLIES_TO, toDeployedName } from '../../../src/services/env-mapper.js';
 import { LogLevel } from '../../../src/lib/logger.js';
 
 // Mock keyvault-checker
@@ -76,11 +76,29 @@ const DEV_MAPPING: EnvMapping = {
   appliesTo: DEFAULT_APPLIES_TO,
 };
 
-const EMPTY_KNOWN: KnownArtifactSets = {
-  namedValues: new Set(),
-  fragments: new Set(),
-  backends: new Set(),
-};
+/**
+ * KnownArtifactSets for these names, with each named value's display name its
+ * name, deployed with DEV_MAPPING's affix.
+ */
+function knownSets(names: { namedValues?: string[]; fragments?: string[]; backends?: string[] } = {}): KnownArtifactSets {
+  const find = (candidates: string[] | undefined, name: string) =>
+    candidates?.find((candidate) => candidate.toLowerCase() === name.toLowerCase());
+  const byType: Partial<Record<ResourceType, string[] | undefined>> = {
+    [ResourceType.NamedValue]: names.namedValues,
+    [ResourceType.PolicyFragment]: names.fragments,
+    [ResourceType.Backend]: names.backends,
+  };
+  return {
+    has: (type, name) => find(byType[type], name) !== undefined,
+    namedValueTargetTypes: () => new Set(),
+    deployedNamedValueReference: (reference) => {
+      const name = find(names.namedValues, reference);
+      return name === undefined ? undefined : toDeployedName(name, ResourceType.NamedValue, DEV_MAPPING);
+    },
+  };
+}
+
+const EMPTY_KNOWN = knownSets();
 
 function makeConfig(overrides?: Partial<PublishConfig>): PublishConfig {
   return { ...baseConfig, ...overrides };
@@ -387,11 +405,95 @@ describe('resource-publisher env-mapping', () => {
         type: ResourceType.Logger,
         nameParts: ['my-logger'],
       };
-      const config = makeConfig({ envMapping: DEV_MAPPING, knownArtifactSets: EMPTY_KNOWN });
+      store.listResources.mockResolvedValue([{ type: ResourceType.NamedValue, nameParts: ['myNv'] }]);
+      // Built from the source, as for a resource published outside a publish run.
+      const config = makeConfig({ envMapping: DEV_MAPPING });
       await publishResource(client, store, testContext, descriptor, config);
       const [, , payload] = client.putResource.mock.calls[0] as [unknown, unknown, Record<string, unknown>];
       const creds = (payload.properties as Record<string, unknown>).credentials as Record<string, unknown>;
       expect(creds.instrumentationKey).toBe('{{dev-myNv}}');
+    });
+  });
+
+  describe('Named value references, by the named value they resolve to', () => {
+    // backend-id has the display name Backend_Id, in the service and in the
+    // team-a workspace; key-id has Key.
+    const namedValues: ResourceDescriptor[] = [
+      { type: ResourceType.NamedValue, nameParts: ['backend-id'] },
+      { type: ResourceType.NamedValue, nameParts: ['backend-id'], workspace: 'team-a' },
+      { type: ResourceType.NamedValue, nameParts: ['key-id'] },
+    ];
+    const publishPolicy = async (xml: string, config: PublishConfig, workspace?: string) => {
+      store.listResources.mockResolvedValue(namedValues);
+      store.readResource.mockImplementation(async (_dir: string, d: ResourceDescriptor) =>
+        d.type === ResourceType.NamedValue
+          ? { name: d.nameParts[0], properties: { displayName: d.nameParts[0] === 'key-id' ? 'Key' : 'Backend_Id', value: 'x' } }
+          : null
+      );
+      store.readContent.mockResolvedValue({ content: xml });
+      await publishResource(client, store, testContext, { type: ResourceType.ApiPolicy, nameParts: ['petstore'], workspace }, config);
+      const [, , payload] = client.putResource.mock.calls[0] as [unknown, unknown, Record<string, unknown>];
+      return (payload.properties as Record<string, unknown>).value as string;
+    };
+
+    it('rewrites a token by display name, in any case, to the deployed display name', async () => {
+      const value = await publishPolicy('{{Backend_Id}}{{backend_id}}{{backend-id}}', makeConfig({ envMapping: DEV_MAPPING }));
+      // {{backend-id}} is only a resource name, which APIM doesn't resolve.
+      expect(value).toBe('{{dev-Backend_Id}}{{dev-Backend_Id}}{{backend-id}}');
+    });
+
+    it('follows a display name an explicit override changes, without a mapping', async () => {
+      const value = await publishPolicy(
+        '{{Key}}{{prod_key}}',
+        makeConfig({ overrides: { namedValues: { 'key-id': { properties: { displayName: 'Prod_Key' } } } } })
+      );
+      expect(value).toBe('{{Prod_Key}}{{prod_key}}');
+    });
+
+    it("keeps a reference to an auto-generated logger key publish skips, and affixes one an override provides", async () => {
+      const id = '66f48e1226dab62c0823e4f8';
+      const publishLogger = async (overrides?: PublishConfig['overrides']) => {
+        client.putResource.mockClear();
+        store.listResources.mockResolvedValue([{ type: ResourceType.NamedValue, nameParts: [id] }]);
+        store.readResource.mockImplementation(async (_dir: string, d: ResourceDescriptor) =>
+          d.type === ResourceType.NamedValue
+            ? { name: id, properties: { displayName: `Logger-Credentials--${id}`, secret: true } }
+            : { name: 'ai', properties: { loggerType: 'applicationInsights', credentials: { instrumentationKey: `{{Logger-Credentials--${id}}}` } } }
+        );
+        await publishResource(client, store, testContext, { type: ResourceType.Logger, nameParts: ['ai'] }, makeConfig({ envMapping: DEV_MAPPING, overrides }));
+        const [, , payload] = client.putResource.mock.calls[0] as [unknown, unknown, Record<string, unknown>];
+        return ((payload.properties as Record<string, unknown>).credentials as Record<string, unknown>).instrumentationKey;
+      };
+
+      // Publish skips it, so the logger keeps the key the target already has.
+      expect(await publishLogger()).toBe(`{{Logger-Credentials--${id}}}`);
+      expect(await publishLogger({ namedValues: { [id]: { properties: { value: 'key' } } } })).toBe(`{{dev-Logger-Credentials--${id}}}`);
+    });
+
+    it('rewrites the tokens in backend credentials', async () => {
+      store.listResources.mockResolvedValue(namedValues);
+      store.readResource.mockImplementation(async (_dir: string, d: ResourceDescriptor) =>
+        d.type === ResourceType.NamedValue
+          ? { name: d.nameParts[0], properties: { displayName: 'Backend_Id' } }
+          : { name: 'b', properties: { url: 'https://example.test', credentials: { header: { 'x-key': ['{{Backend_Id}}'], 'x-spaced': ['{{ Backend_Id }}'] } } } }
+      );
+      await publishResource(client, store, testContext, { type: ResourceType.Backend, nameParts: ['b'] }, makeConfig({ envMapping: DEV_MAPPING }));
+      const [, , payload] = client.putResource.mock.calls[0] as [unknown, unknown, Record<string, unknown>];
+      expect((payload.properties as Record<string, unknown>).credentials).toEqual({
+        header: { 'x-key': ['{{dev-Backend_Id}}'], 'x-spaced': ['{{dev-Backend_Id}}'] },
+      });
+    });
+
+    it("matches a workspace policy's tokens against the workspace's named values", async () => {
+      const config = makeConfig({
+        envMapping: DEV_MAPPING,
+        overrides: {
+          workspaces: {
+            'team-a': { properties: {}, children: { namedValues: { 'backend-id': { properties: { displayName: 'Team_Backend' } } } } },
+          },
+        },
+      });
+      expect(await publishPolicy('{{Backend_Id}}', config, 'team-a')).toBe('{{Team_Backend}}');
     });
   });
 
@@ -408,11 +510,7 @@ describe('resource-publisher env-mapping', () => {
         type: ResourceType.ApiPolicy,
         nameParts: ['petstore'],
       };
-      const known: KnownArtifactSets = {
-        namedValues: new Set(['myNv']),
-        fragments: new Set(['myFrag']),
-        backends: new Set(['myBackend']),
-      };
+      const known = knownSets({ namedValues: ['myNv'], fragments: ['myFrag'], backends: ['myBackend'] });
       const config = makeConfig({ envMapping: DEV_MAPPING, knownArtifactSets: known });
       await publishResource(client, store, testContext, descriptor, config);
       const [, , payload] = client.putResource.mock.calls[0] as [unknown, unknown, Record<string, unknown>];
@@ -437,11 +535,7 @@ describe('resource-publisher env-mapping', () => {
         type: ResourceType.PolicyFragment,
         nameParts: ['myFrag'],
       };
-      const known: KnownArtifactSets = {
-        namedValues: new Set(),
-        fragments: new Set(),
-        backends: new Set(['myBackend']),
-      };
+      const known = knownSets({ backends: ['myBackend'] });
       const config = makeConfig({ envMapping: DEV_MAPPING, knownArtifactSets: known });
       await publishResource(client, store, testContext, descriptor, config);
       const [, , payload] = client.putResource.mock.calls[0] as [unknown, unknown, Record<string, unknown>];

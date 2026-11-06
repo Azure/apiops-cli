@@ -17,7 +17,7 @@ import { ResourceType } from '../../../src/models/resource-types.js';
 import { ApimServiceContext, ResourceDescriptor } from '../../../src/models/types.js';
 import { PublishConfig } from '../../../src/models/config.js';
 import { KeyVaultAccessError } from '../../../src/services/keyvault-checker.js';
-import { LogLevel } from '../../../src/lib/logger.js';
+import { LogLevel, logger } from '../../../src/lib/logger.js';
 import { REDACTION_MARKER } from '../../../src/services/secret-redactor.js';
 import { buildEnvMapping } from '../../../src/services/env-mapper.js';
 import { HttpError } from '../../../src/clients/apim-client.js';
@@ -2070,9 +2070,11 @@ describe('resource-publisher', () => {
   });
 
   describe('Logger named value reference rewriting', () => {
-    it('should rewrite {{name}} to {{displayName}} in logger credentials', async () => {
+    it("should leave a reference to an auto-generated named value's resource name, and warn", async () => {
+      const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
       const client = createMockClient();
       const store = createMockStore();
+      store.listResources.mockResolvedValue([{ type: ResourceType.NamedValue, nameParts: ['abc123def456abc123def456'] }]);
 
       const loggerJson = {
         name: 'my-logger',
@@ -2109,7 +2111,10 @@ describe('resource-publisher', () => {
       const putPayload = client.putResource.mock.calls[0][2] as Record<string, unknown>;
       const props = putPayload.properties as Record<string, unknown>;
       const creds = props.credentials as Record<string, unknown>;
-      expect(creds.instrumentationKey).toBe('{{Logger-Credentials--abc123def456abc123def457}}');
+      // APIM matches display names only, so the reference isn't repaired.
+      expect(creds.instrumentationKey).toBe('{{abc123def456abc123def456}}');
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('no named value has that display name'));
+      warn.mockRestore();
     });
 
     it('should leave {{displayName}} references unchanged', async () => {
@@ -2146,6 +2151,27 @@ describe('resource-publisher', () => {
       expect(creds.instrumentationKey).toBe('{{Logger-Credentials--abc123}}');
     });
 
+    it('should point a reference at the display name an override gives, and leave one already using it', async () => {
+      const client = createMockClient();
+      const store = createMockStore();
+      store.listResources.mockResolvedValue([{ type: ResourceType.NamedValue, nameParts: ['key-id'] }]);
+      store.readResource.mockImplementation(async (_dir: string, desc: ResourceDescriptor) =>
+        desc.type === ResourceType.Logger
+          ? { properties: { loggerType: 'applicationInsights', credentials: { a: '{{Key}}', b: '{{prod_key}}' } } }
+          : { name: 'key-id', properties: { displayName: 'Key', secret: true } }
+      );
+      const config: PublishConfig = {
+        ...testConfig,
+        overrides: { namedValues: { 'key-id': { properties: { displayName: 'Prod_Key' } } } },
+      };
+
+      await publishResource(client, store, testContext, { type: ResourceType.Logger, nameParts: ['my-logger'] }, config);
+
+      const credentials = ((client.putResource.mock.calls[0]?.[2] as Record<string, unknown>).properties as Record<string, unknown>)
+        .credentials as Record<string, unknown>;
+      expect(credentials).toEqual({ a: '{{Prod_Key}}', b: '{{prod_key}}' });
+    });
+
     it('should keep an explicit workspace named-value displayName unprefixed in logger credentials', async () => {
       const client = createMockClient();
       const store = createMockStore();
@@ -2156,6 +2182,7 @@ describe('resource-publisher', () => {
           credentials: { instrumentationKey: '{{api-key}}' },
         },
       };
+      store.listResources.mockResolvedValue([{ type: ResourceType.NamedValue, nameParts: ['api-key'], workspace: 'team-a' }]);
       store.readResource.mockImplementation(async (_dir: string, descriptor: ResourceDescriptor) => {
         if (descriptor.type === ResourceType.Logger) return loggerJson;
         if (descriptor.type === ResourceType.NamedValue && descriptor.nameParts[0] === 'api-key') {
