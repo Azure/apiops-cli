@@ -564,6 +564,26 @@ describe('workspace-extractor', () => {
   });
 
   describe('resolveWorkspaceFilter', () => {
+    it('should apply a sub-filter keyed by a pattern to every workspace it matches', () => {
+      const filter: FilterConfig = {
+        workspaces: ['team-*'],
+        workspaceSubFilters: {
+          'team-*': { apis: ['orders'], namedValues: [] },
+          'team-b': { apis: ['billing'] },
+          '!team-c': { apis: [] },
+        },
+      };
+
+      expect(resolveWorkspaceFilter('team-a', filter)).toEqual(
+        expect.objectContaining({ apis: ['orders'], namedValues: [] })
+      );
+      // A sub-filter keyed by the workspace's name takes precedence over a pattern.
+      expect(resolveWorkspaceFilter('TEAM-B', filter)).toEqual(expect.objectContaining({ apis: ['billing'] }));
+      // Exclusion keys never apply.
+      expect(resolveWorkspaceFilter('team-c', filter)).toEqual(expect.objectContaining({ apis: ['orders'] }));
+      expect(resolveWorkspaceFilter('platform', filter)).toBeUndefined();
+    });
+
     it('should return undefined when no filter provided', () => {
       expect(resolveWorkspaceFilter('ws-1')).toBeUndefined();
     });

@@ -201,6 +201,49 @@ apis:
       });
     });
 
+    it('should load a wildcard API sub-filter with tagDescriptions (#316, #307)', async () => {
+      const content = `
+apis:
+  - '*':
+      operations: []
+      schemas: []
+      tagDescriptions: []
+`;
+      const filePath = path.join(tmpDir, 'wildcard-api-filter.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+
+      expect(config!.apis).toEqual(['*']);
+      expect(config!.apiSubFilters).toEqual({
+        '*': { operations: [], schemas: [], tagDescriptions: [] },
+      });
+    });
+
+    it('should ignore, with a warning, sub-filters keyed by an exclusion', async () => {
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const content = `
+apis:
+  - '*'
+  - '!legacy':
+      operations: []
+workspaces:
+  - '!team-c':
+      apis: []
+`;
+      const filePath = path.join(tmpDir, 'exclusion-sub-filter.yaml');
+      await fs.writeFile(filePath, content, 'utf-8');
+
+      const config = await loadFilterConfig(filePath);
+
+      expect(config!.apis).toEqual(['*', '!legacy']);
+      expect(config!.apiSubFilters).toEqual({});
+      expect(config!.workspaceSubFilters).toEqual({});
+      expect(warnSpy).toHaveBeenCalledWith("Sub-filter for exclusion '!legacy' in 'apis' has no effect; ignoring.");
+      expect(warnSpy).toHaveBeenCalledWith("Sub-filter for exclusion '!team-c' in 'workspaces' has no effect; ignoring.");
+      warnSpy.mockRestore();
+    });
+
     it('should load nested workspace filter entries', async () => {
       const content = `
 workspaces:

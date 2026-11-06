@@ -105,7 +105,7 @@
         },
         {
           "type": "object",
-          "description": "A single API name mapped to sub-resource filters for that API.",
+          "description": "A single API name, or a wildcard pattern such as *, mapped to sub-resource filters for the matching APIs. A name takes precedence over a pattern.",
           "minProperties": 1,
           "maxProperties": 1,
           "patternProperties": {
@@ -124,7 +124,7 @@
         },
         {
           "type": "object",
-          "description": "A single workspace name mapped to sub-resource filters for that workspace.",
+          "description": "A single workspace name, or a wildcard pattern such as team-*, mapped to sub-resource filters for the matching workspaces. A name takes precedence over a pattern.",
           "minProperties": 1,
           "maxProperties": 1,
           "patternProperties": {
@@ -156,6 +156,10 @@
         "releases": {
           "$ref": "#/definitions/resourcePatternArray",
           "description": "Releases to extract for this API. Matching is case-insensitive and supports * and ? wildcards."
+        },
+        "tagDescriptions": {
+          "$ref": "#/definitions/resourcePatternArray",
+          "description": "TagDescriptions to extract for this API. Matching is case-insensitive and supports * and ? wildcards."
         }
       }
     },
