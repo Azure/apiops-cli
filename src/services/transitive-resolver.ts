@@ -177,6 +177,15 @@ const POLICY_RESOURCE_TYPES = new Set<ResourceType>([
   ResourceType.GraphQLResolverPolicy,
 ]);
 
+/** The artifact types scanArtifactReferences finds references in; the rest hold none. */
+const REFERENCING_TYPES = new Set<ResourceType>([
+  ...POLICY_RESOURCE_TYPES,
+  ResourceType.Api,
+  ResourceType.Logger,
+  ResourceType.Backend,
+  ResourceType.PolicyFragment,
+]);
+
 /**
  * Scan policy XML content for references to other resources.
  *
@@ -536,6 +545,9 @@ export async function scanArtifactReferences(
   readNamedValue?: NamedValueReader,
   prepareJson?: PrepareJson
 ): Promise<ResourceDescriptor[]> {
+  if (!REFERENCING_TYPES.has(descriptor.type)) {
+    return [];
+  }
   const references: ResourceDescriptor[] = [];
   const policies = new Map<string, string>();
   const apis = new Map<string, Record<string, unknown>>();

@@ -54,6 +54,7 @@ import { REDACTION_MARKER } from './secret-redactor.js';
 import {
   createArtifactReferenceResolver,
   createNamedValueReader,
+  findTransitiveDependencies,
   indexNamedValueTargetTypes,
   REFERENCE_SCAN_CONCURRENCY,
   scanArtifactNamedValueReferences,
@@ -269,7 +270,8 @@ async function runPublishPipeline(
       store,
       config.service,
       config,
-      targetDescriptors
+      targetDescriptors,
+      sourceReferences
     );
 
     // Step 4: Execute DELETEs in reverse dependency order (tier 4 → tier 1) if requested
@@ -656,7 +658,8 @@ async function executePuts(
   store: IArtifactStore,
   context: ApimServiceContext,
   config: PublishConfig,
-  targetDescriptors: ResourceDescriptor[]
+  targetDescriptors: ResourceDescriptor[],
+  sourceReferences: SourceReferences
 ): Promise<PublishActionResult[]> {
   const results: PublishActionResult[] = [];
 
@@ -710,33 +713,65 @@ async function executePuts(
         await publishAndOutput(client, store, context, config, workspaces, targetDescriptors, results);
       }
 
-      // Within Tier 1 we publish in three ordered waves to satisfy implicit
+      // Within Tier 1 we publish in ordered waves to satisfy implicit
       // runtime dependencies:
       //
-      // Wave 1 — NamedValues only.
+      // Wave 1 — Named values, except those in wave 4.
       //   Loggers and backends may reference named values by name in their
       //   configuration (e.g. AppInsights instrumentation key stored as a
       //   named value). Publishing named values first ensures they exist
       //   before any resource that references them.
       //
-      // Wave 2 — All remaining Tier 1 resources except pool backends.
-      //   Loggers, tags, gateways, etc. can now reference named values safely.
+      // Wave 2 — The remaining Tier 1 resources except pool backends and
+      //   wave 4 (and except policy fragments when wave 4 has any).
       //
       // Wave 3 — Pool backends.
       //   Pool backends reference individual Backend resources and must be
       //   published after the backends they aggregate (see pool backend
       //   ordering comments in splitPoolBackends).
-      if (namedValues.length > 0) {
-        logger.debug(`Publishing ${namedValues.length} named value(s) first (wave 1 of tier 1)`);
-        await publishAndOutput(client, store, context, config, namedValues, targetDescriptors, results);
+      //
+      // Wave 4 — Named values a policy uses as a resource name
+      //   (backend-id="{{name}}") whose value names a backend, logger or
+      //   schema published here, after that resource: APIM checks the
+      //   policies that use a named value when it changes, so that resource
+      //   must exist first. With them, in an order where each goes after what
+      //   it needs, the backends and loggers whose credentials use them and
+      //   the pools those are members of (see
+      //   splitNamedValuesNamingResources).
+      //
+      // Wave 5 — Policy fragments, when wave 4 has resources: a fragment can
+      //   use its named values, and APIM rejects a policy that uses a
+      //   missing one.
+      const { early: earlyNamedValues, ordered } = await splitNamedValuesNamingResources(
+        store,
+        config,
+        namedValues,
+        otherTier1,
+        sourceReferences
+      );
+      if (earlyNamedValues.length > 0) {
+        logger.debug(`Publishing ${earlyNamedValues.length} named value(s) first (wave 1 of tier 1)`);
+        await publishAndOutput(client, store, context, config, earlyNamedValues, targetDescriptors, results);
       }
 
+      const inOrdered = new Set(ordered.flat());
       const { poolBackends, regularTier1 } = await splitPoolBackends(
         store,
         config.sourceDir,
-        otherTier1
+        otherTier1.filter((descriptor) => !inOrdered.has(descriptor))
       );
-      await publishAndOutput(client, store, context, config, regularTier1, targetDescriptors, results);
+      const fragments = inOrdered.size > 0
+        ? regularTier1.filter((descriptor) => descriptor.type === ResourceType.PolicyFragment)
+        : [];
+      await publishAndOutput(
+        client,
+        store,
+        context,
+        config,
+        regularTier1.filter((descriptor) => !fragments.includes(descriptor)),
+        targetDescriptors,
+        results
+      );
       if (poolBackends.length > 0) {
         logger.debug(
           `Publishing ${poolBackends.length} pool backend(s) after regular backends`
@@ -750,6 +785,17 @@ async function executePuts(
           targetDescriptors,
           results
         );
+      }
+      if (inOrdered.size > 0) {
+        logger.debug(
+          `Publishing ${inOrdered.size} named value(s) and resource(s) in the order the named values' values need`
+        );
+      }
+      for (const wave of ordered) {
+        await publishAndOutput(client, store, context, config, wave, targetDescriptors, results);
+      }
+      if (fragments.length > 0) {
+        await publishAndOutput(client, store, context, config, fragments, targetDescriptors, results);
       }
     } else if (tier === 2) {
       const tier2Descriptors = filterApiRevisionsHandledByRootApis(descriptors);
@@ -961,6 +1007,194 @@ function splitNamedValues(
 
   return { namedValues, otherTier1 };
 }
+
+/**
+ * The Tier 1 order around named values a policy or policy fragment in the
+ * source uses as the whole value of a reference attribute
+ * (backend-id="{{name}}", logger-id, schema-id), and whose value (with
+ * overrides) names a resource of that type published in this tier. APIM
+ * checks the policies that use a named value when the named value changes,
+ * rejecting the change ("its value breaks policies") while the resource it
+ * now names doesn't exist, so such a named value goes after that resource.
+ *
+ * `early` named values go before the rest of Tier 1. `ordered` is published
+ * in turn after it, wave by wave: the late named values, the backends and
+ * loggers whose credentials use them (after them), the resources those name
+ * or pools those are members of, in an order where each comes after what it
+ * needs. Where there is none (a cycle, as when a backend uses in its
+ * credentials the named value that names it), the named values in it go
+ * early instead. `ordered` resources other than named values are not
+ * published in the earlier waves.
+ *
+ * The policies are read (once) only when a named value's value matches the
+ * name of such a resource here; a named value that can't be read goes first,
+ * and publishing it reports the error.
+ */
+async function splitNamedValuesNamingResources(
+  store: IArtifactStore,
+  config: PublishConfig,
+  namedValues: ResourceDescriptor[],
+  otherTier1: ResourceDescriptor[],
+  sourceReferences: SourceReferences
+): Promise<{ early: ResourceDescriptor[]; ordered: ResourceDescriptor[][] }> {
+  const resourceKey = (type: ResourceType, name: string, workspace: string | undefined) =>
+    `${type}/${workspace ?? ''}/${name.toLowerCase()}`;
+  const keyOf = (descriptor: ResourceDescriptor) =>
+    resourceKey(descriptor.type, getNamePart(descriptor.nameParts, 0), descriptor.workspace);
+  const byResourceKey = new Map(otherTier1.map((descriptor) => [keyOf(descriptor), descriptor]));
+  const named = new Set(
+    otherTier1.filter((descriptor) => NAMED_THROUGH_NAMED_VALUE_TYPES.has(descriptor.type)).map(keyOf)
+  );
+  const early: ResourceDescriptor[] = [];
+  const late: ResourceDescriptor[] = [];
+  if (named.size === 0) {
+    return { early: namedValues, ordered: [] };
+  }
+  // The resources each late named value names, which go before it.
+  const targetsOf = new Map<ResourceDescriptor, string[]>();
+  // The named values policies use as resource names, and as which types.
+  // Every policy in the source counts, not only the ones the filter selects:
+  // APIM checks every policy on the target that uses the named value, and
+  // this only decides the order, not what is published.
+  const typesFor = async (namedValue: ResourceDescriptor): Promise<Set<ResourceType> | undefined> =>
+    (await sourceReferences.namedValueTargets()).get(getResourceDescriptorKey(namedValue));
+  for (const descriptor of namedValues) {
+    let targets: string[] = [];
+    try {
+      const json = await store.readResource(config.sourceDir, descriptor);
+      const name = json ? namedValueTargetName(applyOverrides(descriptor, json, config.overrides)) : undefined;
+      if (name && [...NAMED_THROUGH_NAMED_VALUE_TYPES].some((type) => named.has(resourceKey(type, name, descriptor.workspace)))) {
+        targets = [...(await typesFor(descriptor) ?? [])]
+          .map((type) => resourceKey(type, name, descriptor.workspace))
+          .filter((target) => named.has(target));
+      }
+    } catch {
+      targets = [];
+    }
+    if (targets.length > 0) {
+      late.push(descriptor);
+      targetsOf.set(descriptor, targets);
+    } else {
+      early.push(descriptor);
+    }
+  }
+  if (late.length === 0) {
+    return { early, ordered: [] };
+  }
+
+  // The backends and loggers whose own configuration (their credentials)
+  // uses a late named value, and the pools each backend is a member of.
+  const resolve = sourceReferences.resolve;
+  const lateByKey = new Map(late.map((descriptor) => [getResourceDescriptorKey(descriptor), descriptor]));
+  const usesOf = new Map<ResourceDescriptor, ResourceDescriptor[]>();
+  const poolsOf = new Map<string, ResourceDescriptor[]>();
+  for (const descriptor of otherTier1) {
+    if (descriptor.type !== ResourceType.Backend && descriptor.type !== ResourceType.Logger) {
+      continue;
+    }
+    let json: Record<string, unknown> | undefined;
+    try {
+      json = await store.readResource(config.sourceDir, descriptor);
+    } catch {
+      continue;
+    }
+    if (!json) {
+      continue;
+    }
+    const resource = { descriptor, json: applyOverrides(descriptor, json, config.overrides) };
+    const uses: ResourceDescriptor[] = [];
+    for (const dependency of findTransitiveDependencies(new Map(), new Map(), descriptor.workspace, [resource])) {
+      if (dependency.type === ResourceType.Backend) {
+        // A pool's member.
+        const memberKey = keyOf(dependency);
+        poolsOf.set(memberKey, [...(poolsOf.get(memberKey) ?? []), descriptor]);
+        continue;
+      }
+      const target = dependency.type === ResourceType.NamedValue ? await resolve(dependency) : undefined;
+      const used = target ? lateByKey.get(getResourceDescriptorKey(target)) : undefined;
+      if (used) {
+        uses.push(used);
+      }
+    }
+    if (uses.length > 0) {
+      usesOf.set(descriptor, uses);
+    }
+  }
+
+  // What is ordered: the late named values, their credential users, and the
+  // pools those users are members of (a pool goes after its members).
+  const nodes = new Set<ResourceDescriptor>([...late, ...usesOf.keys()]);
+  for (const node of [...nodes]) {
+    if (node.type === ResourceType.Backend) {
+      (poolsOf.get(keyOf(node)) ?? []).forEach((pool) => nodes.add(pool));
+    }
+  }
+  // Each node's predecessors among the nodes.
+  const before = new Map<ResourceDescriptor, Set<ResourceDescriptor>>([...nodes].map((node) => [node, new Set()]));
+  for (const [user, uses] of usesOf) {
+    uses.forEach((used) => before.get(user)?.add(used));
+  }
+  for (const [namedValue, targets] of targetsOf) {
+    for (const target of targets) {
+      const resource = byResourceKey.get(target);
+      if (resource && nodes.has(resource)) {
+        before.get(namedValue)?.add(resource);
+      }
+    }
+  }
+  for (const node of nodes) {
+    if (node.type === ResourceType.Backend) {
+      (poolsOf.get(keyOf(node)) ?? []).forEach((pool) => before.get(pool)?.add(node));
+    }
+  }
+
+  const ordered: ResourceDescriptor[][] = [];
+  const remaining = new Set(nodes);
+  // Whether a node needs itself through what it needs among `remaining`.
+  const inCycle = (start: ResourceDescriptor): boolean => {
+    const seen = new Set<ResourceDescriptor>();
+    const pending = [...(before.get(start) ?? [])];
+    for (let node = pending.pop(); node; node = pending.pop()) {
+      if (node === start) {
+        return true;
+      }
+      if (remaining.has(node) && !seen.has(node)) {
+        seen.add(node);
+        pending.push(...(before.get(node) ?? []));
+      }
+    }
+    return false;
+  };
+  while (remaining.size > 0) {
+    const wave = [...remaining].filter((node) => [...(before.get(node) ?? [])].every((needed) => !remaining.has(needed)));
+    if (wave.length === 0) {
+      // A cycle: the named values in one go early, before what they name,
+      // and what needs them is still ordered after them.
+      const cyclic = [...remaining].filter((node) => node.type === ResourceType.NamedValue && inCycle(node));
+      if (cyclic.length === 0) {
+        // None to break it with: publish the rest together, and APIM
+        // reports what it rejects.
+        ordered.push([...remaining]);
+        break;
+      }
+      for (const node of cyclic) {
+        remaining.delete(node);
+        early.push(node);
+      }
+      continue;
+    }
+    wave.forEach((node) => remaining.delete(node));
+    ordered.push(wave);
+  }
+  return { early, ordered };
+}
+
+/** Tier 1 types a policy attribute can name through a named value. */
+const NAMED_THROUGH_NAMED_VALUE_TYPES: ReadonlySet<ResourceType> = new Set([
+  ResourceType.Backend,
+  ResourceType.Logger,
+  ResourceType.GlobalSchema,
+]);
 
 /**
  * Separates Backend descriptors that are pool backends (properties.type === "Pool")
