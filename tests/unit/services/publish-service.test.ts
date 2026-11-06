@@ -1808,6 +1808,77 @@ describe('publish-service', () => {
       );
     });
 
+    describe('with a named value a policy uses as a resource name, and an environment prefix', () => {
+      const publishWith = async (
+        fragment: string,
+        values: Record<string, string>,
+        extra: ResourceDescriptor[],
+        environment: Record<string, unknown> = { namePrefix: 'dev-' }
+      ) => {
+        const client = createMockClient();
+        const store = createMockStore([
+          { type: ResourceType.PolicyFragment, nameParts: ['frag'] },
+          ...Object.keys(values).map((name) => ({ type: ResourceType.NamedValue, nameParts: [name] })),
+          ...extra,
+        ]);
+        vi.mocked(store.readResource).mockImplementation(async (_sourceDir: string, descriptor: ResourceDescriptor) => {
+          if (descriptor.type === ResourceType.NamedValue) {
+            const name = descriptor.nameParts[0] ?? '';
+            return { properties: { displayName: name, value: values[name] } };
+          }
+          return descriptor.type === ResourceType.PolicyFragment
+            ? { properties: { format: 'rawxml', value: fragment } }
+            : { properties: { url: 'https://example.test' } };
+        });
+        await runPublish(client, store, {
+          service: testContext,
+          sourceDir: '/source',
+          dryRun: false,
+          deleteUnmatched: false,
+          logLevel: LogLevel.INFO,
+          overrides: { environment },
+        });
+        return (name: string) =>
+          (client.putResource.mock.calls.find((call) => call[1].type === ResourceType.NamedValue && call[1].nameParts[0] === `dev-${name}`)?.[2] as
+            { properties: { value?: string } } | undefined)?.properties.value;
+      };
+
+      it('should publish its value as the deployed name of the resource it names', async () => {
+        const valueOf = await publishWith(
+          '<fragment><set-backend-service backend-id="{{route}}" /></fragment>',
+          { route: 'new-backend', plain: 'new-backend' },
+          [{ type: ResourceType.Backend, nameParts: ['new-backend'] }]
+        );
+
+        expect(valueOf('route')).toBe('dev-new-backend');
+        // Not used as a resource name: its value is only text.
+        expect(valueOf('plain')).toBe('new-backend');
+      });
+
+      it('should leave a value that names no resource in the source', async () => {
+        const valueOf = await publishWith('<fragment><set-backend-service backend-id="{{route}}" /></fragment>', { route: 'elsewhere' }, []);
+
+        expect(valueOf('route')).toBe('elsewhere');
+      });
+
+      it('should leave, with a warning, a value used for types affixed differently', async () => {
+        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+        const valueOf = await publishWith(
+          '<fragment><set-backend-service backend-id="{{shared}}" /><log-to-eventhub logger-id="{{shared}}">x</log-to-eventhub></fragment>',
+          { shared: 'shared' },
+          [
+            { type: ResourceType.Backend, nameParts: ['shared'] },
+            { type: ResourceType.Logger, nameParts: ['shared'] },
+          ],
+          { namePrefix: 'dev-', appliesTo: ['NamedValue', 'Backend', 'PolicyFragment'] }
+        );
+
+        expect(valueOf('shared')).toBe('shared');
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('deployed under different names'));
+        warn.mockRestore();
+      });
+    });
+
     it('should pass commit-scoped deleted descriptors to dry-run report', async () => {
       const client = createMockClient();
       const store = createMockStore([]);

@@ -52,6 +52,7 @@ function knownSets(mapping: EnvMapping | undefined, names = BASE): KnownArtifact
   };
   return {
     has: (type, name, workspace) => !workspace && find(byType[type] ?? [], name) !== undefined,
+    namedValueTargetTypes: () => new Set(),
     deployedNamedValueReference: (reference) => {
       const name = find(names.namedValues, reference);
       return name === undefined || !mapping ? name : toDeployedName(name, ResourceType.NamedValue, mapping);

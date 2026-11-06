@@ -90,6 +90,7 @@ function knownSets(names: { namedValues?: string[]; fragments?: string[]; backen
   };
   return {
     has: (type, name) => find(byType[type], name) !== undefined,
+    namedValueTargetTypes: () => new Set(),
     deployedNamedValueReference: (reference) => {
       const name = find(names.namedValues, reference);
       return name === undefined ? undefined : toDeployedName(name, ResourceType.NamedValue, DEV_MAPPING);

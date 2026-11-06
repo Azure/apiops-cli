@@ -164,7 +164,9 @@ async function runPublishPipeline(
       store,
       config,
       await sourceReferences.available(),
-      sourceReferences.readNamedValue
+      sourceReferences.readNamedValue,
+      // A named value's value is only rewritten when names are affixed.
+      config.envMapping ? await sourceReferences.namedValueTargets() : undefined
     );
 
     logger.debug(

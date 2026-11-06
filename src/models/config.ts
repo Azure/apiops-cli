@@ -6,7 +6,7 @@
  */
 
 import type { ResourceType } from './resource-types.js';
-import { ApimServiceContext } from './types.js';
+import { ApimServiceContext, ResourceDescriptor } from './types.js';
 import { LogLevel } from '../lib/logger.js';
 import type { EnvMapping } from '../services/env-mapper.js';
 
@@ -90,6 +90,11 @@ export interface KnownArtifactSets {
    * its display name.
    */
   deployedNamedValueReference(reference: string, workspace?: string): string | undefined;
+  /**
+   * The resource types policies use a named value for as a resource name
+   * (backend-id="{{name}}"). Known within a publish run only; empty otherwise.
+   */
+  namedValueTargetTypes(namedValue: ResourceDescriptor): ReadonlySet<ResourceType>;
 }
 
 export interface PublishConfig {
