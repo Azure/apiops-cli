@@ -17,6 +17,7 @@ import {
   findTransitiveDependencies,
   findSubscriptionTargets,
   scanArtifactReferences,
+  blankPolicyExpressions,
 } from '../../../src/services/transitive-resolver.js';
 
 describe('transitive-resolver', () => {
@@ -93,6 +94,18 @@ describe('transitive-resolver', () => {
       ['azure-openai-semantic-cache-lookup', '<azure-openai-semantic-cache-lookup score-threshold="0.8" embeddings-backend-id="embeddings" />', ResourceType.Backend, 'embeddings'],
       ['llm-semantic-cache-lookup', '<llm-semantic-cache-lookup embeddings-backend-id="llm-embeddings" />', ResourceType.Backend, 'llm-embeddings'],
       ['include-fragment with another attribute first', '<include-fragment id="x" fragment-id="frag-a" />', ResourceType.PolicyFragment, 'frag-a'],
+      [
+        'a policy expression with quoted strings in an attribute before it',
+        '<set-backend-service sf-service-instance-name="@("fabric:/myapp/" + context.Variables.GetValueOrDefault<string>("svc", "orders"))" backend-id="orders-backend" />',
+        ResourceType.Backend,
+        'orders-backend',
+      ],
+      [
+        'a multi-statement expression before it',
+        '<set-backend-service sf-resolve-condition="@{ var s = (string)context.Variables["x"]; return s == "{"; }" backend-id="sf-backend" />',
+        ResourceType.Backend,
+        'sf-backend',
+      ],
     ])('should detect a reference written with %s', (_label, policy, type, name) => {
       expect(scanPolicyReferences(policy)).toContainEqual({ type, name });
     });
@@ -556,5 +569,19 @@ describe('transitive-resolver', () => {
         });
       });
     });
+  });
+});
+
+describe('blankPolicyExpressions', () => {
+  it.each([
+    ['a call with string literals', 'v="@(ctx.Get("a)b", \'"\'))" x', 'v="@(                   )" x'],
+    ['a verbatim string with doubled quotes', 'v="@(@"a""b)c")" x', 'v="@(         )" x'],
+    ['an escaped quote', 'v="@("a\\"b")" x', 'v="@(      )" x'],
+    ['a block with nested braces', 'v="@{ if (a) { return "}"; } }" x', 'v="@{                        }" x'],
+    ['an unclosed expression', 'v="@(ctx.Get("a")" x', 'v="@(ctx.Get("a")" x'],
+    ['an @ that starts no expression', 'mail="a@example.com"', 'mail="a@example.com"'],
+  ])('should blank %s, keeping its length', (_label, xml, expected) => {
+    expect(blankPolicyExpressions(xml)).toBe(expected);
+    expect(blankPolicyExpressions(xml)).toHaveLength(xml.length);
   });
 });

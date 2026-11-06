@@ -112,6 +112,12 @@ describe('rewritePolicyRefs', () => {
     expect(result).toBe(xml);
   });
 
+  it('rewrites backend-id after an attribute whose policy expression holds quoted strings', () => {
+    const xml = '<set-backend-service sf-service-instance-name="@("fabric:/" + "app")" backend-id="myBackend" />';
+    const result = rewrite(xml, devPrefixMapping(ALL_TYPES));
+    expect(result).toBe('<set-backend-service sf-service-instance-name="@("fabric:/" + "app")" backend-id="dev-myBackend" />');
+  });
+
   it('rewrites backend-id with single quotes', () => {
     const xml = "<set-backend-service backend-id='myBackend' />";
     const result = rewrite(xml, devPrefixMapping([ResourceType.Backend]));

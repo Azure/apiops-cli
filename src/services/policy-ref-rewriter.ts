@@ -24,7 +24,7 @@
 import type { EnvMapping } from './env-mapper.js';
 import { toDeployedName } from './env-mapper.js';
 import type { KnownArtifactSets } from '../models/config.js';
-import { POLICY_REFERENCE_PATTERNS, replaceNamedValueReferences } from './transitive-resolver.js';
+import { blankPolicyExpressions, POLICY_REFERENCE_PATTERNS, replaceNamedValueReferences } from './transitive-resolver.js';
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -72,12 +72,22 @@ export function rewritePolicyRefs(
   // An attribute that names a resource (backend-id, fragment-id, logger-id,
   // schema-id ...) names one in the policy's scope. A policy expression or a
   // named value (rewritten above) names none here.
+  // Matched on a copy with policy expressions blanked (same offsets), so a
+  // quote inside one doesn't hide the attributes after it.
   for (const { type, pattern } of POLICY_REFERENCE_PATTERNS) {
     if (!mapping.appliesTo.has(type)) continue;
-    result = result.replace(pattern, (match: string, quote: string, value: string) => {
-      if (value.startsWith('@') || value.includes('{{') || !known.has(type, value, workspace)) return match;
-      return `${match.slice(0, match.length - value.length - quote.length)}${toDeployedName(value, type, mapping)}${quote}`;
-    });
+    const current = result;
+    let rewritten = '';
+    let last = 0;
+    for (const match of blankPolicyExpressions(current).matchAll(pattern)) {
+      const [whole, quote = '', value = ''] = match;
+      const start = match.index ?? 0;
+      const end = start + whole.length;
+      if (value.startsWith('@') || value.includes('{{') || !known.has(type, value, workspace)) continue;
+      rewritten += current.slice(last, end - value.length - quote.length) + toDeployedName(value, type, mapping) + quote;
+      last = end;
+    }
+    result = rewritten + current.slice(last);
   }
 
   return result;

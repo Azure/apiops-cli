@@ -88,6 +88,64 @@ const LIQUID_BODY_PATTERN = new RegExp(
 const LIQUID_NAMED_VALUE_PATTERN = /\{\{([A-Za-z0-9._-]+)\}\}/g;
 
 /**
+ * Policy XML with the inside of each policy expression (`@(...)`, `@{...}`)
+ * replaced by spaces, the same length. APIM's raw XML keeps an expression's
+ * string literals as written, so an attribute value can hold double quotes
+ * (`sf-service-instance-name="@("fabric:/app")"`), which would end an
+ * attribute pattern's value early and hide the attributes after it. The `@`
+ * and the outer brackets are kept, so a value that is an expression still
+ * starts with `@`; offsets are unchanged, so matches found in the result
+ * apply to the original. An expression whose end can't be found is left as
+ * it is.
+ */
+export function blankPolicyExpressions(xml: string): string {
+  let result = '';
+  let last = 0;
+  let index = xml.indexOf('@');
+  while (index !== -1) {
+    const open = xml[index + 1];
+    const end = open === '(' || open === '{' ? policyExpressionEnd(xml, index + 1) : -1;
+    if (end === -1) {
+      index = xml.indexOf('@', index + 1);
+      continue;
+    }
+    result += xml.slice(last, index + 2) + ' '.repeat(end - index - 2);
+    last = end;
+    index = xml.indexOf('@', end);
+  }
+  return result + xml.slice(last);
+}
+
+/**
+ * The index of the bracket closing the one at `start` (`(` or `{`), skipping
+ * C# string and character literals, or -1 when the expression doesn't close.
+ */
+function policyExpressionEnd(xml: string, start: number): number {
+  const opening = xml[start];
+  const closing = opening === '(' ? ')' : '}';
+  let depth = 0;
+  for (let i = start; i < xml.length; i++) {
+    const char = xml[i];
+    if (char === '"' || char === "'") {
+      // A verbatim string (@"...") doubles its quotes; others escape with '\'.
+      const verbatim = char === '"' && xml[i - 1] === '@';
+      for (i++; i < xml.length; i++) {
+        if (verbatim ? xml[i] === '"' && xml[i + 1] === '"' : xml[i] === '\\') {
+          i++;
+        } else if (xml[i] === char) {
+          break;
+        }
+      }
+    } else if (char === opening) {
+      depth++;
+    } else if (char === closing && --depth === 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
  * Policy XML with the parts that cannot reference other resources removed:
  * XML comments, and the bodies of Liquid templates.
  */
@@ -249,11 +307,17 @@ export function scanNamedValueTargets(policyXml: string): NamedValueTarget[] {
   return targets;
 }
 
-/** The non-empty values of the policy attributes that name a resource, trimmed. */
+/**
+ * The non-empty values of the policy attributes that name a resource, trimmed.
+ * Policy expressions are blanked first (blankPolicyExpressions), so a quote
+ * inside one doesn't end the attribute early; a value that is an expression
+ * keeps its leading `@`.
+ */
 function scanReferenceAttributes(scannable: string): Array<{ type: ResourceType; value: string }> {
   const attributes: Array<{ type: ResourceType; value: string }> = [];
+  const blanked = blankPolicyExpressions(scannable);
   for (const { type, pattern } of POLICY_REFERENCE_PATTERNS) {
-    for (const match of scannable.matchAll(pattern)) {
+    for (const match of blanked.matchAll(pattern)) {
       const value = match[2]?.trim();
       if (value) {
         attributes.push({ type, value });
